@@ -1,0 +1,31 @@
+# Data-room shape — the fact vocabulary a consistency suite mints over an
+# M&A data room. Three runbook applications bind to it:
+# due-diligence, sweep-coverage, sweep-v2.
+#
+#   mmctl apply -f runbooks/shapes/dataroom-documents.yaml
+#
+# Subject/key discipline, enforced at the command gate so a violation lands as
+# a `disputed` claim instead of a silent split:
+#   - subjects are FOLDED identifiers (casefold, non-alphanumerics -> "_"), so
+#     "Granite Bank Term Loan" and granite_bank_term_loan collide instead of
+#     hiding a conflict behind two spellings. Normalizing subjects is the
+#     highest-leverage change available for finding recall;
+#   - keys carry NO dots. `subject.key=value` splits at the LAST dot
+#     (munarium-core/src/ledger.rs), so a dotted key silently steals from the
+#     subject; dash/colon encode any version-like key part.
+apiVersion: munarium.ioka.io/v1
+kind: Shape
+metadata: { name: dataroom-documents, version: 1 }
+spec:
+  fact:
+    schema:
+      type: object
+      properties:
+        subject: { type: string, pattern: "^[a-z][a-z0-9_]{0,63}$" }
+        key: { type: string, pattern: "^[a-z][a-z0-9_:-]{0,63}$" }
+        value: { type: string, minLength: 1, maxLength: 512 }
+      required: [subject, key, value]
+    supersession:
+      identity: [subject, key]
+  chunking: { max_chars: 1200 }
+  indexing: { rrf_k: 60, candidate_n: 120 }

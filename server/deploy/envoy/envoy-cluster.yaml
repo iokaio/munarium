@@ -1,0 +1,71 @@
+# Cluster demo gateway (2026-08-17): the same content-type routing as
+# envoy.yaml, with TWO upstream instances round-robined per plane. Used by
+# `docker compose --profile cluster up` — the runnable local proof that N
+# instances behind one load balancer serve one coherent mesh (the -Cluster
+# conformance mode drives its scenarios through :8443, so the A/B
+# alternation the scenarios need happens implicitly via ROUND_ROBIN).
+static_resources:
+  listeners:
+    - name: gateway
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 8443 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: munarium_gateway
+                codec_type: AUTO
+                http2_protocol_options: {}
+                route_config:
+                  name: munarium
+                  virtual_hosts:
+                    - name: all
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: "/"
+                            headers:
+                              - name: content-type
+                                string_match: { prefix: application/grpc }
+                          route:
+                            cluster: munarium_grpc
+                            timeout: 0s
+                        - match: { prefix: "/" }
+                          route: { cluster: munarium_rest }
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+  clusters:
+    - name: munarium_grpc
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options: {}
+      load_assignment:
+        cluster_name: munarium_grpc
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: munarium-server, port_value: 50051 }
+              - endpoint:
+                  address:
+                    socket_address: { address: munarium-server-b, port_value: 50051 }
+    - name: munarium_rest
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: munarium_rest
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: munarium-server, port_value: 8080 }
+              - endpoint:
+                  address:
+                    socket_address: { address: munarium-server-b, port_value: 8080 }

@@ -1,0 +1,11 @@
+# spec.source is empty: a metric view names the DataSource that serves it.
+apiVersion: munarium.ioka.io/v1
+kind: MetricView
+metadata: { name: pipeline-metrics, version: 1 }
+spec:
+  source: ""
+  view: mxtest.pipeline_metrics
+  measures:
+    open_pipeline: { type: decimal, scale: 2 }
+  dimensions:
+    region: { type: string }

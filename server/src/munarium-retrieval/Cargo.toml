@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-retrieval"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The retrieval coordinator: mode selection, query preparation, and the server-facing retrieval facade. Server talks to this, never to a storage backend directly."
+
+[features]
+# Forwarded to the engine crate. Off by default: compiling it in is a
+# deliberate approval, and the direct-build plan policy names the approximate
+# engine only when this feature exists.
+vector-diskann = ["munarium-datastore/vector-diskann"]
+
+[dependencies]
+munarium-core = { path = "../munarium-core" }
+munarium-retrieval-pg = { path = "../munarium-retrieval-pg" }
+# The coordinator orchestrates a mirror build: it reads committed chunks through
+# retrieval-pg, seals them with munarium-datastore, and records the attempt and
+# catalog rows through store-pg. It is the one place those three meet, which is
+# what keeps each of them from knowing about the others.
+munarium-datastore = { path = "../munarium-datastore" }
+munarium-store-pg = { path = "../munarium-store-pg" }
+# The shadow comparison fingerprints a query rather than carrying it.
+sha2 = { workspace = true }
+hex = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+async-trait = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

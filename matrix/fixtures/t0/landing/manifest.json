@@ -1,0 +1,42 @@
+{
+  "snapshotId": "export-2026-08-30",
+  "format": "csv",
+  "keys": [
+    "id"
+  ],
+  "schema": [
+    {
+      "name": "id",
+      "type": "int64"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    },
+    {
+      "name": "stage",
+      "type": "string"
+    },
+    {
+      "name": "amount",
+      "type": "decimal",
+      "scale": 2,
+      "unit": "USD"
+    },
+    {
+      "name": "region",
+      "type": "string"
+    },
+    {
+      "name": "close_date",
+      "type": "date"
+    }
+  ],
+  "files": [
+    {
+      "path": "opportunities.csv",
+      "sha256": "0093764e7a7a8b5ffcc36589121abd77f1bf97840c070f6455836d9e2c45f9c6",
+      "rows": 8
+    }
+  ]
+}

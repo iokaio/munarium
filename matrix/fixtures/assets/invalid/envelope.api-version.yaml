@@ -1,0 +1,7 @@
+apiVersion: munarium.ioka.io/v2
+kind: DataSource
+metadata: { name: wrongversion, version: 1 }
+spec:
+  adapter: postgres
+  egress: { allowHosts: [db.example.com] }
+  authorization: { strategy: source_native }

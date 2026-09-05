@@ -1,0 +1,45 @@
+Munarium Matrix
+Copyright (c) 2026 Ioka LLC
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+these files except in compliance with the License. A copy of the License is in
+the LICENSE file beside this notice.
+
+"Munarium" and "Ioka" are trademarks of Ioka LLC. The License grants no right to
+use them beyond what is needed to describe the origin of these files. What is
+and is not permitted is in TRADEMARK.md.
+
+This repository is Munarium Matrix core: the runtime and its roles, the asset
+grammar, the refusal registry, the query compiler, materialization, reconcile,
+the wire contract, the source-adapter interface, and the adapters for common
+operational databases and file sources. It requires Munarium Server, which is a
+separate repository under the same License.
+
+Munarium Matrix Enterprise is a separate, proprietary product that builds on this
+one: it implements the same public adapter interface to reach analytics
+platforms — Databricks, BigQuery, Snowflake, Cube and dbt. It is not licensed by
+this License, is not open source, and nothing here grants any right to it. An
+asset naming one of those adapters validates against this repository's grammar
+and is refused at execution with adapter_not_available.
+
+The contract
+------------
+
+contract/ is the structured-evidence contract — the JSON Schemas and examples
+that are the entire boundary between Matrix and the Server. contract/publish.py
+cuts it as a locked bundle that the Server repository vendors. Both copies are
+under the License above.
+
+The Matrix client libraries
+---------------------------
+
+The .NET, Java and Python clients under clients/ are part of this repository and
+under its License.
+
+Third-party software
+--------------------
+
+Third-party components, their versions and licenses are listed in
+THIRD_PARTY_NOTICES.md, generated from the shipping dependency graph and reviewed
+at each release. Each component is governed by its own license, which takes
+precedence for that component.

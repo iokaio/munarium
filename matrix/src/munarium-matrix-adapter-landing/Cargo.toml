@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-matrix-adapter-landing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Manifest-driven immutable snapshots from a landing zone (CSV/JSON). An export IS a snapshot."
+
+[dependencies]
+munarium-matrix-core = { workspace = true }
+munarium-matrix-types = { workspace = true }
+munarium-matrix-adapter = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+csv = { workspace = true }
+chrono = { workspace = true }
+rust_decimal = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+tracing = { workspace = true }
+# Azure Blob, the `object_store` transport for landing manifests read via
+# managed identity. The same crate and the same feature discipline as the server's
+# munarium-store-objects: object_store's cloud client rides reqwest 0.13, whose
+# `rustls` feature would hard-wire aws-lc-rs beside the workspace's ring;
+# `rustls-no-provider` + `rustls/ring` keeps one crypto backend, and the
+# binary installs it explicitly (`install_crypto_provider`).
+object_store = { version = "0.14", default-features = false, features = ["azure-base", "reqwest", "ring"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2"] }
+rustls = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

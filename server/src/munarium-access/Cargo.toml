@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-access"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Deliberately-light capability tokens for munarium-server: HS256 JWTs minted for the API-management layer, plus the level+compartment permit check. No sqlx/axum/tonic — pure logic, CI-enforced."
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+jsonwebtoken = { workspace = true }
+thiserror = { workspace = true }

@@ -1,0 +1,12 @@
+{
+  "contract_version": "0.1.0",
+  "kind": "refusal",
+  "refusal": {
+    "contract_version": "0.1.0",
+    "class": "not_covered",
+    "code": "required_evidence_not_permitted",
+    "message": "A required layer of this research profile is not available to this session.",
+    "source_id": null,
+    "detail": null
+  }
+}

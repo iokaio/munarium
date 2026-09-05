@@ -1,0 +1,6 @@
+apiVersion: v2
+name: munarium
+description: Munarium governed-memory service (munarium-server) — CNPG cell + three API planes
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

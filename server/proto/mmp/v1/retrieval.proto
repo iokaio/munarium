@@ -1,0 +1,86 @@
+// MMP v1 — Retrieval API. Hybrid lexical+vector search; every result set
+// carries a ProvenanceEnvelope (chunk ids, source hashes, index_version,
+// ledger event watermark) so any answer is reproducible.
+syntax = "proto3";
+
+package mmp.v1;
+
+import "mmp/v1/common.proto";
+
+message HybridSearchRequest {
+  string query = 1;
+  string shape_ref = 2;        // which shape's index to search
+  uint32 top_k = 3;            // default 10
+  string filter_json = 4;      // shape-defined metadata filters
+  string index_version = 5;    // empty = active index
+}
+
+message SearchHit {
+  string chunk_id = 1;
+  string source_content_hash = 2; // integrity of the bytes indexed
+  string text = 3;
+  double score = 4;
+  double lexical_rank = 5;
+  double vector_rank = 6;
+  string metadata_json = 7;
+  string source_id = 8;   // stable identity of the source
+  string source_path = 9; // the logical path — which document answered
+}
+
+message HybridSearchResponse {
+  repeated SearchHit hits = 1;
+  ProvenanceEnvelope envelope = 2;
+}
+
+message GetIndexVersionRequest {
+  string shape_ref = 1;
+}
+message GetIndexVersionResponse {
+  string index_version = 1;
+  uint64 event_watermark = 2;
+  string manifest_json = 3;
+  bool active = 4;
+}
+
+// -- Collections (gRPC twin of the REST route) -------------------------------
+// There is no delete RPC anywhere — collections retire softly; physical
+// deletion is the DBA runbook (docs/ops/index-deletion-runbook.md).
+
+message CreateCollectionRequest {
+  string name = 1;         // tenant-unique stable handle
+  string shape_ref = 2;    // immutable after creation
+  int32 access_level = 3;
+  repeated string compartments = 4;
+  string description = 5;  // empty = none
+}
+
+message CollectionInfo {
+  string id = 1;
+  string name = 2;
+  string shape_ref = 3;
+  int32 access_level = 4;
+  repeated string compartments = 5;
+  string status = 6;       // active | retired
+  string description = 7;  // empty = none
+  string created_at = 8;
+  int64 source_count = 9;
+  string active_index = 10; // empty = no index cut over
+}
+
+message ListCollectionsRequest {}
+message ListCollectionsResponse {
+  repeated CollectionInfo collections = 1;
+}
+
+message GetCollectionRequest {
+  string id = 1;
+}
+
+service RetrievalService {
+  rpc HybridSearch(HybridSearchRequest) returns (HybridSearchResponse);
+  rpc GetIndexVersion(GetIndexVersionRequest) returns (GetIndexVersionResponse);
+  // REST twins:
+  rpc CreateCollection(CreateCollectionRequest) returns (CollectionInfo);
+  rpc ListCollections(ListCollectionsRequest) returns (ListCollectionsResponse);
+  rpc GetCollection(GetCollectionRequest) returns (CollectionInfo);
+}

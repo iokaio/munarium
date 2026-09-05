@@ -1,0 +1,28 @@
+# A Genie space with NO allowlist at all.
+#
+# Refused, and the refusal is the whole design: planner-assist with neither
+# `trustedAssets` nor `allowedTables` is "run whatever the model wrote". The
+# tempting alternative — defaulting an absent allowlist to "everything" —
+# would make the safe posture the one nobody configures.
+apiVersion: munarium.ioka.io/v1
+kind: DataSource
+metadata:
+  name: crm-genie-open
+  version: 1
+spec:
+  adapter: databricks
+  connection:
+    host: adb-1234567890.7.azuredatabricks.net
+    warehouseId: abc123
+    catalog: main
+    schema: crm
+    allowHosts: [adb-1234567890.7.azuredatabricks.net]
+    genie:
+      spaceId: 01ef-1234-5678
+      trustedAssets: []
+      allowedTables: []
+  credentialRef: matrix-databricks
+  egress:
+    allowHosts: [adb-1234567890.7.azuredatabricks.net]
+  authorization:
+    strategy: source_native

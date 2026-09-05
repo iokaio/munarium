@@ -1,0 +1,31 @@
+# example-anthropic — a Claude-family provider config for a front end that
+# lets users choose a model family.
+#
+# A front end maps its "Claude" family choice to
+# `model_override: { provider: example-anthropic, tier: fast|capable|frontier }`
+# on each session turn; the built-in tier table resolves
+# fast -> claude-haiku-4-5, capable -> claude-sonnet-5 and
+# frontier -> claude-fable-5-1. A runbook lists this config in
+# `models.allowOverrides`. The credential is the same env var the synthesized
+# default uses — this config exists so the override policy can name a family
+# explicitly, not to change credentials.
+#
+# The rpm budget is a guard: a public-facing front end should never be able
+# to saturate a shared key. The dailyTokens ceilings are the spending caps:
+# per-tier daily token budgets, UTC-day window, enforced in op_complete
+# against the shared ledger (migration 0029). A tier without a value is
+# unlimited. Size the frontier tier from its per-turn cost: on a hard
+# multi-document question a frontier model's turns can run several times a
+# capable model's tokens, so the same ceiling buys proportionally fewer
+# questions.
+#
+#   mmctl apply -f runbooks/providers/example-anthropic.yaml
+apiVersion: munarium.ioka.io/v1
+kind: ProviderConfig
+metadata: { name: example-anthropic }
+spec:
+  provider: anthropic
+  credentialRef: { env: MUNARIUM_SECRET_ANTHROPIC }
+  budgets:
+    rpm: 30
+    dailyTokens: { fast: 1000000, capable: 500000, frontier: 250000 }  # placeholders: size to your own keys

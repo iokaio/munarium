@@ -1,0 +1,70 @@
+# regulatory-compliance — regulator findings and the regulations they cite,
+# as a self-citing retrieval application.
+#
+# What this demonstrates: two level-0 collections kept separate for retrieval
+# reasons rather than governance reasons, and a corpus whose ground truth is
+# free because the documents name their own sources.
+#
+# Server mapping: two collections, both level 0 — warning letters and the CFR
+# are public records and there is no clearance story to invent. They stay
+# separate because they are different bodies of text with different retrieval
+# behavior: a letter is a narrative finding, a CFR section is a rule. Expect
+# `mmctl runbook validate` to emit the INFO finding
+# `collections.uniform-access`; it is correct here.
+#
+# Upload convention: `letters/` and `cfr/`.
+#
+#   mmctl apply -f runbooks/shapes/regulatory-documents.yaml
+#   mmctl apply -f runbooks/applications/regulatory-compliance.yaml
+#   mmctl run regulatory-compliance --watch
+apiVersion: munarium.ioka.io/v1
+kind: Runbook
+metadata: { name: regulatory-compliance, version: 1 }
+spec:
+  # Where this runbook's documents live. The blob path IS the ingest
+  # filename, so every collection binding below sits under this prefix —
+  # `mmctl runbook validate` errors if one does not.
+  sources:
+    container: sources
+    prefix: "fda/"
+  collections:
+    - name: fda-warning-letters
+      shape: regulatory-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "fda/letters/" }
+    - name: title-21-cfr
+      shape: regulatory-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "fda/cfr/" }
+  retrieval: { topK: 8, rrfK: 60, candidateN: 100 }
+  models:
+    default: { provider: default, tier: fast }
+    tasks:
+      completion: { provider: default, tier: fast }
+      validation: { tier: fast }
+    allowOverrides: [default]
+  completion:
+    promptTemplate: |
+      You are a regulatory affairs analyst answering over FDA warning letters
+      and Title 21 CFR.
+
+      Rules:
+      - Answer ONLY from the served text and cite both sides of the hop: the
+        LETTER (by firm and date) and the CFR SECTION it cites.
+      - Quote the regulation's own language when stating what it requires. Do
+        not paraphrase a requirement into a stricter or looser one.
+      - A letter states the agency's findings, not adjudicated fact. Say
+        "FDA found" rather than asserting the violation as settled.
+      - Regulations are versioned by date. If the served text carries an
+        effective date or revision, report it.
+      - If the served documents do not answer the question, say so.
+
+      {context}
+
+      Question: {query}
+  steps:
+    - resolveSources: {}
+    - buildIndex: {}
+    - verify: {}
+    - cutover: { approval: required }
+    - retireOld: { keep_versions: 2 }

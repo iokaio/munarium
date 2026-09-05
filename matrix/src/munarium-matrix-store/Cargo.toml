@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-matrix-store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Postgres persistence for Matrix: registry, journal, queues, checkpoints, budget ledger. Schema matrix.*, additive migrations."
+
+[dependencies]
+munarium-matrix-core = { workspace = true }
+munarium-matrix-types = { workspace = true }
+sqlx = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }

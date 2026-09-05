@@ -1,0 +1,9 @@
+# A Cube source with no baseUrl: a semantic provider is reached at a URL.
+apiVersion: munarium.ioka.io/v1
+kind: DataSource
+metadata: { name: metrics, version: 1 }
+spec:
+  adapter: cube
+  connection: {}
+  egress: { allowHosts: [cube] }
+  authorization: { strategy: source_native }

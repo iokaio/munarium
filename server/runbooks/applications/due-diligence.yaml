@@ -1,0 +1,134 @@
+# due-diligence — a data room as a compartmentalized retrieval application.
+#
+# What this demonstrates: a compartment per functional area, so one runbook
+# serves several audiences from one index — the capability token decides what
+# a session can see, not a separate deployment.
+#
+# Server mapping: every data-room functional area is its own collection, so a
+# capability token's level + compartments decide what a session can see. A
+# buyer-side associate at level 1 gets corporate/commercial/real-estate/
+# insurance/operations; deal counsel at level 2 with `finance` or `legal`
+# reaches the equity, financial, tax, IP and compliance files; only level 3
+# with `hr` or `security` reaches employment files and incident records. Same
+# runbook, different tokens, disjoint results.
+#
+# Upload convention: sources are ingested under `northgate/<area>/...`. If you
+# hold an answer key for this corpus, it is never uploaded — a key inside the
+# retrieval index is not a measurement.
+#
+#   mmctl apply -f runbooks/shapes/dataroom-documents.yaml
+#   mmctl apply -f runbooks/applications/due-diligence.yaml
+#   mmctl run due-diligence --watch
+#   mmctl approve <run-id> <cutover-step-ordinal>
+apiVersion: munarium.ioka.io/v1
+kind: Runbook
+metadata: { name: due-diligence, version: 2 }
+spec:
+  # Where this runbook's documents live. The blob path IS the ingest
+  # filename, so every collection binding below sits under this prefix —
+  # `mmctl runbook validate` errors if one does not.
+  sources:
+    container: sources
+    prefix: "northgate/"
+  collections:
+    - name: dataroom-index
+      shape: dataroom-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "northgate/000_" }
+    - name: dataroom-corporate
+      shape: dataroom-documents@1
+      accessLevel: 1
+      sources: { filenamePrefix: "northgate/01_corporate/" }
+    - name: dataroom-equity
+      shape: dataroom-documents@1
+      accessLevel: 2
+      compartments: [finance]
+      sources: { filenamePrefix: "northgate/02_equity/" }
+    - name: dataroom-finance
+      shape: dataroom-documents@1
+      accessLevel: 2
+      compartments: [finance]
+      sources: { filenamePrefix: "northgate/03_finance/" }
+    - name: dataroom-tax
+      shape: dataroom-documents@1
+      accessLevel: 2
+      compartments: [finance]
+      sources: { filenamePrefix: "northgate/04_tax/" }
+    - name: dataroom-commercial
+      shape: dataroom-documents@1
+      accessLevel: 1
+      sources: { filenamePrefix: "northgate/05_commercial/" }
+    - name: dataroom-employment
+      shape: dataroom-documents@1
+      accessLevel: 3
+      compartments: [hr]
+      sources: { filenamePrefix: "northgate/06_employment/" }
+    - name: dataroom-ip
+      shape: dataroom-documents@1
+      accessLevel: 2
+      compartments: [legal]
+      sources: { filenamePrefix: "northgate/07_intellectual_property/" }
+    - name: dataroom-legal-compliance
+      shape: dataroom-documents@1
+      accessLevel: 2
+      compartments: [legal]
+      sources: { filenamePrefix: "northgate/08_legal_compliance/" }
+    - name: dataroom-privacy-security
+      shape: dataroom-documents@1
+      accessLevel: 3
+      compartments: [security]
+      sources: { filenamePrefix: "northgate/09_privacy_security/" }
+    - name: dataroom-real-estate
+      shape: dataroom-documents@1
+      accessLevel: 1
+      sources: { filenamePrefix: "northgate/10_real_estate_environment/" }
+    - name: dataroom-insurance
+      shape: dataroom-documents@1
+      accessLevel: 1
+      sources: { filenamePrefix: "northgate/11_insurance/" }
+    - name: dataroom-operations
+      shape: dataroom-documents@1
+      accessLevel: 1
+      sources: { filenamePrefix: "northgate/12_operations_regulatory/" }
+  retrieval: { topK: 20, rrfK: 60, candidateN: 120 }
+  models:
+    default: { provider: default, tier: capable }
+    tasks:
+      completion: { provider: default, tier: capable }
+      validation: { tier: fast }
+    allowOverrides: [default, example-anthropic, example-openai, example-openrouter]
+  completion:
+    promptTemplate: |
+      You are an M&A due-diligence analyst reading a virtual data room.
+      Answer ONLY from the context below and cite every document you rely on.
+
+      Reading rules that decide authority questions:
+      - A conflict between documents is a FINDING. Report every side with its
+        value and date. Never average it away or silently pick a winner.
+      - A later document of the same type presumptively supersedes an earlier
+        one, but an amendment or side letter controls its base agreement no
+        matter what a later summary says.
+      - Audited financials outrank management summaries and marketing
+        materials; the conflict between them is still reportable.
+      - A representation ("no material litigation") is a party's assertion,
+        not a fact. Corroborate or refute it against the underlying records.
+      - If the context does not answer the question, say so plainly.
+
+      {context}
+
+      Question: {query}
+    # topK 20 over 1,200-character chunks is an UPPER BOUND of ~24,000
+    # characters plus ~60 per hit for the "[collection/chunk_id]" label.
+    # In practice the twenty served hits already fit the 16,000
+    # engine default -- every battery turn's input tokens were identical with
+    # and without this line, because the data room's chunks run well under
+    # max_chars. Declared anyway, sized to the bound, so a corpus or shape
+    # change cannot make the truncation binding without anyone noticing
+    # (guides/retrieval-sizing.md).
+    contextCharBudget: 28000
+  steps:
+    - resolveSources: {}
+    - buildIndex: {}
+    - verify: {}
+    - cutover: { approval: required }
+    - retireOld: { keep_versions: 2 }

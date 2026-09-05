@@ -1,0 +1,39 @@
+{
+  "contract_version": "0.1.0",
+  "kind": "complete_table",
+  "evidence_id": "ev-01a047000000000000000000000000b1",
+  "manifest": {
+    "contract_version": "0.1.0",
+    "canon": "canon@1",
+    "evidence_id": "ev-01a047000000000000000000000000b1",
+    "tenant": "acme",
+    "kind": "table",
+    "logical_result_hash": "sha256:050ab91350bf4eb8468ac178f72094ebc7ff880ac7eefefdf8a45dfb30341a4a",
+    "artifact_hash": "sha256:4fc2ce83603ee11248a3f006555ab71f99cbefd7ca878a959e7f6f80f98375fb",
+    "bytes_len": 2481,
+    "media_type": "text/csv; charset=utf-8",
+    "source": { "source_id": "crm", "source_version": 1, "adapter": "postgres" },
+    "versions": { "query_contract": "open-pipeline-by-region@2" },
+    "schema": {
+      "columns": [
+        { "id": "c0", "name": "region", "type": "string", "nullable": false, "key": true },
+        { "id": "c1", "name": "pipeline_amount", "type": "decimal", "nullable": false, "scale": 2, "unit": "USD", "additivity": "additive" },
+        { "id": "c2", "name": "opportunity_count", "type": "int64", "nullable": false, "additivity": "additive" }
+      ]
+    },
+    "identity": { "row_id_rule": "keys", "order_by": ["region"], "rows": 3 },
+    "completeness": { "truncated": false, "declared_max_rows": 500 },
+    "snapshot_vector": [{ "source_id": "crm", "marker": "1024:1024:", "replay_level": "sealed_result" }],
+    "execution": { "started_at": "2026-08-28T12:00:01Z", "ended_at": "2026-08-28T12:00:02Z", "effective_principal": "matrix_reader" },
+    "authorization_class": { "name": "sales-emea", "access_level": 2, "compartments": ["sales", "emea"] }
+  },
+  "rows": [
+    { "row_id": "AMER", "cells": ["AMER", "4210500.00", "37"] },
+    { "row_id": "APAC", "cells": ["APAC", "1180250.50", "11"] },
+    { "row_id": "EMEA", "cells": ["EMEA", "2954000.00", "24"] }
+  ],
+  "truncated": false,
+  "derivations": [
+    { "ref": "total_pipeline", "op": "sum", "over": "pipeline_amount", "value": "8344750.50", "unit": "USD", "scale": 2 }
+  ]
+}

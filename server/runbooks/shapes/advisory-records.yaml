@@ -1,0 +1,27 @@
+# Advisory-record shape — client-profile canon over a long-running wealth
+# advisory corpus. Bound by the financial-advisory runbook.
+#
+#   mmctl apply -f runbooks/shapes/advisory-records.yaml
+#
+# The 240-character value ceiling is deliberate, not a guess: sentence-valued
+# claims produce false conflicts from phrasing collisions alone. Values are
+# terse and
+# normalized ("USD 2750000", "2%", "prohibited") so the ledger-conflict gate
+# compares facts rather than prose. Keys stay dot-free — `subject.key=value`
+# splits at the last dot.
+apiVersion: munarium.ioka.io/v1
+kind: Shape
+metadata: { name: advisory-records, version: 1 }
+spec:
+  fact:
+    schema:
+      type: object
+      properties:
+        subject: { type: string, pattern: "^[a-z][a-z0-9_]{0,63}$" }
+        key: { type: string, pattern: "^[a-z][a-z0-9_:-]{0,63}$" }
+        value: { type: string, minLength: 1, maxLength: 240 }
+      required: [subject, key, value]
+    supersession:
+      identity: [subject, key]
+  chunking: { max_chars: 1200 }
+  indexing: { rrf_k: 60, candidate_n: 100 }

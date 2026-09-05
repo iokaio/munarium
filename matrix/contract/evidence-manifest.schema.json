@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://munarium.ioka.io/contract/matrix/evidence-manifest.schema.json",
+  "title": "EvidenceManifest",
+  "description": "Matrix -> server on seal; server -> caller on `GET /v1/evidence/{id}`. Everything needed to (a) prove what an answer was computed from, (b) decide who may read it, and (c) say honestly whether it can be replayed and for how long. The BYTES are separate: this manifest names them by `artifact_hash` and never embeds them.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version", "canon", "tenant", "kind",
+    "logical_result_hash", "artifact_hash", "bytes_len", "media_type",
+    "source", "versions", "schema", "identity", "completeness",
+    "snapshot_vector", "execution", "authorization_class"
+  ],
+  "properties": {
+    "contract_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "canon": { "const": "canon@1" },
+    "evidence_id": {
+      "description": "Assigned by the SERVER at seal. Absent in the seal request, present in every read.",
+      "type": ["string", "null"]
+    },
+    "tenant": { "type": "string", "minLength": 1 },
+    "kind": {
+      "description": "CLOSED. What the sealed bytes are: a query result table, an exact count with its coverage, or a batch of mode-C observations.",
+      "enum": ["table", "count", "observations"]
+    },
+    "logical_result_hash": { "$ref": "#/$defs/hash" },
+    "artifact_hash": { "$ref": "#/$defs/hash" },
+    "bytes_len": { "type": "integer", "minimum": 0 },
+    "media_type": {
+      "description": "How the bytes are serialized. Both are canonical forms; the CSV form exists so a small artifact is readable without a Parquet reader.",
+      "enum": ["application/vnd.apache.parquet", "text/csv; charset=utf-8"]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_id", "source_version", "adapter"],
+      "properties": {
+        "source_id": { "type": "string" },
+        "source_version": { "type": "integer", "minimum": 1 },
+        "adapter": { "type": "string", "description": "OPEN enum: postgres | databricks | landing | ..." },
+        "adapter_version": { "type": ["string", "null"] },
+        "engine": {
+          "description": "What actually executed it, as the engine reports itself (e.g. 'PostgreSQL 16.4'). Part of the provenance, not of the logical identity.",
+          "type": ["string", "null"]
+        },
+        "driver": { "type": ["string", "null"] }
+      }
+    },
+    "versions": {
+      "description": "Every versioned artifact that shaped this result. A null means 'not applicable to this kind', never 'unknown'.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "query_contract": { "type": ["string", "null"] },
+        "claim_mapping": { "type": ["string", "null"] },
+        "semantic_provider": { "type": ["string", "null"] },
+        "render": { "type": ["string", "null"] },
+        "policy": { "type": ["string", "null"] },
+        "compiler": { "type": ["string", "null"] }
+      }
+    },
+    "plan": {
+      "description": "Hashes of the compiled plan and the bound parameters. Present for `table`; the statement TEXT is never sealed and never leaves Matrix.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "canonical_plan_hash": { "$ref": "#/$defs/hash" },
+        "bound_parameters_hash": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["columns"],
+      "properties": {
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "type", "nullable"],
+            "properties": {
+              "id": { "type": "string", "description": "Stable within the contract; survives a rename of the source column." },
+              "name": { "type": "string" },
+              "type": {
+                "enum": ["bool", "int64", "decimal", "float64", "string", "bytes", "date", "timestamp_tz", "timestamp_naive", "interval", "uuid", "json", "array"]
+              },
+              "nullable": { "type": "boolean" },
+              "scale": { "type": ["integer", "null"], "minimum": 0, "maximum": 38 },
+              "unit": { "type": ["string", "null"], "description": "e.g. 'USD', 'seconds'. Carried into the answer so a number is never unitless." },
+              "additivity": { "enum": ["additive", "semi_additive", "non_additive", null], "default": null },
+              "key": { "type": "boolean", "default": false },
+              "element_type": { "type": ["string", "null"] }
+            }
+          }
+        }
+      }
+    },
+    "identity": {
+      "description": "How rows are identified — the canon@1 ordering rule for this result.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["row_id_rule"],
+      "properties": {
+        "row_id_rule": { "enum": ["keys", "position"] },
+        "order_by": { "type": "array", "items": { "type": "string" }, "default": [] },
+        "rows": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "completeness": {
+      "description": "G4. A truncated block cannot support a completeness claim, and the server enforces that; this is where it learns.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["truncated"],
+      "properties": {
+        "truncated": { "type": "boolean" },
+        "declared_max_rows": { "type": ["integer", "null"] },
+        "rows_covered": { "type": ["integer", "null"], "description": "Mode A: source rows this run covered." },
+        "rows_excluded": { "type": ["integer", "null"], "description": "Mode A: rows excluded by policy or drift — reported, never silently dropped." },
+        "exclusion_reason": { "type": ["string", "null"] }
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "denied_columns": {
+          "description": "Columns the policy denied. They were never selected, so they are absent from the bytes; naming them here is how an operator sees WHY a column is missing.",
+          "type": "array", "items": { "type": "string" }, "default": []
+        },
+        "masked": { "type": "boolean", "default": false }
+      }
+    },
+    "snapshot_vector": {
+      "description": "G3. One marker per source that contributed. A cross-source result is a VECTOR precisely so it is never described as one atomic snapshot.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source_id", "replay_level"],
+        "properties": {
+          "source_id": { "type": "string" },
+          "marker": { "type": ["string", "null"], "description": "Engine-native: a pg snapshot, a Delta version, a manifest id." },
+          "isolation": { "type": ["string", "null"] },
+          "started_at": { "type": ["string", "null"], "format": "date-time" },
+          "ended_at": { "type": ["string", "null"], "format": "date-time" },
+          "replay_level": {
+            "description": "OPEN enum. G2 is only promised as `source_time_travel`.",
+            "type": "string",
+            "examples": ["sealed_result", "source_time_travel"]
+          },
+          "replay_expires_at": { "type": ["string", "null"], "format": "date-time" }
+        }
+      }
+    },
+    "freshness": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "watermark": { "type": ["string", "null"] },
+        "observed_at": { "type": ["string", "null"], "format": "date-time" },
+        "lag_seconds": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["started_at", "ended_at"],
+      "properties": {
+        "started_at": { "type": "string", "format": "date-time" },
+        "ended_at": { "type": "string", "format": "date-time" },
+        "effective_principal": {
+          "description": "G6. The identity the SOURCE saw — an RLS-subject role, a Unity Catalog principal. Not the end user's uid.",
+          "type": ["string", "null"]
+        },
+        "statement_id": { "type": ["string", "null"], "description": "Engine-side correlation id (Databricks statement_id, pg pid)." }
+      }
+    },
+    "authorization_class": {
+      "description": "The equivalence class this artifact belongs to. A resolving session must DOMINATE it: session.access_level >= access_level AND session.compartments superset-of compartments.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["access_level"],
+      "properties": {
+        "name": { "type": ["string", "null"] },
+        "access_level": { "type": "integer", "minimum": 0 },
+        "compartments": { "type": "array", "items": { "type": "string" }, "default": [] }
+      }
+    },
+    "retention": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "expires_at": { "type": ["string", "null"], "format": "date-time" },
+        "legal_hold": { "type": "boolean", "default": false },
+        "purged_at": {
+          "description": "Set by the server's purge job. A purged artifact KEEPS this row so a citation resolves `evidence-expired` rather than `not-found`.",
+          "type": ["string", "null"], "format": "date-time"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  }
+}

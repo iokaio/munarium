@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://munarium.ioka.io/contract/matrix/query-intent.schema.json",
+  "title": "QueryIntent",
+  "description": "Server -> Matrix. What one layer of a turn asks a structured source for. The server owns the model call that produces this; Matrix never calls a model and holds no provider credential. Everything here is typed and bounded: Matrix validates the intent against the named contract and refuses anything it cannot serve exactly.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "kind", "authorization", "limits"],
+  "properties": {
+    "contract_version": {
+      "description": "The matrix/contract VERSION this document is written against.",
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "kind": {
+      "description": "CLOSED. `structured_query` binds a QueryContract by name (v1). `semantic` binds a SemanticProvider measure/dimension request and is refused with `not_covered` until then.",
+      "enum": ["structured_query", "semantic"]
+    },
+    "request_id": {
+      "description": "The server's request id, echoed into Matrix's journal so one id ties an interaction row, a journal row and a source statement together.",
+      "type": ["string", "null"]
+    },
+    "contract": {
+      "description": "Required when kind = structured_query. `name@version`; a bare name resolves to the latest applied version and is recorded resolved in the evidence.",
+      "type": ["string", "null"],
+      "pattern": "^[a-z0-9][a-z0-9-]*(@[0-9]+)?$"
+    },
+    "semantic": {
+      "description": "Required when kind = semantic. Bounded: no free-form expression ever crosses this boundary.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["provider", "measures"],
+      "properties": {
+        "provider": { "type": "string" },
+        "measures": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "dimensions": { "type": "array", "items": { "type": "string" } },
+        "filters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["dimension", "op", "value"],
+            "properties": {
+              "dimension": { "type": "string" },
+              "op": { "enum": ["eq", "ne", "lt", "lte", "gt", "gte", "in"] },
+              "value": { "$ref": "#/$defs/typed_value" }
+            }
+          }
+        },
+        "grain": { "type": ["string", "null"] }
+      }
+    },
+    "parameters": {
+      "description": "Typed parameter bindings for the contract's declared parameters. A parameter the contract does not declare is `not_covered`; a value outside a declared allowed set is `not_covered`. Values are NEVER interpolated into statement text.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/typed_value" }
+    },
+    "authorization": {
+      "description": "The caller's authorization snapshot, taken by the server at turn time. Matrix uses it to select the source identity or the authorization equivalence class; it can never widen what the source's own policy allows.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenant", "access_level"],
+      "properties": {
+        "tenant": { "type": "string", "minLength": 1 },
+        "uid": {
+          "description": "The end user the server authenticated. Recorded in the journal for attribution; it is NOT a source identity.",
+          "type": ["string", "null"]
+        },
+        "access_level": { "type": "integer", "minimum": 0 },
+        "compartments": { "type": "array", "items": { "type": "string" }, "default": [] },
+        "session_id": { "type": ["string", "null"] },
+        "runbook_ref": { "type": ["string", "null"] }
+      }
+    },
+    "limits": {
+      "description": "Hard ceilings. Matrix takes the MINIMUM of these and the contract's own limits; it never raises a contract's ceiling because an intent asked it to.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_rows", "max_bytes"],
+      "properties": {
+        "max_rows": { "type": "integer", "minimum": 1 },
+        "max_bytes": { "type": "integer", "minimum": 1 },
+        "max_cells": { "type": ["integer", "null"], "minimum": 1 }
+      }
+    },
+    "deadline_at": {
+      "description": "Absolute wall-clock deadline. Matrix cancels the source statement at this instant and answers `partial_result` or `source_unavailable`. It ALSO cancels when the caller disconnects, which is not expressible here and is a handler property.",
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "freshness": {
+      "description": "An optional obligation from the research profile: refuse rather than answer from data older than this.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "max_staleness_seconds": { "type": "integer", "minimum": 0 },
+        "on_violation": { "enum": ["refuse", "disclose"], "default": "refuse" }
+      }
+    },
+    "seal": {
+      "description": "Whether Matrix seals the result into the server's evidence plane before returning, and under what retention. `required: true` means a sealing failure is a refusal, not a degraded answer.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required"],
+      "properties": {
+        "required": { "type": "boolean", "default": true },
+        "retention_days": { "type": ["integer", "null"], "minimum": 0 },
+        "idempotency_key": { "type": ["string", "null"] }
+      },
+      "default": { "required": true }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "structured_query" } }, "required": ["kind"] },
+      "then": { "required": ["contract"], "properties": { "contract": { "type": "string" } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "semantic" } }, "required": ["kind"] },
+      "then": { "required": ["semantic"], "properties": { "semantic": { "type": "object" } } }
+    }
+  ],
+  "$defs": {
+    "typed_value": {
+      "description": "A value with its logical type stated. Decimals and 64-bit integers travel as STRINGS: a JSON number is an IEEE-754 double in most parsers and silently loses both.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": {
+          "enum": [
+            "bool", "int64", "decimal", "float64", "string", "bytes",
+            "date", "timestamp_tz", "timestamp_naive", "interval", "uuid", "json", "array"
+          ]
+        },
+        "value": {
+          "description": "null means SQL NULL. Scalars follow canon@1's text forms; `array` carries a JSON array of typed_value."
+        },
+        "scale": {
+          "description": "Required for `decimal`: the number of fraction digits the text form carries.",
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 38
+        },
+        "element_type": {
+          "description": "Required for `array`.",
+          "type": ["string", "null"]
+        }
+      }
+    }
+  }
+}

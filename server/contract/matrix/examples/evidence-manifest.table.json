@@ -1,0 +1,61 @@
+{
+  "contract_version": "0.1.0",
+  "canon": "canon@1",
+  "evidence_id": "ev-01a047000000000000000000000000b1",
+  "tenant": "acme",
+  "kind": "table",
+  "logical_result_hash": "sha256:050ab91350bf4eb8468ac178f72094ebc7ff880ac7eefefdf8a45dfb30341a4a",
+  "artifact_hash": "sha256:4fc2ce83603ee11248a3f006555ab71f99cbefd7ca878a959e7f6f80f98375fb",
+  "bytes_len": 2481,
+  "media_type": "text/csv; charset=utf-8",
+  "source": {
+    "source_id": "crm",
+    "source_version": 1,
+    "adapter": "postgres",
+    "adapter_version": "0.1.0",
+    "engine": "PostgreSQL 16.4",
+    "driver": "sqlx 0.8"
+  },
+  "versions": {
+    "query_contract": "open-pipeline-by-region@2",
+    "claim_mapping": null,
+    "semantic_provider": null,
+    "render": null,
+    "policy": "policy@3",
+    "compiler": "compiler@1"
+  },
+  "plan": {
+    "canonical_plan_hash": "sha256:ab3b514448794c49c078edbba340d4e7671aa13df4b55b7ce3b0a4d0ee2b07ec",
+    "bound_parameters_hash": "sha256:9e30b466ac491380429e9687611e33970f253e264fa1a08b82707f12047fbfc9"
+  },
+  "schema": {
+    "columns": [
+      { "id": "c0", "name": "region", "type": "string", "nullable": false, "key": true },
+      { "id": "c1", "name": "pipeline_amount", "type": "decimal", "nullable": false, "scale": 2, "unit": "USD", "additivity": "additive" },
+      { "id": "c2", "name": "opportunity_count", "type": "int64", "nullable": false, "additivity": "additive" }
+    ]
+  },
+  "identity": { "row_id_rule": "keys", "order_by": ["region"], "rows": 4 },
+  "completeness": { "truncated": false, "declared_max_rows": 500 },
+  "redaction": { "denied_columns": ["owner_email"], "masked": false },
+  "snapshot_vector": [
+    {
+      "source_id": "crm",
+      "marker": "1024:1024:",
+      "isolation": "repeatable read",
+      "started_at": "2026-08-28T12:00:01Z",
+      "ended_at": "2026-08-28T12:00:02Z",
+      "replay_level": "sealed_result",
+      "replay_expires_at": null
+    }
+  ],
+  "freshness": { "watermark": "2026-08-28T11:45:00Z", "observed_at": "2026-08-28T12:00:02Z", "lag_seconds": 902 },
+  "execution": {
+    "started_at": "2026-08-28T12:00:01Z",
+    "ended_at": "2026-08-28T12:00:02Z",
+    "effective_principal": "matrix_reader",
+    "statement_id": null
+  },
+  "authorization_class": { "name": "sales-emea", "access_level": 2, "compartments": ["sales", "emea"] },
+  "retention": { "expires_at": "2027-10-02T12:00:02Z", "legal_hold": false, "purged_at": null }
+}

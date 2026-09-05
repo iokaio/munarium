@@ -1,0 +1,9 @@
+# A dbt source with no environmentId: metrics belong to an environment.
+apiVersion: munarium.ioka.io/v1
+kind: DataSource
+metadata: { name: metrics, version: 1 }
+spec:
+  adapter: dbt
+  connection: { baseUrl: "https://semantic-layer.cloud.getdbt.com" }
+  egress: { allowHosts: [semantic-layer.cloud.getdbt.com] }
+  authorization: { strategy: source_native }

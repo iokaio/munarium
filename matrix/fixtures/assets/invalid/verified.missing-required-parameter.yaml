@@ -1,0 +1,15 @@
+apiVersion: munarium.ioka.io/v1
+kind: QueryContract
+metadata: { name: missingparam, version: 1 }
+spec:
+  source: crm
+  parameters:
+    as_of: { type: date, required: true }
+  statementByDialect: { postgres: { inline: "SELECT region FROM opportunities" } }
+  result:
+    columns:
+      region: { type: string, key: true }
+    columnOrder: [region]
+  verifiedQuestions:
+    - question: "regions?"
+      expect: { rows: 3 }

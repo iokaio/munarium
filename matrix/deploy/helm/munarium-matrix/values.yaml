@@ -1,0 +1,78 @@
+image:
+  # No default: there is no official public image location for the open
+  # edition, and a placeholder here fails at image-pull time with a confusing
+  # error. Left empty, `helm install` refuses immediately and says why.
+  repository: ""
+  tag: "1.0.0"
+
+# One Deployment per role, or one `all` for a small install. A role that
+# serves no plane answers 404 on it STRUCTURALLY — the routes are not mounted —
+# so splitting is isolation, not configuration. Queues, budgets and breakers
+# are per role in the store, which is what lets a hung sync never touch the
+# query plane's capacity.
+roles:
+  - name: control
+    replicas: 1
+  - name: query
+    replicas: 2
+    # The gRPC data plane (matrix.v1.MatrixQuery/Execute) is served only by a
+    # role that serves the query plane; the Service below exposes it there.
+    grpc: true
+  - name: sync
+    replicas: 1
+  - name: reconcile
+    replicas: 1
+
+# The registry, journal, queues and checkpoints live in schema `matrix` of a
+# database the chart does NOT create, under a role (`matrix_owner`) that owns
+# that schema and is denied `public`. Both come from the operator — the same
+# posture the ephemeral estate proves every cycle (fixtures/t0/sql/
+# 01-roles-and-schema.sql is the statement). Point this at an existing Secret
+# holding the URL as `postgres://matrix_owner:...@host:5432/matrix`.
+database:
+  secretName: munarium-matrix-db
+  key: url
+
+# munarium-server: where evidence is sealed and the ledger is read. The
+# lockstep version is checked at boot against the server's /version; a
+# mismatch is a refusal, not a warning.
+server:
+  url: http://munarium-server:8080
+  lockstepVersion: "1.0.0"
+  # A Secret holding the server token Matrix seals with (rw, Matrix's own tenant).
+  tokenSecretName: munarium-matrix-server-token
+  tokenKey: token
+
+# Static tokens for Matrix's own API: `<token>:<tenant>:<rw|mgmt>` — demo
+# literals; replace them. Production swaps MUNARIUM_MATRIX_AUTH_MODE via
+# extra env.
+staticTokens: "matrix-demo-rw:demo:rw,matrix-demo-mgmt:demo:mgmt"
+
+# Source credentials are resolved by NAME at call time
+# (`credentialRef: matrix-crm` reads MUNARIUM_MATRIX_SECRET_MATRIX_CRM).
+# Each entry mounts one key of one Secret under that variable; nothing here
+# is ever a literal.
+credentials: []
+#  - ref: matrix-crm
+#    secretName: munarium-matrix-sources
+#    key: crm
+
+# Egress is default-deny: a DataSource reaches only the hosts its own
+# `egress.allowHosts` names. Off only for a lab.
+egressDefaultDeny: true
+
+# Azure workload identity for `store: az` landing sources (Blob via managed
+# identity) — the client id of the UAMI the federated credential points at.
+# Empty disables the annotation; the chart installs on any cluster.
+workloadIdentity:
+  clientId: ""
+
+# The operator console on the control role. `disabled` unmounts it.
+admin: enabled
+
+metrics:
+  scrapeAnnotations: true
+
+resources:
+  requests: { cpu: 100m, memory: 128Mi }
+  limits: { cpu: "1", memory: 512Mi }

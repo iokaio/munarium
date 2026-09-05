@@ -1,0 +1,28 @@
+# Archival-document shape — a large public archival corpus spread across
+# many digital collections: letterbooks, narratives, broadsides, map catalog
+# records and OCR newspaper pages.
+# Bound by the history-revolution runbook.
+#
+#   mmctl apply -f runbooks/shapes/archival-documents.yaml
+#
+# Chunks run long (1,500 chars) because the unit of meaning here is a whole
+# letter or a full newspaper column, and candidate_n is raised because the
+# corpus is two orders of magnitude larger than the other samples. Subjects
+# fold to identifiers so "Gen. Washington" and washington reconcile; keys are
+# dot-free (`subject.key=value` splits at the last dot).
+apiVersion: munarium.ioka.io/v1
+kind: Shape
+metadata: { name: archival-documents, version: 1 }
+spec:
+  fact:
+    schema:
+      type: object
+      properties:
+        subject: { type: string, pattern: "^[a-z][a-z0-9_]{0,63}$" }
+        key: { type: string, pattern: "^[a-z][a-z0-9_:-]{0,63}$" }
+        value: { type: string, minLength: 1, maxLength: 512 }
+      required: [subject, key, value]
+    supersession:
+      identity: [subject, key]
+  chunking: { max_chars: 1500 }
+  indexing: { rrf_k: 60, candidate_n: 200 }

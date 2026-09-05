@@ -1,0 +1,78 @@
+// Munarium Protocol (MMP) v1 — shared types.
+// Package discipline: additive-only within v1 (new fields, new RPCs, new enum
+// values after _UNSPECIFIED). Breaking change => mmp/v2, served side by side.
+syntax = "proto3";
+
+package mmp.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Tenant scoping travels in auth metadata, not messages; TenantRef appears only
+// on admin surfaces that operate across tenants.
+message TenantRef {
+  string tenant_id = 1;
+}
+
+message VersionRef {
+  string version_id = 1; // memory version id (lineage node)
+}
+
+// Claim status: blocked claims are recorded disputed,
+// never dropped.
+enum ClaimStatus {
+  CLAIM_STATUS_UNSPECIFIED = 0;
+  CLAIM_STATUS_ACCEPTED = 1;
+  CLAIM_STATUS_DISPUTED = 2;
+}
+
+enum Severity {
+  SEVERITY_UNSPECIFIED = 0;
+  SEVERITY_INFO = 1;
+  SEVERITY_WARN = 2;
+  SEVERITY_BLOCK = 3;
+}
+
+// A deterministic-gate (or shape/policy) finding. rule_id keeps the
+// dotted vocabulary: gate.anchor-consistency, gate.ledger-conflict,
+// gate.orphaned-reference, gate.meta-leakage, gate.lexical-similarity,
+// gate.chronology-order|-deadline|-duration, shape.schema-violation, ...
+message GateFinding {
+  string rule_id = 1;
+  Severity severity = 2;
+  string message = 3;
+  string scope_path = 4;
+  string detail_json = 5; // structured detail, JSON-encoded
+}
+
+// Machine-actionable rejection payload (mirrors REST problem+json).
+message PolicyRejection {
+  string problem_type = 1; // e.g. "https://munarium.ioka.io/problems/policy-rejection"
+  string detail = 2;
+  repeated GateFinding findings = 3;
+  string policy_citation = 4;
+}
+
+message PageRequest {
+  uint32 page_size = 1;  // server caps apply
+  string page_token = 2;
+}
+
+message PageResponse {
+  string next_page_token = 1;
+}
+
+// Every retrieval answer carries one of these; reproducibility is the demo.
+//
+// Sources are named three ways on purpose: ids are stable identity, paths say
+// WHICH DOCUMENT answered (a bare hash never did), and hashes prove which
+// bytes it held when indexed.
+message ProvenanceEnvelope {
+  repeated string chunk_ids = 1;
+  repeated string source_content_hashes = 2; // hex sha-256
+  string index_version = 3;
+  uint64 event_watermark = 4;      // ledger seq the index reflects
+  string provider_fingerprint = 5; // embedding provider/model/dims, when applicable
+  google.protobuf.Timestamp generated_at = 6;
+  repeated string source_ids = 7;   // 'src-…', identity of each source
+  repeated string source_paths = 8; // the logical paths of those sources
+}

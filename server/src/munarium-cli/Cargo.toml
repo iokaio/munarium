@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "mmctl: apply/run/approve for shapes, provider configs, and runbooks over the REST plane, plus the guided authoring loop (author new/answer/validate/assist/export) and hash-verified bundle deploys (bundle apply). Wire `mmctl apply` / `bundle apply` into CI so runbook changes flow through review like code."
+
+[[bin]]
+name = "mmctl"
+path = "src/main.rs"
+
+[dependencies]
+reqwest = { workspace = true, features = ["blocking"] }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+uuid = { workspace = true }
+base64 = { workspace = true }

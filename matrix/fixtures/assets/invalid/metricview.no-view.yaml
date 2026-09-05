@@ -1,0 +1,11 @@
+# spec.view has no schema part: a bare name is not a catalog identity.
+apiVersion: munarium.ioka.io/v1
+kind: MetricView
+metadata: { name: pipeline-metrics, version: 1 }
+spec:
+  source: dbx-crm
+  view: pipeline_metrics
+  measures:
+    open_pipeline: { type: decimal, scale: 2 }
+  dimensions:
+    region: { type: string }

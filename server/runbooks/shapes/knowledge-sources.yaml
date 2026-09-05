@@ -1,0 +1,29 @@
+# Heterogeneous support-knowledge shape — one seeded world emitted across ten
+# disparate source systems (tickets, forum,
+# KB, chat, email, bugs, release notes, postmortems, DOCX policies, PDF SLAs).
+# Bound by the support-knowledge runbook.
+#
+#   mmctl apply -f runbooks/shapes/knowledge-sources.yaml
+#
+# This corpus is where the dot-free key rule was paid for. A key like
+# `release_date.4.2.1` splits at its LAST dot (munarium-core/src/ledger.rs), so
+# the version silently became part of the subject and blinded the chronology
+# gate; dash-encoding it (`release_date::4-2-1`) fixed it. The key pattern
+# below makes that mistake impossible to commit — it admits `:` and `-`, and
+# no dots at all.
+apiVersion: munarium.ioka.io/v1
+kind: Shape
+metadata: { name: knowledge-sources, version: 1 }
+spec:
+  fact:
+    schema:
+      type: object
+      properties:
+        subject: { type: string, pattern: "^[a-z0-9][a-z0-9_-]{0,63}$" }
+        key: { type: string, pattern: "^[a-z][a-z0-9_:-]{0,63}$" }
+        value: { type: string, minLength: 1, maxLength: 512 }
+      required: [subject, key, value]
+    supersession:
+      identity: [subject, key]
+  chunking: { max_chars: 900 }
+  indexing: { rrf_k: 60, candidate_n: 120 }

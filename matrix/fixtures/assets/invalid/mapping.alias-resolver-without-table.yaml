@@ -1,0 +1,25 @@
+# The resolver that needs an alias table, declared without one. It reads as
+# configured identity resolution and resolves nothing — the exact state the
+# T0 mapping shipped in, which left trap 9 unreachable for a whole phase.
+apiVersion: munarium.ioka.io/v1
+kind: ClaimMapping
+metadata:
+  name: captable-holdings
+  version: 1
+spec:
+  source: crm
+  mode: shadow
+  entity:
+    table: holdings
+    key: [holder_id, company_id]
+    subjectTemplate: "shareholder.{holder_id}"
+    scopeTemplate: "company.{company_id}.captable"
+    identity:
+      resolver: terminology_alias
+      minConfidence: 0.95
+  properties:
+    shares_outstanding: { column: shares, type: decimal, scale: 0 }
+  temporal:
+    validTime: { column: effective_date }
+  changes:
+    shares_outstanding: { onUpdate: update, onBackdated: requires_review }

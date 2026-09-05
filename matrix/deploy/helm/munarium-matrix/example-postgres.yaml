@@ -1,0 +1,44 @@
+# A DEVELOPMENT Postgres for the chart's laptop install (see README.md,
+# "Install it on a laptop cluster"). One replica, no persistence, a literal
+# password: it exists so the install instructions are reproducible, and it is
+# deliberately not what an operator deploys.
+#
+# What matters here is the init SQL, mounted from a ConfigMap made out of
+# fixtures/t0/sql/01-roles-and-schema.sql: it creates `matrix_owner`, gives it
+# schema `matrix` and denies it `public`. The chart assumes that posture and
+# the ephemeral estate proves it every cycle
+# (`registry.matrix_owner_cannot_write_public`).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: postgres } }
+  template:
+    metadata: { labels: { app: postgres } }
+    spec:
+      containers:
+        - name: postgres
+          image: pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
+          env:
+            - { name: POSTGRES_USER, value: matrix }
+            - { name: POSTGRES_PASSWORD, value: matrix-dev }
+            - { name: POSTGRES_DB, value: matrix }
+          ports: [{ containerPort: 5432 }]
+          volumeMounts:
+            - { name: init, mountPath: /docker-entrypoint-initdb.d }
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "matrix"] }
+            initialDelaySeconds: 5
+      volumes:
+        - name: init
+          configMap: { name: matrix-init }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector: { app: postgres }
+  ports: [{ port: 5432, targetPort: 5432 }]

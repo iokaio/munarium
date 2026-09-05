@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The mesh kernel: append-only ledger semantics, supersession, deterministic gates, context composition. Pure: storage and retrieval live behind traits; no HTTP, no SQL, no provider calls."
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+chrono = { workspace = true }
+regex = { workspace = true }
+async-trait = { workspace = true }
+
+# Boundary rule (architecture.md §3): this crate must never depend on
+# sqlx, axum, tonic, reqwest, or utoipa. CI greps `cargo tree` for violations.

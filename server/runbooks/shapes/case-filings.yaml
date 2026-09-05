@@ -1,0 +1,27 @@
+# Court-filing shape — the real Juliana v. United States case file: 358
+# documents across 15 dockets, district through Supreme Court applications
+# Bound by the legal-appeal runbook.
+#
+#   mmctl apply -f runbooks/shapes/case-filings.yaml
+#
+# Procedural posture is the fact that moves: a stay is granted, then lifted;
+# a holding is reversed. Those are supersessions on one (subject, key), never
+# overwrites — the prior row stays resolvable as provenance. Subjects admit
+# docket-shaped ids (18-36082) as well as folded party/issue names; keys are
+# dot-free (`subject.key=value` splits at the last dot).
+apiVersion: munarium.ioka.io/v1
+kind: Shape
+metadata: { name: case-filings, version: 1 }
+spec:
+  fact:
+    schema:
+      type: object
+      properties:
+        subject: { type: string, pattern: "^[a-z0-9][a-z0-9_-]{0,63}$" }
+        key: { type: string, pattern: "^[a-z][a-z0-9_:-]{0,63}$" }
+        value: { type: string, minLength: 1, maxLength: 512 }
+      required: [subject, key, value]
+    supersession:
+      identity: [subject, key]
+  chunking: { max_chars: 1600 }
+  indexing: { rrf_k: 60, candidate_n: 120 }

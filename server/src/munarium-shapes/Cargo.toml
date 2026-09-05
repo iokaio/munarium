@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-shapes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Shape registry: schema-driven data shapes. Validation at the command gate — a violation is a policy rejection with citation (shape.schema-violation), recorded like every gate finding. Shapes are data, not code."
+
+[dependencies]
+munarium-core = { path = "../munarium-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+jsonschema = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }

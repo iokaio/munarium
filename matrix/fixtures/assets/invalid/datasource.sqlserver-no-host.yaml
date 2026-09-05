@@ -1,0 +1,12 @@
+# A SQL Server source with no connection.host. The credential is an ADO.NET
+# connection string and therefore a secret the validator cannot read, so with
+# no host declared the egress allowlist is never consulted at all.
+apiVersion: munarium.ioka.io/v1
+kind: DataSource
+metadata: { name: crm-sqlserver, version: 1 }
+spec:
+  adapter: sqlserver
+  connection: { schema: dbo }
+  credentialRef: matrix-crm-sqlserver
+  egress: { allowHosts: [crm.database.windows.net] }
+  authorization: { strategy: source_native }

@@ -1,0 +1,196 @@
+# financial-advisory — a long-running wealth-advisory record as a
+# PII-compartmentalized retrieval application.
+#
+# What this demonstrates: PII as the compartment boundary, including documents
+# that require two compartments at once, and a completion template that states
+# an enumerable-set coverage rule so a partial answer cannot score as complete.
+#
+# Server mapping: client identity is the compartment boundary. Level 2 with
+# `advisory` reaches the portfolio, business, venture and policy record;
+# level 3 with `client_pii` is required for the profile, tax/insurance and
+# household history. Transaction files need both.
+#
+# Upload convention: sources ingested under `vale/<area>/...`. Ground-truth
+# files, where you have them, are never uploaded.
+#
+#   mmctl apply -f runbooks/shapes/advisory-records.yaml
+#   mmctl apply -f runbooks/applications/financial-advisory.yaml
+#   mmctl run financial-advisory --watch
+apiVersion: munarium.ioka.io/v1
+kind: Runbook
+metadata: { name: financial-advisory, version: 5 }
+spec:
+  # Where this runbook's documents live. The blob path IS the ingest
+  # filename, so every collection binding below sits under this prefix —
+  # `mmctl runbook validate` errors if one does not.
+  sources:
+    container: sources
+    prefix: "vale/"
+  collections:
+    - name: advisory-corpus-admin
+      shape: advisory-records@1
+      accessLevel: 0
+      sources: { filenamePrefix: "vale/00_corpus_admin/" }
+    - name: advisory-client-profile
+      shape: advisory-records@1
+      accessLevel: 3
+      compartments: [client_pii]
+      sources: { filenamePrefix: "vale/01_client_profile/" }
+    - name: advisory-reviews
+      shape: advisory-records@1
+      accessLevel: 2
+      compartments: [advisory]
+      sources: { filenamePrefix: "vale/02_advisory_reviews/" }
+    - name: advisory-constraints
+      shape: advisory-records@1
+      accessLevel: 2
+      compartments: [advisory]
+      sources: { filenamePrefix: "vale/03_constraints/" }
+    - name: advisory-investment-policy
+      shape: advisory-records@1
+      accessLevel: 2
+      compartments: [advisory]
+      sources: { filenamePrefix: "vale/04_investment_policy/" }
+    - name: advisory-portfolios
+      shape: advisory-records@1
+      accessLevel: 2
+      compartments: [advisory]
+      sources: { filenamePrefix: "vale/05_portfolios/" }
+    - name: advisory-businesses
+      shape: advisory-records@1
+      accessLevel: 2
+      compartments: [advisory]
+      sources: { filenamePrefix: "vale/06_businesses/" }
+    - name: advisory-venture-capital
+      shape: advisory-records@1
+      accessLevel: 2
+      compartments: [advisory]
+      sources: { filenamePrefix: "vale/07_venture_capital/" }
+    - name: advisory-tax-insurance
+      shape: advisory-records@1
+      accessLevel: 3
+      compartments: [client_pii]
+      sources: { filenamePrefix: "vale/08_tax_insurance/" }
+    - name: advisory-real-estate
+      shape: advisory-records@1
+      accessLevel: 2
+      compartments: [advisory]
+      sources: { filenamePrefix: "vale/09_real_estate_ventures/" }
+    - name: advisory-hospitality
+      shape: advisory-records@1
+      accessLevel: 2
+      compartments: [advisory]
+      sources: { filenamePrefix: "vale/10_hospitality_ventures/" }
+    - name: advisory-transactions
+      shape: advisory-records@1
+      accessLevel: 3
+      compartments: [advisory, client_pii]
+      sources: { filenamePrefix: "vale/11_transactions_and_financing/" }
+    - name: advisory-household-history
+      shape: advisory-records@1
+      accessLevel: 3
+      compartments: [client_pii]
+      sources: { filenamePrefix: "vale/12_historical_household/" }
+    - name: advisory-consolidated-interests
+      shape: advisory-records@1
+      accessLevel: 2
+      compartments: [advisory]
+      sources: { filenamePrefix: "vale/13_consolidated_business_interests/" }
+
+  # Retrieval is sized from this corpus rather than left on the engine
+  # defaults: topK 10, an unweighted merge, no collection selection and a
+  # 16,000-character context reproduce the pre-2026-08-25 behaviour and are
+  # the narrow case. Arithmetic: guides/retrieval-sizing.md.
+  retrieval:
+    # Fourteen collections, and the front end ran at clearance level 3 with
+    # every compartment, so all fourteen are permitted on every turn. At
+    # topK 10 the merge cannot give any collection more than one hit on
+    # average -- the starvation shape, where a wide corpus crowds every
+    # collection down to a single hit.
+    # Two chips here enumerate the twenty-six quarterly constraint sheets
+    # ("first relaxed", "each quarter the score was reduced"). At topK 20 the
+    # merge serves only a fraction of them, and the model either declines --
+    # correctly refusing to generalise from a sample -- or worse, writes
+    # "every constraint sheet" having seen half. For an enumerable set of N
+    # documents topK must exceed N with headroom for the other collections;
+    # 26 sheets -> 40 (guides/retrieval-sizing.md).
+    topK: 40
+    rrfK: 60
+    candidateN: 400
+    # Declaring collectionSelection is also the only thing that raises each
+    # collection's deep candidate pool above topK (sessions_api.rs:
+    # params.top_k = max(top_k, candidatePoolPerCollection)), so without it
+    # the merge picks topK hits out of collections x topK candidates. Selection
+    # spends the deep search and never excludes -- an unselected collection
+    # keeps its probe pool in the merge.
+    collectionSelection:
+      maxCollections: 8
+      probeCandidateN: 50
+      candidatePoolPerCollection: 100
+      phraseBoost: 3.0
+    # The only embedder is local-hash@1 (256-dim feature hashing): its global
+    # rank-1s are the shortest chunk sharing any token. Left unweighted, the
+    # vector leg spends slots on short fragments and stub tables rather than
+    # on passages. Revisit when a real embedder is indexed. The collection-evidence leg carries the
+    # probe's ranking into the merge as a prior and needs collectionSelection
+    # above -- the validator warns without it.
+    fusion:
+      lexicalWeight: 1.0
+      vectorWeight: 0.3
+      collectionEvidenceWeight: 1.0
+      unselectedPoolWeight: 1.0
+    # NOT ported from history-revolution, deliberately: minimumShouldMatch and
+    # stopTermFraction relieve a scan cost a many-shard archival corpus has
+    # and this one does not, and both can only REMOVE candidates;
+    # contentDemotions targets a catalog marker that never occurs here.
+  models:
+    default: { provider: default, tier: capable }
+    tasks:
+      completion: { provider: default, tier: capable }
+      validation: { tier: fast }
+    allowOverrides: [default, example-anthropic, example-openai, example-openrouter]
+  completion:
+    promptTemplate: |
+      You are a wealth advisor answering from a client's own advisory record.
+      Answer ONLY from the context below and cite every document you use.
+
+      Rules:
+      - THE CONSTRAINTS REGISTER: a context block from the constraints-register
+        layer is the signed sheets as a typed table — one row per sheet with
+        its effective date, risk score and crypto rule, each row citable as
+        [evidence/<id>#<row>]. A block marked COMPLETE is the WHOLE set:
+        answer "first", "each" and "every" questions FROM IT, cite the rows
+        you used, and name the sheet ids the rows carry. A block marked
+        TRUNCATED is not the whole set and cannot support those words.
+      - ENUMERABLE SETS: when a question asks whether something held across a
+        set the corpus enumerates (every constraint sheet, every quarterly
+        review, every portfolio), cover the FULL set before answering. Never
+        generalize a constancy claim from a sample — that is the classic
+        failure of this pattern. Document hits alone are a sample by
+        construction: a completeness claim needs the COMPLETE register block,
+        and when that block is absent or unavailable, say in one sentence
+        that the register was not available and answer only what the
+        documents themselves support.
+      - A constraint changes by amendment. State the value AND the date it
+        took effect, and say which document superseded which.
+      - A standing election or restriction persists until a later signed
+        document changes it; a summary that contradicts a signed sheet loses
+        to the sheet.
+      - Report a contradiction between documents as a finding with both sides
+        and their dates. Do not reconcile it silently.
+      - If the record does not answer the question, say so.
+
+      {context}
+
+      Question: {query}
+    # 40 hits x (1,200-character chunks + ~60 for the "[collection/chunk_id]"
+    # label) is 50,400. The engine default (16,000) would serve the model the
+    # first thirteen of forty while the response reported all forty -- which
+    # is what makes that truncation invisible.
+    contextCharBudget: 52000
+  steps:
+    - resolveSources: {}
+    - buildIndex: {}
+    - verify: {}
+    - cutover: { approval: required }
+    - retireOld: { keep_versions: 2 }

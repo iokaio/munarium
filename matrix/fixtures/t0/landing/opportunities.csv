@@ -1,0 +1,9 @@
+id,name,stage,amount,region,close_date
+1,Northgate renewal,Negotiation,1500000.00,EMEA,2026-03-31
+2,Copperline expansion,Proposal,120000.00,EMEA,2026-05-15
+3,Vale advisory,Negotiation,900000.50,EMEA,2026-06-30
+4,Harbour platform,Closed Won,250000.50,EMEA,2026-02-28
+5,Meridian pilot,Proposal,75000.00,AMER,2026-07-31
+6,Atlas migration,Negotiation,410000.25,AMER,2026-08-15
+7,Kestrel support,Closed Lost,60000.00,APAC,2026-04-30
+8,Sable analytics,Proposal,330000.00,APAC,2026-09-30

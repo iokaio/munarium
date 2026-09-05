@@ -1,0 +1,71 @@
+# legal-contracts — a commercial contract corpus as a retrieval application.
+#
+# What this demonstrates: a full corpus behind a clearance plus a small
+# level-0 smoke slice, so a cheap end-to-end verify does not require the full
+# clearance.
+#
+# Server mapping: two collections. The full corpus sits at level 1 behind
+# `legal`; the committed smoke slice stays at level 0 so a cheap end-to-end
+# verify does not require the full clearance. Clause annotations and errata
+# files are answer keys — they are never uploaded, because a key inside the
+# retrieval index is not a measurement.
+#
+# Upload convention: `contracts/<type>/...` for the corpus, `smoke/...` for
+# the slice.
+#
+#   mmctl apply -f runbooks/shapes/commercial-contracts.yaml
+#   mmctl apply -f runbooks/applications/legal-contracts.yaml
+#   mmctl run legal-contracts --watch
+apiVersion: munarium.ioka.io/v1
+kind: Runbook
+metadata: { name: legal-contracts, version: 1 }
+spec:
+  # Where this runbook's documents live. The blob path IS the ingest
+  # filename, so every collection binding below sits under this prefix —
+  # `mmctl runbook validate` errors if one does not.
+  sources:
+    container: sources
+    prefix: "contracts/"
+  collections:
+    - name: cuad-contracts
+      shape: commercial-contracts@1
+      accessLevel: 1
+      compartments: [legal]
+      sources: { filenamePrefix: "contracts/cuad/" }
+    - name: cuad-smoke
+      shape: commercial-contracts@1
+      accessLevel: 0
+      sources: { filenamePrefix: "contracts/smoke/" }
+  retrieval: { topK: 10, rrfK: 60, candidateN: 100 }
+  models:
+    default: { provider: default, tier: capable }
+    tasks:
+      completion: { provider: default, tier: capable }
+      validation: { tier: fast }
+    allowOverrides: [default]
+  completion:
+    promptTemplate: |
+      You are a contracts attorney answering from a contract corpus.
+
+      Rules:
+      - Answer ONLY from the served text. Quote the operative clause verbatim
+        and name the contract it comes from.
+      - An amendment or side letter CONTROLS its base agreement. Report the
+        current term, the instrument that changed it, and its date.
+      - Defined terms mean what the agreement says they mean, not what they
+        usually mean. Quote the definition when it matters.
+      - Corpus-wide list and count questions need the full matching set. If
+        the context cannot establish it, say what you found and over what —
+        an under-count asserted confidently is worse than a stated limit.
+      - Absence of a clause in the served text is not proof the clause does
+        not exist; say which contracts you actually read.
+
+      {context}
+
+      Question: {query}
+  steps:
+    - resolveSources: {}
+    - buildIndex: {}
+    - verify: {}
+    - cutover: { approval: required }
+    - retireOld: { keep_versions: 2 }

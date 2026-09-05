@@ -1,0 +1,14 @@
+apiVersion: munarium.ioka.io/v1
+kind: ClaimMapping
+metadata: { name: badconfidence, version: 1 }
+spec:
+  source: crm
+  entity:
+    table: holdings
+    key: [holder_id]
+    subjectTemplate: "shareholder.{holder_id}"
+    identity: { resolver: terminology_alias, minConfidence: 1.5 }
+  properties:
+    shares: { column: shares, type: decimal, scale: 0 }
+  temporal:
+    validTime: { column: effective_date }

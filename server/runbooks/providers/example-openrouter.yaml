@@ -1,0 +1,28 @@
+# example-openrouter — an OpenRouter-family provider config for a front end
+# that lets users choose a model family.
+#
+# A front end maps its "OpenRouter" family choice to
+# `model_override: { provider: example-openrouter, tier: fast|capable|frontier }`
+# on each session turn; the built-in tier table resolves
+# fast -> deepseek/deepseek-v4-flash, capable -> z-ai/glm-5.2 and
+# frontier -> z-ai/glm-5.3. A runbook lists this config in
+# `models.allowOverrides`. The credential is the same env var the synthesized
+# default uses — this config exists so the override policy can name a family
+# explicitly, not to change credentials.
+#
+# The rpm budget is a guard: a public-facing front end should never be able
+# to saturate a shared key. The dailyTokens ceilings are the spending caps:
+# per-tier daily token budgets, UTC-day window, enforced in op_complete
+# against the shared ledger (migration 0029). A tier without a value is
+# unlimited.
+#
+#   mmctl apply -f runbooks/providers/example-openrouter.yaml
+apiVersion: munarium.ioka.io/v1
+kind: ProviderConfig
+metadata: { name: example-openrouter }
+spec:
+  provider: openrouter
+  credentialRef: { env: MUNARIUM_SECRET_OPENROUTER }
+  budgets:
+    rpm: 30
+    dailyTokens: { fast: 1000000, capable: 500000, frontier: 250000 }  # placeholders: size to your own keys

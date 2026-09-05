@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://munarium.ioka.io/contract/datastore/manifest.schema.json",
+  "title": "ArtifactManifest — a pure function of sealed content",
+  "description": "The canonical physical manifest. `artifact_id` IS the SHA-256 of these bytes canonicalized under artifact@1, which is only sound because the document is content-pure: it carries no build timestamp, builder identity, attempt id or hostname. Those live in the catalog row and the attempt row. Purity is what makes a byte-identical rebuild converge on one catalog row by rule instead of colliding. The L2 copy of this document is the ONLY reader input: the PostgreSQL JSONB projection is audit metadata and never opens an artifact.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["manifest_version", "format_version", "build_spec_sha256", "artifact_plan_sha256", "engines", "components", "counts", "reader", "probes"],
+  "properties": {
+    "manifest_version": { "type": "integer", "const": 1 },
+
+    "format_version": {
+      "description": "The envelope format, mirrored from the plan so a reader can decide compatibility from the manifest alone without fetching the plan.",
+      "type": "integer",
+      "minimum": 1
+    },
+
+    "build_spec_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "artifact_plan_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+
+    "engines": {
+      "description": "Which engine produced which part, at which exact revision. Sorted by role so the encoding is stable.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role", "engine_id", "engine_revision"],
+        "properties": {
+          "role": { "enum": ["lexical", "vector", "records"] },
+          "engine_id": { "type": "string", "minLength": 1 },
+          "engine_revision": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+
+    "components": {
+      "description": "Every physical file, hashed. The contract is that every byte is LISTED and VERIFIABLE -- not that an engine emits deterministic bytes, which is not promised and must not be assumed. Paths are normalized relative paths; absolute paths, '..', drive prefixes, symlinks, alternate data streams and duplicate normalized names are refused before any allocation.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "purpose", "bytes_len", "sha256", "required"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?!/)(?!.*(^|/)\\.\\.(/|$))(?!.*//)[^\\\\:*?\"<>|\\u0000-\\u001f]+$"
+          },
+          "purpose": { "enum": ["manifest_sidecar", "records", "lexical", "vector", "filters", "range_map"] },
+          "bytes_len": { "type": "integer", "minimum": 0 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "required": {
+            "description": "A reader must refuse the artifact if a required component is missing; an optional one may be absent when a feature bit says so.",
+            "type": "boolean"
+          }
+        }
+      }
+    },
+
+    "range_map": {
+      "description": "Optional reference to the block map, itself listed in components and hashed like any other file. Reserved in v1; whole-artifact hydration is the v1 serving path.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["path", "block_bytes", "blocks"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "block_bytes": { "type": "integer", "minimum": 1 },
+        "blocks": { "type": "integer", "minimum": 1 }
+      }
+    },
+
+    "counts": {
+      "description": "Checked against configured allocation limits BEFORE memory is reserved. An untrusted count is an allocation instruction unless it is bounded first.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["chunks", "documents", "terms"],
+      "properties": {
+        "chunks": { "type": "integer", "minimum": 0 },
+        "documents": { "type": "integer", "minimum": 0 },
+        "terms": { "type": "integer", "minimum": 0 },
+        "vectors": { "type": ["integer", "null"], "minimum": 0 },
+        "dimensions": { "type": ["integer", "null"], "minimum": 1 }
+      }
+    },
+
+    "reader": {
+      "description": "The supported reader range this artifact declares. Startup and every binding change reject an unsupported artifact BEFORE traffic is switched to it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min_version", "max_version", "required_features"],
+      "properties": {
+        "min_version": { "type": "integer", "minimum": 1 },
+        "max_version": { "type": "integer", "minimum": 1 },
+        "required_features": {
+          "description": "Sorted, deduplicated. A reader that does not recognise one refuses; unknown OPTIONAL features are ignored.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+
+    "probes": {
+      "description": "Deterministic verification queries run at seal and again after hydration. A probe is what turns 'the hashes matched' into 'the index answers', which is a different claim: a correctly transferred but wrongly built index passes checksums.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "expect"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "kind": { "enum": ["lexical", "vector", "record"] },
+          "query": { "type": ["string", "null"] },
+          "expect": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["chunk_ids"],
+            "properties": {
+              "chunk_ids": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+              "result_sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" }
+            }
+          }
+        }
+      }
+    }
+  },
+
+  "$comment": "Fields deliberately ABSENT and which a validator must reject as additionalProperties: built_at, builder, builder_version, attempt_id, hostname, node_id, tenant_id, index_version_id. The first six are non-content metadata and belong to the catalog and attempt rows. The last two are authority, not content: an identical corpus in two tenants legitimately produces one artifact_id, and runtime authority uses ArtifactCacheKey { isolation_domain, logical_version_id, artifact_id } while durable keys carry tenant_id and index_version_id. Putting either in the manifest would make the content hash pretend to be an authorization boundary."
+}

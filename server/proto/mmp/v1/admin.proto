@@ -1,0 +1,99 @@
+// MMP v1 — Admin API (management plane; mgmt static token required).
+// SERVED since 2026-08-18 for the access-token RPCs (the management
+// surface, twinning POST/GET /v1/access-tokens + revoke). The tenant
+// lifecycle RPCs remain declared-but-UNIMPLEMENTED: tenancy is provisioned
+// out of band in the demo posture (single database, tenant-scoped stores;
+// cells are a documented production concept), and the server answers
+// UNIMPLEMENTED honestly rather than faking placement.
+syntax = "proto3";
+
+package mmp.v1;
+
+import "google/protobuf/timestamp.proto";
+
+message Tenant {
+  string tenant_id = 1;
+  string slug = 2;
+  string cell = 3;
+  google.protobuf.Timestamp created_at = 4;
+}
+
+message CreateTenantRequest {
+  string slug = 1;
+}
+message CreateTenantResponse {
+  Tenant tenant = 1;
+}
+
+message ListTenantsRequest {}
+message ListTenantsResponse {
+  repeated Tenant tenants = 1;
+}
+
+message UsageRequest {
+  string tenant_id = 1;
+}
+message UsageResponse {
+  uint64 ledger_events = 1;
+  uint64 sources_bytes = 2;
+  uint64 invocations = 3;
+  double invocation_cost_usd = 4;
+}
+
+// -- Access tokens (management plane; gRPC twin of the REST route) ----------
+
+message IssueAccessTokenRequest {
+  string uid = 1;          // end-user id; becomes the JWT sub
+  int32 access_level = 2;
+  repeated string compartments = 3;
+  repeated string scopes = 4; // "query" and/or "ingest"
+  // Runbook NAME allowlist; empty = any runbook the level permits.
+  repeated string runbook_refs = 5;
+  uint64 ttl_secs = 6;     // 0 = server default; clamped to the 24 h ceiling
+}
+message IssueAccessTokenResponse {
+  string token = 1;        // the signed JWT — never persisted server-side
+  string jti = 2;
+  string expires_at = 3;   // RFC 3339
+}
+
+message ListAccessTokensRequest {
+  string uid = 1;          // empty = all uids
+  bool active = 2;         // true = unexpired + unrevoked only
+}
+message AccessTokenInfo {
+  string jti = 1;
+  string uid = 2;
+  int32 access_level = 3;
+  repeated string compartments = 4;
+  repeated string scopes = 5;
+  repeated string runbook_refs = 6;
+  string issued_by = 7;
+  string issued_at = 8;
+  string expires_at = 9;
+  string revoked_at = 10;  // empty = not revoked
+}
+message ListAccessTokensResponse {
+  repeated AccessTokenInfo tokens = 1;
+}
+
+message RevokeAccessTokenRequest {
+  string jti = 1;
+}
+message RevokeAccessTokenResponse {
+  string jti = 1;
+  bool revoked = 2;
+  // The deny-list is only consulted when MUNARIUM_TOKEN_REVOCATION_CHECK=true.
+  bool revocation_check_enabled = 3;
+}
+
+service AdminService {
+  // Tenant lifecycle: declared, UNIMPLEMENTED (see header).
+  rpc CreateTenant(CreateTenantRequest) returns (CreateTenantResponse);
+  rpc ListTenants(ListTenantsRequest) returns (ListTenantsResponse);
+  rpc Usage(UsageRequest) returns (UsageResponse);
+  // Access tokens: SERVED.
+  rpc IssueAccessToken(IssueAccessTokenRequest) returns (IssueAccessTokenResponse);
+  rpc ListAccessTokens(ListAccessTokensRequest) returns (ListAccessTokensResponse);
+  rpc RevokeAccessToken(RevokeAccessTokenRequest) returns (RevokeAccessTokenResponse);
+}

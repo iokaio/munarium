@@ -1,0 +1,62 @@
+# Gateway plane (plane 2): one listener, content-type routed.
+#   application/grpc  -> munarium-server:50051 (h2)
+#   everything else   -> munarium-server:8080  (REST)
+# Production uses Envoy Gateway (Gateway API) on AKS with TLS; this compose profile
+# demonstrates the same routing locally on :8443 (h2c).
+static_resources:
+  listeners:
+    - name: gateway
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 8443 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: munarium_gateway
+                codec_type: AUTO
+                http2_protocol_options: {}
+                route_config:
+                  name: munarium
+                  virtual_hosts:
+                    - name: all
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: "/"
+                            headers:
+                              - name: content-type
+                                string_match: { prefix: application/grpc }
+                          route:
+                            cluster: munarium_grpc
+                            timeout: 0s
+                        - match: { prefix: "/" }
+                          route: { cluster: munarium_rest }
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+  clusters:
+    - name: munarium_grpc
+      type: STRICT_DNS
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options: {}
+      load_assignment:
+        cluster_name: munarium_grpc
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: munarium-server, port_value: 50051 }
+    - name: munarium_rest
+      type: STRICT_DNS
+      load_assignment:
+        cluster_name: munarium_rest
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: munarium-server, port_value: 8080 }

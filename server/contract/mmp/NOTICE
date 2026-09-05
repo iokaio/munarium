@@ -1,0 +1,13 @@
+Munarium MMP contract bundle
+Copyright (c) 2026 Ioka LLC
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+these files except in compliance with the License. A copy of the License is in
+the LICENSE file beside this notice.
+
+"Munarium" and "Ioka" are trademarks of Ioka LLC. The License grants no right
+to use them beyond what is needed to describe the origin of these files.
+
+Munarium Server, which implements the protocol described here, is a separate
+work licensed under its own terms; nothing in this bundle grants any right to
+it.

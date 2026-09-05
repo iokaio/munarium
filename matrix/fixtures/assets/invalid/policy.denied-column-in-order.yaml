@@ -1,0 +1,13 @@
+apiVersion: munarium.ioka.io/v1
+kind: QueryContract
+metadata: { name: deniedinorder, version: 1 }
+spec:
+  source: crm
+  statementByDialect:
+    postgres: { inline: "SELECT region FROM opportunities ORDER BY owner_email" }
+  result:
+    columns:
+      region: { type: string, key: true }
+    columnOrder: [region]
+    orderBy: [owner_email]
+  policy: { deniedColumns: [owner_email] }

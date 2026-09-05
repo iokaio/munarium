@@ -1,0 +1,32 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Ioka.Munarium.Matrix.Client</RootNamespace>
+    <Description>Official .NET client for Munarium Matrix, the structured-evidence plane: register assets, run the three modes, read what happened. REST only, async only, typed refusals.</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ioka.Munarium.Matrix.Client.Tests" />
+  </ItemGroup>
+
+  <!-- LICENSE and NOTICE travel in the package root, read from the clients root:
+       one copy of each, never a per-project duplicate. -->
+  <ItemGroup>
+    <None Include="..\..\..\LICENSE" Pack="true" PackagePath="" Visible="false" />
+    <None Include="..\..\..\NOTICE" Pack="true" PackagePath="" Visible="false" />
+  </ItemGroup>
+
+  <!-- There is deliberately no PackageReference here, and the absence is the
+       feature. Matrix's whole surface is REST + JSON, both of which ship in
+       the net10.0 shared framework (System.Net.Http, System.Text.Json), so
+       this client adds nothing to a consumer's dependency graph: no second
+       HTTP stack with its own proxy and TLS behaviour to explain, no
+       transitive version conflict to resolve in an application that already
+       pins something. The server's .NET client carries gRPC packages because
+       it serves a gRPC data plane; this one has no gRPC transport (see
+       MatrixClient's class doc), so it needs none of them. If a dependency
+       ever becomes genuinely necessary, adding it should feel expensive. -->
+
+</Project>

@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://munarium.ioka.io/contract/matrix/observation-batch.schema.json",
+  "title": "ObservationBatch",
+  "description": "Mode C. Typed observations derived from source rows or change events, batched for sealing and for the discrepancy pipeline. An observation is a STATEMENT ABOUT THE SOURCE, not a claim: it becomes a claim only in authoritative mode, through the server's ordinary ProposeClaim gate.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "mapping", "batch_id", "observations"],
+  "properties": {
+    "contract_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "mapping": {
+      "description": "`name@version` of the ClaimMapping that produced these.",
+      "type": "string"
+    },
+    "batch_id": { "type": "string" },
+    "source_id": { "type": ["string", "null"] },
+    "run_id": { "type": ["string", "null"] },
+    "sealed_evidence_id": {
+      "description": "Set once the batch is sealed. The discrepancy finding cites this plus the ledger claim id — both sides of the disagreement.",
+      "type": ["string", "null"]
+    },
+    "observations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/observation" }
+    }
+  },
+  "$defs": {
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entity_candidates", "property", "value", "origin"],
+      "properties": {
+        "entity_candidates": {
+          "description": "Resolved candidates with confidence, best first. AMBIGUITY IS NOT RESOLVED HERE: two candidates above the threshold means the pipeline files `identity_ambiguous` and merges nothing.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["subject", "confidence"],
+            "properties": {
+              "subject": { "type": "string", "description": "The server-side claim subject, e.g. 'shareholder.42'." },
+              "scope_path": { "type": ["string", "null"] },
+              "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+              "resolver": { "type": ["string", "null"] }
+            }
+          }
+        },
+        "property": { "type": "string", "description": "The claim key, e.g. 'shares_outstanding'." },
+        "value": { "$ref": "#/$defs/typed_value" },
+        "valid_time": {
+          "description": "When the fact is true in the world, per the mapping's declared column.",
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "from": { "type": ["string", "null"], "format": "date-time" },
+            "to": { "type": ["string", "null"], "format": "date-time" }
+          }
+        },
+        "transaction_time": {
+          "description": "When the SOURCE recorded it (LSN, delta_version, observed_at). Bitemporality is the reason a backdated update is reviewable instead of silently overwriting.",
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "change_kind": {
+          "description": "CLOSED. What the source did. `backdated` is deliberately its own kind: it never becomes a correction without review.",
+          "enum": ["insert", "update", "delete", "backdated", "snapshot"]
+        },
+        "origin": {
+          "description": "Exactly the block that lands on a proposed claim in authoritative mode.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "source_id", "mapping_version", "row_key"],
+          "properties": {
+            "kind": { "const": "connector" },
+            "source_id": { "type": "string" },
+            "mapping_version": { "type": "string" },
+            "row_key": { "type": "string", "description": "The source's stable primary key, encoded." },
+            "event_position": { "type": ["string", "null"], "description": "LSN / delta_version / manifest offset — what makes replay idempotent." },
+            "observed_at": { "type": ["string", "null"], "format": "date-time" },
+            "evidence_id": { "type": ["string", "null"] }
+          }
+        }
+      }
+    },
+    "typed_value": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": {
+          "enum": ["bool", "int64", "decimal", "float64", "string", "bytes", "date", "timestamp_tz", "timestamp_naive", "interval", "uuid", "json", "array"]
+        },
+        "value": {},
+        "scale": { "type": ["integer", "null"], "minimum": 0, "maximum": 38 },
+        "element_type": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

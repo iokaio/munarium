@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://munarium.ioka.io/contract/datastore/canonicalization.schema.json",
+  "title": "artifact@1 — Munarium Datastore identity rules",
+  "description": "Not a message shape: the machine-readable specification of how the three canonical documents are encoded before hashing, so that `index_version_id` and `artifact_id` mean the same thing in every implementation. A document conforming to this schema DESCRIBES a canonicalization version; the rules are the `const` values below, which is what makes a drift in an implementation a test failure rather than a discussion. This is deliberately NOT `canon@1` (matrix/contract/canonicalization.schema.json): that one canonicalizes a tabular RESULT for evidence identity, this one canonicalizes a JSON DOCUMENT for artifact identity. Two different problems; conflating them under one name would be worse than having two.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["canon", "rules"],
+  "properties": {
+    "canon": { "const": "artifact@1" },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["encoding", "value_types", "hashing", "identity_inputs", "purity"],
+      "properties": {
+        "encoding": {
+          "description": "RFC 8785 JSON Canonicalization Scheme, restricted. JCS is chosen rather than invented because an independently specified scheme with third-party test vectors is auditable in a way a house format is not.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "scheme": { "const": "RFC 8785 (JCS)" },
+            "key_order": { "const": "object members sorted by UTF-16 code unit, ascending" },
+            "whitespace": { "const": "none: no space after ':' or ',', no newlines, no trailing newline" },
+            "output": { "const": "UTF-8 bytes, no BOM" },
+            "string_escaping": { "const": "minimal per RFC 8785: only \" \\ and C0 controls are escaped; \\b \\f \\n \\r \\t use their short forms, other controls use \\u00XX lowercase hex" },
+            "unicode": { "const": "no normalization: the UTF-8 bytes of a string are hashed as given, exactly as canon@1 also refuses to normalize" }
+          }
+        },
+        "value_types": {
+          "description": "The closed set of JSON value types a canonical document may contain. Floating-point numbers are FORBIDDEN, which is the one place this profile is stricter than JCS.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "permitted": {
+              "type": "array",
+              "const": ["object", "array", "string", "integer", "boolean", "null"]
+            },
+            "forbidden": {
+              "type": "array",
+              "const": ["number with a fractional part or exponent"]
+            },
+            "why_no_floats": {
+              "const": "JCS number canonicalization is ES6 Number::toString, and it is the part implementations get wrong -- shortest round-trip formatting, exponent thresholds, negative zero. Nothing in a BuildSpec, a plan or a manifest needs a float: dimensions, byte lengths, counts and positions are integers, and a genuine ratio is carried as a decimal STRING at a declared scale, the same discipline canon@1 applies to its decimal type. A rule that removes a whole class of implementation divergence is worth more than the convenience it costs."
+            },
+            "integer_range": {
+              "const": "signed 64-bit; a value outside it is refused rather than truncated or widened to a float"
+            },
+            "decimal_as_string": {
+              "const": "base-10 at a declared scale, always with that many fraction digits, optional leading '-', no exponent, no thousands separators -- identical to canon@1's decimal encoding so one reading of 'exact decimal' serves both"
+            }
+          }
+        },
+        "hashing": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "algorithm": { "const": "SHA-256" },
+            "representation": { "const": "lowercase hex, 64 characters, no prefix" },
+            "input": { "const": "the canonical UTF-8 bytes as defined above, with nothing appended -- no trailing newline, no length prefix, no domain separator" }
+          }
+        },
+        "identity_inputs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "index_version_id": {
+              "const": "'idx2-' followed by the full 64-hex SHA-256 of the canonical BuildSpec document. The BuildSpec already carries the logical scope and the source snapshot, so nothing is concatenated outside the document -- a concatenation is a second format to get wrong."
+            },
+            "artifact_id": {
+              "const": "the full 64-hex SHA-256 of the canonical manifest.json bytes, with no prefix. There is exactly ONE physical content identifier; a second physical hash must not be introduced."
+            },
+            "artifact_plan_sha256": {
+              "const": "the full 64-hex SHA-256 of the canonical ArtifactBuildPlan document; recorded in the manifest and in the catalog, and the single-flight key for a build attempt"
+            },
+            "legacy_ids": {
+              "const": "existing 'idx-' identifiers are NOT recomputed under these rules and are not retroactively changed; a mirror artifact reuses the PostgreSQL index_version_id verbatim"
+            }
+          }
+        },
+        "purity": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "manifest_is_content_pure": {
+              "const": "the manifest contains no build timestamp, builder identity, attempt id, hostname, or any other non-content metadata. Those live in the catalog row and the attempt row. This is what makes a byte-identical rebuild converge on one artifact_id instead of colliding."
+            },
+            "spec_excludes_physical": {
+              "const": "the BuildSpec excludes the selected engine, crate revision, artifact envelope format, graph/quantization parameters, thread counts, build timestamp and query-only fusion knobs -- so an engine upgrade changes artifact_id alone and never invalidates a session's logical pin"
+            },
+            "invariant": {
+              "const": "changing a build timestamp, builder or attempt changes NEITHER id; changing an engine or envelope format changes artifact_id ONLY; changing a source, chunker, extractor, analyzer contract or embedder changes the logical index_version_id"
+            }
+          }
+        }
+      }
+    }
+  }
+}

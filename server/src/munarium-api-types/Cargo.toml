@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-api-types"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+description = "Shared REST DTOs: the single place JSON casing is decided. OpenAPI schemas derive from exactly these structs; prost types never leak past the tonic boundary."
+
+[features]
+# pb <-> DTO boundary conversions (server tonic impls + Rust gRPC clients).
+# Off by default so REST-only consumers stay tonic-free. This crate depends on no
+# server crate: the core <-> DTO conversions live in munarium-api-conv.
+proto = ["dep:munarium-proto"]
+
+[dependencies]
+# `version` beside `path`: cargo publishes the registry dependency and drops
+# the path, so the crate can leave the workspace. munarium-proto goes first.
+munarium-proto = { path = "../munarium-proto", version = "1.0.0", optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+utoipa = { workspace = true }
+
+[dev-dependencies]
+# S-1.0: tests/matrix_contract.rs validates the vendored Matrix contract's
+# examples against its schemas, and (phase 2, Server step 4, 2026-09-03)
+# every vendored file against the contract.lock its publisher wrote -- the
+# proof a standalone Server checkout has with no matrix/ sibling. Dev-
+# dependencies only: no runtime code in this crate reads the contract, nothing
+# here ships in the image, and the public MMP bundle drops this section.
+jsonschema = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }

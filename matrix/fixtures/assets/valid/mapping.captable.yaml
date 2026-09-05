@@ -1,0 +1,63 @@
+# Mode C, shadow. `authority` is deliberately absent: in shadow mode it would
+# be ignored, and an ignored field in an asset is a lie waiting to be believed.
+#
+# The alias table is what binds this register to a ledger built from documents.
+# Canon's subjects are NAMED (a signed stock certificate says "Jane Rowntree",
+# not "holder_id 42"), so without it every row reconciles as
+# `missing_in_ledger` and the whole mode says nothing.
+#
+# It also arms trap 9. Holders 51 and 58 sit on ONE cap table and their
+# declared forms name one ledger subject, so the alias is contested and both
+# rows refuse to resolve. Holder 42 carries the same name on a DIFFERENT cap
+# table, which is a person holding shares in two companies — not a collision —
+# and resolves cleanly. That difference is why contest is scoped.
+apiVersion: munarium.ioka.io/v1
+kind: ClaimMapping
+metadata:
+  name: captable-holdings
+  version: 1
+spec:
+  source: crm
+  mode: shadow
+  entity:
+    table: holdings
+    key: [holder_id, company_id]
+    subjectTemplate: "shareholder.{holder_id}"
+    scopeTemplate: "company.{company_id}.captable"
+    identity:
+      resolver: terminology_alias
+      minConfidence: 0.95
+      onAmbiguous: file_finding
+      aliases:
+        column: holder_name
+        # Below 1.0 on purpose: an alias is evidence about identity, never
+        # proof of it, so it ranks behind the exact key subject and is only
+        # consulted when the key subject has no claim.
+        confidence: 0.96
+        entries:
+          # `J. Rowntree` is a form of this subject because a human wrote it
+          # down here. It is NOT derived by stripping punctuation — a rule that
+          # turns a similarity into an equivalence class is how two people get
+          # merged into one.
+          - subject: shareholder.jane-rowntree
+            forms: ["Jane Rowntree", "J. Rowntree"]
+          - subject: shareholder.marcus-vane
+            forms: ["Marcus Vane", "M. Vane"]
+          - subject: shareholder.priya-anand
+            forms: ["Priya Anand"]
+          # Declared and ABSENT from the register: no holdings row is named
+          # Tomas Berg. A ledger claim about him is `missing_in_source` — the
+          # verdict that comes from a row NOT being there, and one only a
+          # declared holder (or a subject inside the template's namespace) can
+          # support. A name the mapping has never heard of is not its business.
+          - subject: shareholder.tomas-berg
+            forms: ["Tomas Berg"]
+  properties:
+    shares_outstanding: { column: shares, type: decimal, scale: 0 }
+    share_class: { column: share_class, type: string }
+  temporal:
+    validTime: { column: effective_date }
+    transactionTime: { fromSource: true }
+  changes:
+    share_class: { onUpdate: update, onBackdated: requires_review }
+    shares_outstanding: { onUpdate: update, onBackdated: requires_review }

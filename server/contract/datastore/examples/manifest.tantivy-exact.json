@@ -1,0 +1,107 @@
+{
+  "manifest_version": 1,
+  "format_version": 1,
+  "build_spec_sha256": "fd2ca98173d996d54f79f0292f7c8302fbe095583ba732282bfa7925f0c0687c",
+  "artifact_plan_sha256": "888789f289be09847b46462a20ba13b8f331778f45a546c688d738067c20547e",
+  "engines": [
+    {
+      "role": "lexical",
+      "engine_id": "tantivy",
+      "engine_revision": "0.22.0"
+    },
+    {
+      "role": "records",
+      "engine_id": "munarium-records",
+      "engine_revision": "0.1.0"
+    },
+    {
+      "role": "vector",
+      "engine_id": "munarium-flat",
+      "engine_revision": "0.1.0"
+    }
+  ],
+  "components": [
+    {
+      "path": "build-spec.canonical.json",
+      "purpose": "manifest_sidecar",
+      "bytes_len": 1873,
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "required": true
+    },
+    {
+      "path": "artifact-plan.canonical.json",
+      "purpose": "manifest_sidecar",
+      "bytes_len": 492,
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "required": true
+    },
+    {
+      "path": "records/chunks.bin",
+      "purpose": "records",
+      "bytes_len": 1884213,
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "required": true
+    },
+    {
+      "path": "records/chunks.idx",
+      "purpose": "records",
+      "bytes_len": 19288,
+      "sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+      "required": true
+    },
+    {
+      "path": "lexical/meta.json",
+      "purpose": "lexical",
+      "bytes_len": 2044,
+      "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+      "required": true
+    },
+    {
+      "path": "vector/flat.bin",
+      "purpose": "vector",
+      "bytes_len": 2468864,
+      "sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+      "required": false
+    }
+  ],
+  "range_map": null,
+  "counts": {
+    "chunks": 2411,
+    "documents": 2,
+    "terms": 48213,
+    "vectors": 2411,
+    "dimensions": 256
+  },
+  "reader": {
+    "min_version": 1,
+    "max_version": 1,
+    "required_features": [
+      "records.v1"
+    ]
+  },
+  "probes": [
+    {
+      "id": "probe-lex-01",
+      "kind": "lexical",
+      "query": "continental congress",
+      "expect": {
+        "chunk_ids": [
+          "src-0002#17",
+          "src-0001#3"
+        ],
+        "result_sha256": null
+      }
+    },
+    {
+      "id": "probe-rec-01",
+      "kind": "record",
+      "query": null,
+      "expect": {
+        "chunk_ids": [
+          "src-0001#0"
+        ],
+        "result_sha256": null
+      }
+    }
+  ]
+}

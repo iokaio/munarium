@@ -1,0 +1,30 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- xmldoc ships for documented members; per-member coverage is not enforced -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <LangVersion>latest</LangVersion>
+    <Version>1.0.0</Version>
+    <Authors>Ioka LLC</Authors>
+    <Company>Ioka LLC</Company>
+    <Copyright>Copyright (c) 2026 Ioka LLC</Copyright>
+    <PackageProjectUrl>https://github.com/iokaio/munarium</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/iokaio/munarium</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!-- Apache-2.0: the SPDX expression is what NuGet reads; the LICENSE and NOTICE
+         files ride in the package root (see the client .csproj). check_license.py
+         fails CI if this ever says anything else. -->
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+  </PropertyGroup>
+
+  <!-- The package README, so the registry page is not blank. -->
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+</Project>

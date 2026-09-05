@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Ioka.Munarium.Client/Ioka.Munarium.Client.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Ioka.Munarium.Client.Conformance/Ioka.Munarium.Client.Conformance.csproj" />
+    <Project Path="tests/Ioka.Munarium.Client.Tests/Ioka.Munarium.Client.Tests.csproj" />
+  </Folder>
+</Solution>

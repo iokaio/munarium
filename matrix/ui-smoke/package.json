@@ -1,0 +1,12 @@
+{
+  "name": "munarium-matrix-ui-smoke",
+  "private": true,
+  "description": "The operator console through a real browser, dev-only: test.ps1 -BlackBox -Browser. Never in the image, never in the core build.",
+  "type": "module",
+  "scripts": {
+    "smoke": "node smoke.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1"
+  }
+}

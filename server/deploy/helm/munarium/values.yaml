@@ -1,0 +1,69 @@
+image:
+  # No default: there is no official public image location for the open
+  # edition, and a placeholder here fails at image-pull time with a confusing
+  # error. Left empty, `helm install` refuses immediately and says why.
+  repository: ""
+  tag: "1.0.0"
+
+replicas: 2
+
+# static demo auth; production swaps MUNARIUM_AUTH_MODE=oidc via values
+staticTokens: "demo-rw-token:demo:rw,demo-ro-token:demo:ro"
+
+# Azure workload identity. Terraform supplies the client id of the UAMI its
+# federated credential points at; empty disables the annotation entirely so
+# the chart still installs on a non-Azure cluster.
+workloadIdentity:
+  clientId: ""
+
+# Where raw document bytes live. With an account set, the pod uses workload
+# identity against Blob; without one it falls back to bytes-in-Postgres, which
+# is what keeps a plain `helm install` working with no Azure at all.
+# s3 | gcs | file backends also exist (munarium-store-objects) but have no
+# first-class values yet — set MUNARIUM_SOURCE_STORE and its MUNARIUM_S3_*/
+# MUNARIUM_GCS_*/MUNARIUM_FILE_ROOT vars via extra env overrides (README table).
+sourceStore:
+  account: ""
+  container: "sources"
+
+# Document-intelligence escalation for scans local extraction cannot read.
+# Empty provider = OFF, which is the product default: it is a paid,
+# network-egressing dependency, so an environment opts in rather than
+# inheriting it. See docs/guides/document-intelligence.md.
+docIntel:
+  provider: ""
+  endpoint: ""
+
+# Munarium Matrix (the structured-evidence plane), installed as its OWN
+# release beside this one — matrix/deploy/helm/munarium-matrix — never as a
+# sub-chart, because ground rule 1 keeps the trees apart. `baseUrl` is where
+# the turn path executes contracts (the QUERY role's Service); `adminUrl` is
+# where a BROWSER reaches Matrix's console, for the /admin/matrix reciprocal
+# link. Both empty = no Matrix: runbooks declaring data views fail their
+# verifyDataViews step rather than passing vacuously.
+matrix:
+  baseUrl: ""
+  adminUrl: ""
+
+# Prometheus scrape discovery for the ops plane's /metrics (:9090). On by
+# default — the annotations are inert without a scraper. Disable if your
+# cluster uses ServiceMonitors instead.
+metrics:
+  scrapeAnnotations: true
+
+cell:
+  # CNPG cluster: 1 primary + 1 replica. The official CNPG operand image
+  # ships pgvector (verified 0.8.6 in postgresql:16 at the 2026-08-18 first
+  # install; the previously pinned tensorchord tag "pg16-v0.2.1" was
+  # REJECTED by the CNPG admission webhook as an invalid version tag).
+  instances: 2
+  storage: 10Gi
+  imageName: ghcr.io/cloudnative-pg/postgresql:16
+
+gateway:
+  enabled: true
+  # Envoy Gateway (Gateway API) terminates 443; direct gRPC is a LB on 50051
+
+directGrpc:
+  enabled: true
+  port: 50051

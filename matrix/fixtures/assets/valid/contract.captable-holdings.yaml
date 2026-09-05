@@ -1,0 +1,58 @@
+# The share register, as a verified query contract. The demo's "what does the
+# register say about a holder" chip answers from this — every share count in
+# the answer cites `[evidence/<id>#<row>]`, and the row is keyed by
+# (holder_id, company_id), so a citation names one holding.
+#
+# Deliberately NOT filtered by holder: a contract takes declared parameters,
+# and a parameter the model would bind at turn time is a knob on a query whose
+# whole point is that it was declared in advance. Five rows is a complete
+# table under the limit, and the reader decides which one the question meant.
+apiVersion: munarium.ioka.io/v1
+kind: QueryContract
+metadata:
+  name: captable-holdings
+  version: 1
+spec:
+  source: crm
+  description: >-
+    Every holding in the share register: who holds what, in which company,
+    in which share class, effective when. The cap table, exactly as recorded.
+  parameters: {}
+  statementByDialect:
+    postgres:
+      inline: >-
+        SELECT holder_id, company_id, holder_name, shares, share_class, effective_date
+        FROM holdings
+        ORDER BY company_id, holder_id
+  reads:
+    tables: [holdings]
+    columns: [holder_id, company_id, holder_name, shares, share_class, effective_date]
+  result:
+    columns:
+      holder_id: { type: int64, key: true }
+      company_id: { type: int64, key: true }
+      holder_name: { type: string }
+      shares: { type: decimal, scale: 0, additivity: additive }
+      share_class: { type: string }
+      effective_date: { type: date }
+    columnOrder: [holder_id, company_id, holder_name, shares, share_class, effective_date]
+    orderBy: [company_id, holder_id]
+    derivations:
+      total_shares: { op: sum, over: shares }
+  policy:
+    authorization: source_native
+    deniedColumns: []
+  limits:
+    maxRows: 500
+    maxBytes: 1048576
+    timeoutMs: 6000
+  evidence:
+    retentionDays: 400
+    replayLevel: sealed_result
+  verifiedQuestions:
+    - question: "What does the share register hold?"
+      parameters: {}
+      expect:
+        rows: 5
+        invariants:
+          - { op: sum, over: shares, atLeast: "0" }

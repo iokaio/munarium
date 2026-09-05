@@ -1,0 +1,12 @@
+apiVersion: munarium.ioka.io/v1
+kind: ClaimMapping
+metadata: { name: mappingnoprops, version: 1 }
+spec:
+  source: crm
+  entity:
+    table: holdings
+    key: [holder_id]
+    subjectTemplate: "shareholder.{holder_id}"
+  properties: {}
+  temporal:
+    validTime: { column: effective_date }

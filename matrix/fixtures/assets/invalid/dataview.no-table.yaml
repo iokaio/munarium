@@ -1,0 +1,11 @@
+# spec.table is empty: no fact table, no grain.
+apiVersion: munarium.ioka.io/v1
+kind: DataView
+metadata: { name: pipeline-by-region, version: 1 }
+spec:
+  source: crm
+  table: ""
+  measures:
+    pipeline_amount: { op: sum, column: amount, type: decimal, scale: 2 }
+  dimensions:
+    region: { type: string }

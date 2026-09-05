@@ -1,0 +1,46 @@
+# gitleaks configuration for the public tree.
+#
+# Run locally with `gitleaks dir .` (working tree) or `gitleaks git .` (history,
+# once there is one). CI runs it from .github/workflows/repo-hygiene.yml on every
+# push and pull request, over the whole repository.
+#
+# Everything below is an allowlist, and every entry says why. An entry with no
+# reason is a way to make the scanner quiet, which is not what it is for.
+title = "munarium"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Build output, and the development-only tokens the docs teach with"
+paths = [
+  # Compiler and package-manager output: crate metadata for PEM parsers and
+  # the AWS SDK's own example tokens live here, and none of it is ours.
+  '''(^|/)target/''',
+  '''(^|/)build/''',
+  '''(^|/)bin/''',
+  '''(^|/)obj/''',
+  '''(^|/)node_modules/''',
+  '''(^|/)\.gradle/''',
+  # A tokenizer fixture: every string in it is a deliberately shaped INPUT --
+  # sha256 digests, paths, CVE ids -- and the golden output repeats them.
+  '''(^|/)tests/fixtures/lexical-compat/''',
+]
+regexes = [
+  # The static development tokens the guides and the compose files teach
+  # with. Every one is scoped to localhost or a compose network, is named in
+  # the file that uses it, and is refused by any deployment that sets
+  # MUNARIUM_AUTH_MODE to anything but `static`.
+  '''\b(guide|ch18|demo|dev|ci|cl|mx|mxserver|mxseal|mxtest|matrix-demo)-?(rw|ro|mgmt|token)\b''',
+  '''\bdevtoken\b''',
+  # Identifiers, not credentials: the request, session and token IDs in the
+  # guides' captured responses are UUIDv7s behind a type prefix.
+  '''\b(tok|ses|req|src|run|memv|claim)-[0-9a-f]{32}\b''',
+  '''\bmatrix-(reader|owner|root)-dev\b''',
+  # The public jwt.io HS256 sample, used to prove a literal JWT is REJECTED.
+  '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9''',
+]
+stopwords = [
+  # Test-tier secrets that say so in their own bytes.
+  "test-tier", "-secret-32-bytes", "compose-matrix-tier",
+]

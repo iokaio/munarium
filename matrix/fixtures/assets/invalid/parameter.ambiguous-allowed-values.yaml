@@ -1,0 +1,16 @@
+apiVersion: munarium.ioka.io/v1
+kind: QueryContract
+metadata: { name: ambiguousallowed, version: 1 }
+spec:
+  source: crm
+  parameters:
+    region:
+      type: string
+      required: true
+      allowedValues: [EMEA, AMER]
+      allowedValuesFrom: { column: region_name }
+  statementByDialect: { postgres: { inline: "SELECT region FROM opportunities" } }
+  result:
+    columns:
+      region: { type: string, key: true }
+    columnOrder: [region]

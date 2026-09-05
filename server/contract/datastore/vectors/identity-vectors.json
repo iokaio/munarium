@@ -1,0 +1,161 @@
+{
+  "canon": "artifact@1",
+  "generated_from": {
+    "spec": "examples/build-spec.collection.json",
+    "plan": "examples/artifact-plan.tantivy-exact.json",
+    "manifest": "examples/manifest.tantivy-exact.json"
+  },
+  "note": "Regenerate with gen_vectors.py. A Rust implementation of artifact@1 must reproduce every hash below byte for byte. Where the two disagree, THESE are the contract and both implementations are suspect until one is shown to violate the schema.",
+  "vectors": [
+    {
+      "name": "baseline",
+      "moves": "neither",
+      "why": "the unmutated example; every other vector is measured against it",
+      "index_version_id": "idx2-fd2ca98173d996d54f79f0292f7c8302fbe095583ba732282bfa7925f0c0687c",
+      "artifact_plan_sha256": "888789f289be09847b46462a20ba13b8f331778f45a546c688d738067c20547e",
+      "artifact_id": "b3e248ebe66ee512d4833b156e2b6392bcd76d1f166b298e3591ec480dc4c1a4"
+    },
+    {
+      "name": "lexical_engine_revision",
+      "moves": "artifact",
+      "why": "an engine upgrade is a new physical artifact of the SAME logical version -- this is the property that lets a session pin survive an engine promotion",
+      "index_version_id": "idx2-fd2ca98173d996d54f79f0292f7c8302fbe095583ba732282bfa7925f0c0687c",
+      "artifact_plan_sha256": "a327a77eee5bdcd8504f512bdfcfbe6eb1f98343e63f6c65846ec25fe4ce0a91",
+      "artifact_id": "84fb39383d0086cbb6f063339ebefcca45ee96316b3024c51a0972aa737bd622"
+    },
+    {
+      "name": "envelope_format_version",
+      "moves": "artifact",
+      "why": "the envelope format is physical; a reader-compatibility change must not force a reindex",
+      "index_version_id": "idx2-fd2ca98173d996d54f79f0292f7c8302fbe095583ba732282bfa7925f0c0687c",
+      "artifact_plan_sha256": "bcc86ecb8934c397d53bcf0e0f951fcf14bacd26ade39ba71e333d8b4d8503a4",
+      "artifact_id": "0839d9ab73c90a2e38a526df4339ca72507e8434375f9d8aaccbc1d6651beb6d"
+    },
+    {
+      "name": "vector_kind_approximate",
+      "moves": "artifact",
+      "why": "exact-vs-approximate is a binding change, recorded in the plan and never in the logical id",
+      "index_version_id": "idx2-fd2ca98173d996d54f79f0292f7c8302fbe095583ba732282bfa7925f0c0687c",
+      "artifact_plan_sha256": "dd146368b8041a4ab0456381e3f703c0c82bdbd8ad2a28195783d8009638508b",
+      "artifact_id": "9bee0f0155b4251d51760abd29203ce7868c467f634e7469005e48f1926e9757"
+    },
+    {
+      "name": "source_content_hash",
+      "moves": "logical",
+      "why": "different bytes in a source are a different corpus",
+      "index_version_id": "idx2-3aa815389fbe4eacb9eac48a0c72084a0762fcbeea616c4fdfe5b63ad97f80bf",
+      "artifact_plan_sha256": "888789f289be09847b46462a20ba13b8f331778f45a546c688d738067c20547e",
+      "artifact_id": "fc0a8ecab00c54454af043068fda8f00fbb884d5e2f2c7c8b47397def28d3e23"
+    },
+    {
+      "name": "source_order",
+      "moves": "logical",
+      "why": "source order is part of the identity: the builder streams in this order, so two builds of the same SET that disagree by permutation are not the same build",
+      "index_version_id": "idx2-9bc155722445369e89c0a36faf7c431a1fe12867e8079ee57a03633f16762ad9",
+      "artifact_plan_sha256": "888789f289be09847b46462a20ba13b8f331778f45a546c688d738067c20547e",
+      "artifact_id": "e1986abfa8cc1afa10e96b12531db4dd8967bef82e3247ea30c17839dfd962fb"
+    },
+    {
+      "name": "chunker_param",
+      "moves": "logical",
+      "why": "a resolved chunker parameter changes the chunks, so it changes results",
+      "index_version_id": "idx2-02e6925fc6fc637a4f4fb156b44cd3357f89e049f0d7460b6304985f5b9258f0",
+      "artifact_plan_sha256": "888789f289be09847b46462a20ba13b8f331778f45a546c688d738067c20547e",
+      "artifact_id": "905c79da82d22340281260bbfbdff2601ed6414c94a6d0286f9af23b25141f76"
+    },
+    {
+      "name": "extractor_outcome",
+      "moves": "logical",
+      "why": "per-source extracted text is what got indexed; without it two builds whose extraction silently differed would share a logical id",
+      "index_version_id": "idx2-ee0d2442f6b6d717ca67d780c50e38542c4513e8ea74b995ab43c62eb6bc0f76",
+      "artifact_plan_sha256": "888789f289be09847b46462a20ba13b8f331778f45a546c688d738067c20547e",
+      "artifact_id": "a09fa43282cd0067d545885a460ea70c37bb3bcb1b6aebdaaf0b99dc2b680e5a"
+    },
+    {
+      "name": "analyzer_tokenizer",
+      "moves": "logical",
+      "why": "the documented V1 decision in force: the analyzer contract is a result-affecting input, so a tokenizer change produces a new logical version that must be activated like any corpus change. The corpus-only alternative is recorded in decisions.md with its trigger.",
+      "index_version_id": "idx2-39ad6ee9c14ff8211a470832d36f4ba8c0dfd13b8ddcb2fd0800281ac96a58cd",
+      "artifact_plan_sha256": "888789f289be09847b46462a20ba13b8f331778f45a546c688d738067c20547e",
+      "artifact_id": "83569985b91785a53a4ee58171940caaeca175e11cac3cf22b2ae1321018725d"
+    },
+    {
+      "name": "analyzer_stop_terms",
+      "moves": "logical",
+      "why": "the stop list is carried by HASH, not by reference alone -- a reference would let the list change under a fixed logical id",
+      "index_version_id": "idx2-7ce54c209c59bb2fbd1a1128ef356ce4068e0b73d6ba430f43241ddf50e5fc92",
+      "artifact_plan_sha256": "888789f289be09847b46462a20ba13b8f331778f45a546c688d738067c20547e",
+      "artifact_id": "766ac2bde097aef3f4343c871b1b65f8f5cdf0a34736cd277781804e8bbb8bd6"
+    },
+    {
+      "name": "embedder_model",
+      "moves": "logical",
+      "why": "a different embedder ranks differently; the provenance envelope's index_version is what an audit uses to say how an answer was ranked",
+      "index_version_id": "idx2-338b4a3e70acf59fb2e39baa1aa2b876b7de853c56f99a6244a5c8a48474520c",
+      "artifact_plan_sha256": "888789f289be09847b46462a20ba13b8f331778f45a546c688d738067c20547e",
+      "artifact_id": "31a076ab6f5590e3bb48dec215cf99755c907bda852cfc2d8d5cfb4937b3d029"
+    },
+    {
+      "name": "embedder_absent",
+      "moves": "logical",
+      "why": "a lexical-only corpus is valid and is NOT the same logical corpus as a hybrid one",
+      "index_version_id": "idx2-fc5df388812bda2eabaadb409c26e5ffc25d8e42c72574bc519f615c7723ec07",
+      "artifact_plan_sha256": "888789f289be09847b46462a20ba13b8f331778f45a546c688d738067c20547e",
+      "artifact_id": "69588351a4cf7f4ae577639770669e4bd1d3a615f0f419860f2916ff7132c561"
+    },
+    {
+      "name": "snapshot_watermark",
+      "moves": "logical",
+      "why": "the same sources at a different watermark is a different snapshot",
+      "index_version_id": "idx2-a8ccc4b7056ab073b5a13f9d5b7736c5ab1c142a99753c505e29e11d2ebe2dfe",
+      "artifact_plan_sha256": "888789f289be09847b46462a20ba13b8f331778f45a546c688d738067c20547e",
+      "artifact_id": "a880d675d715e903ffd7ab7de19611fbb02b7981aef7ef004d419da57721c463"
+    },
+    {
+      "name": "key_order_permuted",
+      "moves": "neither",
+      "why": "the same content with object members written in a different order canonicalizes to the SAME bytes -- this is the whole point of JCS key ordering",
+      "index_version_id": "idx2-fd2ca98173d996d54f79f0292f7c8302fbe095583ba732282bfa7925f0c0687c",
+      "artifact_plan_sha256": "888789f289be09847b46462a20ba13b8f331778f45a546c688d738067c20547e",
+      "artifact_id": "b3e248ebe66ee512d4833b156e2b6392bcd76d1f166b298e3591ec480dc4c1a4"
+    },
+    {
+      "name": "probe_order_is_content",
+      "moves": "artifact",
+      "why": "ARRAY order is content, unlike object member order: reordering probes is a different manifest, because an array is a sequence and canonicalization does not sort it",
+      "index_version_id": "idx2-fd2ca98173d996d54f79f0292f7c8302fbe095583ba732282bfa7925f0c0687c",
+      "artifact_plan_sha256": "888789f289be09847b46462a20ba13b8f331778f45a546c688d738067c20547e",
+      "artifact_id": "3d19151714948cce4ee2af0969b3b1b5139a38786cb0aa6aecc66fa3c955d37f"
+    }
+  ],
+  "must_refuse": [
+    {
+      "name": "float_in_document",
+      "why": "artifact@1 forbids floating-point numbers; a canonicalizer must refuse rather than format one. See canonicalization.schema.json why_no_floats.",
+      "document": {
+        "spec_version": 1,
+        "ratio": 0.5
+      }
+    },
+    {
+      "name": "manifest_with_build_timestamp",
+      "why": "the manifest is content-pure. A builder that stamps built_at makes byte-identical rebuilds collide instead of converging, which is the defect the purity rule exists to prevent. additionalProperties:false must reject it.",
+      "document_note": "the baseline manifest plus \"built_at\": \"2026-08-29T12:00:00Z\""
+    },
+    {
+      "name": "manifest_with_tenant_id",
+      "why": "tenant is authority, not content. An identical corpus in two tenants legitimately produces one artifact_id; isolation lives in the catalog key and the runtime ArtifactCacheKey. Putting it here would make a content hash pretend to be an authorization boundary.",
+      "document_note": "the baseline manifest plus \"tenant_id\": \"tenant-default\""
+    },
+    {
+      "name": "component_path_traversal",
+      "why": "component paths are normalized relative paths; '..' escapes the artifact prefix",
+      "document_note": "the baseline manifest with a component path of \"../../etc/passwd\""
+    },
+    {
+      "name": "component_path_absolute",
+      "why": "an absolute path ignores the artifact root entirely",
+      "document_note": "the baseline manifest with a component path of \"/etc/passwd\""
+    }
+  ]
+}

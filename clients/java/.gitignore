@@ -1,0 +1,4 @@
+.gradle/
+build/
+# VS Code / Eclipse Java language server compile output (Gradle uses build/)
+bin/

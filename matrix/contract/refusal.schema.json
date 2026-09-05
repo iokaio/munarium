@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://munarium.ioka.io/contract/matrix/refusal.schema.json",
+  "title": "Refusal",
+  "description": "G7. Matrix answers with a typed refusal instead of a degraded answer or a generic connector error. `class` is CLOSED and is what the server switches on; `code` is OPEN and is what an operator reads. A consumer that meets an unknown `code` MUST fall back to the `class`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "class", "code", "message"],
+  "properties": {
+    "contract_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "class": {
+      "description": "CLOSED. How the SERVER must react: `not_covered` = this layer cannot answer this question at all; `unavailable` = try later; `denied` = policy said no; `incomplete` = something came back but cannot be used for a completeness or exactness claim; `invalid` = the intent was malformed or contradicts the contract; `exhausted` = a budget or ceiling stopped it.",
+      "enum": ["not_covered", "unavailable", "denied", "incomplete", "invalid", "exhausted"]
+    },
+    "code": {
+      "description": "OPEN. The specific typed state. Every code Matrix can emit is provoked by at least one conformance scenario — an unreachable code is dead vocabulary and fails the provocation matrix.",
+      "type": "string",
+      "examples": [
+        "not_covered", "source_unavailable", "source_stale", "policy_denied",
+        "policy_delegation_unavailable", "budget_exceeded", "result_too_large",
+        "result_truncated", "partial_result", "schema_drift", "checkpoint_gap",
+        "snapshot_expired", "identity_ambiguous", "result_not_identifiable",
+        "too_many_classes", "seal_failed", "contract_not_found", "deadline_exceeded",
+        "warehouse_unavailable", "warehouse_start_timeout", "statement_failed",
+        "statement_cancelled", "unity_catalog_denied", "metric_view_changed",
+        "metric_not_covered", "delta_version_expired", "cdf_not_enabled_or_supported",
+        "cdf_checkpoint_gap", "signed_result_expired_before_seal",
+        "genie_plan_unpinned", "genie_asset_not_allowed"
+      ]
+    },
+    "message": {
+      "description": "One sentence for an operator. MUST NOT name a source, table, column or collection the caller is not cleared to know exists — a refusal that leaks the name of a hidden required layer defeats the point of hiding it.",
+      "type": "string"
+    },
+    "source_id": {
+      "description": "Only when the caller is already entitled to know this source is in play.",
+      "type": ["string", "null"]
+    },
+    "retry_after_seconds": { "type": ["integer", "null"], "minimum": 0 },
+    "detail": {
+      "description": "Structured, non-sensitive extras for the journal and the operator UI. Never a stack trace, never a statement, never a credential.",
+      "type": ["object", "null"]
+    }
+  }
+}

@@ -1,0 +1,15 @@
+apiVersion: munarium.ioka.io/v1
+kind: QueryContract
+metadata: { name: deniedinderivation, version: 1 }
+spec:
+  source: crm
+  statementByDialect:
+    postgres: { inline: "SELECT region, amount FROM opportunities" }
+  result:
+    columns:
+      region: { type: string, key: true }
+      amount: { type: decimal, scale: 2 }
+    columnOrder: [region, amount]
+    derivations:
+      total: { op: sum, over: secret_amount }
+  policy: { deniedColumns: [secret_amount] }

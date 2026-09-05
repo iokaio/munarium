@@ -1,0 +1,56 @@
+# measure-matrix — the runbook the measurement harness runs its turns
+# through on a live deployment (applied to that run's munarium-server).
+#
+# One research profile, ONE required Matrix layer, no completion: the harness
+# sends `complete: false`, because the test server holds no provider key
+# and a model's latency is not what the transport share measures. The records
+# collection is what the mode-A sync of `crm-sync` uploaded a few checks
+# earlier, so the runbook has documents to index and a layer to fall through
+# to; the number is taken from the `register` layer alone.
+#
+# Needs the `record-documents@1` shape applied first
+# (server/runbooks/shapes/record-documents.yaml — shapes live in an in-memory
+# registry, so every server roll needs them re-applied).
+apiVersion: munarium.ioka.io/v1
+kind: Runbook
+metadata: { name: measure-matrix, version: 1 }
+spec:
+  collections:
+    - name: register-records
+      shape: record-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "crm-sync/" }
+      evidence: { labels: [register, record] }
+
+  dataViews:
+    - name: open-pipeline
+      contract: open-pipeline-by-region@3
+      description: open pipeline in USD by region as of a date, from the register
+      parameters:
+        as_of: { type: date, value: "2026-06-30" }
+
+  retrieval:
+    topK: 10
+    defaultResearchProfile: measure
+    researchProfiles:
+      - name: measure
+        description: one required Matrix layer, then the rendered records
+        layers:
+          - name: register
+            sources: [matrix:open-pipeline]
+            role: controlling
+            requirement: required
+            preserveCompleteResult: true
+            maxBytes: 8000
+            deadlineMs: 6000
+          - name: records
+            sources: [register-records]
+            role: supporting
+            requirement: optional
+
+  steps:
+    - resolveSources: {}
+    - buildIndex: {}
+    - verify: {}
+    - verifyDataViews: {}
+    - cutover: { approval: required }

@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: munarium-server
+  labels: { app: munarium-server }
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels: { app: munarium-server }
+  template:
+    metadata:
+      {{- if .Values.metrics.scrapeAnnotations }}
+      # Prometheus discovery for the ops plane's /metrics (text exposition,
+      # 2026-08-17). Annotation-based scraping covers the common in-cluster
+      # setups; a ServiceMonitor is the operator's own choice.
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+      {{- end }}
+      labels:
+        app: munarium-server
+        {{- if .Values.workloadIdentity.clientId }}
+        # The webhook keys off this label to project the token the UAMI
+        # federation expects; without it the pod gets no credential.
+        azure.workload.identity/use: "true"
+        {{- end }}
+    spec:
+      {{- if .Values.workloadIdentity.clientId }}
+      serviceAccountName: munarium
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        # Distroless's USER is the NAME "nonroot"; kubelet refuses to verify
+        # a non-numeric user against runAsNonRoot (found at the 2026-08-18
+        # first install: "cannot verify user is non-root"). 65532 is the
+        # distroless nonroot uid/gid.
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: munarium-server
+          image: "{{ required "image.repository is required: set it to a registry you can pull munarium-server from (there is no official public image for the open edition)" .Values.image.repository }}:{{ .Values.image.tag }}"
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+          ports:
+            - { name: rest, containerPort: 8080 }
+            - { name: grpc, containerPort: 50051 }
+            - { name: ops, containerPort: 9090 }
+          env:
+            - { name: MUNARIUM_STORE, value: postgres }
+            - name: MUNARIUM_DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: munarium-cell-a-app, key: uri } # CNPG-generated app secret
+            - { name: MUNARIUM_AUTH_MODE, value: static }
+            - { name: MUNARIUM_STATIC_TOKENS, value: {{ .Values.staticTokens | quote }} }
+            - { name: MUNARIUM_LOG, value: info }
+            {{- if .Values.sourceStore.account }}
+            - { name: MUNARIUM_SOURCE_STORE, value: az }
+            - { name: MUNARIUM_AZURE_STORAGE_ACCOUNT, value: {{ .Values.sourceStore.account | quote }} }
+            - { name: MUNARIUM_AZURE_BLOB_CONTAINER, value: {{ .Values.sourceStore.container | quote }} }
+            - { name: MUNARIUM_BLOB_AUTH, value: managed_identity }
+            - { name: MUNARIUM_AZURE_CLIENT_ID, value: {{ .Values.workloadIdentity.clientId | quote }} }
+            {{- else }}
+            # No blob account configured: keep document bytes in Postgres so a
+            # plain `helm install` works with no Azure.
+            - { name: MUNARIUM_SOURCE_STORE, value: pg }
+            {{- end }}
+            {{- if .Values.matrix.baseUrl }}
+            - { name: MUNARIUM_MATRIX_BASE_URL, value: {{ .Values.matrix.baseUrl | quote }} }
+            {{- end }}
+            {{- if .Values.matrix.adminUrl }}
+            - { name: MUNARIUM_MATRIX_ADMIN_URL, value: {{ .Values.matrix.adminUrl | quote }} }
+            {{- end }}
+            {{- if .Values.docIntel.provider }}
+            - { name: MUNARIUM_DOCINTEL, value: {{ .Values.docIntel.provider | quote }} }
+            - { name: MUNARIUM_DOCINTEL_ENDPOINT, value: {{ .Values.docIntel.endpoint | quote }} }
+            - { name: MUNARIUM_DOCINTEL_AUTH, value: managed_identity }
+            {{- end }}
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8080 }
+{{- if .Values.workloadIdentity.clientId }}
+---
+# The subject Terraform's federated credential is pinned to:
+#   system:serviceaccount:<release namespace>:munarium
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: munarium
+  annotations:
+    azure.workload.identity/client-id: {{ .Values.workloadIdentity.clientId | quote }}
+  labels:
+    azure.workload.identity/use: "true"
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: munarium-server
+spec:
+  selector: { app: munarium-server }
+  ports:
+    - { name: rest, port: 8080, targetPort: 8080 }
+    - { name: grpc, port: 50051, targetPort: 50051 }
+{{- if .Values.directGrpc.enabled }}
+---
+# Plane 3: the direct raw-gRPC TCP port, publicly reachable via LoadBalancer.
+apiVersion: v1
+kind: Service
+metadata:
+  name: munarium-grpc-direct
+spec:
+  type: LoadBalancer
+  selector: { app: munarium-server }
+  ports:
+    - { name: grpc, port: {{ .Values.directGrpc.port }}, targetPort: 50051 }
+{{- end }}

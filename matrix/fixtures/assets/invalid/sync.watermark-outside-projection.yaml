@@ -1,0 +1,12 @@
+apiVersion: munarium.ioka.io/v1
+kind: DataSource
+metadata: { name: wmoutside, version: 1 }
+spec:
+  adapter: postgres
+  egress: { allowHosts: [db.example.com] }
+  authorization: { strategy: source_native }
+  sync:
+    mode: watermark
+    watermark: { column: updated_at, inclusive: false, tieBreak: id }
+    entity: { table: t, key: [id] }
+    projection: [id, name]

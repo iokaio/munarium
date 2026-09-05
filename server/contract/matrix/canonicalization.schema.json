@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://munarium.ioka.io/contract/matrix/canonicalization.schema.json",
+  "title": "canon@1 — evidence identity rules",
+  "description": "Not a message shape: the machine-readable specification of how a tabular result is encoded before hashing, so that `logical_result_hash` means the same thing in both trees. A document conforming to this schema DESCRIBES a canonicalization version; the rules themselves are the `const` values below, which is what makes a drift in either implementation a test failure rather than a discussion.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["canon", "rules"],
+  "properties": {
+    "canon": { "const": "canon@1" },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "logical_types",
+        "scalar_encoding",
+        "ordering",
+        "hashing",
+        "identity_inputs"
+      ],
+      "properties": {
+        "logical_types": {
+          "description": "The closed set of column types. A source type that does not map to exactly one of these refuses sealing rather than being coerced.",
+          "type": "array",
+          "const": [
+            "bool",
+            "int64",
+            "decimal",
+            "float64",
+            "string",
+            "bytes",
+            "date",
+            "timestamp_tz",
+            "timestamp_naive",
+            "interval",
+            "uuid",
+            "json",
+            "array"
+          ]
+        },
+        "scalar_encoding": {
+          "description": "One canonical text form per type. Every value becomes a UTF-8 byte string before hashing; NULL is distinct from every value, including the empty string.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "null": { "const": "the single byte 0x00, which no encoded value may contain" },
+            "bool": { "const": "true | false" },
+            "int64": { "const": "base-10, optional leading '-', no leading zeros, no '+'" },
+            "decimal": { "const": "base-10 at the column's DECLARED scale, always with that many fraction digits, optional leading '-', no exponent, no thousands separators. 1.5 at scale 2 is '1.50'; -0 is '0.00'." },
+            "float64": { "const": "shortest round-trip form (Rust's Display / Ryu); 'NaN', 'inf', '-inf' spelled exactly so" },
+            "string": { "const": "the UTF-8 bytes, unchanged: no case folding, no Unicode normalization, no trimming" },
+            "bytes": { "const": "base64, standard alphabet, padded" },
+            "date": { "const": "ISO-8601 'YYYY-MM-DD'" },
+            "timestamp_tz": { "const": "RFC 3339 in UTC with 'Z' and exactly 6 fraction digits; the source offset, when known, travels in the column metadata and NOT in the value" },
+            "timestamp_naive": { "const": "'YYYY-MM-DDTHH:MM:SS.ffffff' with no offset marker" },
+            "interval": { "const": "ISO-8601 duration, months and seconds normalized separately (P1M is not P30D)" },
+            "uuid": { "const": "lowercase hyphenated" },
+            "json": { "const": "RFC 8785 JSON Canonicalization Scheme" },
+            "array": { "const": "'[' + elements in order, each encoded by its element type, separated by 0x1F + ']'" }
+          },
+          "required": ["null", "decimal", "timestamp_tz", "string"]
+        },
+        "ordering": {
+          "description": "A result must declare how its rows are identified, or it cannot be sealed. This is the rule that stops a row-order permutation from silently changing an answer's evidence.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["row_id_rules", "refuse_when"],
+          "properties": {
+            "row_id_rules": {
+              "type": "array",
+              "const": [
+                "keys: the contract declares result key columns; row_id is the encoded key tuple and the result hashes as a MULTISET (row order does not matter)",
+                "position: the contract declares a TOTAL orderBy; row_id is the 0-based position and the result hashes as a SEQUENCE"
+              ]
+            },
+            "refuse_when": {
+              "const": "neither keys nor a total orderBy is declared — the refusal code is 'result_not_identifiable'"
+            }
+          }
+        },
+        "hashing": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["algorithm", "logical_result_hash", "artifact_hash", "separators"],
+          "properties": {
+            "algorithm": { "const": "sha256" },
+            "separators": {
+              "description": "Field separator 0x1F, row separator 0x1E, section separator 0x1D — bytes that cannot appear in any encoded scalar.",
+              "const": { "field": 31, "row": 30, "section": 29 }
+            },
+            "logical_result_hash": {
+              "const": "sha256 over: canon version, then the schema section (each column: id, name, type, scale, unit, nullable, key flag), then the identity section (row_id rule, order_by list), then the rows. Under 'keys' the encoded rows are sorted bytewise before hashing; under 'position' they are hashed in order. Truncation status, redaction status and the authorization class are part of the identity section — a truncated result never hashes equal to the complete one."
+            },
+            "artifact_hash": {
+              "const": "sha256 over the STORED BYTES (Parquet or canonical CSV) exactly as uploaded. Never conflated with the logical hash: two serializations of one logical result share a logical_result_hash and differ in artifact_hash."
+            }
+          }
+        },
+        "identity_inputs": {
+          "description": "Everything that participates in logical identity. A change in any of these is a different logical result, by construction.",
+          "type": "array",
+          "const": [
+            "canon version",
+            "column ids, names, types, scale, unit, nullability, key flags, in order",
+            "row_id rule and the declared order_by",
+            "the encoded cell values",
+            "truncation status",
+            "redaction/policy metadata (which columns were denied)",
+            "authorization equivalence class"
+          ]
+        }
+      }
+    }
+  }
+}

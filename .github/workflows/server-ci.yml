@@ -1,0 +1,317 @@
+# CI for the Rust munarium-server tree. Path-scoped to server/** so a change to
+# matrix/ or clients/ does not rebuild it. Jobs: lint-test (fmt, clippy, workspace
+# tests with pg, conformance in-process/pg/black-box/platform, doc drift,
+# boundary + migration checks), cargo-deny, and terraform (the shipped example
+# module must parse and validate).
+#
+# One sibling contract tree is in the path filter: matrix/contract/**, because
+# server/contract/matrix/ is a byte-for-byte copy of it and a contract-only edit
+# must trigger the server half or the two copies drift silently.
+#
+# Releases (signed images and tags) are cut outside this repository.
+name: server-ci
+
+# The default token is read-only. Any job that needs more (packages: write for
+# an image push, id-token: write for OIDC) raises it for itself, so a new job
+# cannot silently inherit write access to the repository.
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "server/**"
+      - "matrix/contract/**"
+      - ".github/workflows/server-ci.yml"
+  pull_request:
+    paths:
+      - "server/**"
+      - "matrix/contract/**"
+      - ".github/workflows/server-ci.yml"
+  workflow_dispatch: {}
+
+defaults:
+  run:
+    working-directory: server
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-8core
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
+        env:
+          POSTGRES_USER: munarium
+          POSTGRES_PASSWORD: munarium-dev
+          POSTGRES_DB: munarium
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U munarium"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      MUNARIUM_TEST_DATABASE_URL: postgres://munarium:munarium-dev@localhost:5433/munarium
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The featured (vector-diskann) step below compiles a second
+      # configuration of three crates and their test binaries into the same
+      # target dir, and the first run of it filled the runner's disk mid-build
+      # ("No space left on device"). The hosted runner ships
+      # ~25 GB of toolchains this job never touches; reclaim them up front.
+      - name: free runner disk
+        working-directory: /
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable, 2026-09-03
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: server
+      - name: fmt
+        run: cargo fmt --all --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # Every optional feature, compiled. The `ocr` feature carried an unused
+      # import and an orphaned function for exactly as long as nothing built
+      # it: the default graph does not, and the only other --all-features in
+      # this file are dependency-graph queries that never compile. Matrix had
+      # the same hole and it hid 22 errors.
+      - name: cargo clippy (all features, all targets)
+        run: cargo clippy --workspace --all-features --all-targets -- -D warnings
+      - name: test (includes pg integration via MUNARIUM_TEST_DATABASE_URL)
+        run: cargo test --workspace
+      - name: diskann feature (clippy + tests; off by default, so the workspace run never sees it)
+        run: |
+          cargo clippy -p munarium-datastore -p munarium-retrieval -p munarium-server --features vector-diskann --all-targets -- -D warnings
+          cargo test -p munarium-datastore -p munarium-retrieval --features vector-diskann
+      - name: conformance (in-process + postgres)
+        run: |
+          cargo run -p mmp-conformance -- --in-process
+          cargo run -p mmp-conformance -- --postgres "$MUNARIUM_TEST_DATABASE_URL"
+      - name: conformance (black-box, both planes, pg-backed)
+        # Pre-build BOTH binaries before starting the server: `cargo run &`
+        # holds the build-dir lock while compiling, so a fixed sleep races the
+        # server's port bind (seen live: conformance failed 60ms before the
+        # listener came up). Run compiled binaries directly and poll /healthz.
+        run: |
+          cargo build -p munarium-server -p mmp-conformance
+          MUNARIUM_HTTP_ADDR=127.0.0.1:18080 MUNARIUM_GRPC_ADDR=127.0.0.1:15051 \
+          MUNARIUM_OPS_ADDR=127.0.0.1:19090 MUNARIUM_STORE=postgres MUNARIUM_SOURCE_STORE=pg \
+          MUNARIUM_DATABASE_URL="$MUNARIUM_TEST_DATABASE_URL" \
+          MUNARIUM_AUTH_MODE=static MUNARIUM_STATIC_TOKENS="citoken:ci-$GITHUB_RUN_ID:rw" \
+          ./target/debug/munarium-server & SERVER_PID=$!
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:18080/healthz > /dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:18080/healthz > /dev/null || { echo "::error::server never became ready"; exit 1; }
+          ./target/debug/mmp-conformance \
+            --http http://127.0.0.1:18080 --grpc http://127.0.0.1:15051 --token citoken
+          kill $SERVER_PID
+      - name: conformance (platform platform surface, pg-backed)
+        # The platform suite once existed only in test.ps1 -Platform, so a
+        # run-breaking bug shipped with CI green. This step is the regression
+        # gate for the whole platform REST surface (uid/tokens/collections/runbook-v2/
+        # sessions/ingest/removal/reports). Binaries were built by the
+        # black-box step above.
+        run: |
+          MUNARIUM_HTTP_ADDR=127.0.0.1:18081 MUNARIUM_GRPC_ADDR=disabled \
+          MUNARIUM_OPS_ADDR=127.0.0.1:19091 MUNARIUM_STORE=postgres MUNARIUM_SOURCE_STORE=pg \
+          MUNARIUM_DATABASE_URL="$MUNARIUM_TEST_DATABASE_URL" \
+          MUNARIUM_AUTH_MODE=static \
+          MUNARIUM_STATIC_TOKENS="ent-rw:ent-$GITHUB_RUN_ID:rw,ent-mgmt:ent-$GITHUB_RUN_ID:mgmt" \
+          MUNARIUM_TOKEN_SECRET="ci-platform-token-secret-32-bytes!!" \
+          ./target/debug/munarium-server & SERVER_PID=$!
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:18081/healthz > /dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:18081/healthz > /dev/null || { echo "::error::platform server never became ready"; exit 1; }
+          ./target/debug/mmp-conformance \
+            --platform http://127.0.0.1:18081 --rw-token ent-rw --mgmt-token ent-mgmt
+          kill $SERVER_PID
+      - name: conformance (cluster, two instances, pg-backed)
+        # The N-replica scenarios — registry convergence within the TTL,
+        # cross-instance idempotency, interleaved seq allocation, and the
+        # runbook run advisory lock. Two instances of the SAME binary, one
+        # database, one fresh tenant. Mirrored in test.ps1 -Cluster — change
+        # both in the same commit. Binaries were built by the black-box step above.
+        run: |
+          COMMON="MUNARIUM_GRPC_ADDR=disabled MUNARIUM_STORE=postgres MUNARIUM_SOURCE_STORE=pg \
+            MUNARIUM_AUTH_MODE=static MUNARIUM_REGISTRY_TTL_SECS=1 MUNARIUM_REPLICA_COUNT=2"
+          env $COMMON MUNARIUM_HTTP_ADDR=127.0.0.1:18082 MUNARIUM_OPS_ADDR=127.0.0.1:19092 \
+            MUNARIUM_DATABASE_URL="$MUNARIUM_TEST_DATABASE_URL" \
+            MUNARIUM_STATIC_TOKENS="cl-rw:cl-$GITHUB_RUN_ID:rw" MUNARIUM_INSTANCE_ID=ci-a \
+            ./target/debug/munarium-server & A_PID=$!
+          env $COMMON MUNARIUM_HTTP_ADDR=127.0.0.1:18083 MUNARIUM_OPS_ADDR=127.0.0.1:19093 \
+            MUNARIUM_DATABASE_URL="$MUNARIUM_TEST_DATABASE_URL" \
+            MUNARIUM_STATIC_TOKENS="cl-rw:cl-$GITHUB_RUN_ID:rw" MUNARIUM_INSTANCE_ID=ci-b \
+            ./target/debug/munarium-server & B_PID=$!
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:18082/healthz > /dev/null \
+              && curl -sf http://127.0.0.1:18083/healthz > /dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:18083/healthz > /dev/null || { echo "::error::cluster servers never became ready"; exit 1; }
+          ./target/debug/mmp-conformance \
+            --cluster http://127.0.0.1:18082 --peer http://127.0.0.1:18083 --token cl-rw
+          kill $A_PID $B_PID
+      - name: openapi drift check
+        run: |
+          cargo run -q -p munarium-server -- openapi > /tmp/openapi.json
+          python3 -c "
+          import json
+          a = json.load(open('/tmp/openapi.json'))
+          b = json.load(open('docs/api/openapi.json', encoding='utf-8-sig'))
+          assert a == b, 'docs/api/openapi.json is stale: regenerate with cargo run -p munarium-server -- openapi'
+          "
+      - name: contract bundle is reproducible
+        # Mirrored in server/gates.ps1 'contract bundle self-test' — change
+        # both in the same commit. The public MMP contract bundle (contract/mmp/)
+        # is cut by a publisher; two cuts of this tree must be byte-identical and
+        # every file must match the lock, or a vendored copy could never be
+        # drift-checked against the tree.
+        run: python3 contract/mmp/publish.py --self-test
+      - name: grpc-reference drift check
+        run: |
+          cargo run -q -p munarium-proto --bin gen-grpc-docs -- /tmp/grpc-reference.md
+          diff -u docs/api/grpc-reference.md /tmp/grpc-reference.md \
+            || { echo "::error::docs/api/grpc-reference.md is stale: regenerate with cargo run -p munarium-proto --bin gen-grpc-docs -- docs/api/grpc-reference.md"; exit 1; }
+      - name: matrix contract drift check
+        # server/contract/matrix/ is cut from matrix/contract/ by
+        # matrix/contract/publish.py, which writes contract.lock (a sha256 per
+        # file, UTF-8/LF/no BOM). Ground rule 1 still holds: a copy plus
+        # checks, no crate edge. Two proofs, and both run here: the copy must
+        # equal a fresh cut (--check,
+        # the lock's source commit ignored), and munarium-api-types'
+        # matrix_contract test verifies every vendored file against the lock
+        # independently. Mirrored in server/gates.ps1 and
+        # matrix-ci.yml -- change all three in the same commit.
+        working-directory: .
+        run: |
+          if [ ! -d server/contract/matrix ]; then
+            echo "::error::server/contract/matrix is missing; cut it with: py matrix/contract/publish.py --out server/contract/matrix"
+            exit 1
+          fi
+          python3 matrix/contract/publish.py --self-test
+          python3 matrix/contract/publish.py --check server/contract/matrix
+          echo "contract version: $(cat matrix/contract/VERSION)"
+      - name: license gate (manifests, SPDX headers, license texts)
+        # The licence gate: the workspace and every crate declare Apache-2.0,
+        # LICENSE / NOTICE / THIRD_PARTY_NOTICES.md exist, and every source file
+        # that can carry an SPDX line does. check_license.py's docstring is the
+        # rule list; --stamp adds a missing header. Mirrored in server/gates.ps1.
+        run: python3 check_license.py
+      - name: third-party notices are current for the shipping crate graph
+        # THIRD_PARTY_NOTICES.md is generated from the musl-resolved
+        # runtime graph and reviewed; a dependency change that is not regenerated
+        # fails here. Regenerate with `py tools/third_party_notices.py
+        # --cargo-target x86_64-unknown-linux-musl`, then review the diff.
+        run: python3 tools/third_party_notices.py --check --cargo-target x86_64-unknown-linux-musl
+      - name: crate boundary check
+        # Mirrored in server/gates.ps1 'crate boundary check' — change
+        # both in the same commit. Three machine-checked boundaries (dev-guide
+        # §4 boundary table):
+        #   munarium-core / munarium-access: never depend on sqlx/axum/tonic/reqwest/utoipa
+        #   munarium-providers: never depends on a storage crate
+        run: |
+          for crate in munarium-core munarium-access; do
+            deps=$(cargo tree -p "$crate" -e normal --prefix none | awk '{print $1}' | sort -u)
+            for banned in sqlx axum tonic reqwest utoipa; do
+              if echo "$deps" | grep -qx "$banned"; then
+                echo "BOUNDARY VIOLATION: $crate depends on $banned"; exit 1
+              fi
+            done
+          done
+          deps=$(cargo tree -p munarium-providers -e normal --prefix none | awk '{print $1}' | sort -u)
+          for banned in munarium-store-pg munarium-store-mem munarium-retrieval-pg; do
+            if echo "$deps" | grep -qx "$banned"; then
+              echo "BOUNDARY VIOLATION: munarium-providers depends on $banned"; exit 1
+            fi
+          done
+          # munarium-api-types ships in the public contract bundle: it may depend on munarium-proto
+          # and on nothing else of the workspace. The core <-> DTO conversions live
+          # in munarium-api-conv.
+          deps=$(cargo tree -p munarium-api-types --all-features -e normal --prefix none | awk '{print $1}' | sort -u)
+          strays=$(echo "$deps" | grep -E '^munarium-' | grep -vx -E 'munarium-api-types|munarium-proto' || true)
+          if [ -n "$strays" ]; then
+            echo "BOUNDARY VIOLATION: munarium-api-types depends on a server crate:"; echo "$strays"; exit 1
+          fi
+      - name: retrieval boundary check
+        # Mirrored in server/gates.ps1 -- change both in the same commit.
+        #
+        # Cargo has no notion of "a dependency only the composition root may
+        # name", so the retrieval boundary is enforced at source level:
+        # munarium-server may reference munarium_retrieval_pg ONLY in state.rs,
+        # where AppState constructs PgRetrieval and PgSourceStore. Without this
+        # the extraction silently rots -- one `use munarium_retrieval_pg::` in
+        # a new handler and PostgreSQL is the real interface again.
+        run: |
+          strays=$(grep -rln "munarium_retrieval_pg" src/munarium-server/src/                    | grep -v "^src/munarium-server/src/state.rs$" || true)
+          if [ -n "$strays" ]; then
+            echo "::error::munarium-server names munarium_retrieval_pg outside state.rs:"
+            echo "$strays"
+            echo "use munarium_retrieval::Retrieval instead; state.rs is the composition root."
+            exit 1
+          fi
+      - name: datastore boundary check
+        # Mirrored in server/gates.ps1 -- change both in the same commit.
+        #
+        # munarium-datastore must stay independently usable: no Axum, tonic,
+        # SQLx, PostgreSQL, server config, auth or runbooks in its dependency
+        # graph, and no munarium-core either. The premise is a crate
+        # that can be lifted out of this workspace; a boundary nothing enforces
+        # lasts until the first convenient import.
+        run: |
+          deps=$(cargo tree -p munarium-datastore -e normal --prefix none | awk '{print $1}' | sort -u)
+          rc=0
+          for banned in sqlx axum tonic reqwest utoipa munarium-core munarium-store-pg                         munarium-retrieval-pg munarium-server munarium-runbooks; do
+            if echo "$deps" | grep -qx "$banned"; then
+              echo "::error::munarium-datastore depends on $banned"; rc=1
+            fi
+          done
+          exit $rc
+      - name: additive-only migrations check
+        # no destructive DDL may ever enter the migration set
+        run: |
+          if grep -riE '^\s*(drop\s+(table|column)|alter\s+table\s+\S+\s+drop)' src/munarium-store-pg/migrations/ 2>/dev/null; then
+            echo "DESTRUCTIVE DDL in migrations"; exit 1
+          fi
+
+  cargo-deny:
+    runs-on: ubuntu-8core
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          manifest-path: server/Cargo.toml
+          # --all-features so the OPTIONAL vector-diskann graph (diskann and
+          # its siblings) is inside the checked surface; the default graph
+          # alone would leave a feature-gated dependency tree unaudited.
+          arguments: --all-features
+
+  # The shipped Terraform example must be a thing a reader can actually run:
+  # every input declared, every reference resolvable. `validate` is offline
+  # with -backend=false: no credentials, no state, no deploy.
+  terraform:
+    runs-on: ubuntu-8core
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_wrapper: false
+      - name: fmt
+        working-directory: server/deploy/terraform
+        run: terraform fmt -check -recursive
+      - name: init and validate every example
+        working-directory: server/deploy/terraform
+        run: |
+          for d in example-*/; do
+            echo "== $d"
+            terraform -chdir="$d" init -backend=false -input=false
+            terraform -chdir="$d" validate
+          done

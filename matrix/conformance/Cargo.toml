@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-matrix-conformance"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Conformance scenarios: the same assertions in-process and over HTTP."
+
+[dependencies]
+munarium-matrix-core = { workspace = true }
+munarium-matrix-types = { workspace = true }
+munarium-matrix-adapter = { workspace = true }
+munarium-matrix-adapter-landing = { workspace = true }
+# The Postgres CDC tier. Unlike the other engine tiers this one
+# needs no profile: compose already runs the Postgres it reads.
+munarium-matrix-adapter-postgres = { workspace = true }
+# The MySQL tier: `docker compose --profile mysql` stands up a real engine
+# for $0.
+munarium-matrix-adapter-mysql = { workspace = true }
+# The SQL Server tier, same posture: `docker compose --profile sqlserver`.
+munarium-matrix-adapter-sqlserver = { workspace = true }
+munarium-matrix-store = { workspace = true }
+munarium-matrix-server-client = { workspace = true }
+munarium-matrix-client = { workspace = true }
+munarium-matrix-workers = { workspace = true }
+munarium-matrix-proto = { workspace = true }
+tonic = { workspace = true }
+tonic-health = { workspace = true }
+tonic-reflection = { workspace = true }
+tokio-stream = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+rust_decimal = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+# The schema-isolation scenario deliberately runs raw SQL: it asserts that
+# `matrix_owner` CANNOT create an object in `public`. Proving a privilege is
+# absent requires attempting to use it.
+sqlx = { workspace = true }

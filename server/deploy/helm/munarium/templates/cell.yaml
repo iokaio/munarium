@@ -1,0 +1,18 @@
+# One CNPG cell: 1 primary + replica(s). Barman WAL archive to the shared
+# storage account is wired via values in a follow-up hardening pass (the
+# demo cell recreates with the env; evidence bundles carry the results).
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: munarium-cell-a
+spec:
+  instances: {{ .Values.cell.instances }}
+  imageName: {{ .Values.cell.imageName }}
+  storage:
+    size: {{ .Values.cell.storage }}
+  bootstrap:
+    initdb:
+      database: munarium
+      owner: app
+      postInitApplicationSQL:
+        - CREATE EXTENSION IF NOT EXISTS vector;

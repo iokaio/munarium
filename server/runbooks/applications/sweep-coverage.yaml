@@ -1,0 +1,75 @@
+# sweep-coverage — open-ended sweeps over a whole data room, as one retrieval
+# application.
+#
+# What this demonstrates: sharing one collection handle between two runbooks.
+# Collection names are tenant-unique handles, so both applications resolve the
+# same collection and the index is built once.
+#
+# Server mapping: sweeps read the whole room, not one functional area, so this
+# runbook binds ONE collection over the entire `northgate/` prefix. The
+# collection name is shared with sweep-v2 on purpose — collection names are
+# tenant-unique handles, so both applications resolve the same collection and
+# the index is built once. The per-area compartmentalized view of the same
+# corpus is the separate `due-diligence` runbook; a source uploaded under
+# `northgate/03_finance/` binds into both.
+#
+#   mmctl apply -f runbooks/shapes/dataroom-documents.yaml
+#   mmctl apply -f runbooks/applications/sweep-coverage.yaml
+#   mmctl run sweep-coverage --watch
+apiVersion: munarium.ioka.io/v1
+kind: Runbook
+metadata: { name: sweep-coverage, version: 1 }
+spec:
+  # Where this runbook's documents live. The blob path IS the ingest
+  # filename, so every collection binding below sits under this prefix —
+  # `mmctl runbook validate` errors if one does not.
+  sources:
+    container: sources
+    prefix: "northgate/"
+  collections:
+    - name: northgate-dataroom
+      shape: dataroom-documents@1
+      accessLevel: 1
+      compartments: [diligence]
+      sources: { filenamePrefix: "northgate/" }
+  # Coverage work wants a wide candidate pool before fusion — the failure
+  # mode here is elements never surfacing at all, not elements ranked one
+  # place too low.
+  retrieval: { topK: 12, rrfK: 60, candidateN: 300 }
+  models:
+    default: { provider: default, tier: fast }
+    tasks:
+      # Deliberately the fast tier: the hardening stack (enumeration,
+      # coverage audit, date screens, drop guard) — not model strength — is
+      # what closes coverage. Callers who want the capable
+      # tier for a specific sweep can request it; `default` is override-allowed.
+      completion: { provider: default, tier: fast }
+      validation: { tier: fast }
+    allowOverrides: [default]
+  completion:
+    promptTemplate: |
+      You are sweeping an M&A data room for EVERY instance of the requested
+      category — completeness is the metric, not elegance.
+
+      Rules:
+      - Enumerate. When the question names an enumerable set (all exclusions,
+        all constraint sheets, all counterparties), work the set through to
+        the end. Never generalize from the handful of documents you happened
+        to retrieve; a sample is not a sweep.
+      - Every element you report carries its counterparty and cites the
+        document it came from. An element with no citation is dropped.
+      - Report near-misses and partial matches explicitly rather than
+        silently discarding them.
+      - If a category is genuinely absent from the context, say so — inventing
+        findings to fill a quiet scope is the precision tax this pattern
+        pays.
+
+      {context}
+
+      Sweep: {query}
+  steps:
+    - resolveSources: {}
+    - buildIndex: {}
+    - verify: {}
+    - cutover: { approval: required }
+    - retireOld: { keep_versions: 2 }

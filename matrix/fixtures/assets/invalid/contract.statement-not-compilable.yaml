@@ -1,0 +1,23 @@
+# The defect that shipped: a statement reading a SOURCE column the contract
+# never declares.
+#
+# `amount` is read by the aggregate and is not a result column — `pipeline_amount`
+# is. Until 2026-08-29 the production compile scope was built from result columns
+# alone, so this shape was refused at first execution with a message the author
+# could not act on, because there was nowhere to declare the column. `spec.reads`
+# is that place, and this fixture is what keeps forgetting it a validation error
+# rather than a runtime surprise.
+apiVersion: munarium.ioka.io/v1
+kind: QueryContract
+metadata: { name: uncompilable, version: 1 }
+spec:
+  source: crm
+  statementByDialect:
+    postgres: { inline: "SELECT region, SUM(amount) AS pipeline_amount FROM opportunities GROUP BY region" }
+  # reads: deliberately absent — that is what this fixture tests.
+  result:
+    columns:
+      region: { type: string, key: true }
+      pipeline_amount: { type: decimal, scale: 2, additivity: additive }
+    columnOrder: [region, pipeline_amount]
+    orderBy: [region]

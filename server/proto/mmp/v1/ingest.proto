@@ -1,0 +1,78 @@
+// MMP v1 — Ingest API. Sources are content-addressed: PutSource streams bytes,
+// the server verifies the declared hash before commit, and RecordIngest writes
+// the ingest.recorded ledger event binding hash + media type + shape.
+syntax = "proto3";
+
+package mmp.v1;
+
+message PutSourceRequest {
+  oneof msg {
+    SourceHeader header = 1; // first message
+    bytes chunk = 2;         // subsequent messages
+  }
+}
+message SourceHeader {
+  string declared_sha256 = 1; // hex; server verifies before commit
+  string media_type = 2;
+  string filename = 3;
+  string shape_ref = 4;
+}
+message PutSourceResponse {
+  string content_hash = 1; // integrity of the stored bytes
+  uint64 bytes_len = 2;
+  // True only when this path already held these exact bytes; re-putting a
+  // path with new content is an update and reports false.
+  bool already_existed = 3;
+  string source_id = 4;    // stable identity, derived from the logical path
+}
+
+message RecordIngestRequest {
+  string version_id = 1;
+  string content_hash = 2;
+  string shape_ref = 3;
+  string metadata_json = 4;
+}
+message RecordIngestResponse {
+  string event_id = 1;
+  uint64 seq = 2;
+}
+
+// -- Ingest plane (gRPC twin of the REST route) ------------------------------
+// Data-plane auth: capability JWT with the ingest scope + `munarium-uid`
+// metadata (twin of X-Munarium-Uid). Content rides as native bytes (no base64
+// on this plane). One file is a batch of one; up to 500 files per call with
+// per-item outcomes — one bad file never fails the batch.
+
+message IngestFile {
+  string filename = 1;   // identity + storage path; required
+  string media_type = 2;
+  bytes content = 3;
+  string sha256 = 4;     // optional declared hash, verified before commit
+  // Explicit collection names to bind into; empty = auto-bind via the
+  // declarative sources: matchers of every reachable active runbook.
+  repeated string collections = 5;
+}
+
+message IngestFilesRequest {
+  repeated IngestFile files = 1; // 1..500
+}
+
+message IngestResult {
+  string filename = 1;
+  string source_id = 2;  // empty on per-item error
+  string sha256 = 3;
+  bool existed = 4;      // true only on a genuine idempotent replay
+  repeated string bound_to = 5;
+  string error = 6;      // empty = success
+}
+
+message IngestFilesResponse {
+  repeated IngestResult results = 1;
+}
+
+service IngestService {
+  rpc PutSource(stream PutSourceRequest) returns (PutSourceResponse);
+  rpc RecordIngest(RecordIngestRequest) returns (RecordIngestResponse);
+  // REST twin:
+  rpc IngestFiles(IngestFilesRequest) returns (IngestFilesResponse);
+}

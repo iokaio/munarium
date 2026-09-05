@@ -1,0 +1,30 @@
+# sync.cdc-name — a configured replication object name that is not a plain
+# Postgres identifier. The name is interpolated into the statement a refusal
+# prints for the operator to run, so a name Postgres would need quoted (or
+# would reject) is refused at apply rather than handed to
+# pg_create_logical_replication_slot.
+apiVersion: munarium.ioka.io/v1
+kind: DataSource
+metadata:
+  name: crm-cdc
+  version: 1
+spec:
+  adapter: postgres
+  connection:
+    host: crm.internal.example.com
+    database: crm
+    schema: crm
+  credentialRef: matrix-crm
+  egress:
+    allowHosts: [crm.internal.example.com]
+  authorization:
+    strategy: source_native
+  sync:
+    mode: cdc
+    entity:
+      table: opportunities
+      key: [id]
+    projection: [id, name, amount, region]
+    cdc:
+      slot: "Matrix-Slot"
+      publication: munarium_matrix_crm

@@ -1,0 +1,63 @@
+# legal-appeal — a public court case file as a retrieval application.
+#
+# What this demonstrates: when NOT to compartmentalize, and how to say so in a
+# runbook.
+#
+# Server mapping: ONE collection. The dockets are metadata on the documents,
+# not a governance boundary — every filing here is a public court record, and
+# splitting them would model a distinction the corpus does not have.
+#
+# Upload convention: sources ingested under `juliana/<docket>/...`.
+#
+#   mmctl apply -f runbooks/shapes/case-filings.yaml
+#   mmctl apply -f runbooks/applications/legal-appeal.yaml
+#   mmctl run legal-appeal --watch
+apiVersion: munarium.ioka.io/v1
+kind: Runbook
+metadata: { name: legal-appeal, version: 1 }
+spec:
+  # Where this runbook's documents live. The blob path IS the ingest
+  # filename, so every collection binding below sits under this prefix —
+  # `mmctl runbook validate` errors if one does not.
+  sources:
+    container: sources
+    prefix: "juliana/"
+  collections:
+    - name: juliana-case-file
+      shape: case-filings@1
+      accessLevel: 0
+      sources: { filenamePrefix: "juliana/" }
+  retrieval: { topK: 10, rrfK: 60, candidateN: 120 }
+  models:
+    default: { provider: default, tier: capable }
+    tasks:
+      completion: { provider: default, tier: capable }
+      validation: { tier: fast }
+    allowOverrides: [default]
+  completion:
+    promptTemplate: |
+      You are a litigation associate answering from a case file.
+
+      Rules:
+      - Answer ONLY from the served filings and cite each one by docket and
+        document.
+      - Procedural posture MOVES. A stay is granted and later lifted; a
+        holding is reversed; a petition is denied. State the CURRENT posture,
+        the document that established it, and its date — and say what it
+        superseded.
+      - Distinguish what a party ARGUED from what a court HELD. A brief's
+        assertion is not the record's answer.
+      - Quote holdings and orders verbatim when the answer turns on their
+        language.
+      - If the file does not answer the question, say so rather than
+        reasoning from general knowledge of the litigation.
+
+      {context}
+
+      Question: {query}
+  steps:
+    - resolveSources: {}
+    - buildIndex: {}
+    - verify: {}
+    - cutover: { approval: required }
+    - retireOld: { keep_versions: 2 }

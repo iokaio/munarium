@@ -1,0 +1,25 @@
+{
+  "bundle": "munarium-matrix-contract",
+  "bundle_digest": "2f35a515db4501a0320f51335e3d212796f757f06af6f309f8b3f639305ced96",
+  "contract_version": "0.1.0",
+  "files": {
+    "README.md": "d85533dd4c2fa202c15b81b82840a65f7274670778c3fb193c142c3aab89457f",
+    "VERSION": "e9dd8507f4bf0c6f42458e41aea833ad0bd3f6127272335eee9bf4d58541ed67",
+    "canonicalization.schema.json": "855a56292f9bcb73cb930696a70eb871df572764cedc82abbe61f3f88137d4a9",
+    "evidence-block.schema.json": "ebbc0be59523543b58477666f8a72a518ef167d7817f143a104dd7f0ffa44007",
+    "evidence-manifest.schema.json": "fba1167d8a0979b46b597cdd2c570930d2e4a2b4a08382a8122da8e79974d45a",
+    "examples/evidence-block.complete-table.json": "f0ea12d7f6545ea779c47e8fca7156a3054e69b0274bb91a50d03e72a43cb3ea",
+    "examples/evidence-block.count.json": "330fcca15d91e7ca0360a06f8dcc13822943eeafc144210ebb2dd7b3d370bcc2",
+    "examples/evidence-block.refusal.json": "f6f83f5c00fee67b0d08b22c4fe2fca56dfa02a4f10e31dbf298908ff33327a9",
+    "examples/evidence-manifest.table.json": "b940267639bca852b5ed37a54cbba7518f4c2c37f4bffdd92a380dc30505f08c",
+    "examples/observation-batch.json": "aab19dab98c6bb956af762f1701019a2ec2f6f0e00511bd43aa2834e2a953089",
+    "examples/query-intent.structured.json": "d322135e8164915e6c5476f609db43d1ec0889837e8ddf488d779765eb84c535",
+    "examples/refusal.hidden-required-layer.json": "cddc5638a03ca8cf819735c77b4f750ab6e4afe124be2bf0a91027bb368f72d2",
+    "examples/refusal.policy-denied.json": "0e8f0aac7b434601e1d62ac66ae488747b81d94fe9796e8a6110e174bcbcd2e2",
+    "observation-batch.schema.json": "1078879f574157e27a353c755e541c5dd5e85ea05f331513cda0e3d7522cd169",
+    "query-intent.schema.json": "9de7bc90f65812eb7733e4dd925831132fb26ec5157bbc286bd3321177f66dde",
+    "refusal.schema.json": "b053f68445d50fbf230b4a36448b65e740d1f36e08db3222272c995b56ce81d8",
+    "validate_examples.py": "79191a39bb912850ff1fccabfa8907f1c57a35a3e2e893c2319d2c46e562cf37"
+  },
+  "source_commit": "unknown"
+}

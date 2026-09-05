@@ -1,0 +1,11 @@
+{
+  "contract_version": "0.1.0",
+  "class": "denied",
+  "code": "policy_denied",
+  "message": "The source's row policy returned no rows for the effective principal.",
+  "source_id": "crm",
+  "retry_after_seconds": null,
+  "detail": {
+    "effective_principal": "matrix_reader"
+  }
+}

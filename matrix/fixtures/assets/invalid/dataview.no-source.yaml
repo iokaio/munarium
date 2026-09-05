@@ -1,0 +1,11 @@
+# spec.source is empty: a data view names the DataSource its table lives in.
+apiVersion: munarium.ioka.io/v1
+kind: DataView
+metadata: { name: pipeline-by-region, version: 1 }
+spec:
+  source: ""
+  table: opportunities
+  measures:
+    pipeline_amount: { op: sum, column: amount, type: decimal, scale: 2 }
+  dimensions:
+    region: { type: string }

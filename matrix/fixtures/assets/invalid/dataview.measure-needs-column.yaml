@@ -1,0 +1,11 @@
+# a sum over no column: only `count` may omit its column.
+apiVersion: munarium.ioka.io/v1
+kind: DataView
+metadata: { name: pipeline-by-region, version: 1 }
+spec:
+  source: crm
+  table: opportunities
+  measures:
+    pipeline_amount: { op: sum, type: decimal, scale: 2 }
+  dimensions:
+    region: { type: string }

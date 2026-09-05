@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-extract"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Text extraction for indexable documents: DOCX and PDF today, OCR for scans behind a feature. Pure Rust only — the image is a static musl binary on distroless, so a native dependency is not a tradeoff, it is a build failure."
+
+[dependencies]
+munarium-core = { path = "../munarium-core" }
+tracing = { workspace = true }
+
+# DOCX = a ZIP holding word/document.xml.
+#
+# `default-features = false` matters: zip's defaults pull bzip2, lzma, zstd
+# and xz, all of which bind C libraries and would break the static musl link.
+# The `deflate` feature is the pure-Rust path (it selects
+# `flate2/rust_backend`); `deflate-zlib` and `deflate-zlib-ng` are the C ones
+# and must never be selected here. DOCX only ever uses deflate anyway.
+zip = { version = "2", default-features = false, features = ["deflate"] }
+# >=0.41 is required, not preferred: earlier versions carry an unbounded
+# allocation advisory on namespace declarations, and a DOCX is untrusted
+# caller-supplied XML — precisely the input that advisory describes.
+quick-xml = "0.41"
+
+# PDF text layer. Pure Rust (wraps lopdf); no pdfium/poppler.
+# >=0.12 pulls lopdf >=0.42, which fixes RUSTSEC-2026-0187: unbounded
+# recursion on nested PDF objects aborted the PROCESS (SIGABRT) on a crafted
+# upload. Anyone who can ingest a PDF could have killed the server.
+pdf-extract = "0.12"
+
+# --- OCR (feature `ocr`) -----------------------------------------------------
+# ocrs is pure-Rust OCR (text detection + recognition) on the rten runtime.
+# It is the ONLY credible option here: every Tesseract route (leptess,
+# tesseract-rs) binds libtesseract/libleptonica as C++ natives, and
+# rusty-tesseract shells out to a binary — none can exist in a
+# rust:alpine -> distroless/static build.
+#
+# `image` decodes the bitmaps OCR consumes: multi-page TIFF, PNG, JPEG.
+# default-features = false keeps the C-backed codecs out of the graph.
+ocrs = { version = "0.12", optional = true }
+# Pinned to the version ocrs itself depends on: declaring a newer rten pulls
+# a SECOND copy of the whole ML runtime into the binary, which this image
+# budget cannot absorb. `rten_format` loads the .rten model files.
+rten = { version = "0.24", optional = true, default-features = false, features = ["rten_format"] }
+image = { version = "0.25", optional = true, default-features = false, features = ["png", "jpeg", "tiff"] }
+# Used DIRECTLY for multi-page TIFF: image 0.25's TiffDecoder exposes only the
+# first frame, and a scanned multi-page fax is the whole point here. Already in
+# the graph via `image`, so this adds nothing new.
+tiff = { version = "0.11", optional = true }
+lopdf = { version = "0.42", optional = true, default-features = false }
+
+[features]
+default = []
+# OCR for scanned PDFs and TIFFs. Off by default: it adds ~10 MB of model
+# runtime to the image and is CPU-expensive, so it is an explicit choice.
+ocr = ["dep:ocrs", "dep:rten", "dep:image", "dep:tiff", "dep:lopdf"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }

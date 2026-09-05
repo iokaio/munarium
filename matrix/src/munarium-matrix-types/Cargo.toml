@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-matrix-types"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Asset kinds (DataSource, QueryContract, ClaimMapping) and REST DTOs. Pure serde + utoipa."
+
+[dependencies]
+munarium-matrix-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+utoipa = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }

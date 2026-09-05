@@ -1,0 +1,28 @@
+# Commercial-contract shape — CUAD v1: 510 SEC-EDGAR contracts across 25
+# contract types with 41 expert-annotated clause categories
+# Bound by the legal-contracts runbook.
+#
+#   mmctl apply -f runbooks/shapes/commercial-contracts.yaml
+#
+# Chunks are the longest of any sample (2,000 chars) because a governing-law
+# or change-of-control clause must survive whole — a clause split across two
+# chunks is a clause the retriever can quote wrongly. Defined terms are the
+# anchor case: "Territory" means what the base agreement says until an
+# amendment supersedes it on the same (subject, key), which is why
+# supersession identity is the pair and not the document.
+apiVersion: munarium.ioka.io/v1
+kind: Shape
+metadata: { name: commercial-contracts, version: 1 }
+spec:
+  fact:
+    schema:
+      type: object
+      properties:
+        subject: { type: string, pattern: "^[a-z0-9][a-z0-9_-]{0,63}$" }
+        key: { type: string, pattern: "^[a-z][a-z0-9_:-]{0,63}$" }
+        value: { type: string, minLength: 1, maxLength: 512 }
+      required: [subject, key, value]
+    supersession:
+      identity: [subject, key]
+  chunking: { max_chars: 2000 }
+  indexing: { rrf_k: 60, candidate_n: 100 }

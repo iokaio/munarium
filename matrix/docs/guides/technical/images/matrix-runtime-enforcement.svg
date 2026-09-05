@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 340" width="940" height="340" role="img" aria-label="Runtime enforcement">
+<title>Runtime enforcement</title>
+<defs><marker id="a-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#1b2733"/></marker><marker id="a-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#5a6b7d"/></marker><marker id="a-line" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#93a3b4"/></marker><marker id="a-paper" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#fbfcfd"/></marker><marker id="a-band" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#eef2f6"/></marker><marker id="a-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#1f5c8b"/></marker><marker id="a-accentfill" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#e3edf5"/></marker><marker id="a-warn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#a8442a"/></marker><marker id="a-warnfill" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#f6e5e0"/></marker><marker id="a-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2c6e54"/></marker><marker id="a-okfill" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#e2efe9"/></marker></defs>
+<rect width="940" height="340" fill="#fbfcfd"/>
+<text x="470.0" y="26" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="15" fill="#1b2733" text-anchor="middle" font-weight="700">The request pipeline, and where it refuses</text>
+<rect x="14" y="70" width="126" height="56" rx="6" fill="#fbfcfd" stroke="#93a3b4" stroke-width="1.4"/>
+<text x="77.0" y="92" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13" fill="#1b2733" text-anchor="middle" font-weight="600">tenant + role</text>
+<rect x="146" y="70" width="126" height="56" rx="6" fill="#fbfcfd" stroke="#93a3b4" stroke-width="1.4"/>
+<text x="209.0" y="92" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13" fill="#1b2733" text-anchor="middle" font-weight="600">asset resolve</text>
+<line x1="136" y1="98" x2="144" y2="98" stroke="#93a3b4" stroke-width="1.6" marker-end="url(#a-line)"/>
+<rect x="278" y="70" width="126" height="56" rx="6" fill="#fbfcfd" stroke="#93a3b4" stroke-width="1.4"/>
+<text x="341.0" y="92" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13" fill="#1b2733" text-anchor="middle" font-weight="600">authorization</text>
+<text x="341.0" y="108" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13" fill="#1b2733" text-anchor="middle" font-weight="600">class</text>
+<line x1="268" y1="98" x2="276" y2="98" stroke="#93a3b4" stroke-width="1.6" marker-end="url(#a-line)"/>
+<rect x="410" y="70" width="126" height="56" rx="6" fill="#fbfcfd" stroke="#93a3b4" stroke-width="1.4"/>
+<text x="473.0" y="92" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13" fill="#1b2733" text-anchor="middle" font-weight="600">egress allowlist</text>
+<line x1="400" y1="98" x2="408" y2="98" stroke="#93a3b4" stroke-width="1.6" marker-end="url(#a-line)"/>
+<rect x="542" y="70" width="126" height="56" rx="6" fill="#fbfcfd" stroke="#93a3b4" stroke-width="1.4"/>
+<text x="605.0" y="92" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13" fill="#1b2733" text-anchor="middle" font-weight="600">credential</text>
+<text x="605.0" y="108" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13" fill="#1b2733" text-anchor="middle" font-weight="600">resolve</text>
+<line x1="532" y1="98" x2="540" y2="98" stroke="#93a3b4" stroke-width="1.6" marker-end="url(#a-line)"/>
+<rect x="674" y="70" width="126" height="56" rx="6" fill="#fbfcfd" stroke="#93a3b4" stroke-width="1.4"/>
+<text x="737.0" y="92" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13" fill="#1b2733" text-anchor="middle" font-weight="600">limits</text>
+<line x1="664" y1="98" x2="672" y2="98" stroke="#93a3b4" stroke-width="1.6" marker-end="url(#a-line)"/>
+<rect x="806" y="70" width="126" height="56" rx="6" fill="#fbfcfd" stroke="#93a3b4" stroke-width="1.4"/>
+<text x="869.0" y="92" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13" fill="#1b2733" text-anchor="middle" font-weight="600">seal</text>
+<line x1="796" y1="98" x2="804" y2="98" stroke="#93a3b4" stroke-width="1.6" marker-end="url(#a-line)"/>
+<rect x="14" y="152" width="126" height="52" rx="6" fill="#f6e5e0" stroke="#a8442a" stroke-width="1.4"/>
+<text x="77.0" y="174" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13" fill="#1b2733" text-anchor="middle" font-weight="600">refuse</text>
+<text x="77.0" y="196" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="11" fill="#5a6b7d" text-anchor="middle" font-weight="normal">cross-tenant</text>
+<line x1="77" y1="128" x2="77" y2="150" stroke="#93a3b4" stroke-width="1.6" marker-end="url(#a-line)"/>
+<rect x="146" y="152" width="126" height="52" rx="6" fill="#f6e5e0" stroke="#a8442a" stroke-width="1.4"/>
+<text x="209.0" y="174" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13" fill="#1b2733" text-anchor="middle" font-weight="600">refuse</text>
+<text x="209.0" y="196" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="11" fill="#5a6b7d" text-anchor="middle" font-weight="normal">unknown asset</text>
+<line x1="209" y1="128" x2="209" y2="150" stroke="#93a3b4" stroke-width="1.6" marker-end="url(#a-line)"/>
+<rect x="278" y="152" width="126" height="52" rx="6" fill="#f6e5e0" stroke="#a8442a" stroke-width="1.4"/>
+<text x="341.0" y="174" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13" fill="#1b2733" text-anchor="middle" font-weight="600">refuse</text>
+<text x="341.0" y="196" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="11" fill="#5a6b7d" text-anchor="middle" font-weight="normal">class mismatch</text>
+<line x1="341" y1="128" x2="341" y2="150" stroke="#93a3b4" stroke-width="1.6" marker-end="url(#a-line)"/>
+<rect x="410" y="152" width="126" height="52" rx="6" fill="#f6e5e0" stroke="#a8442a" stroke-width="1.4"/>
+<text x="473.0" y="174" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13" fill="#1b2733" text-anchor="middle" font-weight="600">refuse</text>
+<text x="473.0" y="196" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="11" fill="#5a6b7d" text-anchor="middle" font-weight="normal">host not allowed</text>
+<line x1="473" y1="128" x2="473" y2="150" stroke="#93a3b4" stroke-width="1.6" marker-end="url(#a-line)"/>
+<rect x="542" y="152" width="126" height="52" rx="6" fill="#f6e5e0" stroke="#a8442a" stroke-width="1.4"/>
+<text x="605.0" y="174" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13" fill="#1b2733" text-anchor="middle" font-weight="600">refuse</text>
+<text x="605.0" y="196" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="11" fill="#5a6b7d" text-anchor="middle" font-weight="normal">missing credential</text>
+<line x1="605" y1="128" x2="605" y2="150" stroke="#93a3b4" stroke-width="1.6" marker-end="url(#a-line)"/>
+<rect x="674" y="152" width="126" height="52" rx="6" fill="#f6e5e0" stroke="#a8442a" stroke-width="1.4"/>
+<text x="737.0" y="174" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13" fill="#1b2733" text-anchor="middle" font-weight="600">refuse</text>
+<text x="737.0" y="196" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="11" fill="#5a6b7d" text-anchor="middle" font-weight="normal">over ceiling</text>
+<line x1="737" y1="128" x2="737" y2="150" stroke="#93a3b4" stroke-width="1.6" marker-end="url(#a-line)"/>
+<rect x="806" y="152" width="126" height="52" rx="6" fill="#f6e5e0" stroke="#a8442a" stroke-width="1.4"/>
+<text x="869.0" y="174" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13" fill="#1b2733" text-anchor="middle" font-weight="600">refuse</text>
+<text x="869.0" y="196" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="11" fill="#5a6b7d" text-anchor="middle" font-weight="normal">unmodelled type</text>
+<line x1="869" y1="128" x2="869" y2="150" stroke="#93a3b4" stroke-width="1.6" marker-end="url(#a-line)"/>
+<rect x="180" y="240" width="580" height="56" rx="6" fill="#e3edf5" stroke="#1f5c8b" stroke-width="1.4"/>
+<text x="470.0" y="262" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13" fill="#1b2733" text-anchor="middle" font-weight="600">Every refusal carries a class and a code</text>
+<text x="470.0" y="284" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="11" fill="#5a6b7d" text-anchor="middle" font-weight="normal">the class says whether a retry can help; the code says what to change</text>
+<text x="470.0" y="328" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="11" fill="#5a6b7d" text-anchor="middle" font-weight="normal" font-style="italic">A refusal is data. Retry only when the class says it is retryable.</text>
+</svg>

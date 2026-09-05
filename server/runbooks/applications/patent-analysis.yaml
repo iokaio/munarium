@@ -1,0 +1,137 @@
+# patent-analysis — prior-art mapping and novelty assessment as a
+# privilege-compartmentalized retrieval application.
+#
+# What this demonstrates: privilege as a real three-level boundary — public
+# prior art, confidential unfiled drafts, and attorney work product that sits
+# alone at the top.
+#
+# Server mapping: privilege is the boundary and it is real here. Published
+# prior art and decoys are level 0 (they are public patents). Target drafts
+# are unfiled and confidential (level 2, `patent_counsel`). Office actions
+# ride with them. The novelty assessments are attorney work product and sit
+# alone at level 3.
+#
+# Upload convention: `targets/`, `prior_art/`, `decoys/`, `notices/`,
+# `assessments/`. Answer keys are never uploaded.
+#
+#   mmctl apply -f runbooks/shapes/patent-documents.yaml
+#   mmctl apply -f runbooks/applications/patent-analysis.yaml
+#   mmctl run patent-analysis --watch
+apiVersion: munarium.ioka.io/v1
+kind: Runbook
+metadata: { name: patent-analysis, version: 3 }
+spec:
+  # Where this runbook's documents live. The blob path IS the ingest
+  # filename, so every collection binding below sits under this prefix —
+  # `mmctl runbook validate` errors if one does not.
+  sources:
+    container: sources
+    prefix: "patents/"
+  collections:
+    - name: patent-prior-art
+      shape: patent-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "patents/prior_art/" }
+    - name: patent-decoys
+      shape: patent-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "patents/decoys/" }
+    - name: patent-target-drafts
+      shape: patent-documents@1
+      accessLevel: 2
+      compartments: [patent_counsel]
+      sources: { filenamePrefix: "patents/targets/" }
+    - name: patent-office-actions
+      shape: patent-documents@1
+      accessLevel: 2
+      compartments: [patent_counsel]
+      sources: { filenamePrefix: "patents/notices/" }
+    - name: patent-assessments
+      shape: patent-documents@1
+      accessLevel: 3
+      compartments: [patent_counsel]
+      sources: { filenamePrefix: "patents/assessments/" }
+  # Retrieval is sized from this corpus rather than left on the engine
+  # defaults: topK 10, an unweighted merge, no collection selection and a
+  # 16,000-character context reproduce the pre-2026-08-25 behaviour and are
+  # the narrow case. Arithmetic: guides/retrieval-sizing.md.
+  retrieval:
+    # An anticipation or obviousness question needs the target draft, the
+    # office action, the prior-art patents AND the assessment in one context.
+    # At topK 10 across five collections the merge had 5x10 candidates to
+    # compose that from, and composed it badly.
+    topK: 20
+    rrfK: 60
+    candidateN: 150
+    # Declaring collectionSelection is also the only thing that raises each
+    # collection's deep candidate pool above topK (sessions_api.rs:
+    # params.top_k = max(top_k, candidatePoolPerCollection)), so without it
+    # the merge picks topK hits out of collections x topK candidates. Selection
+    # spends the deep search and never excludes -- an unselected collection
+    # keeps its probe pool in the merge.
+    # maxCollections equals the collection count on purpose: with five
+    # collections every one of them can matter to a single question, so
+    # selection here buys the deep 100-candidate pool and the evidence leg,
+    # not exclusion.
+    collectionSelection:
+      maxCollections: 5
+      probeCandidateN: 50
+      # 100 -> 40: the enlarged pool floods the merge from the dense
+      # office-actions collection, while 40 still dominates topK 20 and gives
+      # the merge four candidates per slot instead of ten.
+      candidatePoolPerCollection: 40
+      phraseBoost: 3.0
+    # The only embedder is local-hash@1 (256-dim feature hashing): its global
+    # rank-1s are the shortest chunk sharing any token. Left unweighted, the
+    # vector leg spends slots on short fragments and stub tables rather than
+    # on passages. Revisit when a real embedder is indexed. The collection-evidence leg carries the
+    # probe's ranking into the merge as a prior and needs collectionSelection
+    # above -- the validator warns without it.
+    fusion:
+      lexicalWeight: 1.0
+      vectorWeight: 0.3
+      collectionEvidenceWeight: 1.0
+      unselectedPoolWeight: 1.0
+    # NOT ported from history-revolution, deliberately. minimumShouldMatch: 2
+    # would be actively harmful here: these questions are keyed to a single
+    # serial ("12-056401", "US patent 7,909,749") and a chunk holding the
+    # serial and little else is exactly what a two-lexeme candidate predicate
+    # drops. stopTermFraction relieves a scan cost this corpus does not have,
+    # and contentDemotions targets an LOC-catalog marker absent here.
+  models:
+    default: { provider: default, tier: capable }
+    tasks:
+      completion: { provider: default, tier: capable }
+      validation: { tier: fast }
+    allowOverrides: [default, example-anthropic, example-openai, example-openrouter]
+  completion:
+    promptTemplate: |
+      You are a patent analyst mapping claim elements to prior art.
+
+      Rules:
+      - Answer ONLY from the served text. Every disclosure statement cites the
+        reference by serial number AND quotes the passage that discloses it.
+      - Name the claim ELEMENT, not a paraphrase. Two drafters' words for one
+        element ("elongated elastic member", "elastic cord") are the same
+        element; treat them as one and say so explicitly.
+      - Keep anticipation and obviousness separate. A single reference
+        disclosing every element is anticipation; a combination is
+        obviousness, and it needs the reason to combine stated.
+      - An element the served references do NOT disclose is a finding worth
+        stating plainly. Do not manufacture a disclosure to close a gap.
+      - Quote issue and publication dates exactly; priority turns on them.
+
+      {context}
+
+      Question: {query}
+    # 20 hits x 1,500-character chunks is ~30,000 characters, plus ~60 per hit
+    # for the "[collection/chunk_id]" label. Without this, raising topK to 20
+    # would have been a complete no-op: the engine default (16,000) serves ten
+    # hits either way, while the response reports twenty.
+    contextCharBudget: 36000
+  steps:
+    - resolveSources: {}
+    - buildIndex: {}
+    - verify: {}
+    - cutover: { approval: required }
+    - retireOld: { keep_versions: 2 }

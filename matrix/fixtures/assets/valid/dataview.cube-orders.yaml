@@ -1,0 +1,36 @@
+# A DataView over a Cube deployment. The measures and dimensions are CUBE's,
+# named as Cube names them; Matrix declares which of them a caller may ask for
+# and what type each answer arrives as, and nothing else. The compiler is not
+# involved: `semantic_execute` on the adapter answers the ask directly.
+apiVersion: munarium.ioka.io/v1
+kind: DataView
+metadata:
+  name: cube-orders
+  version: 1
+spec:
+  source: cube-metrics
+  # The cube whose meta document is fingerprinted.
+  table: Orders
+  description: >-
+    Order counts and totals by status and region, as the Cube deployment's own
+    schema defines them.
+  measures:
+    Orders.count: { op: count, type: int64, additivity: additive }
+    Orders.totalAmount: { op: sum, column: amount, type: decimal, scale: 2, unit: USD, additivity: additive }
+  dimensions:
+    Orders.status: { type: string }
+    Orders.region: { type: string }
+  filters:
+    allowedDimensions: [Orders.region]
+  maxDimensions: 2
+  limits:
+    maxRows: 500
+    maxBytes: 1048576
+    timeoutMs: 15000
+  evidence:
+    retentionDays: 400
+    replayLevel: sealed_result
+  verifiedQuestions:
+    - question: "Orders by status"
+      intent: { measures: [Orders.count], dimensions: [Orders.status] }
+      expect: { rows: 3 }

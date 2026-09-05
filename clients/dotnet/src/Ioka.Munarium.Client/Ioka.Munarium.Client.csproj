@@ -1,0 +1,49 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Ioka.Munarium.Client</RootNamespace>
+    <Description>Official .NET client for munarium-server: one plane surface, two transports (REST + gRPC), typed errors keyed on the problem-slug registry, and the head-conflict write loop built in.</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ioka.Munarium.Client.Tests" />
+  </ItemGroup>
+
+  <!-- LICENSE and NOTICE travel in the package root, read from the repository root:
+       one copy of each, never a per-project duplicate (check_license.py verifies every
+       copy under clients/ is byte-identical to the original anyway). -->
+  <ItemGroup>
+    <None Include="..\..\..\LICENSE" Pack="true" PackagePath="" Visible="false" />
+    <None Include="..\..\..\NOTICE" Pack="true" PackagePath="" Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Google.Api.CommonProtos" Version="2.16.0" />
+    <PackageReference Include="Google.Protobuf" Version="3.28.3" />
+    <PackageReference Include="Grpc.Net.Client" Version="2.66.0" />
+    <PackageReference Include="Grpc.Tools" Version="2.68.1" PrivateAssets="All" />
+  </ItemGroup>
+
+  <!-- The normative MMP protos, read straight from server/proto and compiled at
+       build time (zero drift, nothing committed). Until the 2026-09-04
+       consolidation this read a vendored copy under clients/contract. All served
+       services are wired: SessionService (session.proto, 2026-08-18) and
+       AdminService (admin.proto) whose three access-token RPCs are served
+       since 2026-08-18 — the tenant/usage RPCs answer UNIMPLEMENTED and stay
+       unwrapped by the client. -->
+  <ItemGroup>
+    <Protobuf Include="..\..\..\..\server\proto\mmp\v1\common.proto" ProtoRoot="..\..\..\..\server\proto" GrpcServices="None" />
+    <Protobuf Include="..\..\..\..\server\proto\mmp\v1\ledger.proto" ProtoRoot="..\..\..\..\server\proto" GrpcServices="None" />
+    <Protobuf Include="..\..\..\..\server\proto\mmp\v1\command.proto" ProtoRoot="..\..\..\..\server\proto" GrpcServices="Client" />
+    <Protobuf Include="..\..\..\..\server\proto\mmp\v1\query.proto" ProtoRoot="..\..\..\..\server\proto" GrpcServices="Client" />
+    <Protobuf Include="..\..\..\..\server\proto\mmp\v1\retrieval.proto" ProtoRoot="..\..\..\..\server\proto" GrpcServices="Client" />
+    <Protobuf Include="..\..\..\..\server\proto\mmp\v1\ingest.proto" ProtoRoot="..\..\..\..\server\proto" GrpcServices="Client" />
+    <Protobuf Include="..\..\..\..\server\proto\mmp\v1\runbook.proto" ProtoRoot="..\..\..\..\server\proto" GrpcServices="Client" />
+    <Protobuf Include="..\..\..\..\server\proto\mmp\v1\provider.proto" ProtoRoot="..\..\..\..\server\proto" GrpcServices="Client" />
+    <Protobuf Include="..\..\..\..\server\proto\mmp\v1\session.proto" ProtoRoot="..\..\..\..\server\proto" GrpcServices="Client" />
+    <Protobuf Include="..\..\..\..\server\proto\mmp\v1\admin.proto" ProtoRoot="..\..\..\..\server\proto" GrpcServices="Client" />
+  </ItemGroup>
+
+</Project>

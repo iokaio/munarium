@@ -1,0 +1,32 @@
+# One surface form declared for two subjects. The author has written down
+# that a string means two different people; nothing downstream can resolve
+# that, so it is refused here rather than becoming an ambiguity finding on
+# every row that carries the name.
+apiVersion: munarium.ioka.io/v1
+kind: ClaimMapping
+metadata:
+  name: captable-holdings
+  version: 1
+spec:
+  source: crm
+  mode: shadow
+  entity:
+    table: holdings
+    key: [holder_id, company_id]
+    subjectTemplate: "shareholder.{holder_id}"
+    scopeTemplate: "company.{company_id}.captable"
+    identity:
+      resolver: terminology_alias
+      aliases:
+        column: holder_name
+        entries:
+          - subject: shareholder.jane-rowntree
+            forms: ["Jane Rowntree"]
+          - subject: shareholder.janet-rowntree
+            forms: ["jane  rowntree"]
+  properties:
+    shares_outstanding: { column: shares, type: decimal, scale: 0 }
+  temporal:
+    validTime: { column: effective_date }
+  changes:
+    shares_outstanding: { onUpdate: update, onBackdated: requires_review }

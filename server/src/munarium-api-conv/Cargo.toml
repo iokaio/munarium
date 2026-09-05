@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-api-conv"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The core <-> DTO conversions, kept out of munarium-api-types so the DTO crate carries no server dependency and can ship in the public contract bundle."
+
+[dependencies]
+munarium-core = { path = "../munarium-core" }
+munarium-api-types = { path = "../munarium-api-types" }
