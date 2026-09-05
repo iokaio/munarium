@@ -1,0 +1,72 @@
+# SPDX-License-Identifier: Apache-2.0
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "munarium-client"
+readme = "README.md"
+authors = [{ name = "Ioka" }]
+version = "1.0.0"
+description = "Official Python client for munarium-server: one plane surface, two transports (REST + gRPC), sync and async, typed errors keyed on the problem-slug registry, and the head-conflict write loop built in."
+requires-python = ">=3.11"
+# PEP 639: the SPDX expression lands in the wheel as `License-Expression`, and the
+# two files ship under `.dist-info/licenses/`. They are copies of ../LICENSE and
+# ../NOTICE (hatchling cannot reach outside the project root); check_license.py
+# fails CI if a copy ever differs from the original. hatchling >= 1.27 is the first
+# release that understands this form.
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+dependencies = [
+    "httpx>=0.27",
+    "pydantic>=2.5",
+    # Generated stubs enforce these runtime floors at import time.
+    "grpcio>=1.83",
+    "googleapis-common-protos>=1.60",
+    "protobuf>=7.35.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    # PINNED EXACTLY, and the drift check is why. The generated stubs carry a
+    # `GRPC_GENERATED_VERSION` stamp, so a floating patch version makes
+    # `gen_protos.py` produce different bytes on two machines that are both
+    # correct — CI resolved 1.83.1 while a local 1.83.0 had generated the
+    # committed files, and the check fired on the tool rather than on the
+    # protos it exists to guard (2026-08-29).
+    "grpcio-tools==1.83.1",
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "mypy>=1.10",
+    "ruff>=0.5",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/munarium_client"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["src/munarium_client/_proto"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src/munarium_client"]
+exclude = ["src/munarium_client/_proto"]
+
+[[tool.mypy.overrides]]
+module = ["munarium_client._proto.*", "grpc.*", "google.rpc.*"]
+ignore_missing_imports = true
+ignore_errors = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[project.urls]
+Homepage = "https://github.com/iokaio/munarium"
+Repository = "https://github.com/iokaio/munarium"
+Changelog = "https://github.com/iokaio/munarium/blob/main/clients/CHANGELOG.md"

@@ -1,0 +1,70 @@
+# The reference shape for MATERIALIZED RECORDS — rows from a governed
+# system of record, rendered as documents so they sit beside the corpus and can
+# be cited the same way.
+#
+#   mmctl apply -f runbooks/shapes/record-documents.yaml
+#
+# This is the shape Munarium Matrix's mode A produces: one document per record,
+# rendered from a source the customer's own policy governs. It is deliberately
+# the first shape in this tree to declare `spec.evidence`, because a record is
+# where the difference between evidence *kinds* stops being academic.
+#
+# Three declarations do the work, and each exists to stop a specific mistake.
+#
+#   kind: system_record
+#     Not `primary_document`. A rendered row is a faithful report of what a
+#     database held at a moment; it is not the signed instrument the database
+#     is describing. Conflating the two is exactly how "the register says
+#     90,500" comes to outrank "the executed agreement says 90,000".
+#
+#   max_authority: controlling
+#     A system of record CAN decide a conflict — that is what makes it a
+#     system of record — so the ceiling is the top of the scale. Note the
+#     ceiling is a permission, not an assignment: a runbook still has to bind
+#     this role deliberately, and may narrow to `primary` or `supporting` for
+#     a source it trusts less.
+#
+#   supports: [lookup, aggregation, chronology, contradiction]
+#     No `quotation`. A rendered row has no prose to quote verbatim, and an
+#     answer that "quotes" one is quoting the renderer, not the source. Leaving
+#     quotation out is what lets a verifier refuse such a citation instead of
+#     checking it against text that was never written by anybody.
+apiVersion: munarium.ioka.io/v1
+kind: Shape
+metadata: { name: record-documents, version: 1 }
+spec:
+  fact:
+    schema:
+      type: object
+      properties:
+        # Same terse, normalized value discipline as advisory-records: the
+        # ledger-conflict gate compares facts, not phrasing, and keys stay
+        # dot-free because `subject.key=value` splits at the LAST dot.
+        subject: { type: string, pattern: "^[a-z][a-z0-9_]{0,63}$" }
+        key: { type: string, pattern: "^[a-z][a-z0-9_:-]{0,63}$" }
+        value: { type: string, minLength: 1, maxLength: 240 }
+      required: [subject, key, value]
+    supersession:
+      identity: [subject, key]
+  # Records are short and structured; a large chunk would merge unrelated rows
+  # into one retrievable unit and blur exactly the boundary that makes a row
+  # citable on its own.
+  chunking: { max_chars: 800 }
+  indexing: { rrf_k: 60, candidate_n: 100 }
+  evidence:
+    kind: system_record
+    derivation: original
+    default_role: primary
+    max_authority: controlling
+    supports: [lookup, aggregation, chronology, contradiction]
+    temporal:
+      # The two times a record has, kept apart on purpose. `effective_date` is
+      # when the fact became true in the world; `recorded_at` is when the
+      # system learned it. A backdated-but-legitimate entry has the first
+      # earlier than the second, and a system that only tracked one could not
+      # tell that from an out-of-order write.
+      event_time_field: effective_date
+      observed_time_field: recorded_at
+    requirements:
+      citations: row
+      stable_identity: source_and_row_key

@@ -1,0 +1,288 @@
+# CI for the client libraries under clients/**. Also triggered by contract
+# changes (protos, openapi.json, api-types, conformance scenarios) — a contract
+# change must re-prove every client. Contract drift guards (openapi,
+# grpc-reference) live in server-ci.yml; this workflow owns the Python
+# generated-proto drift check.
+name: clients-ci
+
+# The default token is read-only. Any job that needs more (packages: write for
+# an image push, id-token: write for OIDC) raises it for itself, so a new job
+# cannot silently inherit write access to the repository.
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "clients/**"
+      # The clients read the server tree directly: Rust path-depends on its
+      # wire crates, and Python,.NET and Java compile its protos. A server-side
+      # wire change therefore reaches them immediately, so this filter watches
+      # the whole tree. The conformance job builds the server from source on
+      # every run.
+      - "server/**"
+      - ".github/workflows/clients-ci.yml"
+  pull_request:
+    paths:
+      - "clients/**"
+      # The clients read the server tree directly: Rust path-depends on its
+      # wire crates, and Python,.NET and Java compile its protos. A server-side
+      # wire change therefore reaches them immediately, so this filter watches
+      # the whole tree. The conformance job builds the server from source on
+      # every run.
+      - "server/**"
+      - ".github/workflows/clients-ci.yml"
+
+jobs:
+  compatibility:
+    # compatibility.json's per-client version must match what each package
+    # manifest actually declares, and every
+    # manifest, source header, LICENSE copy and tracked file must pass the
+    # license gate (check_license.py's docstring is the rule
+    # list) -- the two cheapest checks in this workflow, so they run on their
+    # own rather than inside any one language's job. Each language job below
+    # also hands check_license.py its built package.
+    runs-on: ubuntu-8core
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python3 clients/check_compatibility.py
+      - run: python3 clients/check_license.py
+      # THIRD_PARTY_NOTICES.md is generated from the four
+      # language ecosystems' runtime graphs and reviewed. This job has only cargo, so
+      # it checks the Rust rows; --check compares only the ecosystems it resolved.
+      - run: python3 clients/third_party_notices.py --check
+
+  rust:
+    runs-on: ubuntu-8core
+    defaults:
+      run:
+        working-directory: clients/rust
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable, 2026-09-03
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: clients/rust
+      # Package-scoped, NOT `--all`: cargo-fmt resolves path dependencies, and
+      # this workspace path-depends on the two wire crates under server/src, so
+      # `--all` would format and check the server's crates too. Naming the two
+      # client packages keeps this job about the clients.
+      - name: fmt
+        run: cargo fmt -p munarium-client -p munarium-client-conformance --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: unit tests
+        run: cargo test --workspace
+      - name: examples compile
+        run: cargo build --examples
+      - name: rustdoc
+        run: cargo doc --no-deps -p munarium-client
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - name: crate package carries the license files and nothing outside the crate
+        # `cargo package --list` is the exact file set a crates.io release would
+        # carry: LICENSE, NOTICE and Cargo.toml must be in it and nothing from
+        # outside the crate directory. Publishing itself is a release-time step.
+        run: |
+          cargo package -p munarium-client --list > /tmp/crate-files.txt
+          python3 ../check_license.py --rust-list /tmp/crate-files.txt
+
+  python:
+    runs-on: ubuntu-8core
+    defaults:
+      run:
+        working-directory: clients/python
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: install
+        # pip must understand core metadata 2.4 (the PEP 639 License-Expression
+        # that hatchling >= 1.27 emits for `license = "Apache-2.0"`); the
+        # runner's bundled pip is not guaranteed to.
+        run: |
+          python -m pip install -U pip
+          pip install -e ".[dev]"
+      - name: ruff
+        run: |
+          python -m ruff check src tests conformance scripts
+          python -m ruff format --check src tests conformance scripts
+      - name: mypy (strict)
+        run: python -m mypy
+      - name: unit tests
+        run: python -m pytest tests -q
+      - name: proto drift check
+        run: |
+          python scripts/gen_protos.py
+          git diff --exit-code src/munarium_client/_proto \
+            || { echo "::error::generated protos are stale: run python scripts/gen_protos.py"; exit 1; }
+      - name: wheel + sdist carry the license files and nothing of the server
+        # The built distributions, listed entry by entry:
+        # License-Expression: Apache-2.0 in the metadata, LICENSE + NOTICE
+        # inside, no entry naming the retired identifier or a server path.
+        run: |
+          pip install build
+          python -m build --sdist --wheel --outdir /tmp/pydist
+          python ../check_license.py --artifact /tmp/pydist/*
+
+  dotnet:
+    runs-on: ubuntu-8core
+    defaults:
+      run:
+        working-directory: clients/dotnet
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+      - name: build (warnings are errors)
+        run: dotnet build
+      - name: unit tests
+        run: dotnet test tests/Ioka.Munarium.Client.Tests --no-build -v q
+      - name: package carries the license files and nothing of the server
+        # The.nupkg a NuGet release would ship: the
+        # Apache-2.0 license expression in the .nuspec, LICENSE + NOTICE at the
+        # package root, no entry naming the retired identifier or a server path.
+        # `pack` builds Release on its own (its default configuration; the
+        # Debug build above is not reused, so no --no-build).
+        # `-p:PackageOutputPath=` rather than `-o`: on SDK 10.0.204 the `-o`
+        # form hands MSBuild a bare `PackageOutputPath=...` argument, which it
+        # reads as a second project and refuses (MSB1008). The property form
+        # is what `-o` is supposed to expand to, and it works on every SDK.
+        run: |
+          dotnet pack src/Ioka.Munarium.Client -p:PackageOutputPath=/tmp/nupkg/
+          python3 ../check_license.py --artifact /tmp/nupkg/*.nupkg
+
+  java:
+    runs-on: ubuntu-8core
+    defaults:
+      run:
+        working-directory: clients/java
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
+      # `build` generates the gRPC stubs from../../server/proto (build-time
+      # codegen — no committed stubs) and runs the offline unit tests; the live
+      # conformance suite runs in the conformance job below.
+      #
+      # `compileConformanceTestJava` is here because `build` does NOT compile
+      # that source set: a signature change that breaks a conformance test
+      # would otherwise survive this job and first fail in the conformance job
+      # — after the rust/python/dotnet jobs and a full server build. Compiling
+      # is cheap; discovering it an hour later is not.
+      - name: build + unit tests
+        run: ./gradlew build compileConformanceTestJava
+      - name: jar carries the license files and nothing of the server
+        # The jar a Maven Central release would ship:
+        # Bundle-License: Apache-2.0 in the manifest, META-INF/LICENSE +
+        # NOTICE inside, no entry naming the retired identifier or a server path.
+        run: python3 ../check_license.py --artifact build/libs/*.jar
+
+  conformance:
+    runs-on: ubuntu-8core
+    needs: [rust, python, dotnet, java]
+    # No id-token: this job builds the server from source and needs no registry
+    # credential.
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
+        env:
+          POSTGRES_USER: munarium
+          POSTGRES_PASSWORD: munarium-dev
+          POSTGRES_DB: munarium
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U munarium"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable, 2026-09-03
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: |
+            server
+            clients/rust
+      # The clients prove themselves against a server built from THIS commit:
+      # it is free, needs no registry credential and no OIDC, and it tests the
+      # code in the commit rather than the last thing released.
+      - name: build server from source
+        working-directory: server
+        run: cargo build -p munarium-server
+      - name: build client conformance
+        working-directory: clients/rust
+        run: cargo build -p munarium-client-conformance
+      - name: start server built from source
+        working-directory: server
+        run: |
+          MUNARIUM_HTTP_ADDR=127.0.0.1:8080 MUNARIUM_GRPC_ADDR=127.0.0.1:50051 \
+          MUNARIUM_OPS_ADDR=127.0.0.1:9090 MUNARIUM_STORE=postgres MUNARIUM_SOURCE_STORE=pg \
+          MUNARIUM_DATABASE_URL="postgres://munarium:munarium-dev@localhost:5433/munarium" \
+          MUNARIUM_AUTH_MODE=static \
+          MUNARIUM_STATIC_TOKENS="citoken:ci-clients:rw,cimgmt:ci-clients:mgmt" \
+          MUNARIUM_TOKEN_SECRET=ci-clients-conformance-hs256-key-0001 \
+          ./target/debug/munarium-server & echo $! > /tmp/server.pid
+          # cimgmt: SAME tenant, mgmt role — the platform smokes mint
+          # capability JWTs (hence MUNARIUM_TOKEN_SECRET) and prove the role
+          # partition; sharing the tenant keeps that a ROLE boundary test.
+          # The uid contract runs at its secure default (MUNARIUM_REQUIRE_UID=true):
+          # all three client libraries send X-Munarium-Uid / munarium-uid, so the
+          # earlier rollout bridge is no longer needed.
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8080/healthz > /dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8080/healthz > /dev/null || { echo "::error::server never became ready"; exit 1; }
+      - name: rust client conformance + smokes (both transports)
+        working-directory: clients/rust
+        run: |
+          ./target/debug/munarium-client-conformance \
+            --rest http://127.0.0.1:8080 --grpc http://127.0.0.1:50051 \
+            --token citoken --mgmt-token cimgmt --smoke
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: python client conformance + smokes (both transports, sync + async)
+        working-directory: clients/python
+        run: |
+          pip install -e ".[dev]"
+          MUNARIUM_REST_URL=http://127.0.0.1:8080 MUNARIUM_GRPC_URL=127.0.0.1:50051 \
+          MUNARIUM_TOKEN=citoken MUNARIUM_MGMT_TOKEN=cimgmt python -m pytest conformance -q
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+      - name: dotnet client conformance + smokes (both transports)
+        working-directory: clients/dotnet
+        run: |
+          MUNARIUM_REST_URL=http://127.0.0.1:8080 MUNARIUM_GRPC_URL=http://127.0.0.1:50051 \
+          MUNARIUM_TOKEN=citoken MUNARIUM_MGMT_TOKEN=cimgmt \
+          dotnet test tests/Ioka.Munarium.Client.Conformance -v q
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
+      - name: java client conformance + platform smokes (both transports)
+        working-directory: clients/java
+        run: |
+          MUNARIUM_REST_URL=http://127.0.0.1:8080 MUNARIUM_GRPC_URL=127.0.0.1:50051 \
+          MUNARIUM_TOKEN=citoken MUNARIUM_MGMT_TOKEN=cimgmt ./gradlew conformanceTest
+      - name: stop server
+        if: always()
+        run: |
+          kill "$(cat /tmp/server.pid 2>/dev/null)" 2>/dev/null || true
+          docker stop munarium-server 2>/dev/null || true

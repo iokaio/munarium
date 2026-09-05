@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-matrix-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "mxctl — the Matrix operator CLI."
+
+[[bin]]
+name = "mxctl"
+path = "src/main.rs"
+
+[dependencies]
+munarium-matrix-adapter = { workspace = true }
+munarium-matrix-core = { workspace = true }
+munarium-matrix-types = { workspace = true }
+munarium-matrix-client = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }

@@ -1,0 +1,26 @@
+apiVersion: munarium.ioka.io/v1
+kind: DataSource
+metadata: { name: toomanyclasses, version: 1 }
+spec:
+  adapter: landing
+  egress: { allowHosts: [blob.core.windows.net] }
+  authorization:
+    strategy: per_class_principals
+    classes:
+      - { name: c0, compartments: [c0], accessLevel: 1, credentialRef: k0 }
+      - { name: c1, compartments: [c1], accessLevel: 1, credentialRef: k1 }
+      - { name: c2, compartments: [c2], accessLevel: 1, credentialRef: k2 }
+      - { name: c3, compartments: [c3], accessLevel: 1, credentialRef: k3 }
+      - { name: c4, compartments: [c4], accessLevel: 1, credentialRef: k4 }
+      - { name: c5, compartments: [c5], accessLevel: 1, credentialRef: k5 }
+      - { name: c6, compartments: [c6], accessLevel: 1, credentialRef: k6 }
+      - { name: c7, compartments: [c7], accessLevel: 1, credentialRef: k7 }
+      - { name: c8, compartments: [c8], accessLevel: 1, credentialRef: k8 }
+      - { name: c9, compartments: [c9], accessLevel: 1, credentialRef: k9 }
+      - { name: c10, compartments: [c10], accessLevel: 1, credentialRef: k10 }
+      - { name: c11, compartments: [c11], accessLevel: 1, credentialRef: k11 }
+      - { name: c12, compartments: [c12], accessLevel: 1, credentialRef: k12 }
+      - { name: c13, compartments: [c13], accessLevel: 1, credentialRef: k13 }
+      - { name: c14, compartments: [c14], accessLevel: 1, credentialRef: k14 }
+      - { name: c15, compartments: [c15], accessLevel: 1, credentialRef: k15 }
+      - { name: c16, compartments: [c16], accessLevel: 1, credentialRef: k16 }

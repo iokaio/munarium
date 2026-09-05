@@ -1,0 +1,23 @@
+{{- /*
+One Service per role, on the REST port. The control role's Service is where
+`/admin` and the registry live; the query role's also carries the gRPC plane
+(h2c inside the cluster — TLS is the ingress's job, as on Container Apps).
+munarium-server's MUNARIUM_MATRIX_BASE_URL points at the QUERY role: the turn
+path executes and nothing else, and a server that could reach the registry
+would be a server that could rewrite its own contracts.
+*/ -}}
+{{- range .Values.roles }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: munarium-matrix-{{ .name }}
+  labels: { app: munarium-matrix, role: {{ .name | quote }} }
+spec:
+  selector: { app: munarium-matrix, role: {{ .name | quote }} }
+  ports:
+    - { name: rest, port: 8180, targetPort: 8180 }
+    {{- if .grpc }}
+    - { name: grpc, port: 50151, targetPort: 50151, appProtocol: kubernetes.io/h2c }
+    {{- end }}
+{{- end }}

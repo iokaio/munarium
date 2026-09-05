@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-matrix-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Pure kernel: typed values, canon@1 evidence identity, refusal taxonomy, record rendering, checkpoint contract. No I/O."
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+rust_decimal = { workspace = true }
+chrono = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+base64 = { workspace = true }
+thiserror = { workspace = true }
+# A pure parser: no I/O, no runtime. The kernel stays testable in milliseconds
+# and the boundary check (no sqlx/reqwest/axum/tokio) still holds.
+sqlparser = { workspace = true }

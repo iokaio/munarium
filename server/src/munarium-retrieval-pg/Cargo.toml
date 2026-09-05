@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-retrieval-pg"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "In-Postgres hybrid retrieval: tsvector lexical + pgvector HNSW, RRF fusion, versioned immutable indexes, ProvenanceEnvelope on every result."
+
+[dependencies]
+munarium-core = { path = "../munarium-core" }
+# For PgSourceStore, the default document-bytes backend PgRetrieval::new uses.
+munarium-store-pg = { path = "../munarium-store-pg" }
+munarium-extract = { path = "../munarium-extract" }
+tracing = { workspace = true }
+munarium-shapes = { path = "../munarium-shapes" }
+async-trait = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+pgvector = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+uuid = { workspace = true }
+serde = { workspace = true }
+# `spawn_blocking` for local extraction (already in the graph via sqlx's
+# runtime-tokio feature; a direct dependency only for the task API).
+tokio = { workspace = true }
+
+[dev-dependencies]
+async-trait = { workspace = true }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+munarium-store-pg = { path = "../munarium-store-pg" }
+tokio = { workspace = true }

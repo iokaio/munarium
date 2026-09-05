@@ -1,0 +1,12 @@
+# filters.allowedDimensions names 'owner', which is not a declared dimension.
+apiVersion: munarium.ioka.io/v1
+kind: DataView
+metadata: { name: pipeline-by-region, version: 1 }
+spec:
+  source: crm
+  table: opportunities
+  measures:
+    pipeline_amount: { op: sum, column: amount, type: decimal, scale: 2 }
+  dimensions:
+    region: { type: string }
+  filters: { allowedDimensions: [owner] }

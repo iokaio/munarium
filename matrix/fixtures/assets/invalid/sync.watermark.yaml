@@ -1,0 +1,12 @@
+apiVersion: munarium.ioka.io/v1
+kind: DataSource
+metadata: { name: notiebreak, version: 1 }
+spec:
+  adapter: postgres
+  egress: { allowHosts: [db.example.com] }
+  authorization: { strategy: source_native }
+  sync:
+    mode: watermark
+    watermark: { column: updated_at, inclusive: false }
+    entity: { table: t, key: [id] }
+    projection: [id, updated_at]

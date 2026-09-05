@@ -1,0 +1,44 @@
+# A source whose policy is enforced by the source itself (Postgres RLS).
+# The role posture below is PROVEN from the catalog at connect time, not trusted.
+apiVersion: munarium.ioka.io/v1
+kind: DataSource
+metadata:
+  name: crm
+  version: 1
+spec:
+  adapter: postgres
+  connection:
+    host: crm.internal.example.com
+    database: crm
+    sslmode: verify-full
+  credentialRef: matrix-crm
+  egress:
+    allowHosts: [crm.internal.example.com]
+  role:
+    mustBe: { readOnly: true, subjectToRowSecurity: true, notOwner: true }
+  authorization:
+    strategy: source_native
+  limits:
+    maxRows: 10000
+    maxBytes: 8388608
+    statementTimeoutMs: 8000
+    budgetPerHour: 500
+  snapshot:
+    kind: pg_snapshot
+    replayLevel: sealed_result
+  schemaFingerprint:
+    onDrift: refuse
+  sync:
+    mode: watermark
+    schedule: "*/15 * * * *"
+    watermark:
+      column: updated_at
+      inclusive: false
+      tieBreak: id
+    deletes:
+      kind: soft
+      column: deleted_at
+    entity:
+      table: opportunities
+      key: [id]
+    projection: [id, name, stage, amount, region, owner_id, updated_at]

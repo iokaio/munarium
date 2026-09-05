@@ -1,0 +1,121 @@
+// MMP v1 — ledger data model. The append-only fact ledger with supersession
+// chains: subject.key=value claims, monotonic per-lineage seq, corrections as
+// NEW rows naming supersedes_id (never updates).
+syntax = "proto3";
+
+package mmp.v1;
+
+import "google/protobuf/timestamp.proto";
+import "mmp/v1/common.proto";
+
+enum ClaimType {
+  CLAIM_TYPE_UNSPECIFIED = 0;
+  CLAIM_TYPE_FACT = 1;
+  CLAIM_TYPE_UPDATE = 2;     // value legitimately changed (status transition)
+  CLAIM_TYPE_CORRECTION = 3; // the earlier value was wrong
+}
+
+enum Provenance {
+  PROVENANCE_UNSPECIFIED = 0;
+  PROVENANCE_WITNESSED = 1;
+  PROVENANCE_BACKFILLED = 2;
+  PROVENANCE_REPAIRED = 3;
+  PROVENANCE_EMERGENT = 4;
+  PROVENANCE_COVERAGE_REPAIR = 5;
+}
+
+// Where a connector-originated claim came from. Absent on every
+// model-extracted claim; provenance for humans and reconciliation, never a
+// gate input.
+message ClaimOrigin {
+  string kind = 1;             // "connector" | "rollback"
+  string source_id = 2;
+  string mapping_version = 3;  // name@version of the producing ClaimMapping
+  string row_key = 4;          // the source row's stable key
+  string event_position = 5;   // LSN / delta version / manifest offset; empty = none
+  string observed_at = 6;      // RFC-3339; empty = none
+  string evidence_id = 7;      // the sealed observation batch; empty = none
+}
+
+message Claim {
+  string id = 1;
+  string version_id = 2;
+  uint64 seq = 3;
+  ClaimType claim_type = 4;
+  string subject = 5;
+  string key = 6;
+  string value = 7;
+  string normalized_text = 8; // canonical "subject.key=value"
+  string scope_path = 9;
+  ClaimStatus status = 10;
+  Provenance provenance = 11;
+  string supersedes_id = 12;  // empty unless this claim supersedes another
+  string entity_id = 13;
+  string evidence_json = 14;
+  double confidence = 15;
+  string shape_ref = 16;      // shape id@version validating this claim's body
+  google.protobuf.Timestamp recorded_at = 17;
+  ClaimOrigin origin = 18;    // unset unless a connector proposed it
+}
+
+message FactSlice {
+  repeated Claim facts = 1;
+  uint64 as_of_seq = 2; // the pin the slice was resolved at (0 = head)
+  uint64 head_seq = 3;
+}
+
+message Anchor {
+  string id = 1;
+  string version_id = 2;
+  string detail_key = 3;   // "subject.key"
+  string locked_value = 4;
+  string locked_at_scope = 5;
+  string status = 6;       // locked | released
+  uint64 seq = 7;
+}
+
+message Promise {
+  string id = 1;
+  string version_id = 2;
+  string key = 3;          // stable coordination key
+  string kind = 4;
+  string description = 5;
+  string origin_scope = 6;
+  string due_scope = 7;
+  string status = 8;       // open | fulfilled | expired | violated
+  uint64 seq = 9;
+  uint64 fulfilled_seq = 10; // 0 = not fulfilled
+}
+
+message CounterState {
+  string key = 1;
+  uint64 total = 2;
+  uint64 budget = 3; // 0 = no budget
+}
+
+message Lineage {
+  repeated string version_ids = 1; // root -> leaf inclusive
+}
+
+// A digest ladder rung. tier 0 = scope, 1 = group, 2 = rollup. Stored rungs
+// are never served under a pin — pinned reads rebuild deterministically.
+message Digest {
+  string version_id = 1;
+  uint32 tier = 2;
+  string scope_path = 3;
+  string content = 4;
+  string content_hash = 5;
+  uint64 built_from_seq = 6;
+}
+
+message ComposedContext {
+  message Section {
+    string title = 1;
+    string body = 2;
+  }
+  repeated Section sections = 1;
+  string text = 2;
+  uint64 estimated_tokens = 3;
+  string content_hash = 4; // feeds invocation caching
+  uint64 as_of_seq = 5;    // 0 = head
+}

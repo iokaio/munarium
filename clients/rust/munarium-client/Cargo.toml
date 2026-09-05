@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Official Rust client for munarium-server: one plane interface, two transports (REST + gRPC), typed errors keyed on the problem-slug registry, and the head-conflict write loop built in."
+
+[features]
+default = ["rest", "grpc"]
+rest = ["dep:reqwest", "dep:httpdate", "dep:bytes"]
+grpc = [
+    "dep:tonic",
+    "dep:tonic-types",
+    "dep:prost",
+    "dep:munarium-proto",
+    "dep:tokio-stream",
+    "dep:sha2",
+    "dep:hex",
+    "dep:base64",
+]
+
+[dependencies]
+munarium-api-types = { workspace = true }
+munarium-proto = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
+httpdate = { workspace = true, optional = true }
+tonic = { workspace = true, optional = true }
+tonic-types = { workspace = true, optional = true }
+prost = { workspace = true, optional = true }
+tokio-stream = { workspace = true, optional = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+futures-core = { workspace = true }
+futures-util = { workspace = true }
+sha2 = { workspace = true, optional = true }
+hex = { workspace = true, optional = true }
+base64 = { workspace = true, optional = true }
+bytes = { workspace = true, optional = true }
+
+[dev-dependencies]
+# `net` + `io-util`: the REST wire tests answer the real transport from a
+# one-exchange canned responder on loopback (no live server, no mock crate).
+tokio = { workspace = true, features = ["net", "io-util"] }
+base64 = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+futures-util = { workspace = true }

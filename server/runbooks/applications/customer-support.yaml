@@ -1,0 +1,64 @@
+# customer-support — a helpdesk ticket corpus as a retrieval application.
+#
+# What this demonstrates: binding one source system into two collections at
+# different exposure levels, and binding by media type as well as by prefix.
+#
+# Server mapping: two collections with different exposure. The derived
+# per-ticket documents are the searchable corpus; the raw multi-hundred-
+# thousand-row export they came from carries far more customer data than any
+# answer needs, so it sits at level 2 behind `support_ops` and binds by media
+# type (text/csv) as well as prefix.
+#
+#   mmctl apply -f runbooks/shapes/helpdesk-tickets.yaml
+#   mmctl apply -f runbooks/applications/customer-support.yaml
+#   mmctl run customer-support --watch
+apiVersion: munarium.ioka.io/v1
+kind: Runbook
+metadata: { name: customer-support, version: 1 }
+spec:
+  # Where this runbook's documents live. The blob path IS the ingest
+  # filename, so every collection binding below sits under this prefix —
+  # `mmctl runbook validate` errors if one does not.
+  sources:
+    container: sources
+    prefix: "tickets/"
+  collections:
+    - name: cs-tickets
+      shape: helpdesk-tickets@1
+      accessLevel: 0
+      sources: { filenamePrefix: "tickets/CS-", mediaTypes: [text/markdown] }
+    - name: cs-ticket-exports
+      shape: helpdesk-tickets@1
+      accessLevel: 2
+      compartments: [support_ops]
+      sources: { filenamePrefix: "tickets/exports/", mediaTypes: [text/csv] }
+  retrieval: { topK: 8, rrfK: 60, candidateN: 80 }
+  models:
+    default: { provider: default, tier: fast }
+    tasks:
+      completion: { provider: default, tier: fast }
+      validation: { tier: fast }
+    allowOverrides: [default]
+  completion:
+    promptTemplate: |
+      You are a support operations analyst answering questions about a
+      helpdesk ticket corpus.
+
+      Rules:
+      - Answer ONLY from the context and cite the ticket ids you relied on.
+      - Counting questions require the whole matching set, not the tickets
+        that happened to rank highest. If you cannot establish the full set
+        from the context, say what you counted and over what.
+      - Quote ticket text verbatim when the answer turns on wording.
+      - An answer the context does not support is a failure, not a gap to
+        fill from general knowledge.
+
+      {context}
+
+      Question: {query}
+  steps:
+    - resolveSources: {}
+    - buildIndex: {}
+    - verify: {}
+    - cutover: { approval: required }
+    - retireOld: { keep_versions: 2 }

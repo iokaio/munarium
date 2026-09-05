@@ -1,0 +1,177 @@
+// MMP v1 — Shapes + Runbooks API. Shapes and runbooks are data, not code:
+// applying one records a publication event; running one is a checkpointed step
+// machine whose every step, retry, and approval is itself a ledger event.
+syntax = "proto3";
+
+package mmp.v1;
+
+import "google/protobuf/timestamp.proto";
+
+message ApplyShapeRequest {
+  string yaml = 1;       // apiVersion: munarium.ioka.io/v1, kind: Shape
+  string version_id = 2; // optional lineage: when set, the publication is recorded as a ledger claim
+}
+message ApplyShapeResponse {
+  string shape_ref = 1; // name@version
+  string event_id = 2;  // set when the request named a version_id
+}
+
+message ApplyRunbookRequest {
+  string yaml = 1; // kind: Runbook
+}
+message ApplyRunbookResponse {
+  string runbook_ref = 1;
+  string event_id = 2; // reserved: runbook application records no ledger event yet (either plane)
+}
+
+message RunRunbookRequest {
+  string runbook_ref = 1;
+  string params_json = 2;
+}
+message RunRunbookResponse {
+  string run_id = 1;
+  string state = 2; // post-transition run state (running | awaiting_approval | done | failed)
+}
+
+message RunbookStepState {
+  uint32 ordinal = 1;
+  string name = 2;
+  string state = 3; // pending | running | awaiting_approval | done | failed
+  string detail_json = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+message GetRunRequest {
+  string run_id = 1;
+}
+message GetRunResponse {
+  string run_id = 1;
+  string runbook_ref = 2;
+  string state = 3;
+  repeated RunbookStepState steps = 4;
+  string version_id = 5; // the lineage every step transition was evented into; empty = none
+}
+
+message ApproveStepRequest {
+  string run_id = 1;
+  uint32 step_ordinal = 2;
+  string note = 3;
+}
+message ApproveStepResponse {
+  // Reserved: the approval transition IS recorded as a ledger event when the
+  // run names a version, but neither plane surfaces its id yet (REST returns
+  // {run_id, state}); empty until then.
+  string event_id = 1;
+  string state = 2; // post-approval run state — same shape as REST
+}
+
+// -- Runbook management (REST twins, added 2026-08-18) ------------------------
+
+message ListRunbooksRequest {
+  bool include_removed = 1;
+}
+
+message RunbookCollectionInfo {
+  string name = 1;
+  string collection_id = 2; // empty until the runbook is applied
+  string shape_ref = 3;
+  int32 access_level = 4;
+  repeated string compartments = 5;
+  string active_index = 6;  // empty = no index cut over
+  int64 source_count = 7;
+}
+
+message RunbookSummary {
+  string runbook_ref = 1;   // name@version
+  string name = 2;
+  uint32 version = 3;
+  string status = 4;        // active | remove_requested | removed
+  int32 min_access_level = 5;
+  repeated RunbookCollectionInfo collections = 6;
+  string created_at = 7;
+}
+
+message ListRunbooksResponse {
+  repeated RunbookSummary runbooks = 1;
+}
+
+message GetRunbookInfoRequest {
+  string name = 1; // runbook name (latest) or exact name@version
+}
+
+message GetRunbookInfoResponse {
+  string runbook_ref = 1;
+  string name = 2;
+  uint32 version = 3;
+  string status = 4;
+  repeated RunbookCollectionInfo collections = 5;
+  repeated string versions = 6; // sibling refs of the same name, incl. this
+  string models_json = 7;       // the models block, echoed; empty = none
+  string retrieval_json = 8;    // retrieval knobs in effect
+  bool has_completion = 9;
+  string created_at = 10;
+}
+
+message ValidateRunbookRequest {
+  string yaml = 1;
+  bool suggest = 2;   // add AI improvement suggestions (provider required)
+  // Model override for the suggestion pass; empty strings = not set.
+  string provider = 3;
+  string model = 4;
+  string tier = 5;
+}
+
+message ValidationFinding {
+  string severity = 1; // error | warn | info
+  string code = 2;     // stable dotted code
+  string message = 3;
+  string path = 4;
+}
+
+message RunbookSuggestion {
+  string title = 1;
+  string rationale = 2;
+  string patch_hint = 3; // empty = none
+}
+
+message ValidateRunbookResponse {
+  bool valid = 1; // false when any error-severity finding is present
+  repeated ValidationFinding findings = 2;
+  repeated RunbookSuggestion suggestions = 3;
+  string suggest_note = 4; // empty = none
+}
+
+// Removal is double-pass and soft only: request, then confirm with the
+// removal_id inside the TTL. All data is retained — removal is
+// visibility-only (same contract as REST).
+message RequestRemovalRequest {
+  string runbook_ref = 1; // EXACT name@version
+}
+message RequestRemovalResponse {
+  string runbook_ref = 1;
+  string removal_id = 2;
+  string expires_at = 3;
+}
+
+message ConfirmRemovalRequest {
+  string runbook_ref = 1; // EXACT name@version
+  string removal_id = 2;
+}
+message ConfirmRemovalResponse {
+  string runbook_ref = 1;
+  string status = 2; // always "removed" on success
+}
+
+service RunbookService {
+  rpc ApplyShape(ApplyShapeRequest) returns (ApplyShapeResponse);
+  rpc ApplyRunbook(ApplyRunbookRequest) returns (ApplyRunbookResponse);
+  rpc RunRunbook(RunRunbookRequest) returns (RunRunbookResponse);
+  rpc GetRun(GetRunRequest) returns (GetRunResponse);
+  rpc ApproveStep(ApproveStepRequest) returns (ApproveStepResponse);
+  // REST twins:
+  rpc ListRunbooks(ListRunbooksRequest) returns (ListRunbooksResponse);
+  rpc GetRunbookInfo(GetRunbookInfoRequest) returns (GetRunbookInfoResponse);
+  rpc ValidateRunbook(ValidateRunbookRequest) returns (ValidateRunbookResponse);
+  rpc RequestRemoval(RequestRemovalRequest) returns (RequestRemovalResponse);
+  rpc ConfirmRemoval(ConfirmRemovalRequest) returns (ConfirmRemovalResponse);
+}

@@ -1,0 +1,19 @@
+target/
+.git
+docs/
+deploy/
+# runbooks/ is NOT excluded: munarium-authoring embeds every experiment runbook
+# and shape with include_str! at COMPILE time (src/munarium-authoring/src/catalog.rs
+# `embeds!`), so excluding them from the build context breaks the image build
+# outright — 26 "couldn't read ../../../runbooks/..." errors, which is exactly
+# how this was found (2026-08-20, first image build since authoring landed).
+conformance/fixtures/
+**/*.md
+.sqlx-cache/
+
+# contract/ is NOT excluded, and must not be (S-1.0). It holds the vendored
+# Munarium Matrix contract; nothing include_str!s a schema from it yet, but the
+# runbooks/ note above is what an excluded-but-embedded directory costs, and the
+# whole point of vendoring is that the bytes are available where the code is.
+# Note **/*.md above DOES drop contract/matrix/README.md from the build context:
+# embed a .json schema from here, never the prose.

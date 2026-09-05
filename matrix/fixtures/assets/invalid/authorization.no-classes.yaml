@@ -1,0 +1,7 @@
+apiVersion: munarium.ioka.io/v1
+kind: DataSource
+metadata: { name: noclasses, version: 1 }
+spec:
+  adapter: landing
+  egress: { allowHosts: [blob.core.windows.net] }
+  authorization: { strategy: per_class_principals }

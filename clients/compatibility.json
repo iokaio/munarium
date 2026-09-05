@@ -1,0 +1,68 @@
+{
+  "$comment": "The compatibility record for the Munarium client libraries. Generated and maintained by hand at release time. Update this file, never the historical notes in README.md, which are a dated changelog of what was true when they were written.",
+  "policy": "Each Clients minor release supports the current Server minor and the one before it (N and N-1). A breaking MMP wire change bumps mmp_contract_major; Server serves both majors for one Server minor release so Clients can move without a flag day. Clients version independently of Server: a shared version number on a given release is a coincidence of that release, not a rule.",
+  "mmp_contract_major": 1,
+  "updated": "2026-09-04",
+  "clients": {
+    "rust": {
+      "version": "1.0.0",
+      "package": "munarium-client",
+      "registry": "crates.io",
+      "supported_server": [
+        "1.0"
+      ]
+    },
+    "python": {
+      "version": "1.0.0",
+      "package": "munarium-client",
+      "registry": "PyPI",
+      "supported_server": [
+        "1.0"
+      ]
+    },
+    "dotnet": {
+      "version": "1.0.0",
+      "package": "Ioka.Munarium.Client",
+      "registry": "NuGet",
+      "supported_server": [
+        "1.0"
+      ]
+    },
+    "java": {
+      "version": "1.0.0",
+      "package": "io.ioka.munarium:munarium-client",
+      "registry": "Maven Central",
+      "supported_server": [
+        "1.0"
+      ]
+    },
+    "matrix-python": {
+      "version": "1.0.0",
+      "package": "munarium-matrix",
+      "registry": "PyPI",
+      "speaks_to": "matrix",
+      "supported_matrix": [
+        "1.0"
+      ]
+    },
+    "matrix-dotnet": {
+      "version": "1.0.0",
+      "package": "Ioka.Munarium.Matrix.Client",
+      "registry": "NuGet",
+      "speaks_to": "matrix",
+      "supported_matrix": [
+        "1.0"
+      ]
+    },
+    "matrix-java": {
+      "version": "1.0.0",
+      "package": "io.ioka.munarium:munarium-matrix-client",
+      "registry": "Maven Central",
+      "speaks_to": "matrix",
+      "supported_matrix": [
+        "1.0"
+      ]
+    }
+  },
+  "note": "This is the first public release of the server, Matrix and every client, all at 1.0.0. The N-1 half of the policy therefore has nothing to name yet: there is no 0.x in public and no predecessor in scope. When the server ships 1.1, the next release's supported_server becomes [\"1.1\", \"1.0\"] per client, and the same for supported_matrix. The policy is stated now so that it binds from the first release rather than being introduced later. Entries carrying `speaks_to: matrix` are the Munarium Matrix clients; they version against Matrix, not against the server. The Rust client path-depends on munarium-api-types and munarium-proto, which are server crates: both must reach crates.io before munarium-client can be published there."
+}

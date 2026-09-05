@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://munarium.ioka.io/contract/matrix/evidence-block.schema.json",
+  "title": "EvidenceBlock",
+  "description": "What one layer of a turn contributes to an answer. CLOSED set: the server's composer switches on `kind` exhaustively, so a new variant is a major contract bump and cannot be smuggled in as data. `document_hits` and `fact_slice` are produced by the SERVER's own providers and appear here so the composer has one vocabulary; `complete_table`, `count` and `refusal` are what Matrix returns.",
+  "type": "object",
+  "required": ["contract_version", "kind"],
+  "properties": {
+    "contract_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "kind": { "enum": ["complete_table", "count", "document_hits", "fact_slice", "refusal"] }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/complete_table" },
+    { "$ref": "#/$defs/count" },
+    { "$ref": "#/$defs/document_hits" },
+    { "$ref": "#/$defs/fact_slice" },
+    { "$ref": "#/$defs/refusal_block" }
+  ],
+  "$defs": {
+    "complete_table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "kind", "evidence_id", "manifest", "rows", "truncated"],
+      "properties": {
+        "contract_version": { "type": "string" },
+        "kind": { "const": "complete_table" },
+        "evidence_id": {
+          "description": "The sealed artifact. Present because a table block is ALWAYS sealed before it is returned — the answer cites `[evidence/<id>#<row_id>]` and the server resolves it later.",
+          "type": "string"
+        },
+        "manifest": {
+          "description": "The manifest as sealed (the server already has it; echoing it here saves the composer a round-trip on the turn path).",
+          "$ref": "evidence-manifest.schema.json"
+        },
+        "rows": {
+          "description": "The rows themselves, for THIS turn's composition. Each row is {row_id, cells[]} with cells positional to manifest.schema.columns. Values follow canon@1 text forms.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["row_id", "cells"],
+            "properties": {
+              "row_id": { "type": "string" },
+              "cells": { "type": "array", "items": { "type": ["string", "null"] } }
+            }
+          }
+        },
+        "truncated": {
+          "description": "Mirrors manifest.completeness.truncated. Duplicated ON PURPOSE: the composer must be able to refuse a completeness claim without opening the manifest.",
+          "type": "boolean"
+        },
+        "derivations": {
+          "description": "Values the contract DECLARED as derivable, precomputed by Matrix so the server can verify an assertion without re-deriving. Verification recomputes them from the cells; a derivation that is not declared here can never be verified.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["ref", "op", "value"],
+            "properties": {
+              "ref": { "type": "string" },
+              "op": { "enum": ["sum", "count", "ratio", "diff", "pct_change", "min", "max", "as_of_diff"] },
+              "over": { "type": ["string", "null"] },
+              "numerator": { "type": ["string", "null"] },
+              "denominator": { "type": ["string", "null"] },
+              "value": { "type": ["string", "null"], "description": "canon@1 text form; null when undefined (e.g. ratio with a zero denominator)." },
+              "unit": { "type": ["string", "null"] },
+              "scale": { "type": ["integer", "null"] }
+            }
+          },
+          "default": []
+        }
+      }
+    },
+    "count": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "kind", "evidence_id", "manifest", "value"],
+      "properties": {
+        "contract_version": { "type": "string" },
+        "kind": { "const": "count" },
+        "evidence_id": { "type": "string" },
+        "manifest": { "$ref": "evidence-manifest.schema.json" },
+        "value": { "type": "string", "description": "int64 in canon@1 text form." },
+        "of": { "type": ["string", "null"], "description": "What was counted, in the source's words (e.g. 'opportunities where stage not in (Closed Won, Closed Lost)')." },
+        "exact": {
+          "description": "False when the count is over a truncated or partially covered scan. An inexact count can never back an exact-count assertion.",
+          "type": "boolean", "default": true
+        }
+      }
+    },
+    "document_hits": {
+      "description": "The server's existing retrieval path, expressed in this vocabulary. Matrix never produces one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "kind", "hits"],
+      "properties": {
+        "contract_version": { "type": "string" },
+        "kind": { "const": "document_hits" },
+        "hits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["collection", "chunk_id", "source_path", "text"],
+            "properties": {
+              "collection": { "type": "string" },
+              "chunk_id": { "type": "string" },
+              "source_id": { "type": ["string", "null"] },
+              "source_path": { "type": "string" },
+              "text": { "type": "string" },
+              "score": { "type": ["number", "null"] }
+            }
+          }
+        }
+      }
+    },
+    "fact_slice": {
+      "description": "The server's ledger, expressed in this vocabulary: accepted facts at a pinned seq. Matrix never produces one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "kind", "version_id", "as_of_seq", "facts"],
+      "properties": {
+        "contract_version": { "type": "string" },
+        "kind": { "const": "fact_slice" },
+        "version_id": { "type": "string" },
+        "as_of_seq": { "type": "integer", "minimum": 0 },
+        "facts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["subject", "key", "value"],
+            "properties": {
+              "claim_id": { "type": ["string", "null"] },
+              "subject": { "type": "string" },
+              "key": { "type": "string" },
+              "value": { "type": "string" },
+              "seq": { "type": ["integer", "null"] },
+              "provenance": { "type": ["string", "null"] },
+              "status": { "type": ["string", "null"] }
+            }
+          }
+        }
+      }
+    },
+    "refusal_block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "kind", "refusal"],
+      "properties": {
+        "contract_version": { "type": "string" },
+        "kind": { "const": "refusal" },
+        "refusal": { "$ref": "refusal.schema.json" }
+      }
+    }
+  }
+}

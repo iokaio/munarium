@@ -1,0 +1,19 @@
+# spec.limits.maxFindingsPerRun is 0: a mapping that can never run is not a limit.
+apiVersion: munarium.ioka.io/v1
+kind: ClaimMapping
+metadata: { name: captable-holdings, version: 1 }
+spec:
+  source: captable
+  mode: shadow
+  entity:
+    table: holdings
+    key: [holder_id]
+    subjectTemplate: "shareholder.{holder_id}"
+  properties:
+    shares_outstanding: { column: shares, type: decimal, scale: 0 }
+  temporal:
+    validTime: { column: effective_date }
+  changes:
+    shares_outstanding: { onUpdate: update, onBackdated: requires_review }
+  limits:
+    maxFindingsPerRun: 0

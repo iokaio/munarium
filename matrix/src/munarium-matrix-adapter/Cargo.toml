@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-matrix-adapter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "The SourceAdapter trait plus shared parameter binding, limits and capability declaration."
+
+[dependencies]
+munarium-matrix-core = { workspace = true }
+munarium-matrix-types = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+rust_decimal = { workspace = true }
+base64 = { workspace = true }
+tracing = { workspace = true }
+rustls = { workspace = true }

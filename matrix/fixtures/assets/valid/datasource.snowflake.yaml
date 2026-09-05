@@ -1,0 +1,36 @@
+# A Snowflake source. Every setting the SQL API v2 needs in a request
+# body is declared, because the API's own error for a missing one arrives at
+# execute time and a source that cannot execute should not apply.
+apiVersion: munarium.ioka.io/v1
+kind: DataSource
+metadata:
+  name: crm-snowflake
+  version: 1
+spec:
+  adapter: snowflake
+  connection:
+    account: ab12345.eu-west-1.snowflakecomputing.com
+    warehouse: MATRIX_XS
+    database: CRM
+    schema: PUBLIC
+    role: MATRIX_READER
+  credentialRef: matrix-crm-snowflake
+  egress:
+    allowHosts: [ab12345.eu-west-1.snowflakecomputing.com]
+  role:
+    # Snowflake HAS row access policies, so this is a real requirement. Whether
+    # the adapter can OBSERVE one depends on the role's access to the account's
+    # policy catalog; introspect reports what it could see and says so.
+    mustBe: { readOnly: true, subjectToRowSecurity: true, notOwner: true }
+  authorization:
+    strategy: source_native
+  limits:
+    maxRows: 10000
+    maxBytes: 8388608
+    statementTimeoutMs: 30000
+    budgetPerHour: 200
+  snapshot:
+    kind: statement_handle
+    replayLevel: sealed_result
+  schemaFingerprint:
+    onDrift: refuse

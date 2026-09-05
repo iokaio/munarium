@@ -1,0 +1,289 @@
+# Matrix compose: its own Postgres role and schema, plus a fixture `crm`
+# database that stands in for a customer system of record.
+#
+#   docker compose up -d postgres        -> just the database (what test.ps1 -Postgres needs)
+#   docker compose up                    -> + munarium-matrix (ROLE=all)
+#   docker compose --profile roles up    -> one container per role, for the isolation scenario
+#   docker compose --profile server up   -> + a REAL munarium-server, so Matrix can be
+#                                           tested against the peer instead of its mock
+#
+# The `crm` database carries RLS policies and TWO roles on purpose: a compliant
+# `matrix_reader` and a deliberately non-compliant `matrix_bad_reader`, so the
+# introspect refusal is exercised against a real database rather than a mock.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
+    # `wal_level=logical` is what makes a logical replication slot possible at
+    # all. It is set on the SERVICE rather than in an init script
+    # because it is a startup parameter, not SQL — a database cannot turn it on
+    # for itself. It costs a little extra WAL for every write, which is the
+    # real price of CDC and is paid whether or not a slot exists.
+    #
+    # `max_replication_slots` and `max_wal_senders` keep their defaults (10),
+    # which is ample for a fixture and is stated here so nobody has to go and
+    # check whether the default is zero.
+    command: ["postgres", "-c", "wal_level=logical"]
+    environment:
+      POSTGRES_USER: matrix
+      POSTGRES_PASSWORD: matrix-dev
+      POSTGRES_DB: matrix
+    # 5434: the server's compose already owns 5433 on a developer laptop.
+    ports: ["5434:5432"]
+    volumes:
+      - matrixdata:/var/lib/postgresql/data
+      # ONE init directory, read-only. Postgres runs this directory ONLY on
+      # an empty data dir, so an existing `matrixdata` volume will not pick up
+      # a new file: `docker compose down -v` once after pulling a change here,
+      # or the cdc tier refuses `cdc_publication_missing` and looks like a
+      # code defect.
+      - ./fixtures/t0/sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U matrix"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  munarium-matrix:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MUNARIUM_MATRIX_ROLE: all
+      MUNARIUM_MATRIX_DATABASE_URL: postgres://matrix_owner:matrix-owner-dev@postgres:5432/matrix
+      MUNARIUM_MATRIX_AUTH_MODE: static
+      MUNARIUM_MATRIX_STATIC_TOKENS: "mxdev:tenant-default:rw,mxmgmt:tenant-default:mgmt"
+      MUNARIUM_MATRIX_LOG: info
+      # The seal peer. Sealing needs a server, and a role that seals cannot
+      # run without one -- so the tiers that execute a contract (the `grpc`
+      # tier among them) need the `server` profile up AND this pointed at it:
+      #
+      #   $env:MUNARIUM_MATRIX_COMPOSE_SERVER_URL = "http://munarium-server:8080"
+      #   docker compose --profile server-source up -d --build  # builds ../server
+      #   docker compose --profile server up -d                 # needs MUNARIUM_SERVER_IMAGE
+      #
+      # Empty by default, because an empty value reads as UNSET (config.rs
+      # filters blanks) and a plain `docker compose up` still needs no second
+      # service. Left unset, an execute refuses `source_unavailable` naming
+      # this variable, which is the honest answer rather than a green test.
+      MUNARIUM_MATRIX_SERVER_URL: ${MUNARIUM_MATRIX_COMPOSE_SERVER_URL:-}
+      MUNARIUM_MATRIX_SERVER_TOKEN_REF: env:MUNARIUM_MATRIX_COMPOSE_SEAL_TOKEN
+      # A server token scoped to MATRIX'S tenant, and that is not incidental:
+      # an evidence manifest DECLARES its tenant, and the server refuses a
+      # manifest whose tenant is not the one the bearer token is scoped to.
+      # The live-test token (mxserver-rw / matrix-live) is a different tenant
+      # on purpose, so the two tiers cannot read each other's evidence.
+      MUNARIUM_MATRIX_COMPOSE_SEAL_TOKEN: mxseal-rw
+      MUNARIUM_MATRIX_TARGET_SERVER_VERSION: "1.0.0"
+      # The `crm` source's credential, resolved by `credentialRef: matrix-crm`
+      # (a bare name reads MUNARIUM_MATRIX_SECRET_<NAME>). `matrix_reader` is
+      # the row-level-secured role the fixture defines: it sees EMEA only, so
+      # the compose tier measures the same restricted view a live deployment does.
+      MUNARIUM_MATRIX_SECRET_MATRIX_CRM: postgres://matrix_reader:matrix-reader-dev@postgres:5432/matrix
+    ports:
+      - "${MUNARIUM_MATRIX_HOST_HTTP:-8180}:8180"
+      - "${MUNARIUM_MATRIX_HOST_OPS:-9190}:9190"
+      # The gRPC data plane. h2c here; TLS is the ingress's job.
+      - "${MUNARIUM_MATRIX_HOST_GRPC:-50151}:50151"
+
+  # --- server profiles: the COMPOSE tier's test server -----------------------
+  #
+  # The compose tier needs a compose-launched test server, and this is it. It
+  # exists because `MockServer` accepted request shapes the real server
+  # rejects, and four defects rode that gap all the way to a hand-run live
+  # test. A double is a claim about a peer; this service is where the claim
+  # gets checked, for $0, on every push.
+  #
+  # Two profiles, one environment. `server-source` BUILDS ../server from this
+  # repository and is the one to reach for: it needs no registry and it tests
+  # the server you actually have. `server` PULLS a published image instead and
+  # needs MUNARIUM_SERVER_IMAGE set, because there is no published Server image
+  # to default to until the first public release. Both answer to the same name
+  # on the network, so MUNARIUM_MATRIX_COMPOSE_SERVER_URL is the same either way.
+  # Ground rule 1 is about CRATE dependencies -- running a peer's binary in a
+  # test is not a dependency edge, and `cargo tree` stays clean.
+  munarium-server:
+    profiles: ["server"]
+    # A default rather than `:?` — Compose interpolates the WHOLE file on every
+    # command, so a required variable here made `docker compose up -d postgres`
+    # (the documented quickstart) fail before it read a service name. Unset, the
+    # pull fails instead, and the image name says what to do.
+    image: ${MUNARIUM_SERVER_IMAGE:-set-MUNARIUM_SERVER_IMAGE-or-use-the-server-source-profile}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: &munarium-server-env
+      MUNARIUM_HTTP_ADDR: 0.0.0.0:8080
+      MUNARIUM_GRPC_ADDR: disabled
+      MUNARIUM_OPS_ADDR: 0.0.0.0:9090
+      MUNARIUM_STORE: postgres
+      MUNARIUM_SOURCE_STORE: pg
+      MUNARIUM_DATABASE_URL: postgres://matrix:matrix-dev@postgres:5432/munarium
+      MUNARIUM_AUTH_MODE: static
+      # rw for the data plane, mgmt for retention. The tenant matches
+      # MUNARIUM_MATRIX_LIVE_TENANT in the Matrix live tests.
+      MUNARIUM_STATIC_TOKENS: "mxserver-rw:matrix-live:rw,mxserver-mgmt:matrix-live:mgmt,mxseal-rw:tenant-default:rw"
+      MUNARIUM_TOKEN_SECRET: "compose-matrix-tier-secret-32-bytes!"
+      MUNARIUM_REQUIRE_UID: "true"
+      # The retention janitor stays OFF here. A sweep firing mid-suite would
+      # delete an artifact a test was about to read, and the janitor has its
+      # own deterministic coverage in the server's own tests.
+      MUNARIUM_EVIDENCE_PURGE_INTERVAL_SECS: "0"
+      # The structured-evidence plane, so a runbook with data views can run
+      # its verifyDataViews step and a turn can execute through a research
+      # profile HERE, for $0 (2026-08-30: the measurement harness rehearses its
+      # turn half against this before it costs a live run). The token is
+      # Matrix's rw token for the tenant the seal token above belongs to.
+      MUNARIUM_MATRIX_BASE_URL: http://munarium-matrix:8180
+      MUNARIUM_MATRIX_TOKEN: mxdev
+    ports:
+      - "${MUNARIUM_SERVER_HOST_HTTP:-18080}:8080"
+    # No healthcheck: the image is distroless-static and has neither a shell
+    # nor wget, so the one that used to be here never passed and the container
+    # sat "unhealthy" while serving perfectly (found 2026-08-29). The test
+    # runner waits on /healthz from the host instead.
+
+  # This checkout's server, built from the sibling `server/` tree; same
+  # environment, same network name. Needs the whole repository checked out --
+  # see the note above.
+  munarium-server-source:
+    profiles: ["server-source"]
+    build:
+      context: ../server
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: *munarium-server-env
+    networks:
+      default:
+        aliases: [munarium-server]
+    ports:
+      - "${MUNARIUM_SERVER_HOST_HTTP:-18080}:8080"
+
+  # --- role profile: proves the pools are genuinely separate ----------------
+  matrix-control:
+    profiles: ["roles"]
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MUNARIUM_MATRIX_ROLE: control
+      MUNARIUM_MATRIX_DATABASE_URL: postgres://matrix_owner:matrix-owner-dev@postgres:5432/matrix
+      MUNARIUM_MATRIX_AUTH_MODE: static
+      MUNARIUM_MATRIX_STATIC_TOKENS: "mxdev:tenant-default:rw,mxmgmt:tenant-default:mgmt"
+    ports: ["8181:8180"]
+
+  matrix-query:
+    profiles: ["roles"]
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MUNARIUM_MATRIX_ROLE: query
+      MUNARIUM_MATRIX_DATABASE_URL: postgres://matrix_owner:matrix-owner-dev@postgres:5432/matrix
+      MUNARIUM_MATRIX_AUTH_MODE: static
+      MUNARIUM_MATRIX_STATIC_TOKENS: "mxdev:tenant-default:rw"
+    ports: ["8182:8180"]
+
+  matrix-sync:
+    profiles: ["roles"]
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MUNARIUM_MATRIX_ROLE: sync
+      MUNARIUM_MATRIX_DATABASE_URL: postgres://matrix_owner:matrix-owner-dev@postgres:5432/matrix
+      MUNARIUM_MATRIX_AUTH_MODE: static
+      MUNARIUM_MATRIX_STATIC_TOKENS: "mxdev:tenant-default:rw"
+    ports: ["8183:8180"]
+
+  matrix-reconcile:
+    profiles: ["roles"]
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MUNARIUM_MATRIX_ROLE: reconcile
+      MUNARIUM_MATRIX_DATABASE_URL: postgres://matrix_owner:matrix-owner-dev@postgres:5432/matrix
+      MUNARIUM_MATRIX_AUTH_MODE: static
+      MUNARIUM_MATRIX_STATIC_TOKENS: "mxdev:tenant-default:rw"
+    ports: ["8184:8180"]
+
+  # A real MySQL 8, for the second SQL engine behind the adapter
+  # seam. Its fixture mirrors the Postgres one closely enough to compare and
+  # differs where the ENGINES differ — which is the point of the tier.
+  mysql:
+    profiles: ["mysql"]
+    image: mysql:8.4@sha256:b3b90af2a6552ae30c266fdb7d5dd55f3afb72404bb78d37fe8a23eb857fd3fb
+    environment:
+      MYSQL_ROOT_PASSWORD: matrix-root-dev
+      MYSQL_DATABASE: crm
+      MYSQL_USER: matrix
+      MYSQL_PASSWORD: matrix-dev
+    command: ["--sql-mode=STRICT_ALL_TABLES"]
+    volumes:
+      - ./fixtures/mysql:/docker-entrypoint-initdb.d:ro
+    ports: ["3307:3306"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-pmatrix-root-dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # A real SQL Server 2022, for the third SQL engine behind the adapter seam.
+  # Its fixture mirrors the MySQL one where the engines agree and differs where
+  # they do not -- MONEY and GEOGRAPHY, which canon@1 deliberately does not
+  # model, and real row-level security, which MySQL has no equivalent of.
+  #
+  # The image has no init-directory convention, so the fixture is applied by the
+  # container's own command once the engine answers, and the healthcheck counts
+  # rows in the fixture's own table: "healthy" here means the FIXTURE LOADED,
+  # not merely that the engine is listening. SQL Server takes tens of seconds to
+  # recover its databases on a cold start, hence the retry budget.
+  sqlserver:
+    profiles: ["sqlserver"]
+    image: mcr.microsoft.com/mssql/server:2022-latest@sha256:ba4c8329f48fb8f02e1416be6a930ebfd71268caee78aa985f3af4315e457c89
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Matrix-Sa-Dev1!"
+      MSSQL_PID: Developer
+    volumes:
+      - ./fixtures/sqlserver:/fixtures:ro
+    ports: ["14330:1433"]
+    # `$$` is Compose escaping: the literal `$` reaches bash, which expands it
+    # inside the container. A single `$` would be interpolated by Compose from
+    # the HOST environment, where the variable is unset -- and sqlcmd would
+    # then try an empty password against a healthy server, forever.
+    command:
+      - /bin/bash
+      - -c
+      - |
+        /opt/mssql/bin/sqlservr &
+        pid=$$!
+        for _ in $$(seq 1 90); do
+          /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$$MSSQL_SA_PASSWORD" -C -Q "SELECT 1" >/dev/null 2>&1 && break
+          sleep 2
+        done
+        # -b: a SQL error is a non-zero exit. A fixture that half-applied must
+        # take the container down with it, loudly, rather than sit "starting".
+        if ! /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$$MSSQL_SA_PASSWORD" -C -b -i /fixtures/01-crm-fixture.sql; then
+          echo "sqlserver: the crm fixture failed to apply; see the errors above" >&2
+          kill $$pid
+          exit 1
+        fi
+        wait $$pid
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$$MSSQL_SA_PASSWORD" -C -d crm -Q "SELECT COUNT(*) FROM dbo.opportunities" >/dev/null 2>&1
+      interval: 5s
+      timeout: 10s
+      start_period: 30s
+      retries: 60
+
+volumes:
+  matrixdata:

@@ -1,0 +1,10 @@
+apiVersion: munarium.ioka.io/v1
+kind: QueryContract
+metadata: { name: orderunknown, version: 1 }
+spec:
+  source: crm
+  statementByDialect: { postgres: { inline: "SELECT region FROM opportunities" } }
+  result:
+    columns:
+      region: { type: string, key: true }
+    columnOrder: [region, nosuchcolumn]

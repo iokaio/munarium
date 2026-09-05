@@ -1,0 +1,80 @@
+{
+  "spec_version": 1,
+  "scope": {
+    "kind": "collection",
+    "id": "col-revolution-01"
+  },
+  "sources": [
+    {
+      "source_id": "src-0001",
+      "logical_path": "revolution/letters/gw-1775-07-03.md",
+      "media_type": "text/markdown",
+      "content_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "revision": null
+    },
+    {
+      "source_id": "src-0002",
+      "logical_path": "revolution/journals/continental-1775.md",
+      "media_type": "text/markdown",
+      "content_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "revision": "rev-2"
+    }
+  ],
+  "snapshot": {
+    "watermark_seq": 148213
+  },
+  "shape": {
+    "ref": "para",
+    "version": 1
+  },
+  "chunker": {
+    "name": "para",
+    "version": "para@1",
+    "params": {
+      "max_chars": 1200,
+      "overlap": 0
+    }
+  },
+  "extractor": {
+    "name": "munarium-extract",
+    "version": "0.5.0",
+    "config": {
+      "ocr": false
+    },
+    "per_source": [
+      {
+        "source_id": "src-0001",
+        "outcome": "extracted",
+        "extracted_text_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "method": "local"
+      },
+      {
+        "source_id": "src-0002",
+        "outcome": "extracted",
+        "extracted_text_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "method": "local"
+      }
+    ]
+  },
+  "embedder": {
+    "model": "local-hash@1",
+    "dimensions": 256,
+    "normalization": "l2",
+    "metric": "cosine"
+  },
+  "lexical_analysis": {
+    "contract_version": 1,
+    "tokenizer": "munarium-pg-compat@1",
+    "stemmer": "snowball-english",
+    "stop_terms_ref": {
+      "ref": "pg16/english",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    "index_options": {
+      "positions": true,
+      "case_folding": "lowercase",
+      "accent_folding": "none"
+    }
+  },
+  "reconstructed": false
+}

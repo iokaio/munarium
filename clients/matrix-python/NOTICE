@@ -1,0 +1,15 @@
+Munarium client libraries
+Copyright (c) 2026 Ioka LLC
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+these files except in compliance with the License. A copy of the License is in
+the LICENSE file beside this notice.
+
+"Munarium" and "Ioka" are trademarks of Ioka LLC. The License grants no right
+to use them beyond what is needed to describe the origin of these files.
+
+These libraries speak to Munarium Server, a separate work licensed under its
+own terms; nothing here grants any right to it, to Munarium Matrix, or to any
+support from Ioka LLC.
+
+The MMP contract bundle under contract/ carries its own NOTICE.

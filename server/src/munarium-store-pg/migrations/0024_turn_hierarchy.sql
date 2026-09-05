@@ -1,0 +1,14 @@
+-- S-3.3: persist the evidence-hierarchy decision per turn.
+--
+-- On session_turns rather than in the interactions body deliberately. The
+-- interactions capture is CAPPED (MUNARIUM_INTERACTION_BODY_MAX): above the
+-- limit a body is replaced by a {sha256, bytes_len} summary. That is right for
+-- request/response payloads and wrong for this, because the audit question
+-- "why did the model see what it saw?" must be answerable for EVERY turn, and
+-- it is exactly the large, layered turns whose bodies get summarized away.
+--
+-- Nullable, with no default: every turn recorded before this migration, and
+-- every turn that runs no research profile, has no decision to record — and
+-- NULL says that, where an empty JSON object would claim a hierarchy ran and
+-- decided nothing.
+ALTER TABLE session_turns ADD COLUMN IF NOT EXISTS hierarchy JSONB;

@@ -1,0 +1,27 @@
+# An immutable export. The preferred mode-A path: the export IS the snapshot,
+# so replay needs no cooperation from a live system.
+apiVersion: munarium.ioka.io/v1
+kind: DataSource
+metadata:
+  name: landing-crm
+  version: 1
+spec:
+  adapter: landing
+  connection:
+    store: file
+    prefix: crm/
+  egress:
+    allowHosts: [blob.core.windows.net]
+  authorization:
+    strategy: per_class_principals
+    classes:
+      - name: sales-emea
+        compartments: [sales, emea]
+        accessLevel: 2
+        credentialRef: matrix-crm-emea
+  sync:
+    mode: manifest
+    entity:
+      table: opportunities
+      key: [id]
+    projection: [id, region, amount]

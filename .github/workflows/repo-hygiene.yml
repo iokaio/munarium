@@ -1,0 +1,61 @@
+# Repository-wide gates.
+#
+# Every other workflow in this directory is `paths:`-filtered to one component,
+# which is right for a build and wrong for a rule about the whole tree. The
+# consequence was that the root `check_license.py` -- the one gate that walks
+# every file -- was never run by CI at all. This workflow has no paths filter
+# for exactly that reason: a rule about what the repository may contain has to
+# run whatever changed.
+name: repo hygiene
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repo-hygiene-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hygiene:
+    name: private material, licences and notices
+    runs-on: ubuntu-8core
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      # README.md says the private research behind Munarium is deliberately not
+      # carried here. This is what holds that sentence true.
+      - name: private material scan
+        run: python3 scripts/private_material_scan.py
+
+      # Apache-2.0 headers, licence texts and notice files, across the whole
+      # tree rather than one component of it.
+      - name: licence and notice check
+        run: python3 check_license.py
+
+      # Secret scan, over the whole tree. The binary rather than the action: the
+      # action needs a licence key for organisation repositories, and a scanner
+      # that silently skips is the failure this workflow exists to prevent. The
+      # release is pinned by version AND by the checksum gitleaks publishes.
+      - name: gitleaks
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+          GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+        run: |
+          set -euo pipefail
+          curl -sSL -o gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          # The working tree on every push; the history too once one exists.
+          ./gitleaks dir . --config .gitleaks.toml --no-banner --redact --exit-code 1
+          if [ "$(git rev-list --count HEAD 2>/dev/null || echo 0)" -gt 0 ]; then
+            ./gitleaks git . --config .gitleaks.toml --no-banner --redact --exit-code 1
+          fi

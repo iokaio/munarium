@@ -1,0 +1,27 @@
+# A genie block whose shape is wrong — `trustedAssets` is a string where the
+# grammar wants a list.
+#
+# Refused rather than coerced. A single string silently read as a one-element
+# allowlist is an allowlist somebody thinks they wrote and did not, and the
+# whole point of this block is that its contents are read carefully.
+apiVersion: munarium.ioka.io/v1
+kind: DataSource
+metadata:
+  name: crm-genie-malformed
+  version: 1
+spec:
+  adapter: databricks
+  connection:
+    host: adb-1234567890.7.azuredatabricks.net
+    warehouseId: abc123
+    catalog: main
+    schema: crm
+    allowHosts: [adb-1234567890.7.azuredatabricks.net]
+    genie:
+      spaceId: 01ef-1234-5678
+      trustedAssets: asset-open-pipeline
+  credentialRef: matrix-databricks
+  egress:
+    allowHosts: [adb-1234567890.7.azuredatabricks.net]
+  authorization:
+    strategy: source_native

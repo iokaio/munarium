@@ -1,0 +1,41 @@
+# The Developer Certificate of Origin check: every commit in a pull request carries
+# a `Signed-off-by:` trailer (`git commit -s`), which is how a contributor certifies
+# they have the right to submit the change under this repository's license. It is the
+# status check the `main` ruleset requires, and it runs on pull requests only.
+#
+# It is a workflow rather than the DCO GitHub App so that it needs no installation
+# step, no third-party app permission on the repository, and no browser
+# click path; the check name `signed-off` is what the ruleset names.
+name: dco
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  signed-off:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The merge ref alone has no parents to walk; the full history makes
+          # base..head resolvable, on a fork PR too (the merge commit reaches
+          # the fork's head).
+          fetch-depth: 0
+      - name: every commit carries Signed-off-by
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          missing=0
+          for c in $(git rev-list --no-merges "$BASE..$HEAD"); do
+            if git log -1 --format=%B "$c" | grep -qE '^Signed-off-by: .+ <[^>]+@[^>]+>$'; then
+              continue
+            fi
+            echo "::error::commit $c has no Signed-off-by trailer -- amend with 'git commit -s' (CONTRIBUTING.md)"
+            missing=1
+          done
+          [ "$missing" = 0 ] && echo "every commit in $BASE..$HEAD is signed off"
+          exit $missing

@@ -1,0 +1,136 @@
+# support-knowledge — one subject area scattered across ten source systems,
+# reassembled as a compartmentalized retrieval application.
+#
+# What this demonstrates: a four-level compartment model derived from source
+# ownership rather than from content, and DOCX/PDF sources binding by content
+# type so the converter path is exercised end to end.
+#
+# Server mapping: the ten systems are the compartment boundary, because in a
+# real deployment they have ten different owners. Public-facing knowledge (KB,
+# forum, release notes) is level 0; customer tickets and the bug tracker are
+# level 1; chat, postmortems and the mail archive are level 2; signed customer
+# contracts are level 3 behind `legal`. Note the media types: DOCX policies
+# and PDF SLAs bind by content type as well as prefix, which is how the
+# converter path gets exercised end to end.
+#
+#   mmctl apply -f runbooks/shapes/knowledge-sources.yaml
+#   mmctl apply -f runbooks/applications/support-knowledge.yaml
+#   mmctl run support-knowledge --watch
+apiVersion: munarium.ioka.io/v1
+kind: Runbook
+metadata: { name: support-knowledge, version: 4 }
+spec:
+  # Where this runbook's documents live. The blob path IS the ingest
+  # filename, so every collection binding below sits under this prefix —
+  # `mmctl runbook validate` errors if one does not.
+  sources:
+    container: sources
+    prefix: "support/"
+  collections:
+    - name: kb-helphub
+      shape: knowledge-sources@1
+      accessLevel: 0
+      sources: { filenamePrefix: "support/helphub/", mediaTypes: [text/markdown] }
+    - name: community-forum
+      shape: knowledge-sources@1
+      accessLevel: 0
+      sources: { filenamePrefix: "support/community/", mediaTypes: [text/plain] }
+    - name: release-notes
+      shape: knowledge-sources@1
+      accessLevel: 0
+      sources: { filenamePrefix: "support/buildforge/", mediaTypes: [text/markdown] }
+    - name: support-tickets-deskway
+      shape: knowledge-sources@1
+      accessLevel: 1
+      compartments: [support]
+      sources: { filenamePrefix: "support/deskway/", mediaTypes: [text/plain] }
+    - name: bug-tracker
+      shape: knowledge-sources@1
+      accessLevel: 1
+      compartments: [engineering]
+      sources: { filenamePrefix: "support/bugtrail/", mediaTypes: [text/plain] }
+    - name: incident-postmortems
+      shape: knowledge-sources@1
+      accessLevel: 2
+      compartments: [engineering]
+      sources: { filenamePrefix: "support/statusdesk/", mediaTypes: [text/markdown] }
+    - name: engineering-chat
+      shape: knowledge-sources@1
+      accessLevel: 2
+      compartments: [engineering]
+      sources: { filenamePrefix: "support/chatops/", mediaTypes: [text/plain] }
+    - name: mail-archive
+      shape: knowledge-sources@1
+      accessLevel: 2
+      compartments: [support, legal]
+      sources: { filenamePrefix: "support/mailarchive/", mediaTypes: [text/plain] }
+    - name: policy-documents
+      shape: knowledge-sources@1
+      accessLevel: 2
+      compartments: [legal]
+      sources:
+        filenamePrefix: "support/docvault/"
+        mediaTypes:
+          - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+    - name: customer-contracts
+      shape: knowledge-sources@1
+      accessLevel: 3
+      compartments: [legal]
+      sources: { filenamePrefix: "support/contractstore/", mediaTypes: [application/pdf] }
+
+  retrieval:
+    topK: 20
+    rrfK: 60
+    candidateN: 150
+  models:
+    default: { provider: default, tier: fast }
+    tasks:
+      # Fast tier is the honest default: declarative fixes close most of the
+      # gap on this corpus, and the capable tier stays available per turn
+      # through the override policy below.
+      completion: { provider: default, tier: fast }
+      validation: { tier: fast }
+    allowOverrides: [default, example-anthropic, example-openai, example-openrouter]
+  completion:
+    promptTemplate: |
+      You are a support engineer answering from the company's own record —
+      knowledge base, forum, release notes, tickets, bugs, chat, email,
+      postmortems, policies and contracts.
+
+      Rules:
+      - Answer ONLY from the context and cite the documents you used. If you
+        cannot cite it, say the record does not contain the answer.
+      - THE REGISTERS: a context block from the postmortems-register or
+        sla-register layer is that whole record as a typed table, each row
+        citable as [evidence/<id>#<row>] and naming its source document. A
+        block marked COMPLETE is the WHOLE set: answer "most recent", "how
+        many" and "what do our contracts promise" questions FROM IT and cite
+        the rows. A TRUNCATED block, and document hits alone, are samples —
+        never claim a superlative or a total from a sample; when the register
+        is absent or unavailable, say so in one sentence and answer only what
+        the documents support.
+      - A knowledge-base article contradicted by a LATER release note or
+        postmortem is stale. Report both, say which is current, and give the
+        date each one carries.
+      - Systems disagree in wording, not in fact. Reconcile the same incident,
+        version or customer across systems instead of answering from whichever
+        one you read first.
+      - Version numbers and dates are quoted exactly as written.
+
+      {context}
+
+      Question: {query}
+    # topK 20 over 900-character chunks is an UPPER BOUND of ~18,000
+    # characters plus ~60 per hit for the "[collection/chunk_id]" label.
+    # In practice the twenty served hits already fit the 16,000
+    # engine default -- every battery turn's input tokens were identical with
+    # and without this line. Declared anyway, sized to the bound, so a corpus
+    # or shape change cannot make the truncation binding without anyone
+    # noticing (guides/retrieval-sizing.md).
+    contextCharBudget: 22000
+  steps:
+    - resolveSources: {}
+    - buildIndex: {}
+    - verify: {}
+    - cutover: { approval: required }
+    - retireOld: { keep_versions: 2 }

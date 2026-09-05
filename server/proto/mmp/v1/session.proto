@@ -1,0 +1,155 @@
+// MMP v1 — Session API (the data plane; gRPC twin of the REST route).
+// Multiturn sessions over a runbook's access-permitted collections. Auth is
+// the data plane's: a capability JWT (or static token) in `authorization`
+// metadata plus `munarium-uid` metadata (the gRPC twin of X-Munarium-Uid); the
+// query scope and the revocation check are enforced exactly like REST.
+// JSON-shaped transcript fields ride as *_json strings, the same convention
+// as metadata_json/manifest_json elsewhere in this package.
+syntax = "proto3";
+
+package mmp.v1;
+
+import "mmp/v1/common.proto";
+
+message CreateSessionRequest {
+  // Runbook name (latest non-removed version) or exact name@version.
+  string runbook_name = 1;
+}
+message CreateSessionResponse {
+  string session_id = 1;
+  string runbook_ref = 2;             // pinned name@version for every turn
+  repeated string permitted_collections = 3;
+}
+
+// API-level model override — honored only under the runbook's
+// models.allowOverrides policy. Empty strings mean "not set".
+message SessionModelOverride {
+  string provider = 1;
+  string model = 2;
+  string tier = 3; // fast | capable | frontier
+}
+
+message TurnRequest {
+  string session_id = 1;
+  string query = 2;
+  uint32 top_k = 3;                   // 0 = runbook default
+  bool complete = 4;                  // run the runbook's completion step
+  SessionModelOverride model_override = 5;
+  // Run this turn through a named research profile (an evidence
+  // hierarchy). Empty = the legacy single-layer document path, byte-identical.
+  string research_profile = 6;
+}
+
+message TurnHit {
+  string collection = 1;
+  string chunk_id = 2;
+  string source_id = 3;
+  string source_path = 4;
+  string source_content_hash = 5;
+  string text = 6;
+  double score = 7;
+}
+
+message CollectionEnvelope {
+  string collection = 1;
+  ProvenanceEnvelope envelope = 2;
+}
+
+// Deterministic turn-verification outcome (quotes resolve in served text,
+// citations name served content). Violations are prefixed "quote: " /
+// "citation: ". Present only when the runbook declares
+// completion.verification.
+message TurnVerification {
+  repeated string checks = 1;
+  uint32 retries = 2;
+  repeated string first_pass_violations = 3;
+  repeated string violations = 4;     // empty = verified
+}
+
+message TurnCompletion {
+  string provider = 1;
+  string model = 2;
+  bool was_override = 3;
+  string text = 4;
+  uint64 input_tokens = 5;            // totals across ALL completions paid
+  uint64 output_tokens = 6;           // for this turn, retries included
+  TurnVerification verification = 7;  // absent when verification not declared
+}
+
+message TurnResponse {
+  string session_id = 1;
+  uint32 ordinal = 2;
+  repeated string collections_searched = 3;
+  repeated string skipped = 4;        // permitted but no active index
+  repeated TurnHit hits = 5;
+  repeated CollectionEnvelope envelopes = 6;
+  TurnCompletion completion = 7;      // absent when no completion ran
+  // Present only when a research profile ran.
+  EvidenceHierarchyDecision hierarchy = 8;
+}
+
+// What one evidence layer produced.
+message LayerOutcome {
+  string layer = 1;
+  string role = 2;                    // supporting | primary | controlling
+  string requirement = 3;             // required | optional | fallback
+  string block = 4;                   // document_hits | complete_table | count | fact_slice | refusal
+  string evidence_id = 5;
+  // Whether an answer may make a completeness claim on THIS layer. Document
+  // hits are always false: retrieval returns what it found, never a proof
+  // that nothing else exists.
+  bool supports_completeness = 6;
+  string refusal_code = 7;
+  uint64 elapsed_ms = 8;
+}
+
+// Why the model saw what it saw. About the DECISION, not the content:
+// no evidence rows appear here.
+message EvidenceHierarchyDecision {
+  string profile = 1;
+  string intent_kind = 2;
+  // True when the caller supplied the intent rather than a model producing it,
+  // so a keyless test result never reads as a planner result.
+  bool intent_explicit = 3;
+  repeated LayerOutcome layers = 4;
+  bool completeness_available = 5;
+  uint32 disclosed_conflicts = 6;
+  string conflicts_policy = 7;
+}
+
+message GetSessionRequest {
+  string session_id = 1;
+}
+
+message SessionTurn {
+  uint32 ordinal = 1;
+  string query = 2;
+  repeated string collections_searched = 3;
+  string hits_json = 4;               // stored transcript rows are JSON
+  string envelope_json = 5;
+  string completion_json = 6;         // empty = no completion that turn
+  string created_at = 7;              // RFC 3339
+}
+
+message GetSessionResponse {
+  string session_id = 1;
+  string uid = 2;
+  string runbook_ref = 3;
+  int32 access_level = 4;
+  repeated string compartments = 5;
+  string state = 6;                   // open | closed | expired
+  string created_at = 7;
+  repeated SessionTurn turns = 8;
+}
+
+message CloseSessionRequest {
+  string session_id = 1;
+}
+
+service SessionService {
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+  rpc Turn(TurnRequest) returns (TurnResponse);
+  rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
+  // Idempotent; closing a closed/expired session returns its state unchanged.
+  rpc CloseSession(CloseSessionRequest) returns (GetSessionResponse);
+}

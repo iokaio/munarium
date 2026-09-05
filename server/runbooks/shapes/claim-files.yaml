@@ -1,0 +1,28 @@
+# Auto-claim file shape — claim files, each a folder of numbered documents
+# (declarations, policy parts, FNOL, adjuster notes, estimates, invoices,
+# correspondence) across several loss types. Bound by the insurance-claims
+# runbook.
+#
+#   mmctl apply -f runbooks/shapes/claim-files.yaml
+#
+# The claim canon keys on short stable subjects — policy, claim, loss,
+# claimant, estimate — plus the claim number itself, so digits lead legally
+# here. Anchors (policy limits, deductibles) and status transitions ride the
+# same subject/key identity: supersession is what makes "estimate revised" a
+# new row rather than an overwrite.
+apiVersion: munarium.ioka.io/v1
+kind: Shape
+metadata: { name: claim-files, version: 1 }
+spec:
+  fact:
+    schema:
+      type: object
+      properties:
+        subject: { type: string, pattern: "^[a-z0-9][a-z0-9_-]{0,63}$" }
+        key: { type: string, pattern: "^[a-z][a-z0-9_:-]{0,63}$" }
+        value: { type: string, minLength: 1, maxLength: 384 }
+      required: [subject, key, value]
+    supersession:
+      identity: [subject, key]
+  chunking: { max_chars: 1000 }
+  indexing: { rrf_k: 60, candidate_n: 80 }

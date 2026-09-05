@@ -1,0 +1,131 @@
+# threat-intelligence — multi-vendor actor reporting reconciled into one
+# registry, as a retrieval application.
+#
+# What this demonstrates: the vendor feed as the compartment boundary.
+# Splitting by vendor is also what makes the alias problem visible — the same
+# adversary arrives several times under different names.
+#
+# Server mapping: the vendor feed is the compartment boundary — commercial
+# intel arrives under contract and does not leave the `intel` compartment,
+# while public CERT advisories are level 0. Splitting by vendor is also what
+# makes the alias problem visible: the same adversary arrives three times
+# under three names.
+#
+# Upload convention: `intel/<vendor>/...` (helioscope, trellium, northwind,
+# cert), matching the per-report vendor metadata.
+#
+#   mmctl apply -f runbooks/shapes/threat-reports.yaml
+#   mmctl apply -f runbooks/applications/threat-intelligence.yaml
+#   mmctl run threat-intelligence --watch
+apiVersion: munarium.ioka.io/v1
+kind: Runbook
+metadata: { name: threat-intelligence, version: 2 }
+spec:
+  # Where this runbook's documents live. The blob path IS the ingest
+  # filename, so every collection binding below sits under this prefix —
+  # `mmctl runbook validate` errors if one does not.
+  sources:
+    container: sources
+    prefix: "intel/"
+  collections:
+    - name: intel-helioscope
+      shape: threat-reports@1
+      accessLevel: 1
+      compartments: [intel]
+      sources: { filenamePrefix: "intel/helioscope/" }
+    - name: intel-trellium
+      shape: threat-reports@1
+      accessLevel: 1
+      compartments: [intel]
+      sources: { filenamePrefix: "intel/trellium/" }
+    - name: intel-northwind
+      shape: threat-reports@1
+      accessLevel: 1
+      compartments: [intel]
+      sources: { filenamePrefix: "intel/northwind/" }
+    - name: cert-advisories
+      shape: threat-reports@1
+      accessLevel: 0
+      sources: { filenamePrefix: "intel/cert/" }
+  # Retrieval is sized from this corpus rather than left on the engine
+  # defaults: topK 10, an unweighted merge, no collection selection and a
+  # 16,000-character context reproduce the pre-2026-08-25 behaviour and are
+  # the narrow case. Arithmetic: guides/retrieval-sizing.md.
+  retrieval:
+    # Every question on this corpus is a reconciliation: an attribution
+    # conflict or a shared-tooling trap is only visible when BOTH vendors'
+    # reports are served. The vendor IS the collection, so a merge that
+    # crowds out one shard turns a finding into a one-sided answer or a
+    # refusal.
+    topK: 20
+    rrfK: 60
+    candidateN: 150
+    # Declaring collectionSelection is also the only thing that raises each
+    # collection's deep candidate pool above topK (sessions_api.rs:
+    # params.top_k = max(top_k, candidatePoolPerCollection)), so without it
+    # the merge picks topK hits out of collections x topK candidates. Selection
+    # spends the deep search and never excludes -- an unselected collection
+    # keeps its probe pool in the merge.
+    # maxCollections equals the collection count on purpose: with four vendor
+    # feeds, dropping one from the deep search is dropping one side of the
+    # disagreement. Selection here buys the 100-candidate pool and the
+    # evidence leg, not exclusion.
+    collectionSelection:
+      maxCollections: 4
+      probeCandidateN: 50
+      candidatePoolPerCollection: 100
+      phraseBoost: 3.0
+    # The only embedder is local-hash@1 (256-dim feature hashing): its global
+    # rank-1s are the shortest chunk sharing any token. Left unweighted, the
+    # vector leg spends slots on short fragments and stub tables rather than
+    # on passages. Revisit when a real embedder is indexed. The collection-evidence leg carries the
+    # probe's ranking into the merge as a prior and needs collectionSelection
+    # above -- the validator warns without it.
+    fusion:
+      lexicalWeight: 1.0
+      vectorWeight: 0.3
+      collectionEvidenceWeight: 1.0
+      unselectedPoolWeight: 1.0
+    # NOT ported from history-revolution, deliberately: minimumShouldMatch and
+    # stopTermFraction relieve a scan cost a many-shard archival corpus has
+    # and this one does not, and both can only REMOVE candidates;
+    # contentDemotions targets an LOC-catalog marker that never occurs here.
+  models:
+    default: { provider: default, tier: capable }
+    tasks:
+      completion: { provider: default, tier: capable }
+      validation: { tier: fast }
+    allowOverrides: [default, example-anthropic, example-openai, example-openrouter]
+  completion:
+    promptTemplate: |
+      You are a threat-intelligence analyst reconciling multi-vendor
+      reporting.
+
+      Rules:
+      - Answer ONLY from the served reports and cite each report you use.
+      - ALIASES: vendors name the same adversary differently. Reconcile them
+        onto one actor and say which vendor designations you merged. Do NOT
+        merge two actors on a shared tool, a shared loader or a shared
+        target — that is the over-merge this corpus is built to catch.
+      - Write indicators in ONE canonical form (fanged URLs and domains,
+        uppercase CVE ids, lowercase hashes) so the same indicator from two
+        vendors reads as one.
+      - Carry each claim's confidence and its reporting vendor. Two vendors
+        asserting different attribution is a FINDING with both sides, not an
+        average.
+      - Distinguish observed telemetry from vendor assessment.
+      - If the reports do not answer the question, say so.
+
+      {context}
+
+      Question: {query}
+    # 20 hits x 1,000-character chunks is ~20,000 characters, plus ~60 per hit
+    # for the "[collection/chunk_id]" label. The engine default (16,000) would
+    # serve the model only the first sixteen while reporting all twenty.
+    contextCharBudget: 24000
+  steps:
+    - resolveSources: {}
+    - buildIndex: {}
+    - verify: {}
+    - cutover: { approval: required }
+    - retireOld: { keep_versions: 2 }

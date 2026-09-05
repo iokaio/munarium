@@ -1,0 +1,66 @@
+# sweep-v2 — evidence-required refutation and strictly provenance-bound
+# synthesis over the same data room as sweep-coverage.
+#
+# What this demonstrates: two applications over one collection differing only
+# in completion policy — every assertion bound to its provenance, and no
+# refutation admitted without evidence.
+#
+# Server mapping: same corpus, same single collection handle as
+# sweep-coverage (built once, two applications) — what differs is the
+# completion policy. This one binds every assertion to its provenance and
+# refuses to refute without evidence.
+#
+#   mmctl apply -f runbooks/shapes/dataroom-documents.yaml
+#   mmctl apply -f runbooks/applications/sweep-v2.yaml
+#   mmctl run sweep-v2 --watch
+apiVersion: munarium.ioka.io/v1
+kind: Runbook
+metadata: { name: sweep-v2, version: 1 }
+spec:
+  # Where this runbook's documents live. The blob path IS the ingest
+  # filename, so every collection binding below sits under this prefix —
+  # `mmctl runbook validate` errors if one does not.
+  sources:
+    container: sources
+    prefix: "northgate/"
+  collections:
+    # Same name, same level, same binding as sweep-coverage: the executor
+    # resolves the existing collection instead of creating a second index.
+    - name: northgate-dataroom
+      shape: dataroom-documents@1
+      accessLevel: 1
+      compartments: [diligence]
+      sources: { filenamePrefix: "northgate/" }
+  retrieval: { topK: 12, rrfK: 60, candidateN: 300 }
+  models:
+    default: { provider: default, tier: capable }
+    tasks:
+      completion: { provider: default, tier: capable }
+      validation: { tier: fast }
+    allowOverrides: [default]
+  completion:
+    promptTemplate: |
+      You are synthesizing data-room findings under a strict provenance rule.
+
+      Rules:
+      - Every assertion in your answer carries the document id it came from.
+        An assertion you cannot bind to served text does not appear.
+      - Name each finding's counterparty explicitly. A generic subject ("the
+        vendor", "the contract") is not an answer; resolve it from the
+        document or state that it cannot be resolved.
+      - To refute or downgrade a claim you must quote the evidence that
+        refutes it. Refutation without evidence fails closed — the claim
+        stands.
+      - Merging or summarizing must not drop a governing value. If two sources
+        give different figures, both survive into the answer with their dates.
+      - Say plainly when the context is insufficient.
+
+      {context}
+
+      Question: {query}
+  steps:
+    - resolveSources: {}
+    - buildIndex: {}
+    - verify: {}
+    - cutover: { approval: required }
+    - retireOld: { keep_versions: 2 }

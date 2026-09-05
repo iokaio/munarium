@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-store-objects"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "S3 / Azure Blob / GCS / local-filesystem SourceStore over the Apache Arrow object_store crate — one adapter, four backends, credentials from each cloud's ambient chain. Replaces the hand-rolled munarium-store-az."
+
+[dependencies]
+munarium-core = { path = "../munarium-core" }
+# For the ArtifactStore trait. The dependency points THIS way on purpose:
+# munarium-datastore must stay free of cloud SDKs and credential policy, so it
+# declares the trait and this crate satisfies it.
+munarium-datastore = { path = "../munarium-datastore" }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+object_store = { workspace = true }
+# object_store's cloud clients ride reqwest 0.13 (a separate line from the
+# workspace's 0.12), whose `rustls` feature would hard-wire aws-lc-rs and its
+# cmake requirement into the alpine musl build. `rustls-no-provider` +
+# `rustls/ring` keeps the whole workspace on the one crypto backend it
+# already links. If a future dependency ever enables rustls's aws-lc-rs
+# feature alongside this, rustls demands an explicit process-level provider
+# at runtime — treat that as a build-breaking event, not something to paper
+# over here.
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }
+tempfile = "3"

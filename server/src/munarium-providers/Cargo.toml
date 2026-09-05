@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-providers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "BYOK provider gateway: Anthropic (Messages), OpenAI (Chat + Embeddings, base-URL override covers Azure OpenAI/vLLM), OpenRouter (OpenAI dialect). Keys resolve through the SecretResolver seam at call time — never stored, never logged."
+
+[dependencies]
+munarium-core = { path = "../munarium-core" }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+reqwest = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+axum = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+

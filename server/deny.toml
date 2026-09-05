@@ -1,0 +1,159 @@
+# SPDX-License-Identifier: Apache-2.0
+# cargo-deny gate — the standing defense against the relicensing wave (architecture.md §11).
+# Any dependency that turns is replaced behind its seam.
+
+[licenses]
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "CDLA-Permissive-2.0",
+    "OpenSSL",  # ring's bundled license text; no openssl linkage exists in this workspace
+]
+
+# Workspace crates are listed as exceptions: the gate exists for THIRD-party
+# license drift, and first-party crates are checked by check_license.py.
+[[licenses.exceptions]]
+name = "munarium-core"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-proto"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-api-types"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-api-conv"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-store-mem"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-store-pg"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-retrieval-pg"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-retrieval"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-datastore"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-azure-auth"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-store-objects"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-extract"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-docintel-az"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-shapes"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-runbooks"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-authoring"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-providers"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-access"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-server"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-cli"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "mmp-conformance"
+allow = ["Apache-2.0"]
+
+[advisories]
+yanked = "deny"
+ignore = [
+    # rustls-pemfile is archived upstream (thin wrapper over rustls-pki-types);
+    # it reaches us transitively through tonic/reqwest TLS features. Not a
+    # vulnerability — re-evaluate when tonic/reqwest drop the dependency.
+    #
+    # `matrix/deny.toml` carries the SAME entry for the same reason: the two
+    # trees pin the same tonic on purpose. Whoever removes it here should look
+    # there too, or the gate goes green in one tree and red in the other for a
+    # reason nobody wrote down.
+    "RUSTSEC-2025-0134",
+    # ttf-parser is unmaintained, with no safe upgrade available. It reaches
+    # us through lopdf -> pdf-extract, which is how PDFs get a text layer.
+    #
+    # ACCEPTED RISK, stated plainly: this is an UNMAINTAINED advisory, not a
+    # known vulnerability — but the crate parses embedded fonts out of
+    # caller-uploaded PDFs, so it is untrusted input, and nobody upstream is
+    # watching it. Accepted because the alternative is no PDF support at all
+    # (every native engine — pdfium, poppler, mupdf — is excluded outright by
+    # the static-musl/distroless build), and because extraction runs at index
+    # time on already-stored bytes rather than in the request path.
+    #
+    # Re-evaluate when: pdf-extract/lopdf drop it, a maintained fork appears,
+    # or ANY vulnerability advisory lands against it — the last of which flips
+    # this from acceptable to blocking.
+    "RUSTSEC-2026-0192",
+    # `instant` is unmaintained. It arrives with the datastore tier through
+    # tantivy 0.22 -> measure_time 0.8 -> instant 0.1.13.
+    #
+    # Checked by READING the crate rather than inferring from the advisory
+    # title, which is the standard the tiberius-ng decision set. `instant` is a
+    # cfg-if shim whose entire purpose is giving wasm a `std::time::Instant`.
+    # On every target this workspace builds — the musl image included — it
+    # compiles to `src/native.rs`, which is four lines:
+    #
+    #     pub type Instant = std::time::Instant;
+    #     pub type SystemTime = std::time::SystemTime;
+    #
+    # and `measure_time` calls exactly one of them, `Instant::now()`, to time a
+    # block for a log line. There is no parsing, no untrusted input and no
+    # allocation: the unmaintained code we actually compile is a type alias.
+    #
+    # THERE IS A REAL FIX, and it is deliberately not taken here.
+    # `measure_time` 0.9 drops `instant` outright (its only dependency is
+    # `log`), and tantivy 0.24+ requires ^0.9 — so bumping tantivy removes
+    # this from the graph. tantivy 0.22 requires ^0.8, so no `cargo update`
+    # reaches it; it takes an engine bump. That bump invalidates measured
+    # numbers: the lexical-compat fixture beside munarium-datastore's tests records the analyzer oracle
+    # against 0.22 (46 strings, 16 agreeing, 30 differing on token
+    # classification), and the artifact identity vectors are pinned to what
+    # 0.22 produces. Re-measuring is future work for the datastore line, not
+    # something to smuggle in beside a licence exception.
+    #
+    # Revoke this ignore when: munarium-datastore moves to tantivy >= 0.24
+    # (which removes the crate and makes this entry dead), or ANY vulnerability
+    # advisory lands against `instant` — the last of which flips it from
+    # acceptable to blocking.
+    "RUSTSEC-2024-0384",
+]
+
+[bans]
+multiple-versions = "warn"
+# rustls-everywhere rule: openssl must never enter the graph
+deny = [
+    { crate = "openssl" },
+    { crate = "openssl-sys" },
+    { crate = "native-tls" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

@@ -1,0 +1,25 @@
+# A planner block that names no space.
+#
+# The space is what the source is SCOPED to: a question addressed to any other
+# space is refused, and with no space declared there is nothing to scope to.
+apiVersion: munarium.ioka.io/v1
+kind: DataSource
+metadata:
+  name: crm-genie-unscoped
+  version: 1
+spec:
+  adapter: databricks
+  connection:
+    host: adb-1234567890.7.azuredatabricks.net
+    warehouseId: abc123
+    catalog: main
+    schema: crm
+    allowHosts: [adb-1234567890.7.azuredatabricks.net]
+    genie:
+      spaceId: "  "
+      trustedAssets: [asset-open-pipeline]
+  credentialRef: matrix-databricks
+  egress:
+    allowHosts: [adb-1234567890.7.azuredatabricks.net]
+  authorization:
+    strategy: source_native

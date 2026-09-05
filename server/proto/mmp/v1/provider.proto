@@ -1,0 +1,88 @@
+// MMP v1 — Provider API. BYOK: the gateway speaks to LLM endpoints with the
+// TENANT's credentials, resolved through the secrets seam at call time. Keys
+// never appear in messages, the ledger, or config. Every call is recorded as
+// an invocation-provenance event (request hash, provider, model, tokens,
+// latency — never the key).
+syntax = "proto3";
+
+package mmp.v1;
+
+message ApplyProviderConfigRequest {
+  string yaml = 1; // kind: ProviderConfig (provider, endpoint, models, credentialRef, budgets)
+}
+message ApplyProviderConfigResponse {
+  string config_name = 1;
+}
+
+message ProviderHealthRequest {
+  string config_name = 1;
+}
+message ProviderHealthResponse {
+  bool healthy = 1;
+  string provider = 2;
+  string endpoint_fingerprint = 3;
+  string detail = 4; // key validity / reachability detail, never key material
+}
+
+message CompleteRequest {
+  // Config name, or the reserved name "default" to engage the default rule:
+  // anthropic first, openai second, openrouter third — the first family with
+  // a usable credential serves the request.
+  string config_name = 1;
+  // Explicit model id — any model the selected provider supports. Empty =
+  // tier default (when tier set) or the config's first complete model.
+  string model = 2;
+  string system = 3;
+  string prompt = 4;
+  uint32 max_tokens = 5;
+  double temperature = 6;
+  string tools_json = 7;
+  // When set, the invocation is recorded as a ledger event in this lineage
+  // and its id comes back as invocation_event_id. Empty = not recorded.
+  string version_id = 8;
+  // Provider family override (anthropic|openai|openrouter). Only honored
+  // with config_name "default". Empty = default-priority rule.
+  string provider = 9;
+  // Model tier: "fast" (lesser model), "capable", or "frontier" (top model).
+  // Ignored when model set.
+  string tier = 10;
+}
+message CompleteResponse {
+  string text = 1;
+  string stop_reason = 2;
+  uint64 input_tokens = 3;
+  uint64 output_tokens = 4;
+  string invocation_event_id = 5;
+  // The provider family and resolved model that served the request.
+  string provider = 6;
+  string model = 7;
+}
+
+message EmbedRequest {
+  // Config name, or the reserved name "default" (see CompleteRequest).
+  string config_name = 1;
+  string model = 2;
+  repeated string inputs = 3;
+  // When set, the invocation is recorded as a ledger event in this lineage.
+  string version_id = 4;
+  // Provider family override (anthropic|openai|openrouter); only honored
+  // with config_name "default".
+  string provider = 5;
+}
+message EmbedResponse {
+  message Vector { repeated float values = 1; }
+  repeated Vector vectors = 1;
+  uint32 dimensions = 2;
+  bool cache_hit = 3; // embedding calls are cached by request hash
+  string invocation_event_id = 4;
+  // The provider family and resolved model that served the request.
+  string provider = 5;
+  string model = 6;
+}
+
+service ProviderService {
+  rpc ApplyProviderConfig(ApplyProviderConfigRequest) returns (ApplyProviderConfigResponse);
+  rpc ProviderHealth(ProviderHealthRequest) returns (ProviderHealthResponse);
+  rpc Complete(CompleteRequest) returns (CompleteResponse);
+  rpc Embed(EmbedRequest) returns (EmbedResponse);
+}

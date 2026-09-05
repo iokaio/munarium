@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-client-conformance"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The seven MMP wire conformance scenarios (contract/conformance/SCENARIOS.md), written against the official munarium-client and run over both transports, plus per-plane and platform smokes — the proof that the client encodes the contract."
+
+[[bin]]
+name = "munarium-client-conformance"
+path = "src/main.rs"
+
+[dependencies]
+munarium-client = { path = "../munarium-client" }
+munarium-api-types = { workspace = true }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+futures-util = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+base64 = { workspace = true }

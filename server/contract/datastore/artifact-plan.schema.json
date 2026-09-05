@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://munarium.ioka.io/contract/datastore/artifact-plan.schema.json",
+  "title": "ArtifactBuildPlan — one physical realization of a logical version",
+  "description": "Everything the BuildSpec deliberately excludes: which engines, at which exact revisions, in which envelope format, with which physical parameters. Its SHA-256 under artifact@1 is `artifact_plan_sha256`, which is also the single-flight key for a build attempt together with (tenant, index_version_id). Changing anything here changes the artifact and never the logical version.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["plan_version", "envelope", "lexical", "vector", "records", "shaper"],
+  "properties": {
+    "plan_version": { "type": "integer", "const": 1 },
+
+    "envelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format_version", "feature_bits"],
+      "properties": {
+        "format_version": {
+          "description": "Munarium artifact envelope version. Major versions are not assumed readable by older binaries; minor versions may add optional files only when a feature bit makes the behaviour explicit.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "feature_bits": {
+          "description": "Sorted, deduplicated. A reader that does not recognise a REQUIRED feature refuses the artifact before opening any engine file.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+
+    "lexical": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["engine_id", "engine_revision", "positions"],
+      "properties": {
+        "engine_id": { "type": "string", "minLength": 1 },
+        "engine_revision": {
+          "description": "The exact upstream revision: a pinned semver or an immutable git rev. A floating range or a branch name is not a revision and is refused.",
+          "type": "string",
+          "minLength": 1
+        },
+        "positions": { "type": "boolean" },
+        "segments": { "type": ["integer", "null"], "minimum": 1 },
+        "compression": { "type": ["string", "null"] }
+      }
+    },
+
+    "vector": {
+      "description": "Null means the artifact has no vector leg, which is valid when the BuildSpec has no embedder. A plan must not declare a vector leg the spec cannot supply.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["engine_id", "engine_revision", "kind"],
+      "properties": {
+        "engine_id": { "type": "string", "minLength": 1 },
+        "engine_revision": { "type": "string", "minLength": 1 },
+        "kind": {
+          "description": "Exact is the correctness oracle and the small-index fast path; approximate requires the recall gate against it.",
+          "enum": ["exact", "approximate"]
+        },
+        "quantization": { "type": ["string", "null"] },
+        "graph": {
+          "type": ["object", "null"],
+          "additionalProperties": { "type": ["string", "integer", "boolean", "null"] }
+        },
+        "rescore_depth": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+
+    "records": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format"],
+      "properties": {
+        "format": { "type": "string", "minLength": 1 },
+        "compression": { "type": ["string", "null"] }
+      }
+    },
+
+    "range_map": {
+      "description": "Optional. Reserved in v1 so a later verified remote-range reader can fetch immutable blocks without a manifest-schema major bump. An artifact built without one remains whole-hydrate-only and can be rebuilt as a new physical artifact of the same logical version.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["block_bytes", "hash_algorithm"],
+      "properties": {
+        "block_bytes": { "type": "integer", "minimum": 1 },
+        "hash_algorithm": { "const": "sha256" }
+      }
+    },
+
+    "shaper": {
+      "description": "How the physical settings above were CHOSEN. Recording the decision inputs is what makes a build policy auditable rather than a story about what someone probably ran; settings must never be chosen from transient runtime load, and a plan that cannot say why it picked approximate vectors cannot be reviewed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy_version", "decisions"],
+      "properties": {
+        "policy_version": { "type": "integer", "minimum": 1 },
+        "decisions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["setting", "chosen", "because"],
+            "properties": {
+              "setting": { "type": "string", "minLength": 1 },
+              "chosen": { "type": ["string", "integer", "boolean", "null"] },
+              "because": { "type": "string", "minLength": 1 },
+              "threshold": { "type": ["string", "integer", "null"] },
+              "observed": { "type": ["string", "integer", "null"] }
+            }
+          }
+        }
+      }
+    }
+  }
+}

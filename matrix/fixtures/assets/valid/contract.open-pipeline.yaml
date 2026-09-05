@@ -1,0 +1,66 @@
+# A verified query contract. Its verifiedQuestions ARE its regression suite:
+# they run on apply, and again whenever the source's schema fingerprint moves.
+apiVersion: munarium.ioka.io/v1
+kind: QueryContract
+metadata:
+  name: open-pipeline-by-region
+  version: 3
+spec:
+  source: crm
+  description: >-
+    Open pipeline (stage is not Closed Won or Closed Lost), in USD, grouped by
+    region, as of a date. "Open" is defined here and nowhere else.
+  parameters:
+    as_of: { type: date, required: true }
+  statementByDialect:
+    postgres:
+      inline: >-
+        SELECT region, SUM(amount) AS pipeline_amount, COUNT(*) AS opportunity_count
+        FROM opportunities
+        WHERE stage <> 'Closed Won' AND stage <> 'Closed Lost' AND updated_at <= :as_of
+        GROUP BY region ORDER BY region
+  # What the statement reads. Separate from `result` because a statement reads
+  # SOURCE columns and returns RESULT columns: this one reads `amount` and
+  # returns `pipeline_amount`. Deriving the allowlist from `result` refused
+  # every aliased aggregate until 2026-08-29.
+  reads:
+    tables: [opportunities]
+    columns: [region, amount, stage, updated_at]
+  result:
+    columns:
+      region: { type: string, key: true }
+      pipeline_amount: { type: decimal, scale: 2, unit: USD, additivity: additive }
+      opportunity_count: { type: int64, additivity: additive }
+    columnOrder: [region, pipeline_amount, opportunity_count]
+    orderBy: [region]
+    derivations:
+      total_pipeline: { op: sum, over: pipeline_amount }
+  policy:
+    authorization: source_native
+    deniedColumns: [owner_email]
+  limits:
+    maxRows: 500
+    maxBytes: 1048576
+    timeoutMs: 6000
+  evidence:
+    retentionDays: 400
+    replayLevel: sealed_result
+  verifiedQuestions:
+    # ONE row, not three. The contract runs as its own principal, and the
+    # fixture's `matrix_reader` is row-level-secured to EMEA (`emea_only` in
+    # 02-crm-fixture.sql): a verified question is a statement about what THIS
+    # contract answers under THIS credential, not about the table. The sum is
+    # the exact figure the demo reports — 1,500,000.00 + 120,000.00 +
+    # 900,000.50 — because `updated_at <= :as_of` with a DATE parameter
+    # compares against midnight, so the 00:30 row on the 30th is out (the
+    # midnight-straddle trap), and the trailing zero is the decimal identity
+    # the whole evidence story rests on. `rows: 3` had been written against
+    # the whole table and never run: the verify route sealed under a literal
+    # tenant until 2026-08-29, so no verification had ever reached a server,
+    # and cycle 20 was the first to execute this question at all.
+    - question: "What is the open pipeline by region as of 2026-06-30?"
+      parameters: { as_of: "2026-06-30" }
+      expect:
+        rows: 1
+        invariants:
+          - { op: sum, over: pipeline_amount, equals: "2520000.50" }

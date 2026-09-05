@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-store-pg"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "PostgreSQL StorageBackend: partitioned append-only ledger, lineage_heads FOR UPDATE seq allocation, additive-only migrations, tenant-scoped handles."
+
+[dependencies]
+munarium-core = { path = "../munarium-core" }
+async-trait = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+# S-2.1: the evidence plane reads timestamps back (retention, grant expiry,
+# audit), which the ledger tables never needed to do. sqlx's chrono feature is
+# already enabled workspace-wide, so this adds no build cost.
+chrono = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+munarium-store-mem = { path = "../munarium-store-mem" }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros"] }

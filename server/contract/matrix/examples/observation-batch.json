@@ -1,0 +1,75 @@
+{
+  "contract_version": "0.1.0",
+  "mapping": "captable-holdings@1",
+  "batch_id": "obs-01a047000000000000000000000000d3",
+  "source_id": "captable",
+  "run_id": "run-01a047000000000000000000000000d4",
+  "sealed_evidence_id": "ev-01a047000000000000000000000000d5",
+  "observations": [
+    {
+      "entity_candidates": [
+        {
+          "subject": "shareholder.42",
+          "scope_path": "company.7.captable",
+          "confidence": 0.99,
+          "resolver": "terminology_alias"
+        }
+      ],
+      "property": "shares_outstanding",
+      "value": {
+        "type": "decimal",
+        "value": "125000",
+        "scale": 0
+      },
+      "valid_time": {
+        "from": "2026-04-01T00:00:00Z",
+        "to": null
+      },
+      "transaction_time": "2026-08-28T09:15:00Z",
+      "change_kind": "update",
+      "origin": {
+        "kind": "connector",
+        "source_id": "captable",
+        "mapping_version": "captable-holdings@1",
+        "row_key": "42|7",
+        "event_position": "0/1A2B3C4D",
+        "observed_at": "2026-08-28T09:15:00Z",
+        "evidence_id": "ev-01a047000000000000000000000000d5"
+      }
+    },
+    {
+      "entity_candidates": [
+        {
+          "subject": "shareholder.51",
+          "confidence": 0.62,
+          "resolver": "terminology_alias"
+        },
+        {
+          "subject": "shareholder.58",
+          "confidence": 0.61,
+          "resolver": "terminology_alias"
+        }
+      ],
+      "property": "share_class",
+      "value": {
+        "type": "string",
+        "value": "B"
+      },
+      "valid_time": {
+        "from": "2026-01-01T00:00:00Z",
+        "to": null
+      },
+      "transaction_time": "2026-08-28T09:15:00Z",
+      "change_kind": "snapshot",
+      "origin": {
+        "kind": "connector",
+        "source_id": "captable",
+        "mapping_version": "captable-holdings@1",
+        "row_key": "51|7",
+        "event_position": "0/1A2B3C51",
+        "observed_at": "2026-08-28T09:15:00Z",
+        "evidence_id": null
+      }
+    }
+  ]
+}

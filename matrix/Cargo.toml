@@ -1,0 +1,107 @@
+# SPDX-License-Identifier: Apache-2.0
+[workspace]
+resolver = "2"
+members = [
+    "src/munarium-matrix-types",
+    "src/munarium-matrix-core",
+    "src/munarium-matrix-adapter",
+    "src/munarium-matrix-adapter-landing",
+    "src/munarium-matrix-adapter-postgres",
+    "src/munarium-matrix-adapter-mysql",
+    "src/munarium-matrix-adapter-sqlserver",
+    "src/munarium-matrix-server-client",
+    "src/munarium-matrix-store",
+    "src/munarium-matrix-workers",
+    "src/munarium-matrix-server",
+    "src/munarium-matrix-client",
+    "src/munarium-matrix-cli",
+    "src/munarium-matrix-proto",
+    "conformance",
+]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/iokaio/munarium"
+
+[workspace.dependencies]
+# Pinned as a DIRECT dependency only so a binary can choose its crypto
+# provider explicitly. `ring`, matching what reqwest/hyper-rustls/tonic
+# already resolve to — see `munarium_matrix_adapter::install_crypto_provider`
+# for why the choice has to be made in code rather than left to features.
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+# --- workspace crates -------------------------------------------------------
+munarium-matrix-types = { path = "src/munarium-matrix-types" }
+munarium-matrix-core = { path = "src/munarium-matrix-core" }
+munarium-matrix-adapter = { path = "src/munarium-matrix-adapter" }
+munarium-matrix-adapter-landing = { path = "src/munarium-matrix-adapter-landing" }
+munarium-matrix-adapter-postgres = { path = "src/munarium-matrix-adapter-postgres" }
+munarium-matrix-adapter-mysql = { path = "src/munarium-matrix-adapter-mysql" }
+munarium-matrix-adapter-sqlserver = { path = "src/munarium-matrix-adapter-sqlserver" }
+munarium-matrix-server-client = { path = "src/munarium-matrix-server-client" }
+munarium-matrix-store = { path = "src/munarium-matrix-store" }
+munarium-matrix-workers = { path = "src/munarium-matrix-workers" }
+munarium-matrix-client = { path = "src/munarium-matrix-client" }
+munarium-matrix-proto = { path = "src/munarium-matrix-proto" }
+
+# --- async + web ------------------------------------------------------------
+# Versions track the server workspace so one machine builds both without two
+# copies of every transitive dependency.
+tokio = { version = "1", features = ["rt-multi-thread", "signal", "macros", "sync", "time"] }
+axum = "0.8"
+tower = { version = "0.5", features = ["timeout", "limit"] }
+tower-http = { version = "0.6", features = ["trace", "limit"] }
+# rustls ONLY — openssl is banned by deny.toml, as in the server workspace.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "http2"] }
+
+# --- grpc (rustls only, the server's versions) ------------------------------
+tonic = { version = "0.12", features = ["tls", "tls-roots"] }
+tonic-health = "0.12"
+tonic-reflection = "0.12"
+tonic-build = "0.12"
+prost = "0.13"
+prost-types = "0.13"
+protoc-bin-vendored = "3"
+tokio-stream = "0.1"
+
+# --- storage ----------------------------------------------------------------
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio", "tls-rustls", "postgres", "uuid", "json", "chrono", "migrate", "macros", "rust_decimal",
+] }
+object_store = { version = "0.11", default-features = false }
+
+# --- serialization + schema -------------------------------------------------
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"] }
+csv = "1"
+
+# --- typed values -----------------------------------------------------------
+rust_decimal = { version = "1", default-features = false, features = ["serde-str", "std"] }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
+
+# --- sql ---------------------------------------------------------------------
+sqlparser = "0.52"
+
+# --- glue -------------------------------------------------------------------
+async-trait = "0.1"
+sha2 = "0.10"
+hex = "0.4"
+base64 = "0.22"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+[profile.release]
+# The core image target is <= 30 MB, enforced by a CI size gate. `fat` rather
+# than the server's `thin`: with the adapters, tonic and the admin console
+# linked in, thin did not fit under the ceiling and fat does. It costs build
+# time, which the Dockerfile says out loud. A raised ceiling was the
+# alternative, and a ceiling that moves whenever it is reached is not a
+# ceiling.
+strip = true
+lto = "fat"
+codegen-units = 1

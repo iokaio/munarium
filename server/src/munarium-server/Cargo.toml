@@ -1,0 +1,70 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The munarium-server binary: REST :8080 + direct gRPC :50051 + ops :9090, one shared service layer, governance in the command path."
+
+[[bin]]
+name = "munarium-server"
+path = "src/main.rs"
+
+[features]
+# The approximate vector engine, forwarded down to munarium-datastore. Off by
+# default; the release image ships with it ON (see the Dockerfile's FEATURES
+# argument).
+vector-diskann = ["munarium-retrieval/vector-diskann"]
+
+[dependencies]
+munarium-core = { path = "../munarium-core" }
+munarium-store-mem = { path = "../munarium-store-mem" }
+munarium-store-pg = { path = "../munarium-store-pg" }
+munarium-store-objects = { path = "../munarium-store-objects" }
+# Opening an artifact to verify it, and the reader capability range. Server
+# talks to the datastore crate for READING an artifact only; building one goes
+# through munarium-retrieval, which owns the ordering.
+munarium-datastore = { path = "../munarium-datastore" }
+munarium-docintel-az = { path = "../munarium-docintel-az" }
+munarium-api-types = { path = "../munarium-api-types", features = ["proto"] }
+munarium-api-conv = { path = "../munarium-api-conv" }
+munarium-proto = { path = "../munarium-proto" }
+munarium-shapes = { path = "../munarium-shapes" }
+munarium-retrieval = { path = "../munarium-retrieval" }
+# Composition root only: AppState constructs PgRetrieval and PgSourceStore.
+# Every other server module talks to munarium-retrieval. The CI boundary check
+# is what keeps that true.
+munarium-retrieval-pg = { path = "../munarium-retrieval-pg" }
+munarium-providers = { path = "../munarium-providers" }
+munarium-runbooks = { path = "../munarium-runbooks" }
+munarium-authoring = { path = "../munarium-authoring" }
+munarium-access = { path = "../munarium-access" }
+# S-3.1: the Matrix evidence provider speaks REST across ground rule 1.
+# http2 is not in the workspace default feature set; the provider pools h2
+# connections, so it is requested here rather than widened for everyone.
+reqwest = { workspace = true, features = ["http2"] }
+uuid = { workspace = true }
+chrono = { workspace = true }
+base64 = { workspace = true }
+sqlx = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+tonic = { workspace = true }
+tonic-health = { workspace = true }
+tonic-reflection = { workspace = true }
+tonic-types = { workspace = true }
+prost = { workspace = true }
+bytes = { workspace = true }
+http-body = { workspace = true }
+serde_yaml = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+utoipa = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+async-trait = { workspace = true }

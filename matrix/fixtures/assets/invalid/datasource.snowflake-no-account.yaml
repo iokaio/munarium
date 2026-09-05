@@ -1,0 +1,11 @@
+# A Snowflake source with no account host. There is nothing to build a URL
+# from, and nothing for the egress allowlist to be checked against.
+apiVersion: munarium.ioka.io/v1
+kind: DataSource
+metadata: { name: crm-snowflake, version: 1 }
+spec:
+  adapter: snowflake
+  connection: { warehouse: MATRIX_XS, database: CRM, schema: PUBLIC }
+  credentialRef: matrix-crm-snowflake
+  egress: { allowHosts: [ab12345.eu-west-1.snowflakecomputing.com] }
+  authorization: { strategy: source_native }

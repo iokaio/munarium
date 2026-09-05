@@ -1,0 +1,24 @@
+# A Cube deployment as a semantic provider. Cube owns the metric
+# definitions; Matrix checks an ask against the DataView's closed lists, passes
+# the names across, and seals what comes back. There is no statement to compile
+# and no formula to copy.
+apiVersion: munarium.ioka.io/v1
+kind: DataSource
+metadata:
+  name: cube-metrics
+  version: 1
+spec:
+  adapter: cube
+  connection:
+    baseUrl: "http://cube:4000"
+  # Optional by design: a deployment may front Cube with a gateway that
+  # authorizes by network position. When declared it must resolve.
+  egress:
+    allowHosts: [cube]
+  authorization:
+    strategy: source_native
+  limits:
+    maxRows: 500
+    maxBytes: 1048576
+    statementTimeoutMs: 15000
+    budgetPerHour: 200

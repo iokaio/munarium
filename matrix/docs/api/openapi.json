@@ -1,0 +1,1489 @@
+{
+  "components": {
+    "schemas": {
+      "ApplyResponse": {
+        "properties": {
+          "asset_ref": {
+            "description": "`name@version`",
+            "type": "string"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/Finding"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "unchanged": {
+            "description": "True when this apply changed nothing (byte-identical re-apply).",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "asset_ref",
+          "kind",
+          "unchanged"
+        ],
+        "type": "object"
+      },
+      "AssetListResponse": {
+        "properties": {
+          "assets": {
+            "items": {
+              "$ref": "#/components/schemas/AssetSummary"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "assets"
+        ],
+        "type": "object"
+      },
+      "AssetSummary": {
+        "properties": {
+          "asset_ref": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "asset_ref",
+          "name",
+          "version",
+          "kind",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "ColumnInfo": {
+        "properties": {
+          "logical_type": {
+            "description": "The canon@1 type it maps to, or `None` when it maps to nothing (which\nis why the column cannot be used).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "nullable": {
+            "type": "boolean"
+          },
+          "source_type": {
+            "description": "The source's own type name, verbatim — before any mapping.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "source_type",
+          "nullable"
+        ],
+        "type": "object"
+      },
+      "Finding": {
+        "description": "A validation finding. `code` is the stable identity; the message is for a\nhuman and may be reworded without breaking a test.",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "path",
+          "message"
+        ],
+        "type": "object"
+      },
+      "GateHistory": {
+        "description": "`GET /v1/mappings/{name}/gate-history` — the promotion gates over time.\n\nExists because the owner confirmed the 0.95 identity-precision threshold\n**with monitoring**: a number nobody can watch is a number nobody can\nrevise on evidence.",
+        "properties": {
+          "mapping": {
+            "type": "string"
+          },
+          "min_identity_precision": {
+            "format": "double",
+            "type": "number"
+          },
+          "min_value_conformance": {
+            "format": "double",
+            "type": "number"
+          },
+          "passing": {
+            "description": "How many of `runs` would pass the current thresholds. A ratio far from\n0 or 1 is the signal that a threshold is doing real work; 1.0 over a\nlong series means it is not binding, and 0.0 means it is a wall.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "runs": {
+            "description": "Newest first.",
+            "items": {
+              "$ref": "#/components/schemas/GateHistoryEntry"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "mapping",
+          "min_identity_precision",
+          "min_value_conformance",
+          "runs",
+          "passing"
+        ],
+        "type": "object"
+      },
+      "GateHistoryEntry": {
+        "description": "One completed run's gate values, with the verdict the CURRENT thresholds\nwould give it.\n\n`would_pass` is computed against the thresholds in force right now, not the\nones in force when the run happened — which is the point. Lowering\n`MUNARIUM_MATRIX_PROMOTION_MIN_IDENTITY_PRECISION` and re-reading this\nseries shows exactly which past runs the change would have admitted, before\nanything is promoted under the new number.",
+        "properties": {
+          "ambiguous": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ended_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "identity_margin": {
+            "description": "Signed distance from the threshold. NEGATIVE means the run failed the\ngate; a small positive number is a near-miss worth knowing about, and is\ninvisible in a pass/fail column.",
+            "format": "double",
+            "type": "number"
+          },
+          "identity_precision": {
+            "format": "double",
+            "type": "number"
+          },
+          "nonconforming": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "observations": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "value_conformance": {
+            "format": "double",
+            "type": "number"
+          },
+          "value_margin": {
+            "format": "double",
+            "type": "number"
+          },
+          "would_pass": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "run_id",
+          "state",
+          "observations",
+          "ambiguous",
+          "nonconforming",
+          "identity_precision",
+          "value_conformance",
+          "identity_margin",
+          "value_margin",
+          "would_pass"
+        ],
+        "type": "object"
+      },
+      "HealthDataResponse": {
+        "properties": {
+          "healthy": {
+            "type": "boolean"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/ProbeResponse"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "healthy"
+        ],
+        "type": "object"
+      },
+      "IntrospectResponse": {
+        "description": "What `introspect` proved about the role, plus what it found in the schema.",
+        "properties": {
+          "draft_contract_yaml": {
+            "description": "A skeleton the operator edits, never applied automatically.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "posture": {
+            "$ref": "#/components/schemas/RolePostureReport"
+          },
+          "schema_fingerprint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "tables": {
+            "items": {
+              "$ref": "#/components/schemas/TableInfo"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "source",
+          "posture"
+        ],
+        "type": "object"
+      },
+      "JobAccepted": {
+        "description": "A queued job. Returned by the enqueue routes so a caller has something to\nwatch — a 202 with no id would leave an operator guessing.",
+        "properties": {
+          "accepted": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "jobs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "accepted",
+          "jobs",
+          "detail"
+        ],
+        "type": "object"
+      },
+      "JournalEntry": {
+        "description": "One journal row. Parameters and results are **redacted by default**; an\nexplicit reveal is itself journaled.",
+        "properties": {
+          "actor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "asset_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bytes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "duration_ms": {
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "evidence_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "redacted": {
+            "description": "True when parameters/results exist but are withheld.",
+            "type": "boolean"
+          },
+          "refusal_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rows": {
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "seal_ms": {
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_ms": {
+            "description": "For an `execute` row: the source's\nown statement window and the canonicalize+seal call. `duration_ms`\nminus both is Matrix's own share — bind, compile, budget, transport.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "tenant": {
+            "type": "string"
+          },
+          "via": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "tenant",
+          "outcome",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "JournalListResponse": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/JournalEntry"
+            },
+            "type": "array"
+          },
+          "next_before": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "entries"
+        ],
+        "type": "object"
+      },
+      "MappingRunResponse": {
+        "properties": {
+          "ambiguous": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "batch_evidence_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "discrepancies": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "findings_filed": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "mapping": {
+            "type": "string"
+          },
+          "observations": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "mapping",
+          "state"
+        ],
+        "type": "object"
+      },
+      "PlannerAskRequest": {
+        "description": "`POST /v1/datasources/{name}/planner/ask`.",
+        "properties": {
+          "mode": {
+            "description": "`assist` (default) or `evaluation`. Spelled rather than a boolean: the\ntwo modes differ in what they REFUSE, and a flag would leave a reader\nguessing which way it points.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "question": {
+            "description": "The question, in words.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "type": "object"
+      },
+      "PlannerAskResponse": {
+        "description": "The answer. Deliberately NOT an `EvidenceBlock`: nothing here is sealed,\nbecause nothing here was executed. An admitted proposal is run through a\ncontract, and it is that execution that produces citable evidence.",
+        "properties": {
+          "admitted_sql": {
+            "description": "Present only when the allowlist admitted the proposal. Run it through a\ncontract; this route never executes.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mode": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "pin": {
+            "description": "The pin: space, conversation, message, attachment, statement, query\nhash — and `pinned`, which is false everywhere today."
+          },
+          "plan_pinned": {
+            "description": "Whether the PLAN is reproducible. It is not; the field exists so a\nreader is told rather than left to assume.",
+            "type": "boolean"
+          },
+          "proposed_sql": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prose": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "refusal": {},
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "mode",
+          "pin",
+          "plan_pinned",
+          "note"
+        ],
+        "type": "object"
+      },
+      "PostureCheck": {
+        "properties": {
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "observed": {
+            "type": "boolean"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "required": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "required",
+          "observed",
+          "ok"
+        ],
+        "type": "object"
+      },
+      "ProbeResponse": {
+        "properties": {
+          "breaker": {
+            "description": "Circuit-breaker state at probe time: closed | open | half_open.",
+            "type": "string"
+          },
+          "detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "latency_ms": {
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "reachable": {
+            "type": "boolean"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "reachable",
+          "breaker"
+        ],
+        "type": "object"
+      },
+      "PromotionGates": {
+        "properties": {
+          "identity_precision": {
+            "format": "double",
+            "type": "number"
+          },
+          "min_identity_precision": {
+            "format": "double",
+            "type": "number"
+          },
+          "min_value_conformance": {
+            "format": "double",
+            "type": "number"
+          },
+          "observations": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "run_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "value_conformance": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "identity_precision",
+          "value_conformance",
+          "min_identity_precision",
+          "min_value_conformance",
+          "observations"
+        ],
+        "type": "object"
+      },
+      "PromotionStatus": {
+        "properties": {
+          "authority_scopes": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "decision_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "gates": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PromotionGates"
+              }
+            ]
+          },
+          "latest_run": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MappingRun",
+                "description": "The most recent reconcile pass, whatever its state — so an operator who\njust queued a pass can see whether it refused without reading the\njournal separately."
+              }
+            ]
+          },
+          "mapping": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "promoted": {
+            "type": "boolean"
+          },
+          "promoted_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "promoted_version": {
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "mapping",
+          "mode",
+          "promoted",
+          "authority_scopes"
+        ],
+        "type": "object"
+      },
+      "RolePostureReport": {
+        "description": "Each check is reported individually. A single boolean would hide *which*\nrequirement failed, and \"your role is wrong\" is not an actionable message.",
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/PostureCheck"
+            },
+            "type": "array"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "principal": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "principal"
+        ],
+        "type": "object"
+      },
+      "RollbackResponse": {
+        "properties": {
+          "already_rolled_back": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "decision_id": {
+            "type": "string"
+          },
+          "disputed": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "mapping": {
+            "type": "string"
+          },
+          "skipped_no_prior": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "superseded": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "mapping",
+          "decision_id",
+          "superseded",
+          "skipped_no_prior",
+          "already_rolled_back",
+          "disputed"
+        ],
+        "type": "object"
+      },
+      "SyncRunResponse": {
+        "properties": {
+          "count_evidence_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "documents_skipped": {
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "documents_uploaded": {
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "ended_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entity": {
+            "type": "string"
+          },
+          "records_excluded": {
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "records_read": {
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "records_rendered": {
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "refusal": {},
+          "run_id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "watermark": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "run_id",
+          "source",
+          "entity",
+          "state",
+          "started_at"
+        ],
+        "type": "object"
+      },
+      "TableInfo": {
+        "properties": {
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/ColumnInfo"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "row_security_enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "ValidateResponse": {
+        "properties": {
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/Finding"
+            },
+            "type": "array"
+          },
+          "valid": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "valid"
+        ],
+        "type": "object"
+      },
+      "VerifyResponse": {
+        "properties": {
+          "contract": {
+            "type": "string"
+          },
+          "failed": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fingerprint": {
+            "description": "Metric views only: the fingerprint of the definition the questions\nran under. Recorded by the server; what a later execute is held to.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "passed": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/VerifiedQuestionResult"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "contract",
+          "passed",
+          "failed"
+        ],
+        "type": "object"
+      },
+      "VersionResponse": {
+        "properties": {
+          "contract_version": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "server_compatibility": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "server_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_server_version": {
+            "description": "The server version this build is pinned against, and whether the live\nserver matches it.",
+            "type": "string"
+          },
+          "uptime_seconds": {
+            "description": "Seconds since this process started. The first thing worth knowing when\na deployment behaves as though it restarted.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "contract_version",
+          "role",
+          "target_server_version"
+        ],
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "The structured-evidence plane. Registers formal data sources, materializes governed record collections, executes verified query contracts, and seals typed evidence into munarium-server. The cross-tree contract with the server is matrix/contract/.",
+    "title": "munarium-matrix",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/docs": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "html"
+          }
+        },
+        "security": [],
+        "summary": "Human landing page"
+      }
+    },
+    "/healthdata": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "sources"
+          }
+        },
+        "summary": "Per-source health (control role)"
+      }
+    },
+    "/healthz": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "alive"
+          }
+        },
+        "security": [],
+        "summary": "Liveness"
+      }
+    },
+    "/mcp": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "a JSON-RPC response; a refusal rides it as a tool error"
+          }
+        },
+        "summary": "MCP (JSON-RPC 2.0): initialize, ping, tools/list, tools/call — pre-declared tools only, no free SQL"
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "spec"
+          }
+        },
+        "security": [],
+        "summary": "This document"
+      }
+    },
+    "/readyz": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "ready"
+          },
+          "503": {
+            "description": "not ready or draining"
+          }
+        },
+        "security": [],
+        "summary": "Readiness (store probe; 503 while draining)"
+      }
+    },
+    "/v1/assets": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "applied"
+          },
+          "422": {
+            "description": "validation findings"
+          }
+        },
+        "summary": "Apply any asset kind (YAML; kind sniffed by parsing)"
+      }
+    },
+    "/v1/assets/validate": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "findings"
+          }
+        },
+        "summary": "Validate without applying — the same validators mxctl uses"
+      }
+    },
+    "/v1/contracts": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "assets"
+          }
+        },
+        "summary": "List query contracts"
+      },
+      "post": {
+        "responses": {
+          "200": {
+            "description": "applied"
+          }
+        },
+        "summary": "Apply a QueryContract"
+      }
+    },
+    "/v1/contracts/{name}": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "yaml"
+          }
+        },
+        "summary": "The applied YAML, verbatim"
+      }
+    },
+    "/v1/contracts/{name}/execute": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "evidence block"
+          },
+          "403": {
+            "description": "the session dominates no authorization class"
+          },
+          "422": {
+            "description": "not covered: undeclared parameter, dialect or operation"
+          },
+          "429": {
+            "description": "budget exhausted"
+          },
+          "503": {
+            "description": "source unavailable"
+          }
+        },
+        "summary": "Execute a verified query contract against a QueryIntent (query role). Returns an EvidenceBlock, or a typed Refusal as problem+json."
+      }
+    },
+    "/v1/contracts/{name}/verify": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "per-question outcomes; `failed` is non-zero when any moved"
+          }
+        },
+        "summary": "Run the contract’s verified questions — its regression suite (query role)"
+      }
+    },
+    "/v1/datasources": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "assets"
+          }
+        },
+        "summary": "List data sources"
+      },
+      "post": {
+        "responses": {
+          "200": {
+            "description": "applied"
+          }
+        },
+        "summary": "Apply a DataSource"
+      }
+    },
+    "/v1/datasources/{name}": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "yaml"
+          },
+          "404": {
+            "description": "unknown"
+          }
+        },
+        "summary": "The applied YAML, verbatim"
+      }
+    },
+    "/v1/datasources/{name}/introspect": {
+      "post": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntrospectResponse"
+                }
+              }
+            },
+            "description": "posture and schema"
+          },
+          "403": {
+            "description": "the role posture is not permitted"
+          }
+        },
+        "summary": "Prove the role posture and read the schema (rw). Refuses a superuser, owner, or DML-holding role."
+      }
+    },
+    "/v1/datasources/{name}/planner/ask": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "the proposal, its pin, and whether the plan is pinned"
+          },
+          "422": {
+            "description": "no planner surface, or nothing to admit"
+          }
+        },
+        "summary": "Ask a conversational planner (Genie) a question; assist returns admitted SQL to run through a contract, evaluation records and admits nothing"
+      }
+    },
+    "/v1/datasources/{name}/probe": {
+      "post": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProbeResponse"
+                }
+              }
+            },
+            "description": "probe result"
+          },
+          "404": {
+            "description": "no such source"
+          }
+        },
+        "summary": "Probe a source's reachability now (rw). A refusal is an ANSWER — reachable:false with a typed reason, not a 5xx."
+      }
+    },
+    "/v1/datasources/{name}/sync": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "queued job ids"
+          },
+          "422": {
+            "description": "the source declares no sync block"
+          }
+        },
+        "summary": "Enqueue a sync run, one job per authorization class (control role)"
+      }
+    },
+    "/v1/dataviews": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "assets"
+          }
+        },
+        "summary": "List native data views"
+      },
+      "post": {
+        "responses": {
+          "200": {
+            "description": "applied"
+          }
+        },
+        "summary": "Apply a DataView"
+      }
+    },
+    "/v1/dataviews/{name}": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "yaml"
+          }
+        },
+        "summary": "The applied YAML, verbatim"
+      }
+    },
+    "/v1/dataviews/{name}/execute": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "evidence block"
+          },
+          "422": {
+            "description": "metric_not_covered, or metric_view_changed / no passing verification on record"
+          },
+          "429": {
+            "description": "budget exhausted"
+          },
+          "503": {
+            "description": "source unavailable"
+          }
+        },
+        "summary": "Execute a `kind: semantic` QueryIntent against a native data view (query role): the declared aggregates over one fact table, gated on the table definition’s verified fingerprint."
+      }
+    },
+    "/v1/dataviews/{name}/verify": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "per-question outcomes plus `fingerprint`"
+          }
+        },
+        "summary": "Run the data view’s verified questions and record the table definition’s fingerprint (rw)"
+      }
+    },
+    "/v1/journal": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "entries"
+          }
+        },
+        "summary": "The journal (mgmt role; redacted by default)"
+      }
+    },
+    "/v1/mappings": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "assets"
+          }
+        },
+        "summary": "List claim mappings"
+      },
+      "post": {
+        "responses": {
+          "200": {
+            "description": "applied"
+          }
+        },
+        "summary": "Apply a ClaimMapping"
+      }
+    },
+    "/v1/mappings/{name}": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "yaml"
+          }
+        },
+        "summary": "The applied YAML, verbatim"
+      }
+    },
+    "/v1/mappings/{name}/demote": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "demoted"
+          },
+          "422": {
+            "description": "no active promotion"
+          }
+        },
+        "summary": "Stop a mapping writing canon, effective on the next poll (control role, rw)"
+      }
+    },
+    "/v1/mappings/{name}/gate-history": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GateHistory"
+                }
+              }
+            },
+            "description": "gate history"
+          }
+        },
+        "summary": "Gate values per run over time, against the CURRENT thresholds (control role)."
+      }
+    },
+    "/v1/mappings/{name}/promote": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "promoted"
+          },
+          "409": {
+            "description": "already promoted"
+          },
+          "422": {
+            "description": "a gate did not clear; the refusal names it and the numbers"
+          }
+        },
+        "summary": "Promote a mapping to authoritative under a recorded decision; every gate is checked here (control role, rw)"
+      }
+    },
+    "/v1/mappings/{name}/promotion": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "status"
+          }
+        },
+        "summary": "Where a mapping stands against the promotion gates (control role)"
+      }
+    },
+    "/v1/mappings/{name}/rollback": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "counts"
+          }
+        },
+        "summary": "Supersede every claim the mapping proposed with its prior value, under a decision; append-only (control role, rw)"
+      }
+    },
+    "/v1/mappings/{name}/run": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "queued job id"
+          }
+        },
+        "summary": "Enqueue a reconcile pass (control role)"
+      }
+    },
+    "/v1/metricviews": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "assets"
+          }
+        },
+        "summary": "List metric-view overlays"
+      },
+      "post": {
+        "responses": {
+          "200": {
+            "description": "applied"
+          }
+        },
+        "summary": "Apply a MetricView"
+      }
+    },
+    "/v1/metricviews/{name}": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "yaml"
+          }
+        },
+        "summary": "The applied YAML, verbatim"
+      }
+    },
+    "/v1/metricviews/{name}/execute": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "evidence block"
+          },
+          "403": {
+            "description": "the session dominates no authorization class"
+          },
+          "422": {
+            "description": "metric_not_covered, or metric_view_changed / no passing verification on record"
+          },
+          "429": {
+            "description": "budget exhausted"
+          },
+          "503": {
+            "description": "source unavailable"
+          }
+        },
+        "summary": "Execute a `kind: semantic` QueryIntent against a metric view (query role): MEASURE() SQL compiled from the asset’s closed lists, gated on the fingerprint the last passing verify recorded. Returns an EvidenceBlock, or a typed Refusal as problem+json."
+      }
+    },
+    "/v1/metricviews/{name}/verify": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "per-question outcomes plus `fingerprint`; `failed` is non-zero when any moved"
+          }
+        },
+        "summary": "Run the metric view’s verified questions under the definition the source reports now, and record that definition’s fingerprint (rw)"
+      }
+    },
+    "/version": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "version"
+          }
+        },
+        "security": [],
+        "summary": "Build, role and contract version"
+      }
+    }
+  },
+  "security": [
+    {
+      "bearer": []
+    }
+  ],
+  "servers": [
+    {
+      "url": "http://localhost:8180"
+    }
+  ]
+}

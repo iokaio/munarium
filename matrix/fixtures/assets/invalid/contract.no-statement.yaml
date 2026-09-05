@@ -1,0 +1,10 @@
+apiVersion: munarium.ioka.io/v1
+kind: QueryContract
+metadata: { name: nostatement, version: 1 }
+spec:
+  source: crm
+  statementByDialect: {}
+  result:
+    columns:
+      region: { type: string, key: true }
+    columnOrder: [region]

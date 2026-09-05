@@ -1,0 +1,20 @@
+-- A database for the compose-launched munarium-server (the COMPOSE tier's
+-- test server, plan §18.2).
+--
+-- Why this exists: Matrix's `MockServer` accepted request shapes the real
+-- server rejects, and the divergence stayed invisible through 231 passing
+-- offline tests until someone pointed Matrix at a real 0.4.0 server by hand.
+-- It cost four defects — `claim_id` vs `id`, a missing `X-Munarium-Uid`, a
+-- mode-C body posting `{"batch": ...}` where the contract says
+-- `{"manifest": ...}`, and a manifest the server wrapped that the contract
+-- says it returns bare.
+--
+-- A test double is always a *claim* about a peer. This database is what lets
+-- CI check the claim on every push, for $0, instead of discovering it in an
+-- Azure cycle that costs money and runs once a phase.
+--
+-- Separate database, same server: the server owns its own migrations and its
+-- own `public` schema, and `matrix_owner` is deliberately denied `public` in
+-- 01-roles-and-schema.sql. Putting both in one database would have the server
+-- fighting a role posture that exists to be restrictive.
+CREATE DATABASE munarium;

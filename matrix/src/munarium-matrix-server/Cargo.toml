@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-matrix-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+# Published so an out-of-tree build (Munarium Matrix Enterprise, or a
+# third-party adapter host) can depend on this crate and register its adapters
+# through `adapters::AdapterRegistry` rather than fork it.
+publish = true
+description = "The munarium-matrix binary: REST :8180, ops :9190, role-selected workers."
+
+[[bin]]
+name = "munarium-matrix"
+path = "src/main.rs"
+
+[dependencies]
+munarium-matrix-core = { workspace = true }
+munarium-matrix-types = { workspace = true }
+munarium-matrix-adapter = { workspace = true }
+munarium-matrix-adapter-landing = { workspace = true }
+munarium-matrix-adapter-postgres = { workspace = true }
+munarium-matrix-adapter-mysql = { workspace = true }
+munarium-matrix-adapter-sqlserver = { workspace = true }
+munarium-matrix-store = { workspace = true }
+munarium-matrix-server-client = { workspace = true }
+munarium-matrix-workers = { workspace = true }
+munarium-matrix-proto = { workspace = true }
+axum = { workspace = true }
+tonic = { workspace = true }
+tonic-health = { workspace = true }
+tonic-reflection = { workspace = true }
+tokio-stream = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+utoipa = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+async-trait = { workspace = true }
+
+[dev-dependencies]
+tower = { workspace = true, features = ["util"] }

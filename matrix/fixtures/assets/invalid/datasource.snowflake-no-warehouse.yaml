@@ -1,0 +1,15 @@
+# A Snowflake source with no warehouse. Snowflake runs statements on compute it
+# has to be told to use; every execute would fail at the API, so the asset is
+# refused rather than applied and discovered later.
+apiVersion: munarium.ioka.io/v1
+kind: DataSource
+metadata: { name: crm-snowflake, version: 1 }
+spec:
+  adapter: snowflake
+  connection:
+    account: ab12345.eu-west-1.snowflakecomputing.com
+    database: CRM
+    schema: PUBLIC
+  credentialRef: matrix-crm-snowflake
+  egress: { allowHosts: [ab12345.eu-west-1.snowflakecomputing.com] }
+  authorization: { strategy: source_native }

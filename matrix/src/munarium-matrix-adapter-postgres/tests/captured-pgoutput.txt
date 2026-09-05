@@ -1,0 +1,40 @@
+# Captured from a REAL PostgreSQL 16, 2026-08-30.
+#
+# These are the exact bytes `pg_logical_slot_peek_binary_changes(..., 'pgoutput')`
+# returned for an INSERT, an UPDATE, two DELETEs and a NULL-bearing INSERT on a
+# table published as:
+#
+#   CREATE PUBLICATION emea_pub FOR TABLE crm.opportunities (id, name, amount, region)
+#     WHERE (region = 'EMEA');
+#   CREATE UNIQUE INDEX opp_rid ON crm.opportunities (id, region);
+#   ALTER TABLE crm.opportunities REPLICA IDENTITY USING INDEX opp_rid;
+#
+# They are captured rather than constructed, because a decoder tested against
+# its own author's idea of a protocol tests the author. Three things in here
+# were measured and are not obvious from the documentation:
+#
+#   * an UPDATE to a row the publication's WHERE excludes produces NOTHING —
+#     the engine applies the filter during decoding, which is what makes this
+#     path able to carry a policy at all;
+#   * the withheld column `secret` appears NOWHERE, not even in the Relation
+#     message, because the publication's column list governs the whole stream;
+#   * `900000.50` arrives as the TEXT `900000.50` (proto v1 sends values as
+#     text), so the exact decimal survives with no float anywhere near it.
+#
+# Format: <lsn>|<hex of one message>
+0/1565A78|420000000001565ac80002fd3b75bae22d000002f8
+0/1565A78|520000400163726d006f70706f7274756e6974696573006900040169640000000014ffffffff006e616d650000000019ffffffff00616d6f756e7400000006a40012000601726567696f6e0000000019ffffffff
+0/1565A78|44000040014b0004740000000233306e6e7400000004454d4541
+0/1565AF8|43000000000001565ac80000000001565af80002fd3b75bae22d
+0/1565AF8|420000000001565bd80002fd3b75baef3b000002f9
+0/1565AF8|49000040014e00047400000002333074000000054b6170706174000000093930303030302e35307400000004454d4541
+0/1565C08|43000000000001565bd80000000001565c080002fd3b75baef3b
+0/1565C08|420000000001565c700002fd3b75baf48e000002fa
+0/1565C08|55000040014e00047400000002333074000000054b6170706174000000093930303030302e37357400000004454d4541
+0/1565CA0|43000000000001565c700000000001565ca00002fd3b75baf48e
+0/1565CA0|420000000001565cf00002fd3b75baf888000002fb
+0/1565CA0|44000040014b0004740000000233306e6e7400000004454d4541
+0/1565D20|43000000000001565cf00000000001565d200002fd3b75baf888
+0/1565DB8|420000000001565e900002fd3b75bb0040000002fd
+0/1565DB8|49000040014e00047400000002333174000000064c616d6264616e7400000004454d4541
+0/1565EC0|43000000000001565e900000000001565ec00002fd3b75bb0040

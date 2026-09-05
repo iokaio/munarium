@@ -1,0 +1,14 @@
+# A Cube source declaring a sync: a semantic provider has no tables to
+# materialize, and the adapter refuses mode A outright.
+apiVersion: munarium.ioka.io/v1
+kind: DataSource
+metadata: { name: metrics, version: 1 }
+spec:
+  adapter: cube
+  connection: { baseUrl: "http://cube:4000" }
+  egress: { allowHosts: [cube] }
+  authorization: { strategy: source_native }
+  sync:
+    mode: snapshot
+    entity: { table: orders, key: [id] }
+    projection: [id]

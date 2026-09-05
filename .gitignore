@@ -1,0 +1,153 @@
+# Munarium — what this repository does not track.
+#
+# One section per component, because the reasons are specific and worth keeping.
+
+# ---------------------------------------------------------------- shared ---
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+
+# Build output and tool residue wherever a toolchain leaves it. None of these
+# names is a source directory in this tree (Rust `src/bin/` is not matched).
+**/target/
+**/__pycache__/
+**/*.py[cod]
+**/.venv/
+**/venv/
+**/*.egg-info/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/node_modules/
+**/.gradle/
+clients/*/build/
+clients/*/bin/
+clients/*/obj/
+clients/*/src/*/bin/
+clients/*/src/*/obj/
+clients/*/tests/*/bin/
+clients/*/tests/*/obj/
+
+
+# ----------------------------------------------------------- server/ ---
+server/target/
+server/.env
+server/*.local.toml
+server/deploy/terraform/**/.terraform/
+server/deploy/terraform/**/*.tfstate*
+server/deploy/terraform/**/*.tfplan
+# `*.tfplan` does NOT match an extensionless `terraform plan -out=tfplan`, and
+# a suffixed name (`tfplan.datastore`) matches neither. A plan file embeds the
+# FULL tfstate, generated passwords included, so every spelling is covered.
+server/deploy/terraform/**/tfplan*
+server/deploy/terraform/**/.terraform.lock.hcl
+server/deploy/terraform/**/*.tfvars
+!server/deploy/terraform/**/example.tfvars
+
+# Python residue from the tree's own stdlib tools — check_license.py,
+# tools/third_party_notices.py, contract/mmp/publish.py, docs/route-index.py.
+server/__pycache__/
+server/*.py[cod]
+server/.venv/
+server/venv/
+
+# Local run artifacts: a database dump, a saved SBOM, a captured gate log. The
+# notices file itself is COMMITTED; this is the scratch beside it.
+server/*.sbom.json
+server/*.cdx.json
+server/scratch/
+
+# Editors and operating systems. Committed editor settings would impose one
+# person's toolchain on every contributor; per-clone settings are theirs.
+server/.vscode/
+server/.idea/
+server/*.swp
+server/.DS_Store
+server/Thumbs.db
+
+# ----------------------------------------------------------- matrix/ ---
+matrix/target/
+matrix/*.tfstate
+matrix/*.tfstate.*
+matrix/.terraform/
+matrix/tfplan
+matrix/.mxtest-current.json
+# Conformance results files are committed (they are small and are the
+# evidence), never gitignored. Run transcripts under artifacts/ are not.
+matrix/artifacts/
+
+# Python residue from the tree's own stdlib tools — check_license.py,
+# scripts/third_party_notices.py, scripts/boundaries.py, scripts/doclint.py,
+# contract/publish.py.
+matrix/__pycache__/
+matrix/*.py[cod]
+matrix/.venv/
+matrix/venv/
+
+# Local run artifacts: a saved SBOM, a captured gate log. THIRD_PARTY_NOTICES.md
+# itself is COMMITTED; this is the scratch beside it.
+matrix/*.sbom.json
+matrix/*.cdx.json
+matrix/scratch/
+
+# Editors and operating systems. Committed editor settings would impose one
+# person's toolchain on every contributor; per-clone settings are theirs.
+matrix/.vscode/
+matrix/.idea/
+matrix/*.swp
+matrix/.DS_Store
+matrix/Thumbs.db
+
+# ----------------------------------------------------------- clients/ ---
+# The Munarium client libraries: several language trees, so the rules are the
+# union of what those toolchains leave behind.
+#
+# Each language directory keeps its own .gitignore for what only it produces
+# (dotnet/, java/, python/); this file is the cross-cutting set.
+
+# Rust: cargo build output. Cargo.lock IS committed — the conformance runner is
+# an application and its resolved set is part of what CI proves.
+clients/target/
+
+# Python: virtual environments, caches, build output. The generated protobuf
+# stubs under python/src/munarium_client/_proto/ are COMMITTED and drift-checked.
+clients/__pycache__/
+clients/*.py[cod]
+clients/.venv/
+clients/venv/
+clients/*.egg-info/
+clients/dist/
+clients/build/
+clients/.mypy_cache/
+clients/.ruff_cache/
+clients/.pytest_cache/
+
+# .NET and Java build output (also covered by dotnet/.gitignore and
+# java/.gitignore; kept here so a build from the repository root is clean).
+clients/bin/
+clients/obj/
+clients/*.user
+clients/.gradle/
+
+# Local run artifacts: a saved SBOM, a packed wheel or nupkg under test.
+# THIRD_PARTY_NOTICES.md itself is COMMITTED.
+clients/*.sbom.json
+clients/*.cdx.json
+clients/*.nupkg
+clients/*.whl
+clients/scratch/
+
+# Editors and operating systems. Committed editor settings would impose one
+# maintainer's toolchain on every contributor.
+clients/.vscode/
+clients/.idea/
+clients/*.swp
+clients/.DS_Store
+clients/Thumbs.db
+
+# The release-time copy of server/proto that cargo package needs inside the
+# crate; the normative protos stay at server/proto and this must never land.
+server/src/munarium-proto/proto/

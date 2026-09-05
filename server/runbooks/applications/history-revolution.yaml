@@ -1,0 +1,431 @@
+# history-revolution — a large public archival corpus as one retrieval
+# application.
+#
+# What this demonstrates: sharding a large corpus into many collections
+# balanced by BYTES rather than by document count, with stable hash-based
+# assignment. Index-build cost tracks chunks, and bytes predict chunks far
+# better than document counts do — a collection of long documents and one of
+# short documents can differ by an order of magnitude in bytes per document.
+#
+# Server mapping (version 2): five semantic groups survive as path
+# *directories* (founders / narrative / printed / maps / newspapers), and
+# within them the corpus is sharded into 58 collections balanced by BYTES at
+# ~10 MB each. Sharding is hash-based on the file's basename
+# (sha256(basename) % shards), so it is stable across re-runs. Document bytes
+# are untouched — this is a blob-path concern only.
+#
+# The collections list below was GENERATED from a shard table (group, shard
+# count, sha256(basename) % shards). Whatever uploader you write must agree
+# with these bindings exactly, or documents land in blob and bind to nothing.
+#
+# All collections are level 0 — this is public-domain archival material and
+# there is no clearance story to invent. `mmctl runbook validate` will
+# emit the INFO finding `collections.uniform-access` for exactly that
+# reason; it is correct and expected here.
+#
+#   mmctl apply -f runbooks/shapes/archival-documents.yaml
+#   mmctl apply -f runbooks/applications/history-revolution.yaml
+#   mmctl run history-revolution --watch
+apiVersion: munarium.ioka.io/v1
+kind: Runbook
+metadata: { name: history-revolution, version: 2 }
+spec:
+  # Where this runbook's documents live. The blob path IS the ingest
+  # filename, so every collection binding below sits under this prefix —
+  # `mmctl runbook validate` errors if one does not.
+  sources:
+    container: sources
+    prefix: "rev/"
+  # Why this runbook cannot use the default:
+  # only `cutover` can pause a run, so under `stepMajor` the FIRST request
+  # has to build EVERY collection before reaching a gate. At 530 MB that
+  # request cannot finish — the local rehearsal died at the client timeout
+  # and wedged its step. `collectionMajor` walks one collection through all
+  # five steps before starting the next, so each request builds exactly one
+  # collection and the approval gates chunk the load.
+  execution: { order: collectionMajor }
+  collections:
+    # founders/gw <- gw (4 shard(s))
+    - name: loc-founders-gw-b0
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/founders/gw/b0/" }
+    - name: loc-founders-gw-b1
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/founders/gw/b1/" }
+    - name: loc-founders-gw-b2
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/founders/gw/b2/" }
+    - name: loc-founders-gw-b3
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/founders/gw/b3/" }
+    # founders/jefferson <- jefferson (1 shard(s))
+    - name: loc-founders-jefferson
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/founders/jefferson/" }
+    # founders/misc <- hamilton, franklin, madison (1 shard(s))
+    - name: loc-founders-misc
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/founders/misc/" }
+    # narrative/amnotes <- amnotes (15 shard(s))
+    - name: loc-narrative-amnotes-b0
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/narrative/amnotes/b0/" }
+    - name: loc-narrative-amnotes-b1
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/narrative/amnotes/b1/" }
+    - name: loc-narrative-amnotes-b2
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/narrative/amnotes/b2/" }
+    - name: loc-narrative-amnotes-b3
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/narrative/amnotes/b3/" }
+    - name: loc-narrative-amnotes-b4
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/narrative/amnotes/b4/" }
+    - name: loc-narrative-amnotes-b5
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/narrative/amnotes/b5/" }
+    - name: loc-narrative-amnotes-b6
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/narrative/amnotes/b6/" }
+    - name: loc-narrative-amnotes-b7
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/narrative/amnotes/b7/" }
+    - name: loc-narrative-amnotes-b8
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/narrative/amnotes/b8/" }
+    - name: loc-narrative-amnotes-b9
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/narrative/amnotes/b9/" }
+    - name: loc-narrative-amnotes-b10
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/narrative/amnotes/b10/" }
+    - name: loc-narrative-amnotes-b11
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/narrative/amnotes/b11/" }
+    - name: loc-narrative-amnotes-b12
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/narrative/amnotes/b12/" }
+    - name: loc-narrative-amnotes-b13
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/narrative/amnotes/b13/" }
+    - name: loc-narrative-amnotes-b14
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/narrative/amnotes/b14/" }
+    # narrative/capbay <- capbay (5 shard(s))
+    - name: loc-narrative-capbay-b0
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/narrative/capbay/b0/" }
+    - name: loc-narrative-capbay-b1
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/narrative/capbay/b1/" }
+    - name: loc-narrative-capbay-b2
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/narrative/capbay/b2/" }
+    - name: loc-narrative-capbay-b3
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/narrative/capbay/b3/" }
+    - name: loc-narrative-capbay-b4
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/narrative/capbay/b4/" }
+    # narrative/other <- rarebook, adams-trial (1 shard(s))
+    - name: loc-narrative-other
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/narrative/other/" }
+    # printed/ephemera <- ephemera (2 shard(s))
+    - name: loc-printed-ephemera-b0
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/printed/ephemera/b0/" }
+    - name: loc-printed-ephemera-b1
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/printed/ephemera/b1/" }
+    # printed/lawmaking <- lawmaking (2 shard(s))
+    - name: loc-printed-lawmaking-b0
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/printed/lawmaking/b0/" }
+    - name: loc-printed-lawmaking-b1
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/printed/lawmaking/b1/" }
+    # printed/contcong <- contcong (1 shard(s))
+    - name: loc-printed-contcong
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/printed/contcong/" }
+    # maps <- revmaps, battlemaps, rochambeau (1 shard(s))
+    - name: loc-maps
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/maps/" }
+    # newspapers <- newspapers (25 shard(s))
+    - name: loc-newspapers-b0
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/newspapers/b0/" }
+    - name: loc-newspapers-b1
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/newspapers/b1/" }
+    - name: loc-newspapers-b2
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/newspapers/b2/" }
+    - name: loc-newspapers-b3
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/newspapers/b3/" }
+    - name: loc-newspapers-b4
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/newspapers/b4/" }
+    - name: loc-newspapers-b5
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/newspapers/b5/" }
+    - name: loc-newspapers-b6
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/newspapers/b6/" }
+    - name: loc-newspapers-b7
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/newspapers/b7/" }
+    - name: loc-newspapers-b8
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/newspapers/b8/" }
+    - name: loc-newspapers-b9
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/newspapers/b9/" }
+    - name: loc-newspapers-b10
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/newspapers/b10/" }
+    - name: loc-newspapers-b11
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/newspapers/b11/" }
+    - name: loc-newspapers-b12
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/newspapers/b12/" }
+    - name: loc-newspapers-b13
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/newspapers/b13/" }
+    - name: loc-newspapers-b14
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/newspapers/b14/" }
+    - name: loc-newspapers-b15
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/newspapers/b15/" }
+    - name: loc-newspapers-b16
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/newspapers/b16/" }
+    - name: loc-newspapers-b17
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/newspapers/b17/" }
+    - name: loc-newspapers-b18
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/newspapers/b18/" }
+    - name: loc-newspapers-b19
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/newspapers/b19/" }
+    - name: loc-newspapers-b20
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/newspapers/b20/" }
+    - name: loc-newspapers-b21
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/newspapers/b21/" }
+    - name: loc-newspapers-b22
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/newspapers/b22/" }
+    - name: loc-newspapers-b23
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/newspapers/b23/" }
+    - name: loc-newspapers-b24
+      shape: archival-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "rev/newspapers/b24/" }
+  # The largest corpus of the sample set by two orders of magnitude: a wide
+  # candidate pool before fusion is what keeps a single 1777 broadside
+  # reachable beside 16,849 newspaper pages.
+  retrieval:
+    topK: 20
+    rrfK: 60
+    candidateN: 400
+    # A chunk must hold at least two of the query's words to enter the lexical
+    # pool (a GIN-indexable filter evaluated before any rank). The OR leg
+    # otherwise ranks every chunk containing ANY query word — most of a
+    # newspaper shard for "washington" — and those single-word rows sort last
+    # under density ranking regardless.
+    minimumShouldMatch: 2
+    # A query word found in more than 30% of a shard's chunks is a stop word
+    # IN THAT SHARD: it still counts toward the rank but no longer makes every
+    # chunk holding it a candidate ("washington" in the letterbook shards,
+    # "boston" in the newspapers). Learned from each shard's own frequencies
+    # at build time — no vocabulary is configured.
+    stopTermFraction: 0.3
+    # Wide-corpus selection and lexical expansion are generic algorithms, not
+    # a catalog of anticipated names or questions. The original query probes
+    # every permitted shard; the engine ranks shards by the evidence in each
+    # probe pool — the query's own adjacent word pairs found verbatim, then
+    # term density, then vector distance — and the strongest twelve get a deep
+    # candidate pool; the other forty-six keep their probe pools in the merge
+    # (selection spends the deep search, it never excludes — excluding them
+    # loses the 1773 pages reporting the tea's destruction, because the
+    # papers never say "tea party" and the narratives do). Twelve of fifty-eight leaves room for a four-shard
+    # corpus plus the collections that quote it (on term density alone the
+    # travel narratives out-scored every letterbook shard for an entity
+    # question, because they USE the words; phrase evidence put all four
+    # letterbook shards in the top five). The fast model contributes only
+    # safety-constrained single-word lexical variants.
+    collectionSelection:
+      maxCollections: 12
+      probeCandidateN: 50
+      candidatePoolPerCollection: 100
+      # density × (1 + phraseBoost × phrase-fraction). A phrase-first order
+      # lets 0.06 of "tea party" (a later coinage) in the
+      # narratives outrank the newspaper shards holding the December 1773
+      # reports; at 3 the letterbooks still lead the entity question 3.5×
+      # and density decides the newspaper one.
+      phraseBoost: 3.0
+    modelQueryExpansion:
+      maxTerms: 16
+      maxTokens: 256   # doubled 2026-09-02 with every per-call budget (was 128)
+      required: false
+    # Ranking weight of the generated variants. Below ~0.7 a record's header
+    # (the entity name repeated in a title line) out-ranks the body passage
+    # that answers with five matched variants but names the entity once.
+    queryExpansionWeight: 0.8
+    # Weighted global fusion: without it the two legs disagree completely
+    # and the merge interleaved them rank for rank. The built-in bag-of-words
+    # embedder's global rank-1s were fragments ("0 1424 215/3") and town-name
+    # tables — the shortest chunk sharing any token — so the vector leg is
+    # down-weighted until a real embedder is indexed; and the letterbook
+    # shards the probe ranked first got 4 of 20 hits while a travel narrative
+    # (denser in the expansion words) took 6. The collection-evidence leg
+    # carries the probe's ranking into the merge as a prior.
+    fusion:
+      lexicalWeight: 1.0
+      vectorWeight: 0.3
+      collectionEvidenceWeight: 1.0
+      # The forty-six unselected shards' probe pools merge as their own
+      # stratum (original-query scores are not comparable with the expanded
+      # search's — merged raw, they push every letterbook hit out of the
+      # top 20). At 1.0 a probe rank-1 counts like
+      # a deep rank-1 and the evidence leg arbitrates.
+      unselectedPoolWeight: 1.0
+    # LOC collection listings are retained for discovery and provenance, but
+    # a listing with no transcribed text must not outrank a served full record.
+    contentDemotions:
+      - contains: "**Text:** none (metadata record)"
+        lexicalMultiplier: 0.001
+        vectorDistancePenalty: 2.0
+        # Tested against the chunk's tsvector as the phrase text→none→
+        # metadata→record instead of lowering and scanning every candidate
+        # row's text: the substring test is the costliest per-row term of
+        # the lexical leg under load.
+        match: phrase
+        # The maps collection is a catalog: its records ("Fort on Dorchester
+        # Point", "Fort on Charlestown Point") carry the marker because the
+        # map itself has no text, and they ARE the answer to a "which maps"
+        # question. With the rule applied there, loc-maps never enters a
+        # turn's selection or top 20.
+        exceptCollections: [loc-maps]
+  models:
+    default: { provider: default, tier: capable }
+    tasks:
+      completion: { provider: default, tier: capable }
+      validation: { tier: fast }
+      query_expansion: { provider: default, tier: fast }
+    allowOverrides: [default, example-anthropic, example-openai, example-openrouter]
+  completion:
+    promptTemplate: |
+      You are a documentary-history researcher working over Library of
+      Congress American Revolution sources.
+
+      Rules:
+      - You know this period from training. That knowledge is OFF LIMITS. A
+        historically true statement the served text does not support is a
+        fabrication here.
+      - Cite only documents whose text is in the context below. A search hit
+        you did not actually read is not a citation.
+      - Label every document you discuss, quote, or characterize with its
+        bracketed [collection/chunk] tag from the context — including in an
+        answer that explains what the documents do NOT contain. A partial
+        answer earns its citations the same way a full one does. (An answer
+        that discusses no specific document cites nothing.)
+      - Quote the source's own words, spelling and dating as written; note
+        Old Style dates rather than silently converting them.
+      - OCR text is noisy. Say when a passage is uncertain instead of
+        smoothing it into confident prose.
+      - If the served documents do not answer the question AS ASKED, open
+        with that in plain words — "The served documents do not …" — before
+        describing any related content they do hold. A reader must never
+        have to infer the negative from the shape of the positives.
+
+      {context}
+
+      Question: {query}
+    # topK 20 over 1,500-char chunks is ~30k characters; the engine default
+    # (16,000) would serve the model only the first ten hits. Sized so every
+    # merged hit reaches the prompt — the cost is input tokens per turn.
+    contextCharBudget: 40000
+    # Completion-token ceiling. The engine default (1,024; the truncation
+    # retry pays one 4x re-ask) was sized before reasoning-always-on models
+    # sat behind a tier: such a model can burn several thousand hidden
+    # reasoning tokens on a hard question and return EMPTY text even after
+    # the retry. 2048 base -> 8,192 on the retry leaves visible-answer
+    # headroom past that reasoning burn. 2026-09-02
+    # doubled every per-call budget (the engine default is now 2,048), so
+    # this carries 4096 -> 16,384 on the retry. A ceiling, not spend —
+    # non-reasoning tiers are unaffected.
+    maxTokens: 4096
+  steps:
+    - resolveSources: {}
+    - buildIndex: {}
+    - verify: {}
+    - cutover: { approval: required }
+    - retireOld: { keep_versions: 2 }

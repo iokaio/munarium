@@ -1,0 +1,46 @@
+Munarium
+Copyright (c) 2026 Ioka LLC
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+these files except in compliance with the License. A copy of the License is in
+the LICENSE file beside this notice.
+
+"Munarium" and "Ioka" are trademarks of Ioka LLC. The License grants no right to
+use them beyond what is needed to describe the origin of these files. What is
+and is not permitted is in TRADEMARK.md.
+
+This repository holds three components, all under the License above:
+
+  server/    Munarium Server — the governed-memory service and the Munarium
+             Memory Protocol (MMP) it speaks over REST and gRPC.
+  matrix/    Munarium Matrix core — the structured-evidence plane: governed
+             record collections, verified query contracts, sealed evidence, and
+             the adapters for the databases an application already runs.
+  clients/   The client libraries for both, in Rust, Python, .NET and Java.
+
+Munarium Enterprise is a separate, proprietary distribution built from this
+software: certified builds, supported deployment architectures, a support term,
+and the evidence adapters for analytics platforms. It is not open source, and
+nothing here grants any right to it.
+
+The mmesh residue in checksummed migrations
+-------------------------------------------
+
+The product was named Muninn Mesh (mmesh) until 2026-08-26. Six applied
+database migrations under server/src/munarium-store-pg/migrations/ still mention
+mmesh in comments: 0002_ledger, 0006_retrieval, 0010_identity_interactions,
+0015_storage_backend_vocab, 0016_interactions_instance and 0019_authoring_drafts.
+sqlx validates a checksum per applied migration, so editing one byte of an
+applied migration stops the server booting against any existing database; the
+name therefore survives in those comments, and only there, by design. For the
+same reason a few migration comments, in the server and in Matrix, keep
+internal work-item identifiers from before the first release.
+
+Third-party software
+--------------------
+
+Each component lists its own third-party components, versions and licenses in
+its THIRD_PARTY_NOTICES.md, generated from that component's shipping dependency
+graph and reviewed at each release. They are kept separate because the three
+graphs are different. Each component is governed by its own license, which takes
+precedence for that component.

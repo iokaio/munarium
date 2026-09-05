@@ -1,0 +1,303 @@
+# Munarium Matrix CI — offline and compose tiers, $0, on every push.
+#
+# Every tier here is free: offline and compose. Live tiers against cloud
+# sources are not part of this repository.
+name: matrix-ci
+
+# The default token is read-only. Any job that needs more (packages: write for
+# an image push, id-token: write for OIDC) raises it for itself, so a new job
+# cannot silently inherit write access to the repository.
+permissions:
+  contents: read
+
+on:
+  push:
+    paths:
+      - 'matrix/**'
+      - 'server/contract/matrix/**'
+      - '.github/workflows/matrix-ci.yml'
+  pull_request:
+    paths:
+      - 'matrix/**'
+      - 'server/contract/matrix/**'
+      - '.github/workflows/matrix-ci.yml'
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: matrix
+
+concurrency:
+  group: matrix-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    name: fmt · clippy · deny · boundaries
+    runs-on: ubuntu-8core
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable, 2026-09-03
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: matrix
+
+      - name: cargo fmt
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # The build that used to be invisible. `--all-features` ran ZERO times in
+      # this file, so 17 unresolved-import errors in runtime.rs and 5 more in
+      # conformance/src/scenarios.rs sat green behind a feature nothing built.
+      # It is a no-op today by construction -- the workspace declares no
+      # features at all -- and holding that is exactly why it is here.
+      # scripts/boundaries.py fails if a feature reappears unlisted.
+      - name: cargo clippy (all features, all targets)
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      # Ground rules 1 and 3 and the additive-migration rule, in ONE
+      # implementation the laptop calls too (matrix/test.ps1). Three copies
+      # of these four rules used to live here and in test.ps1, over two
+      # different targets, and the difference is what made this job red for
+      # three pushes while every laptop stayed green: `openssl-probe` is
+      # cfg(unix), and a prefix match cannot tell it from openssl.
+      - name: ground rules (boundaries, rustls-only, additive migrations)
+        run: python3 scripts/boundaries.py
+
+      - name: cargo-deny
+        run: |
+          cargo install cargo-deny --locked --quiet || true
+          cargo deny check
+
+      # Measurement discipline: every cycle a document names has a results
+      # file, or a recorded reason. The other half of that rule — a number
+      # quoted beside its fingerprint — is a reader's job.
+      - name: doclint (measurement discipline)
+        run: python3 scripts/doclint.py
+
+      # The licence gate: the workspace and every
+      # crate declare Apache-2.0, the license texts exist, and every
+      # source file that can carry an SPDX line does (check_license.py's docstring is
+      # the rule list; --stamp adds a missing header). Section 6.5: the notices file
+      # is generated from the musl-resolved runtime graph and reviewed; a dependency
+      # change that is not regenerated fails here. Both mirrored in matrix/test.ps1.
+      - name: license gate (manifests, SPDX headers, license texts)
+        run: python3 check_license.py
+      - name: third-party notices are current for the shipping crate graph
+        run: python3 scripts/third_party_notices.py --check --cargo-target x86_64-unknown-linux-musl
+
+  contract:
+    name: contract schemas and examples
+    runs-on: ubuntu-8core
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - run: pip install --quiet jsonschema
+      - name: validate examples against schemas
+        run: python contract/validate_examples.py
+
+      # The contract is cut into the server tree by contract/publish.py with a
+      # contract.lock. Two cuts of this tree must be byte-identical, and the
+      # server's vendored copy must equal a fresh cut; the server also verifies
+      # that copy against the lock in its own test. Mirrored in server-ci.yml
+      # and server/gates.ps1 -- change all three together.
+      - name: the contract cuts reproducibly and the vendored copy matches
+        run: |
+          python contract/publish.py --self-test
+          python contract/publish.py --check ../server/contract/matrix
+
+  test:
+    name: unit · store · conformance
+    runs-on: ubuntu-8core
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable, 2026-09-03
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: matrix
+
+      # NOT a `services:` block, and the reason is `wal_level`. A service
+      # container's command cannot be overridden, so its Postgres starts at
+      # `wal_level=replica` — and the seven `cdc.*` scenarios (the
+      # logical-replication path) need `logical`. They were first written
+      # against a compose Postgres that sets it, and CI failed with "wal_level is insufficient to publish logical
+      # changes": a tier that could not pass on the substrate CI gave it.
+      # Run the container by hand, with compose's own flags, and the two
+      # tiers stand on the same ground.
+      - name: postgres (wal_level=logical, as compose runs it)
+        run: |
+          docker run -d --name matrix-ci-postgres             -e POSTGRES_USER=matrix -e POSTGRES_PASSWORD=matrix-dev -e POSTGRES_DB=matrix             -p 5434:5432 pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b             postgres -c wal_level=logical -c max_replication_slots=8 -c max_wal_senders=8
+          for i in $(seq 1 40); do
+            if docker exec matrix-ci-postgres pg_isready -U matrix >/dev/null 2>&1; then
+              echo "postgres ready after ${i} attempt(s)"; exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::postgres never became ready"; docker logs matrix-ci-postgres; exit 1
+
+      # The container starts from an empty database, so the fixture roles and
+      # the `crm` traps are applied here rather than by compose.
+      - name: seed the fixture database
+        env:
+          PGPASSWORD: matrix-dev
+        run: |
+          for f in fixtures/t0/sql/*.sql; do
+            echo "-- $f"
+            psql -h 127.0.0.1 -p 5434 -U matrix -d matrix -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: unit tests
+        run: cargo test --workspace --all-features
+
+      - name: conformance (offline + postgres tiers)
+        env:
+          MUNARIUM_MATRIX_TEST_DATABASE_URL: postgres://matrix_owner:matrix-owner-dev@127.0.0.1:5434/matrix
+        run: cargo test -p munarium-matrix-conformance -- --include-ignored
+
+      - name: openapi generates and parses
+        run: |
+          cargo run -q -p munarium-matrix-server --bin munarium-matrix -- openapi > /tmp/openapi.json
+          python -c "import json;json.load(open('/tmp/openapi.json'));print('openapi ok')"
+          # docs/api/openapi.json is committed for customers to read; the
+          # binary compares its own document against it and exits 1 on drift.
+          cargo run -q -p munarium-matrix-server --bin munarium-matrix -- openapi --check docs/api/openapi.json
+
+  image:
+    name: image builds distroless and stays under the size gate
+    runs-on: ubuntu-8core
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: matrix
+          load: true
+          tags: munarium-matrix:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      # The server holds itself to 30 MB; so does this. A size regression is a
+      # dependency someone added without noticing what it dragged in.
+      - name: size gate
+        run: |
+          bytes=$(docker image inspect munarium-matrix:ci --format '{{.Size}}')
+          mb=$(( bytes / 1000000 ))
+          echo "image size: ${mb} MB"
+          if [ "$mb" -gt 30 ]; then
+            echo "::error::image is ${mb} MB, over the 30 MB ceiling"
+            exit 1
+          fi
+      - name: it runs and answers for its version
+        run: docker run --rm munarium-matrix:ci openapi | head -c 200
+
+  # The three Matrix clients, offline AND against a Matrix built from this
+  # branch. clients-ci.yml does not know the Matrix clients exist, so this
+  # file owns them. Each client's live tier is gated on
+  # MUNARIUM_MATRIX_TEST_URL and SKIPS OUT LOUD without it; here the variable
+  # is set, so a skip line is a failure.
+  clients:
+    name: python · dotnet · java clients — offline, then live against this branch's Matrix
+    runs-on: ubuntu-8core
+    needs: [gates]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
+        env:
+          POSTGRES_USER: matrix
+          POSTGRES_PASSWORD: matrix-dev
+          POSTGRES_DB: matrix
+        ports: ['5434:5432']
+        options: >-
+          --health-cmd "pg_isready -U matrix"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable, 2026-09-03
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: matrix
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
+
+      # --- offline: the response SHAPES each client claims to read ----------
+      - name: python (offline)
+        working-directory: clients/matrix-python
+        run: |
+          pip install -e ".[dev]"
+          python -m pytest tests -q
+      - name: dotnet (offline)
+        working-directory: clients/matrix-dotnet
+        run: |
+          dotnet build
+          dotnet test tests/Ioka.Munarium.Matrix.Client.Tests --no-build -v q
+      - name: java (offline)
+        working-directory: clients/matrix-java
+        run: ./gradlew test --no-daemon -q
+
+      # --- live: a Matrix built from THIS branch, on the service Postgres ----
+      - name: seed the fixture database
+        env:
+          PGPASSWORD: matrix-dev
+        run: |
+          for f in fixtures/t0/sql/*.sql; do
+            psql -h 127.0.0.1 -p 5434 -U matrix -d matrix -v ON_ERROR_STOP=1 -f "$f"
+          done
+      - name: start munarium-matrix from the branch
+        env:
+          MUNARIUM_MATRIX_ROLE: all
+          MUNARIUM_MATRIX_DATABASE_URL: postgres://matrix_owner:matrix-owner-dev@127.0.0.1:5434/matrix
+          MUNARIUM_MATRIX_AUTH_MODE: static
+          MUNARIUM_MATRIX_STATIC_TOKENS: "mxdev:tenant-default:rw,mxmgmt:tenant-default:mgmt"
+          MUNARIUM_MATRIX_GRPC_ADDR: disabled
+          MUNARIUM_MATRIX_LOG: warn
+        run: |
+          cargo build -q -p munarium-matrix-server --bin munarium-matrix
+          nohup ./target/debug/munarium-matrix > matrix.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:8180/healthz >/dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8180/version
+      - name: python (live)
+        working-directory: clients/matrix-python
+        env:
+          MUNARIUM_MATRIX_TEST_URL: http://127.0.0.1:8180
+          MUNARIUM_MATRIX_TEST_TOKEN: mxdev
+        run: |
+          python -m pytest tests -q -rs | tee live.txt
+          if grep -qi "skipped" live.txt; then echo "::error::a live client test skipped while a Matrix was running"; exit 1; fi
+      - name: dotnet (live)
+        working-directory: clients/matrix-dotnet
+        env:
+          MUNARIUM_MATRIX_TEST_URL: http://127.0.0.1:8180
+          MUNARIUM_MATRIX_TEST_TOKEN: mxdev
+        run: dotnet test tests/Ioka.Munarium.Matrix.Client.Tests --no-build -v n | tee live.txt; ! grep -qi "skipped" live.txt
+      - name: java (live)
+        working-directory: clients/matrix-java
+        env:
+          MUNARIUM_MATRIX_TEST_URL: http://127.0.0.1:8180
+          MUNARIUM_MATRIX_TEST_TOKEN: mxdev
+        run: ./gradlew test --no-daemon --rerun-tasks -q
+      - name: matrix log on failure
+        if: failure()
+        run: tail -100 matrix.log || true

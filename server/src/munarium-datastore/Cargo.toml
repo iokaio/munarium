@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-datastore"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Immutable, content-verified Munarium search artifacts: build, seal, verify, open, query. Independently usable — no Axum, tonic, SQLx, PostgreSQL, server config, auth or runbooks anywhere in its graph."
+
+[features]
+default = ["lexical-tantivy", "vector-flat", "artifact-file"]
+# Lexical search through Tantivy's public crate API and Directory abstraction.
+lexical-tantivy = ["dep:tantivy", "dep:tempfile", "dep:rust-stemmers"]
+# Exact cosine: the correctness oracle every approximate engine is measured
+# against, and the deployable fast path below the graph threshold.
+vector-flat = []
+# Approximate vectors through Microsoft's first-party pure-Rust `diskann`
+# crate. NOT default: compiling it in is a deliberate approval, and the plan
+# policy only names the engine when this feature exists (a plan naming an
+# engine the binary lacks refuses to seal). Version pinned EXACT per the
+# datastore design: the adapter implements the crate's
+# DataProvider ensemble, whose shape is API, and a floating range would move
+# that shape under us between lockfile updates.
+vector-diskann = ["dep:diskann", "dep:diskann-vector"]
+# The local-filesystem ArtifactStore. Cloud object stores are supplied by a
+# thin adapter or by Server, so credential policy stays out of this crate.
+artifact-file = []
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
+tantivy = { version = "0.22", optional = true }
+# =exact pins, not ranges: the DataProvider/glue trait ensemble this adapter
+# implements is public API whose shape the contract fixture test asserts.
+diskann = { version = "=0.56.0", optional = true }
+diskann-vector = { version = "=0.56.0", optional = true }
+# Named directly for the digit-aware stemmer filter; the same crate and
+# version Tantivy itself stems with, so the algorithm cannot fork.
+rust-stemmers = { version = "1.2", optional = true }
+# Scratch directories for the lexical adapter: Tantivy writes many files and
+# mmaps them, so build and open both need somewhere real to put them.
+tempfile = { version = "3", optional = true }
+
+[dev-dependencies]
+tempfile = "3"

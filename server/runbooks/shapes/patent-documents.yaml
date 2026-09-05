@@ -1,0 +1,31 @@
+# Patent-document shape — target drafts, prior-art references, decoys, and
+# the office actions and novelty assessments over them. Bound by the
+# patent-analysis runbook.
+#
+#   mmctl apply -f runbooks/shapes/patent-documents.yaml
+#
+# Two subject families are legal here, and both are load-bearing:
+#   - patent serials (7-9 digits) — a citation record's facts key to the
+#     reference it cites;
+#   - folded claim-element ids (el_elastic_member, el_grip_handle) — a
+#     draft's "resilient member" and a reference's "elastic cord" can only
+#     contradict each other if they land on the SAME subject.
+# Mind the plural trap: one drafter's punching_bags beside another's
+# punching_bag defeats the ledger-conflict gate outright, which is why
+# singular, folded element subjects are the convention.
+apiVersion: munarium.ioka.io/v1
+kind: Shape
+metadata: { name: patent-documents, version: 1 }
+spec:
+  fact:
+    schema:
+      type: object
+      properties:
+        subject: { type: string, pattern: "^([0-9]{6,9}|[a-z][a-z0-9_]{0,63})$" }
+        key: { type: string, pattern: "^[a-z][a-z0-9_:-]{0,63}$" }
+        value: { type: string, minLength: 1, maxLength: 512 }
+      required: [subject, key, value]
+    supersession:
+      identity: [subject, key]
+  chunking: { max_chars: 1500 }
+  indexing: { rrf_k: 60, candidate_n: 150 }

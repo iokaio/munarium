@@ -1,0 +1,105 @@
+{{- /*
+One Deployment per role. The env list is rendered ONCE (`matrixEnv`) and
+reused by every role, because an env list copied per Deployment is the kind
+of thing that drifts by one variable — the same reason the terraform module
+lifts it into a single local.
+*/ -}}
+{{- define "munarium-matrix.env" -}}
+- name: MUNARIUM_MATRIX_DATABASE_URL
+  valueFrom:
+    secretKeyRef: { name: {{ .Values.database.secretName | quote }}, key: {{ .Values.database.key | quote }} }
+- { name: MUNARIUM_MATRIX_AUTH_MODE, value: static }
+- { name: MUNARIUM_MATRIX_STATIC_TOKENS, value: {{ .Values.staticTokens | quote }} }
+- { name: MUNARIUM_MATRIX_SERVER_URL, value: {{ .Values.server.url | quote }} }
+- { name: MUNARIUM_MATRIX_SERVER_TOKEN_REF, value: "env:MUNARIUM_MATRIX_SERVER_TOKEN" }
+- name: MUNARIUM_MATRIX_SERVER_TOKEN
+  valueFrom:
+    secretKeyRef: { name: {{ .Values.server.tokenSecretName | quote }}, key: {{ .Values.server.tokenKey | quote }} }
+- { name: MUNARIUM_MATRIX_TARGET_SERVER_VERSION, value: {{ .Values.server.lockstepVersion | quote }} }
+- { name: MUNARIUM_MATRIX_EGRESS_DEFAULT_DENY, value: {{ .Values.egressDefaultDeny | quote }} }
+- { name: MUNARIUM_MATRIX_ADMIN, value: {{ .Values.admin | quote }} }
+- { name: MUNARIUM_MATRIX_LOG, value: info }
+{{- if .Values.workloadIdentity.clientId }}
+- { name: AZURE_CLIENT_ID, value: {{ .Values.workloadIdentity.clientId | quote }} }
+{{- end }}
+{{- range .Values.credentials }}
+- name: MUNARIUM_MATRIX_SECRET_{{ .ref | upper | replace "-" "_" }}
+  valueFrom:
+    secretKeyRef: { name: {{ .secretName | quote }}, key: {{ .key | quote }} }
+{{- end }}
+{{- end -}}
+{{- range .Values.roles }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: munarium-matrix-{{ .name }}
+  labels: { app: munarium-matrix, role: {{ .name | quote }} }
+spec:
+  replicas: {{ .replicas | default 1 }}
+  selector:
+    matchLabels: { app: munarium-matrix, role: {{ .name | quote }} }
+  template:
+    metadata:
+      {{- if $.Values.metrics.scrapeAnnotations }}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9190"
+        prometheus.io/path: "/metrics"
+      {{- end }}
+      labels:
+        app: munarium-matrix
+        role: {{ .name | quote }}
+        {{- if $.Values.workloadIdentity.clientId }}
+        azure.workload.identity/use: "true"
+        {{- end }}
+    spec:
+      {{- if $.Values.workloadIdentity.clientId }}
+      serviceAccountName: munarium-matrix
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        # Distroless's USER is the NAME "nonroot"; kubelet cannot verify a
+        # non-numeric user against runAsNonRoot (the server chart's first
+        # install found this). 65532 is the distroless nonroot uid/gid.
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: munarium-matrix
+          image: "{{ required "image.repository is required: set it to a registry you can pull munarium-matrix from (there is no official public image for the open edition)" $.Values.image.repository }}:{{ $.Values.image.tag }}"
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+          ports:
+            - { name: rest, containerPort: 8180 }
+            - { name: ops, containerPort: 9190 }
+            {{- if .grpc }}
+            - { name: grpc, containerPort: 50151 }
+            {{- end }}
+          env:
+            - { name: MUNARIUM_MATRIX_ROLE, value: {{ .name | quote }} }
+            {{- if not .grpc }}
+            # The gRPC listener is bound only by a role that serves the query
+            # plane; every other role turns it off rather than answering
+            # UNIMPLEMENTED on a port nothing routes to.
+            - { name: MUNARIUM_MATRIX_GRPC_ADDR, value: disabled }
+            {{- end }}
+            {{- include "munarium-matrix.env" $ | nindent 12 }}
+          resources: {{- toYaml $.Values.resources | nindent 12 }}
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8180 }
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8180 }
+{{- end }}
+{{- if .Values.workloadIdentity.clientId }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: munarium-matrix
+  annotations:
+    azure.workload.identity/client-id: {{ .Values.workloadIdentity.clientId | quote }}
+  labels:
+    azure.workload.identity/use: "true"
+{{- end }}

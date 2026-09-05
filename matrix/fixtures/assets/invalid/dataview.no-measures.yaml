@@ -1,0 +1,10 @@
+# spec.measures is empty: nothing a caller could ask for.
+apiVersion: munarium.ioka.io/v1
+kind: DataView
+metadata: { name: pipeline-by-region, version: 1 }
+spec:
+  source: crm
+  table: opportunities
+  measures: {}
+  dimensions:
+    region: { type: string }

@@ -1,0 +1,34 @@
+# A BigQuery source. The host is fixed by the API rather than by the
+# deployment, so the allowlist names Google's endpoint and the project and
+# dataset are what identify the data.
+apiVersion: munarium.ioka.io/v1
+kind: DataSource
+metadata:
+  name: crm-bigquery
+  version: 1
+spec:
+  adapter: bigquery
+  connection:
+    project: ioka-crm-prod
+    dataset: crm
+    location: EU
+  credentialRef: matrix-crm-bigquery
+  egress:
+    allowHosts: [bigquery.googleapis.com]
+  role:
+    # BigQuery has row-level access policies, which INFORMATION_SCHEMA reports.
+    # `readOnly` here is IAM, which the adapter reads rather than tests: it
+    # will not attempt a write to find out.
+    mustBe: { readOnly: true, subjectToRowSecurity: true, notOwner: true }
+  authorization:
+    strategy: source_native
+  limits:
+    maxRows: 10000
+    maxBytes: 8388608
+    statementTimeoutMs: 30000
+    budgetPerHour: 200
+  snapshot:
+    kind: none
+    replayLevel: sealed_result
+  schemaFingerprint:
+    onDrift: refuse

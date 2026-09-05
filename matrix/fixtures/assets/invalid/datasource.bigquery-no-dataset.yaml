@@ -1,0 +1,12 @@
+# A BigQuery source with no default dataset. A contract's unqualified table
+# name has nothing to resolve against, and the failure would surface as a
+# confusing "table not found" long after apply.
+apiVersion: munarium.ioka.io/v1
+kind: DataSource
+metadata: { name: crm-bigquery, version: 1 }
+spec:
+  adapter: bigquery
+  connection: { project: ioka-crm-prod, location: EU }
+  credentialRef: matrix-crm-bigquery
+  egress: { allowHosts: [bigquery.googleapis.com] }
+  authorization: { strategy: source_native }

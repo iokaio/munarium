@@ -1,0 +1,16 @@
+# The canonical reindex pipeline (architecture.md §7): side-by-side build,
+# deterministic verify, HUMAN-approved cutover, then storage reclaim.
+#   mmctl apply -f runbooks/pipelines/tickets-reindex.yaml
+#   mmctl run tickets-reindex --version-id <memv-...> --watch
+#   mmctl approve <run-id> 3
+apiVersion: munarium.ioka.io/v1
+kind: Runbook
+metadata: { name: tickets-reindex, version: 1 }
+spec:
+  shape: support-tickets@1
+  steps:
+    - resolveSources: {}
+    - buildIndex: {}
+    - verify: {}
+    - cutover: { approval: required }
+    - retireOld: { keep_versions: 2 }

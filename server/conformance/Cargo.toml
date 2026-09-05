@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "mmp-conformance"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Black-box MMP conformance suite. M0: in-process mode against any StorageBackend. M2+: --http/--grpc black-box mode driving BOTH planes and asserting parity."
+
+[[bin]]
+name = "mmp-conformance"
+path = "src/main.rs"
+
+[dependencies]
+munarium-core = { path = "../src/munarium-core" }
+munarium-store-mem = { path = "../src/munarium-store-mem" }
+munarium-store-pg = { path = "../src/munarium-store-pg" }
+munarium-proto = { path = "../src/munarium-proto" }
+munarium-api-types = { path = "../src/munarium-api-types", features = ["proto"] }
+munarium-api-conv = { path = "../src/munarium-api-conv" }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }
+reqwest = { workspace = true }
+tonic = { workspace = true }
+uuid = { workspace = true }
+async-trait = { workspace = true }
+base64 = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }

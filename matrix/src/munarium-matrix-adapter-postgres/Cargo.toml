@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-matrix-adapter-postgres"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "PostgreSQL adapter: role posture proof, RLS-subject identity, snapshot/watermark reads, contract execution."
+
+[dependencies]
+munarium-matrix-core = { workspace = true }
+munarium-matrix-types = { workspace = true }
+munarium-matrix-adapter = { workspace = true }
+sqlx = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+rust_decimal = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

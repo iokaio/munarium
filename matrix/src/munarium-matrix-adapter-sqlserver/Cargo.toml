@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-matrix-adapter-sqlserver"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+munarium-matrix-core = { workspace = true }
+munarium-matrix-adapter = { path = "../munarium-matrix-adapter" }
+munarium-matrix-types = { workspace = true }
+async-trait.workspace = true
+chrono.workspace = true
+rust_decimal = { workspace = true }
+# sqlx dropped its MSSQL driver in 0.7 and has not brought it back, so this is
+# the one adapter that cannot ride the driver the rest of the workspace uses.
+# RESOLVED BY THE OWNER, 2026-08-30: this is `tiberius-ng`, a community
+# continuation, and NOT the Prisma-published `tiberius`.
+#
+# Why the swap. `tiberius` 0.12.3 is the last release upstream published, and
+# it pins tokio-rustls 0.24 -> rustls 0.21 -> rustls-webpki 0.101, which
+# carries three open advisories: RUSTSEC-2026-0098 and -0099
+# (name-constraint validation accepted where it should not be) and -0104 (a
+# reachable panic parsing CRLs). The first two are certificate-CHAIN flaws in
+# the path this adapter walks on EVERY connect, not something reachable only
+# by an unusual API call. There is no in-range fix: the advisories are
+# answered by rustls-webpki >= 0.103, and rustls 0.21 cannot take it, so
+# `cargo update` has nothing to offer. The only three moves were: this fork,
+# suppress the gate, or drop SQL Server support.
+#
+# What was accepted with it, stated plainly rather than buried. `tiberius-ng`
+# is one maintainer and, at the time of writing, one published version. An
+# unaudited crate running in-process with a database credential is a real
+# supply-chain risk, and it is not smaller than the CVEs merely because it is
+# newer. It was taken because the alternative was shipping a driver whose
+# certificate validation is known-broken while a gate stayed green by
+# suppression — and a suppressed gate is worse than a red one.
+#
+# Re-evaluate when: upstream `tiberius` publishes past 0.12.3 (switch back —
+# this is a `package =` rename and nothing else), or `tiberius-ng` itself goes
+# quiet, or any advisory lands against it.
+#
+# `default-features = false` is separately load-bearing and predates all of
+# this: the defaults include `native-tls`, which deny.toml BANS — the whole
+# workspace is rustls, and a driver that quietly linked OpenSSL would break
+# the distroless image long after this line was written.
+tiberius = { package = "tiberius-ng", version = "0.13", default-features = false, features = [
+    "rustls", "tds73", "chrono", "rust_decimal",
+] }
+# tiberius speaks futures-io, tokio speaks tokio-io. `compat_write()` is the
+# adapter between them and is the documented way to drive tiberius on tokio.
+tokio = { workspace = true, features = ["net", "time"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }

@@ -1,0 +1,124 @@
+# SPDX-License-Identifier: Apache-2.0
+# cargo-deny gate. Same posture as the server workspace: the standing defense
+# against the relicensing wave, plus a hard ban on OpenSSL.
+
+[licenses]
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "CDLA-Permissive-2.0",
+    # ring's bundled license text; no openssl linkage exists in this workspace
+    # (the [bans] section below makes that mechanical rather than a promise).
+    "OpenSSL",
+]
+
+# The gate exists for THIRD-party license drift, so each workspace member is
+# an exception; first-party licensing is checked by check_license.py.
+[[licenses.exceptions]]
+name = "munarium-matrix-core"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-matrix-types"
+allow = ["Apache-2.0"]
+# Every workspace member needs its exception here: a crate added without one
+# fails `cargo deny check licenses` on a rule that has nothing to do with
+# third-party licence drift.
+[[licenses.exceptions]]
+name = "munarium-matrix-adapter"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-matrix-adapter-landing"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-matrix-adapter-postgres"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-matrix-adapter-mysql"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-matrix-proto"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-matrix-adapter-sqlserver"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-matrix-server-client"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-matrix-store"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-matrix-workers"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-matrix-server"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-matrix-client"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-matrix-cli"
+allow = ["Apache-2.0"]
+[[licenses.exceptions]]
+name = "munarium-matrix-conformance"
+allow = ["Apache-2.0"]
+
+[bans]
+multiple-versions = "allow"
+# Mechanical, not aspirational: the musl/distroless image and the whole
+# supply-chain posture depend on there being exactly one TLS stack.
+deny = [
+    { name = "openssl" },
+    { name = "openssl-sys" },
+    { name = "native-tls" },
+]
+
+[advisories]
+yanked = "deny"
+# Two entries, both REASONED and both carrying the condition that revokes
+# them. Nothing here is ignored because it was noisy.
+#
+# The three rustls-webpki CVEs that stood here on 2026-08-30 are NOT in this
+# list: they were fixed, by moving the SQL Server driver to `tiberius-ng`.
+# See src/munarium-matrix-adapter-sqlserver/Cargo.toml for what that cost.
+ignore = [
+    # rsa's Marvin timing sidechannel, reached through sqlx-mysql. There is no
+    # fixed release: rsa 0.9.x is current and the constant-time rewrite is
+    # unreleased, so this cannot be updated away.
+    #
+    # NOT REACHABLE HERE, and that was checked by reading sqlx-mysql rather
+    # than inferred from the advisory title. Marvin recovers a PRIVATE key
+    # from DECRYPTION timing; `sqlx-mysql/src/connection/auth.rs` imports only
+    # `RsaPublicKey` and calls only `encrypt` — this process holds no RSA
+    # private key and performs no private-key operation, so there is nothing
+    # for the sidechannel to leak. The path is also skipped outright over TLS
+    # (`if stream.is_tls { return Ok(to_asciz(password)) }`), so a deployment
+    # that requires TLS never reaches the crate at all.
+    #
+    # Re-evaluate when: a fixed `rsa` is published (take it), or sqlx-mysql
+    # ever performs a private-key operation — which would make this entry
+    # wrong, not merely stale.
+    "RUSTSEC-2023-0071",
+    # rustls-pemfile is archived upstream (a thin wrapper over
+    # rustls-pki-types); it reaches us transitively through tonic. An
+    # UNMAINTAINED advisory, not a vulnerability. The same entry, for the same
+    # reason, is in the server tree's deny.toml — the two trees pin the same
+    # tonic on purpose.
+    #
+    # Re-evaluate when: tonic drops the dependency, or any vulnerability
+    # advisory lands against it — the second of which flips this from
+    # acceptable to blocking.
+    "RUSTSEC-2025-0134",
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

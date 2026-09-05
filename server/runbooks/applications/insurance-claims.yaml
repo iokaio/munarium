@@ -1,0 +1,84 @@
+# insurance-claims — claim files as a retrieval application.
+#
+# What this demonstrates: loss type as the collection boundary, with one type
+# escalated behind its own compartment because those files route to special
+# investigations.
+#
+# Server mapping: loss type is the collection boundary. Theft claims sit a
+# level higher behind an `siu` compartment because they are the ones that go
+# to special investigations; the raw intake export binds by media type
+# (text/csv) and stays at level 2.
+#
+#   mmctl apply -f runbooks/shapes/claim-files.yaml
+#   mmctl apply -f runbooks/applications/insurance-claims.yaml
+#   mmctl run insurance-claims --watch
+apiVersion: munarium.ioka.io/v1
+kind: Runbook
+metadata: { name: insurance-claims, version: 1 }
+spec:
+  # Where this runbook's documents live. The blob path IS the ingest
+  # filename, so every collection binding below sits under this prefix —
+  # `mmctl runbook validate` errors if one does not.
+  sources:
+    container: sources
+    prefix: "claims/"
+  collections:
+    - name: claims-single-vehicle
+      shape: claim-files@1
+      accessLevel: 1
+      compartments: [claims]
+      sources: { filenamePrefix: "claims/single_vehicle_collision/" }
+    - name: claims-multi-vehicle
+      shape: claim-files@1
+      accessLevel: 1
+      compartments: [claims]
+      sources: { filenamePrefix: "claims/multi_vehicle_collision/" }
+    - name: claims-parked-car
+      shape: claim-files@1
+      accessLevel: 1
+      compartments: [claims]
+      sources: { filenamePrefix: "claims/parked_car/" }
+    - name: claims-theft
+      shape: claim-files@1
+      accessLevel: 2
+      compartments: [claims, siu]
+      sources: { filenamePrefix: "claims/vehicle_theft/" }
+    - name: claims-intake-export
+      shape: claim-files@1
+      accessLevel: 2
+      compartments: [claims]
+      sources: { filenamePrefix: "claims/exports/", mediaTypes: [text/csv] }
+  retrieval: { topK: 8, rrfK: 60, candidateN: 100 }
+  models:
+    default: { provider: default, tier: fast }
+    tasks:
+      # The fast tier is sufficient on this corpus; claim files are
+      # short and the questions are grounded in explicit document values.
+      completion: { provider: default, tier: fast }
+      validation: { tier: fast }
+    allowOverrides: [default]
+  completion:
+    promptTemplate: |
+      You are a claims examiner answering from a claim file.
+
+      Rules:
+      - Answer ONLY from the context and cite the document each value came
+        from (declarations, FNOL, estimate, adjuster note, invoice).
+      - Policy limits, deductibles and coverage parts are governing values.
+        Quote them exactly; never round, restate or infer them.
+      - A later document may CHANGE a value (a revised estimate, a corrected
+        loss date). Report the current value, say which document changed it,
+        and keep the prior value visible with its date.
+      - Coverage conclusions must name the policy part they rest on.
+      - If the file does not answer the question, say so rather than
+        reasoning from what claims usually look like.
+
+      {context}
+
+      Question: {query}
+  steps:
+    - resolveSources: {}
+    - buildIndex: {}
+    - verify: {}
+    - cutover: { approval: required }
+    - retireOld: { keep_versions: 2 }

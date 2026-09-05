@@ -1,0 +1,149 @@
+# Does Matrix still agree with the REAL munarium-server?
+#
+# Its own workflow, and the reason is the path filter. `matrix-ci.yml` runs on
+# `matrix/**`; a change to the SERVER's wire shape would not trigger it, and
+# divergence comes from both sides — the last one found was the server wrapping
+# a manifest the contract says it returns bare. GitHub path filters are
+# per-workflow, not per-job, so the only way to watch both trees is a workflow
+# that lists both.
+#
+# WHAT THIS EXISTS TO CATCH
+#
+# `MockServer` accepted request shapes the real server rejects, and the gap
+# survived 231 passing offline tests until someone pointed Matrix at a real
+# 0.4.0 server by hand. Four defects rode it:
+#
+#   * the facts reader looked for `claim_id` where the DTO says `id`
+#   * no request sent `X-Munarium-Uid`, which the server requires on every /v1
+#   * mode C posted `{"batch": ...}` where the contract says `{"manifest": ...}`
+#   * `GET /v1/evidence/{id}` wrapped a manifest the contract returns bare
+#
+# A test double is always a CLAIM about a peer. This is where the claim gets
+# checked — on every push, for $0, against the real binary rather than a
+# cloud deployment, so a wrong body shape is learned before it merges.
+#
+# Ground rule 1 is untouched. That rule is about CRATE dependencies, and the
+# `cargo tree` boundary check in matrix-ci's `gates` job still passes. Running
+# a peer's binary in a test is not a dependency edge.
+name: matrix-server-contract
+
+# Read-only by default; a job that needs more raises it for itself.
+permissions:
+  contents: read
+
+on:
+  push:
+    paths:
+      - 'matrix/**'
+      - 'server/**'
+      - '.github/workflows/matrix-server-contract.yml'
+  pull_request:
+    paths:
+      - 'matrix/**'
+      - 'server/**'
+      - '.github/workflows/matrix-server-contract.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: matrix-server-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-server:
+    name: against a REAL munarium-server (compose tier)
+    runs-on: ubuntu-8core
+    # A separate job so it runs in PARALLEL with `test` rather than adding its
+    # server build to that job's wall clock.
+    #
+    # Every run builds the server from THIS branch, which is what catches a
+    # wire change on either side before it merges. The source build is always
+    # available, always free, and always tests the commit rather than the last
+    # release, so it is the only path and this job needs no registry credential.
+    #
+    # This workflow stays a separate file: GitHub path filters are per-workflow,
+    # not per-job, so watching BOTH matrix/** and server/** takes a workflow
+    # that lists both.
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
+        env:
+          POSTGRES_USER: munarium
+          POSTGRES_PASSWORD: munarium-dev
+          POSTGRES_DB: munarium
+        ports: ['5435:5432']
+        options: >-
+          --health-cmd "pg_isready -U munarium"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable, 2026-09-03
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          # Both workspaces: this job builds the server AND the matrix tests.
+          workspaces: |
+            matrix
+            server
+
+      # WHY THIS JOB EXISTS
+      #
+      # `MockServer` accepted request shapes the real server rejects, and the
+      # divergence survived 231 passing offline tests. It cost four defects —
+      # `claim_id` vs `id`, a missing `X-Munarium-Uid`, mode C posting
+      # `{"batch": ...}` where the contract says `{"manifest": ...}`, and a
+      # manifest the server wrapped that the contract says it returns bare.
+      # Every one surfaced only when someone pointed Matrix at a real server by
+      # hand.
+      #
+      # A test double is always a CLAIM about a peer. This job checks the claim
+      # on every push, for $0, before anything reaches a deployment.
+      #
+      # Building the server here is not a ground-rule-1 violation: that rule is
+      # about CRATE dependencies, and the `cargo tree` boundary check in the
+      # `gates` job still passes. Running a peer's binary in a test is not a
+      # dependency edge.
+      - name: build the server from THIS branch
+        working-directory: server
+        run: cargo build -q -p munarium-server
+
+      - name: start it, from source
+        working-directory: server
+        env:
+          MUNARIUM_HTTP_ADDR: 127.0.0.1:18080
+          MUNARIUM_GRPC_ADDR: disabled
+          MUNARIUM_OPS_ADDR: 127.0.0.1:19080
+          MUNARIUM_STORE: postgres
+          MUNARIUM_SOURCE_STORE: pg
+          MUNARIUM_DATABASE_URL: postgres://munarium:munarium-dev@localhost:5435/munarium
+          MUNARIUM_AUTH_MODE: static
+          MUNARIUM_STATIC_TOKENS: "mxserver-rw:matrix-live:rw,mxserver-mgmt:matrix-live:mgmt"
+          MUNARIUM_TOKEN_SECRET: "compose-matrix-tier-secret-32-bytes!"
+          MUNARIUM_EVIDENCE_PURGE_INTERVAL_SECS: "0"
+        run: |
+          ./target/debug/munarium-server & echo $! > /tmp/server.pid
+          for i in $(seq 1 40); do
+            curl -sf http://127.0.0.1:18080/healthz > /dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:18080/healthz || {
+            echo "::error::the test server never became ready"; exit 1; }
+
+      # The gate. These tests SKIP when the URL is unset and FAIL when it is set
+      # and the connection does not work — a configured peer that quietly falls
+      # back to nothing is how a tier reports green while testing nothing.
+      - name: matrix against the real server
+        working-directory: matrix
+        env:
+          MUNARIUM_MATRIX_LIVE_SERVER_URL: http://127.0.0.1:18080
+          MUNARIUM_MATRIX_LIVE_SERVER_TOKEN: mxserver-rw
+          MUNARIUM_MATRIX_LIVE_TENANT: matrix-live
+        run: cargo test -p munarium-matrix-workers --test live_server -- --nocapture
+
+      - name: stop it
+        if: always()
+        run: |
+          kill "$(cat /tmp/server.pid 2>/dev/null)" 2>/dev/null || true
+          docker stop munarium-server 2>/dev/null || true

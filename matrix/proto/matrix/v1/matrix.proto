@@ -1,0 +1,237 @@
+// SPDX-License-Identifier: Apache-2.0
+// Munarium Matrix — the gRPC data plane.
+//
+// ONE service, ONE server-streaming RPC. Registry, journal, reports and ops
+// stay REST; this plane exists for the call that benefits from streaming —
+// an execute whose progress is worth watching and whose cancellation should
+// reach the source — and for a deployment posture in which gRPC is the
+// first-class transport (owner's decision, 2026-08-29: gRPC is a core
+// philosophy for Ioka; the §5.1 latency trigger no longer gates it).
+//
+// THIS FILE IS NOT A SECOND CONTRACT. `matrix/contract/*.schema.json` remains
+// the one normative definition, vendored into the server. Every message here
+// mirrors a contract type field for field, with the same names; open JSON
+// values ride as `google.protobuf.Value`, and the evidence manifest — whose
+// schema is the normative one — rides as a `google.protobuf.Struct` rather
+// than a hand-maintained mirror of its sixty fields. The drift check is a
+// test that round-trips every committed contract example through these
+// messages and back and asserts nothing moved.
+syntax = "proto3";
+
+package matrix.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+// The query plane. Served only by a role that serves the query plane
+// (`all` or `query`); a control or sync container refuses at the service.
+service MatrixQuery {
+  // Execute a verified query contract. The stream carries progress stages,
+  // then exactly one terminal event: the evidence block, or a typed refusal.
+  //
+  // A refusal is an ANSWER, not a transport failure, so it is a message on
+  // the stream and the call completes OK. gRPC status codes are reserved for
+  // the transport and the caller's own mistakes: UNAUTHENTICATED,
+  // PERMISSION_DENIED, INVALID_ARGUMENT, UNIMPLEMENTED (wrong role),
+  // DEADLINE_EXCEEDED.
+  //
+  // Cancellation is native: dropping the stream aborts the execution task,
+  // and a budget unit reserved for it is reclaimed by the sweep.
+  rpc Execute(ExecuteRequest) returns (stream ExecuteEvent);
+}
+
+message ExecuteRequest {
+  // The contract name (`POST /v1/contracts/{name}/execute`'s path segment).
+  string contract = 1;
+  QueryIntent intent = 2;
+}
+
+message ExecuteEvent {
+  oneof event {
+    Progress progress = 1;
+    EvidenceBlock block = 2;
+    Refusal refusal = 3;
+  }
+}
+
+// One stage of an execution, in order: `authenticated`, `loading`, `wiring`,
+// `budget`, `executing`, `sealed`. Informational — a client that ignores
+// progress loses nothing but the timeline.
+message Progress {
+  string stage = 1;
+  google.protobuf.Timestamp at = 2;
+}
+
+// ---------------------------------------------------------------------------
+// QueryIntent — mirrors contract/query-intent.schema.json
+// ---------------------------------------------------------------------------
+
+enum IntentKind {
+  INTENT_KIND_UNSPECIFIED = 0;
+  INTENT_KIND_STRUCTURED_QUERY = 1;
+  INTENT_KIND_SEMANTIC = 2;
+}
+
+message QueryIntent {
+  string contract_version = 1;
+  IntentKind kind = 2;
+  optional string request_id = 3;
+  optional string contract = 4;
+  optional SemanticIntent semantic = 5;
+  map<string, TypedValue> parameters = 6;
+  AuthorizationSnapshot authorization = 7;
+  IntentLimits limits = 8;
+  optional google.protobuf.Timestamp deadline_at = 9;
+  optional FreshnessObligation freshness = 10;
+  optional SealPolicy seal = 11;
+}
+
+message SemanticIntent {
+  string provider = 1;
+  repeated string measures = 2;
+  repeated string dimensions = 3;
+  repeated SemanticFilter filters = 4;
+  optional string grain = 5;
+}
+
+message SemanticFilter {
+  string dimension = 1;
+  string op = 2;
+  TypedValue value = 3;
+}
+
+// A value with its logical type stated (the contract's `TypedValue`). `value`
+// is the canon@1 wire form — a decimal is a STRING here, never a number, so
+// `900000.50` keeps its scale across the wire exactly as it does in JSON.
+message TypedValue {
+  string type = 1;
+  google.protobuf.Value value = 2;
+  optional uint32 scale = 3;
+  optional string element_type = 4;
+}
+
+message AuthorizationSnapshot {
+  string tenant = 1;
+  optional string uid = 2;
+  int32 access_level = 3;
+  repeated string compartments = 4;
+  optional string session_id = 5;
+  optional string runbook_ref = 6;
+}
+
+message IntentLimits {
+  uint64 max_rows = 1;
+  uint64 max_bytes = 2;
+  optional uint64 max_cells = 3;
+}
+
+enum FreshnessAction {
+  FRESHNESS_ACTION_UNSPECIFIED = 0;
+  FRESHNESS_ACTION_REFUSE = 1;
+  FRESHNESS_ACTION_DISCLOSE = 2;
+}
+
+message FreshnessObligation {
+  uint64 max_staleness_seconds = 1;
+  FreshnessAction on_violation = 2;
+}
+
+message SealPolicy {
+  bool required = 1;
+  optional uint32 retention_days = 2;
+  optional string idempotency_key = 3;
+}
+
+// ---------------------------------------------------------------------------
+// EvidenceBlock — mirrors contract/evidence-block.schema.json
+// ---------------------------------------------------------------------------
+
+message EvidenceBlock {
+  string contract_version = 1;
+  oneof kind {
+    CompleteTable complete_table = 2;
+    Count count = 3;
+    DocumentHits document_hits = 4;
+    FactSlice fact_slice = 5;
+    Refusal refusal = 6;
+  }
+}
+
+message CompleteTable {
+  string evidence_id = 1;
+  // The sealed manifest, as the normative JSON object.
+  google.protobuf.Struct manifest = 2;
+  repeated BlockRow rows = 3;
+  bool truncated = 4;
+  repeated Derivation derivations = 5;
+}
+
+message BlockRow {
+  string row_id = 1;
+  // Positional to `manifest.schema.columns`. An absent `value` is SQL NULL;
+  // an empty string is an empty string. The distinction is one of the T0
+  // traps and it survives the wire here.
+  repeated Cell cells = 2;
+}
+
+message Cell {
+  optional string value = 1;
+}
+
+message Count {
+  string evidence_id = 1;
+  google.protobuf.Struct manifest = 2;
+  string value = 3;
+  optional string of = 4;
+  bool exact = 5;
+}
+
+message DocumentHits {
+  repeated google.protobuf.Value hits = 1;
+}
+
+message FactSlice {
+  string version_id = 1;
+  uint64 as_of_seq = 2;
+  repeated google.protobuf.Value facts = 3;
+}
+
+message Derivation {
+  string ref = 1;
+  string op = 2;
+  optional string over = 3;
+  optional string numerator = 4;
+  optional string denominator = 5;
+  // canon@1 text, or absent when the derivation is undefined (a ratio over
+  // zero). Undefined is reported, never rendered as 0.
+  optional string value = 6;
+  optional string unit = 7;
+  optional uint32 scale = 8;
+}
+
+// ---------------------------------------------------------------------------
+// Refusal — mirrors contract/refusal.schema.json
+// ---------------------------------------------------------------------------
+
+// `class` is CLOSED and is what a consumer switches on; `code` is OPEN and is
+// what an operator reads. A consumer that meets an unknown code falls back to
+// the class.
+enum RefusalClass {
+  REFUSAL_CLASS_UNSPECIFIED = 0;
+  REFUSAL_CLASS_NOT_COVERED = 1;
+  REFUSAL_CLASS_UNAVAILABLE = 2;
+  REFUSAL_CLASS_DENIED = 3;
+  REFUSAL_CLASS_INCOMPLETE = 4;
+  REFUSAL_CLASS_INVALID = 5;
+  REFUSAL_CLASS_EXHAUSTED = 6;
+}
+
+message Refusal {
+  string contract_version = 1;
+  RefusalClass class = 2;
+  string code = 3;
+  string message = 4;
+  optional string source_id = 5;
+  optional uint64 retry_after_seconds = 6;
+  optional google.protobuf.Value detail = 7;
+}

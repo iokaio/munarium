@@ -1,0 +1,46 @@
+# A Unity Catalog metric view, bounded. The formulas live in
+# the view's own YAML on the source; this asset says which measures and
+# dimensions a caller may ask for, which dimensions may be filtered, and the
+# questions that must keep answering the same way. The view's definition is
+# fingerprinted at verify time, and an execute under a different definition
+# is refused `metric_view_changed` until someone verifies again.
+#
+# A Databricks fixture creates `pipeline_metrics` over the same
+# `opportunities` table the query contracts read (`_databricks.ps1`).
+apiVersion: munarium.ioka.io/v1
+kind: MetricView
+metadata:
+  name: pipeline-metrics
+  version: 1
+spec:
+  source: dbx-crm
+  view: mxtest.pipeline_metrics
+  description: >-
+    Open pipeline and deal counts by region and stage, as the finance metric
+    view defines them. The measure formulas are the view's, not ours.
+  measures:
+    open_pipeline: { type: decimal, scale: 2, unit: USD, additivity: additive }
+    deal_count: { type: int64, additivity: additive }
+  dimensions:
+    region: { type: string }
+    stage: { type: string }
+  filters:
+    allowedDimensions: [region]
+  maxDimensions: 2
+  synonyms:
+    open_pipeline: [pipeline, open opportunities, open deals value]
+    deal_count: [number of deals, opportunity count]
+  limits:
+    maxRows: 500
+    maxBytes: 1048576
+    timeoutMs: 10000
+  evidence:
+    retentionDays: 400
+    replayLevel: sealed_result
+  verifiedQuestions:
+    - question: "Open pipeline by region"
+      intent: { measures: [open_pipeline], dimensions: [region] }
+      expect: { rows: 2 }
+    - question: "How many deals are there in total?"
+      intent: { measures: [deal_count] }
+      expect: { rows: 1 }

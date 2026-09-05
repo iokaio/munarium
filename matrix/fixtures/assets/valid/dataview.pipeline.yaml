@@ -1,0 +1,52 @@
+# The minimal native data view: one fact table, the
+# aggregates declared here, dimensions as its columns. No joins, so the grain
+# is the table's and fan-out cannot happen. The table's definition — every
+# column, type and nullability — is fingerprinted at verify and re-read before
+# every execute, exactly as a metric view's is.
+#
+# Under the T0 fixture's `matrix_reader` (row-level secured to EMEA) the
+# verified question below sees one region with four opportunities —
+# 1,500,000.00 + 250,000.50 + 120,000.00 + 900,000.50 = 2,770,001.00. That
+# figure was wrong by 0.50 when it was first written by hand, and the
+# invariant is what caught it on the first run against a real database:
+# which is the entire argument for evaluating them.
+apiVersion: munarium.ioka.io/v1
+kind: DataView
+metadata:
+  name: pipeline-by-region
+  # v2: v1's verified question expected 2,770,000.50 — an arithmetic slip
+  # made by hand. An applied version is immutable, so the correction is a new
+  # version rather than an edit; the invariant that caught it is why.
+  version: 2
+spec:
+  source: crm
+  table: opportunities
+  description: >-
+    Pipeline amount and opportunity count by region and stage, summed from
+    the register's own rows.
+  measures:
+    pipeline_amount: { op: sum, column: amount, type: decimal, scale: 2, unit: USD, additivity: additive }
+    opportunity_count: { op: count, type: int64, additivity: additive }
+  dimensions:
+    region: { type: string }
+    stage: { type: string }
+  filters:
+    allowedDimensions: [region, stage]
+  maxDimensions: 2
+  synonyms:
+    pipeline_amount: [pipeline, total pipeline, amount by region]
+    opportunity_count: [number of opportunities, deal count]
+  limits:
+    maxRows: 500
+    maxBytes: 1048576
+    timeoutMs: 6000
+  evidence:
+    retentionDays: 400
+    replayLevel: sealed_result
+  verifiedQuestions:
+    - question: "Pipeline by region"
+      intent: { measures: [pipeline_amount, opportunity_count], dimensions: [region] }
+      expect:
+        rows: 1
+        invariants:
+          - { op: sum, over: pipeline_amount, equals: "2770001.00" }

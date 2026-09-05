@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-matrix-workers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "The role workers: sync (mode A), query (mode B), reconcile (mode C)."
+
+[dependencies]
+munarium-matrix-core = { workspace = true }
+munarium-matrix-types = { workspace = true }
+munarium-matrix-adapter = { workspace = true }
+munarium-matrix-store = { workspace = true }
+munarium-matrix-server-client = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+csv = { workspace = true }
+rust_decimal = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+munarium-matrix-adapter-landing = { workspace = true }
+# The live tier seeds a memory version and a document-derived claim through the
+# server's OWN routes. Matrix's client deliberately cannot do either — it may
+# only propose connector claims — so the test reaches for raw HTTP rather than
+# widening a client surface to suit a test.
+reqwest = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

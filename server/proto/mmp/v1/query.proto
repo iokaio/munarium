@@ -1,0 +1,100 @@
+// MMP v1 — Query API. Every read accepts as_of_seq: one pin bounds facts,
+// anchors, promises (post-pin fulfillment reads back open), counters, and
+// entities; digests are deterministically REBUILT under a pin, never served
+// from storage. This is the load-bearing semantic of the mesh.
+syntax = "proto3";
+
+package mmp.v1;
+
+import "mmp/v1/common.proto";
+import "mmp/v1/ledger.proto";
+
+message GetHeadRequest {
+  string version_id = 1;
+}
+message GetHeadResponse {
+  uint64 head_seq = 1;
+}
+
+message GetClaimRequest {
+  string claim_id = 1;
+}
+message GetClaimResponse {
+  Claim claim = 1;
+  bool superseded = 2;
+  string superseded_by = 3;
+}
+
+message SliceFactsRequest {
+  string version_id = 1;
+  string scope_prefix = 2;            // exact or "prefix.%" match
+  uint64 as_of_seq = 3;               // 0 = head
+  repeated ClaimStatus statuses = 4;  // default: [ACCEPTED]
+  uint32 limit = 5;                   // keeps the NEWEST n
+}
+message SliceFactsResponse {
+  FactSlice slice = 1;
+}
+
+message GetLineageRequest {
+  string version_id = 1;
+}
+message GetLineageResponse {
+  Lineage lineage = 1;
+}
+
+message ListAnchorsRequest {
+  string version_id = 1;
+  uint64 as_of_seq = 2;
+}
+message ListAnchorsResponse {
+  repeated Anchor anchors = 1;
+}
+
+message ListPromisesRequest {
+  string version_id = 1;
+  string status = 2;   // empty = all; applies to the AS-OF status
+  uint64 as_of_seq = 3;
+}
+message ListPromisesResponse {
+  repeated Promise promises = 1;
+}
+
+message ComposeContextRequest {
+  string version_id = 1;
+  string scope = 2;
+  uint64 budget_tokens = 3; // 0 = unbounded
+  uint32 fact_limit = 4;    // default 60
+  uint64 as_of_seq = 5;
+  string as_of_date = 6;    // YYYY-MM-DD; resolved to a seq pin via version as_of metadata
+}
+message ComposeContextResponse {
+  ComposedContext context = 1;
+}
+
+message CounterTotalsRequest {
+  string version_id = 1;
+  uint64 as_of_seq = 2;
+}
+message CounterTotalsResponse {
+  repeated CounterState counters = 1;
+}
+
+message ListDigestsRequest {
+  string version_id = 1;
+}
+message ListDigestsResponse {
+  repeated Digest digests = 1;
+}
+
+service QueryService {
+  rpc GetHead(GetHeadRequest) returns (GetHeadResponse);
+  rpc GetClaim(GetClaimRequest) returns (GetClaimResponse);
+  rpc SliceFacts(SliceFactsRequest) returns (SliceFactsResponse);
+  rpc GetLineage(GetLineageRequest) returns (GetLineageResponse);
+  rpc ListAnchors(ListAnchorsRequest) returns (ListAnchorsResponse);
+  rpc ListPromises(ListPromisesRequest) returns (ListPromisesResponse);
+  rpc ComposeContext(ComposeContextRequest) returns (ComposeContextResponse);
+  rpc CounterTotals(CounterTotalsRequest) returns (CounterTotalsResponse);
+  rpc ListDigests(ListDigestsRequest) returns (ListDigestsResponse);
+}

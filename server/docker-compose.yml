@@ -1,0 +1,114 @@
+# dev profile: laptop parity (architecture.md §13).
+#   docker compose up                      -> postgres + munarium-server
+#   docker compose --profile gateway up    -> + Envoy fronting 443-style gateway on :8443
+#   docker compose --profile cluster up    -> + a SECOND server instance and an Envoy
+#                                             round-robining both on :8443 — the local
+#                                             N-replica demo (docs/ops/clustering.md)
+#   docker compose --profile s3 up minio   -> + MinIO for the s3 source-store smoke
+#                                             (gated test: MUNARIUM_TEST_S3_ENDPOINT)
+services:
+  postgres:
+    image: pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
+    environment:
+      POSTGRES_USER: munarium
+      POSTGRES_PASSWORD: munarium-dev
+      POSTGRES_DB: munarium
+    ports: ["5433:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U munarium"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  munarium-server:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MUNARIUM_STORE: postgres
+      MUNARIUM_DATABASE_URL: postgres://munarium:munarium-dev@postgres:5432/munarium
+      MUNARIUM_AUTH_MODE: static
+      MUNARIUM_STATIC_TOKENS: devtoken:dev-tenant:rw
+      MUNARIUM_LOG: info
+      # Document bytes in Postgres — the offline fallback, so the dev
+      # profile needs no cloud account. Production is 'az' via
+      # MUNARIUM_AZURE_STORAGE_ACCOUNT; s3|gcs|file also exist
+      # (munarium-store-objects — see README "Source stores").
+      MUNARIUM_SOURCE_STORE: pg
+      # 1 for the single-server flow; export MUNARIUM_REPLICA_COUNT=2 before
+      # `docker compose --profile cluster up` so both instances split the
+      # provider rate budgets (docs/ops/clustering.md).
+      MUNARIUM_REPLICA_COUNT: "${MUNARIUM_REPLICA_COUNT:-1}"
+      MUNARIUM_INSTANCE_ID: compose-a
+    ports:
+      # host ports interpolate so machines with conflicts can remap
+      # (localdeploy.ps1 sets these; defaults match the documented layout)
+      - "${MUNARIUM_HOST_HTTP:-8080}:8080"    # REST + /docs + /openapi.json
+      - "${MUNARIUM_HOST_GRPC:-50051}:50051"  # direct gRPC (plane 3)
+      - "${MUNARIUM_HOST_OPS:-9090}:9090"     # ops/metrics
+
+  munarium-server-b:
+    # Second instance for the cluster profile: same image, same database,
+    # same tenant tokens — NO host ports (the envoy-cluster gateway is the
+    # front door; publishing 8080 twice would collide). REPLICA_COUNT=2 on
+    # this service arms the cluster-mode validation and halves the
+    # per-instance provider rate budgets; set MUNARIUM_REPLICA_COUNT=2 in the
+    # environment before `docker compose --profile cluster up` so the
+    # primary service matches (its default stays 1 for the single-server
+    # flow).
+    profiles: [cluster]
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MUNARIUM_STORE: postgres
+      MUNARIUM_DATABASE_URL: postgres://munarium:munarium-dev@postgres:5432/munarium
+      MUNARIUM_AUTH_MODE: static
+      MUNARIUM_STATIC_TOKENS: devtoken:dev-tenant:rw
+      MUNARIUM_LOG: info
+      MUNARIUM_SOURCE_STORE: pg
+      MUNARIUM_REPLICA_COUNT: "2"
+      MUNARIUM_INSTANCE_ID: compose-b
+
+  envoy-cluster:
+    # Round-robin gateway over both instances (deploy/envoy/envoy-cluster.yaml)
+    # — same :8443 as the gateway profile, so run one profile or the other.
+    profiles: [cluster]
+    image: envoyproxy/envoy:v1.31-latest@sha256:caa5b411be1633b90023592a34a7e010c933d6e60206c758f631485e53006865
+    command: ["-c", "/etc/envoy/envoy.yaml"]
+    depends_on: [munarium-server, munarium-server-b]
+    ports:
+      - "${MUNARIUM_HOST_GATEWAY:-8443}:8443"
+    volumes:
+      - ./deploy/envoy/envoy-cluster.yaml:/etc/envoy/envoy.yaml:ro
+
+  minio:
+    # S3-compatible smoke target for the munarium-store-objects s3 backend.
+    # Off by default (profile) — CI and the normal dev loop never start it.
+    profiles: [s3]
+    image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "${MUNARIUM_HOST_MINIO:-9000}:9000"   # S3 API
+      - "${MUNARIUM_HOST_MINIO_UI:-9001}:9001" # web console
+    volumes: [miniodata:/data]
+
+  envoy:
+    profiles: [gateway]
+    image: envoyproxy/envoy:v1.31-latest@sha256:caa5b411be1633b90023592a34a7e010c933d6e60206c758f631485e53006865
+    command: ["-c", "/etc/envoy/envoy.yaml"]
+    depends_on: [munarium-server]
+    ports:
+      - "${MUNARIUM_HOST_GATEWAY:-8443}:8443" # gateway plane: REST + gRPC-over-HTTP/2 content-type routed
+    volumes:
+      - ./deploy/envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+
+volumes:
+  pgdata:
+  miniodata:

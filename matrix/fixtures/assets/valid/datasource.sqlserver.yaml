@@ -1,0 +1,45 @@
+# A SQL Server source. The credential is an ADO.NET connection string
+# resolved through the secret resolver at call time, so the host is declared
+# here as well: it is the only value the egress allowlist can be checked
+# against, and a validator cannot read a secret.
+apiVersion: munarium.ioka.io/v1
+kind: DataSource
+metadata:
+  name: crm-sqlserver
+  version: 1
+spec:
+  adapter: sqlserver
+  connection:
+    host: crm.database.windows.net
+    schema: dbo
+  credentialRef: matrix-crm-sqlserver
+  egress:
+    allowHosts: [crm.database.windows.net]
+  role:
+    # `subjectToRowSecurity` is a real requirement on this engine: SQL Server
+    # has a row-level policy engine, unlike MySQL. Observing it needs VIEW
+    # DEFINITION on the database, or a protected table reports as unprotected.
+    mustBe: { readOnly: true, subjectToRowSecurity: true, notOwner: true }
+  authorization:
+    strategy: source_native
+  limits:
+    maxRows: 10000
+    maxBytes: 8388608
+    statementTimeoutMs: 8000
+    budgetPerHour: 500
+  snapshot:
+    kind: change_tracking_version
+    replayLevel: sealed_result
+  schemaFingerprint:
+    onDrift: refuse
+  sync:
+    mode: watermark
+    schedule: "*/15 * * * *"
+    watermark:
+      column: updated_at
+      inclusive: false
+      tieBreak: id
+    entity:
+      table: opportunities
+      key: [id]
+    projection: [id, name, stage, amount, region, updated_at]

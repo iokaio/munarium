@@ -1,0 +1,11 @@
+# A BigQuery source with no project. The project is part of the jobs.query URL
+# and there is no default to fall back to.
+apiVersion: munarium.ioka.io/v1
+kind: DataSource
+metadata: { name: crm-bigquery, version: 1 }
+spec:
+  adapter: bigquery
+  connection: { dataset: crm, location: EU }
+  credentialRef: matrix-crm-bigquery
+  egress: { allowHosts: [bigquery.googleapis.com] }
+  authorization: { strategy: source_native }

@@ -1,0 +1,134 @@
+# A worked evidence hierarchy (S-3.x): documents, a governed register, and the
+# ledger's own facts, ranked.
+#
+#   mmctl apply -f runbooks/pipelines/diligence-hierarchy.yaml
+#   mmctl run diligence-hierarchy --version-id <memv-...> --watch
+#
+# The point of the file is the `researchProfiles` block. Everything above it is
+# an ordinary v2 retrieval runbook.
+apiVersion: munarium.ioka.io/v1
+kind: Runbook
+metadata: { name: diligence-hierarchy, version: 1 }
+spec:
+  collections:
+    - name: dataroom-contracts
+      shape: commercial-contracts@1
+      sources: { filenamePrefix: northgate/contracts/ }
+      # Labels ride the evidence sealed from this collection, so a report can
+      # group by them without re-deriving provenance.
+      evidence: { labels: [dataroom, contract] }
+    - name: dataroom-minutes
+      shape: archival-documents@1
+      accessLevel: 2
+      sources: { filenamePrefix: northgate/minutes/ }
+      evidence: { labels: [dataroom, governance] }
+
+  # Pre-declared Matrix query contracts. A layer names one as `matrix:<name>`;
+  # the model never writes SQL, so there is no injection surface to defend.
+  dataViews:
+    - name: revenue-register
+      contract: revenue_by_region@2
+      description: quarterly revenue by region, from the system of record
+      # The contract's declared parameters, bound HERE. A contract with a
+      # required parameter is unreachable without this — and binding one at
+      # turn time would hand the caller a knob on a query whose whole point is
+      # that it was declared in advance. Values are always text: a decimal
+      # round-tripped through a JSON number reaches the source having lost the
+      # precision the contract exists to keep.
+      parameters:
+        as_of: { type: date, value: "2026-06-30" }
+      accessLevel: 2
+
+  retrieval:
+    topK: 20
+    defaultResearchProfile: diligence
+
+    researchProfiles:
+      - name: diligence
+        description: >-
+          The register decides, the data room explains, the ledger remembers.
+        layers:
+          # ORDER IS THE HIERARCHY. Nothing below declares rank; being first is
+          # what makes the register outrank the documents when they disagree.
+          - name: register
+            sources: [matrix:revenue-register]
+            role: controlling
+            # Optional, not required, and that is a deliberate posture: a
+            # Matrix outage should thin this runbook's answers, not stop them.
+            # Mark it `required` only where an answer without the register
+            # would be worse than no answer — and then a runbook-wide refusal
+            # is what you have chosen.
+            requirement: optional
+            # Whole or nothing. Half a table is not a smaller true answer, and
+            # a model shown nine of twelve rows will answer about twelve.
+            preserveCompleteResult: true
+            # Required beside preserveCompleteResult, and it is what lets apply
+            # catch a layer that could never fit the context budget — instead
+            # of every turn discovering it, one paid call at a time.
+            maxBytes: 6000
+            deadlineMs: 4000
+
+          - name: documents
+            sources: [dataroom-contracts, dataroom-minutes]
+            role: primary
+            requirement: optional
+
+          # Consulted only if nothing above produced evidence. The version is
+          # named because a fact layer must pin what it reads: sessions carry
+          # no memory-version binding, so a bare `facts` would validate and
+          # then refuse every turn.
+          - name: ledger
+            sources: [facts:REPLACE_WITH_VERSION_ID]
+            role: supporting
+            requirement: fallback
+
+  completion:
+    contextCharBudget: 16000
+    promptTemplate: |
+      Answer the question using only the evidence below.
+
+      Each block is labelled with the layer it came from. A block marked
+      COMPLETE is the whole result; a block marked TRUNCATED is not, so do not
+      say "all" or "there are N" on the strength of it. A block that says no
+      evidence was available means that source was not consulted — say so
+      rather than answering as if it had been.
+
+      Where the layers disagree, report the disagreement. Do not silently
+      prefer one.
+
+      For any number you state, add an assertions block citing the rows it
+      rests on. Use the row ids exactly as they appear in the evidence above —
+      a keyed result labels its rows by key, not by position:
+
+      ```assertions
+      [{"value": "900000.50", "unit": "EUR", "type": "value",
+        "evidence_refs": ["evidence/<id>#EMEA"]}]
+      ```
+
+      {context}
+
+      Question: {query}
+
+    verification:
+      quotes: true
+      citations: true
+      maxRetries: 1
+
+  models:
+    tasks:
+      # Classifying what a question ASKS runs on the server; Matrix never calls
+      # a model provider. Omit this and the query is used literally, which is
+      # a supported mode and not a degraded one — it is how a keyless run works.
+      intent: { tier: fast }
+      completion: { tier: capable }
+
+  steps:
+    - resolveSources: {}
+    - buildIndex: {}
+    - verify: {}
+    # Checks every dataView against Matrix. Read-only, and a step rather than
+    # an apply-time check because it needs Matrix reachable — applying a
+    # runbook must not depend on a second service being up.
+    - verifyDataViews: {}
+    - cutover: { approval: required }
+    - retireOld: { keep_versions: 2 }

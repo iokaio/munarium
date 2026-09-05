@@ -1,0 +1,68 @@
+{
+  "contract_version": "0.1.0",
+  "kind": "count",
+  "evidence_id": "ev-01a047000000000000000000000000c2",
+  "manifest": {
+    "contract_version": "0.1.0",
+    "canon": "canon@1",
+    "evidence_id": "ev-01a047000000000000000000000000c2",
+    "tenant": "acme",
+    "kind": "count",
+    "logical_result_hash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "artifact_hash": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "bytes_len": 96,
+    "media_type": "text/csv; charset=utf-8",
+    "source": {
+      "source_id": "crm",
+      "source_version": 1,
+      "adapter": "postgres"
+    },
+    "versions": {
+      "render": "record-documents@1"
+    },
+    "schema": {
+      "columns": [
+        {
+          "id": "c0",
+          "name": "count",
+          "type": "int64",
+          "nullable": false
+        }
+      ]
+    },
+    "identity": {
+      "row_id_rule": "position",
+      "order_by": [],
+      "rows": 1
+    },
+    "completeness": {
+      "truncated": false,
+      "rows_covered": 1284,
+      "rows_excluded": 17,
+      "exclusion_reason": "row policy denied 17 rows to every configured class principal"
+    },
+    "snapshot_vector": [
+      {
+        "source_id": "crm",
+        "marker": "1031:1031:",
+        "replay_level": "sealed_result"
+      }
+    ],
+    "execution": {
+      "started_at": "2026-08-28T11:00:00Z",
+      "ended_at": "2026-08-28T11:00:04Z",
+      "effective_principal": "matrix_reader"
+    },
+    "authorization_class": {
+      "name": "sales-emea",
+      "access_level": 2,
+      "compartments": [
+        "sales",
+        "emea"
+      ]
+    }
+  },
+  "value": "1284",
+  "of": "opportunities where stage not in (Closed Won, Closed Lost)",
+  "exact": true
+}

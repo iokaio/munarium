@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://munarium.ioka.io/contract/datastore/build-spec.schema.json",
+  "title": "BuildSpec — the logical indexed corpus",
+  "description": "Everything that can change RESULTS, and nothing that cannot. The SHA-256 of this document canonicalized under artifact@1 is the logical index_version_id (prefixed 'idx2-'). It deliberately excludes the search engine, its revision, the envelope format, graph and quantization parameters, thread counts, the build timestamp, and query-only fusion knobs -- so rebuilding the same corpus on a newer engine produces a new ARTIFACT and not a new logical version, and a session's pin survives an engine upgrade.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["spec_version", "scope", "sources", "snapshot", "shape", "chunker", "extractor", "lexical_analysis", "reconstructed"],
+  "properties": {
+    "spec_version": {
+      "description": "Schema version of this document. Not the contract VERSION and not the artifact envelope format.",
+      "type": "integer",
+      "const": 1
+    },
+    "scope": {
+      "description": "The logical scope. Tenant is supplied SEPARATELY and is never a field here: an identical corpus in two tenants is legitimately the same logical build, and tenant isolation is enforced by the catalog key and the runtime cache key, never by salting a content hash.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": { "enum": ["collection", "legacy_shape"] },
+        "id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "sources": {
+      "description": "Ordered, and the order is part of the identity: it is the stable source_id ordering the builder streams in, so two builds of the same set cannot disagree by permutation.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source_id", "logical_path", "media_type", "content_sha256"],
+        "properties": {
+          "source_id": { "type": "string", "minLength": 1 },
+          "logical_path": { "type": "string", "minLength": 1 },
+          "media_type": { "type": "string", "minLength": 1 },
+          "content_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "revision": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "snapshot": {
+      "description": "The immutable point in the ledger this corpus reflects.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["watermark_seq"],
+      "properties": {
+        "watermark_seq": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "shape": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "version"],
+      "properties": {
+        "ref": { "type": "string", "minLength": 1 },
+        "version": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "chunker": {
+      "description": "Name, version and EVERY effective parameter. 'Effective' means resolved: a default that was not written down still changes the chunks, so it is recorded here rather than left implicit.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "params"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "params": {
+          "type": "object",
+          "additionalProperties": { "type": ["string", "integer", "boolean", "null"] }
+        }
+      }
+    },
+    "extractor": {
+      "description": "Per-source extraction outcome and the hash of the text that came out. Without the per-source record, two builds whose extraction silently differed would share a logical id.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "config", "per_source"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "config": {
+          "type": "object",
+          "additionalProperties": { "type": ["string", "integer", "boolean", "null"] }
+        },
+        "per_source": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source_id", "outcome", "extracted_text_sha256"],
+            "properties": {
+              "source_id": { "type": "string", "minLength": 1 },
+              "outcome": { "enum": ["extracted", "empty", "skipped", "failed"] },
+              "extracted_text_sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+              "method": { "type": ["string", "null"] }
+            }
+          }
+        }
+      }
+    },
+    "embedder": {
+      "description": "Null is valid and means a lexical-only corpus. An adapter must not fabricate a vector leg for one, and PreparedSearchQuery.embedding is Option for the same reason.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["model", "dimensions", "normalization", "metric"],
+      "properties": {
+        "model": { "type": "string", "minLength": 1 },
+        "dimensions": { "type": "integer", "minimum": 1 },
+        "normalization": { "enum": ["l2", "none"] },
+        "metric": { "enum": ["cosine", "l2", "inner_product"] }
+      }
+    },
+    "lexical_analysis": {
+      "description": "The Munarium lexical-analysis contract: everything that changes which terms exist. This is in the LOGICAL identity by the section 5.1 V1 decision, so a tokenizer change produces a new logical version that must be activated like any corpus change. The corpus-only alternative is recorded in decisions.md with its trigger.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "tokenizer", "stemmer", "stop_terms_ref", "index_options"],
+      "properties": {
+        "contract_version": { "type": "integer", "minimum": 1 },
+        "tokenizer": { "type": "string", "minLength": 1 },
+        "stemmer": { "type": "string", "minLength": 1 },
+        "stop_terms_ref": {
+          "description": "A reference plus the hash of the resolved list. A reference alone would let the list change under a fixed logical id.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ref", "sha256"],
+          "properties": {
+            "ref": { "type": "string", "minLength": 1 },
+            "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          }
+        },
+        "index_options": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["positions"],
+          "properties": {
+            "positions": {
+              "description": "Must be true for any corpus the current shaping serves: phrase and substring demotions read positions.",
+              "type": "boolean"
+            },
+            "case_folding": { "enum": ["lowercase", "none"] },
+            "accent_folding": { "enum": ["fold", "none"] }
+          }
+        }
+      }
+    },
+    "reconstructed": {
+      "description": "True for specs reassembled from an existing PostgreSQL 'idx-' version during a mirror build. Such a spec's hash is NOT the source of the version id -- the mirror reuses the existing id -- and it must never be used as replay input, because it is a best reconstruction of inputs nobody recorded, not a record of them.",
+      "type": "boolean"
+    }
+  }
+}

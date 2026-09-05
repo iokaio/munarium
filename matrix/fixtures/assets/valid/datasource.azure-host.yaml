@@ -1,0 +1,22 @@
+# A host of real-world length. Azure Postgres FQDNs run to ~47 characters and
+# Azure Databricks hosts to ~44, and an earlier secret heuristic
+# refused any connection value over 40 — so this exact asset was refused on
+# a live deployment at `spec.connection.host` with `credential.literal`, and no Azure
+# source could have been registered on a deployed Matrix. Every other valid
+# fixture uses a short host, which is why only a live run found it.
+apiVersion: munarium.ioka.io/v1
+kind: DataSource
+metadata:
+  name: crm-azure
+  version: 1
+spec:
+  adapter: postgres
+  connection:
+    host: psql-sample-a1b2c3d4.postgres.database.azure.com
+    database: crm
+    schema: crm
+  credentialRef: mxtest-crm
+  egress:
+    allowHosts: [psql-sample-a1b2c3d4.postgres.database.azure.com]
+  authorization:
+    strategy: source_native

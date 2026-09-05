@@ -1,0 +1,18 @@
+# Reference shape pack — the worked example for the tickets-reindex pipeline (apply with:
+#   mmctl apply -f runbooks/shapes/support-tickets.yaml)
+apiVersion: munarium.ioka.io/v1
+kind: Shape
+metadata: { name: support-tickets, version: 1 }
+spec:
+  fact:
+    schema:
+      type: object
+      properties:
+        subject: { type: string, pattern: "^(ticket-|source-|invocation|runbook-run-|munarium-shapes)" }
+        key: { type: string }
+        value: { type: string, minLength: 1 }
+      required: [subject, key, value]
+    supersession:
+      identity: [subject, key]
+  chunking: { max_chars: 400 }
+  indexing: { rrf_k: 60 }

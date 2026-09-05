@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-matrix-adapter-mysql"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+munarium-matrix-core = { workspace = true }
+munarium-matrix-adapter = { path = "../munarium-matrix-adapter" }
+munarium-matrix-types = { workspace = true }
+async-trait.workspace = true
+chrono.workspace = true
+serde_json.workspace = true
+rust_decimal = { workspace = true }
+# NOT the workspace sqlx: its feature list is Postgres-shaped, and sqlx
+# features are additive across a workspace — enabling `mysql` there would
+# compile a MySQL driver into the store, the server and every other crate
+# that touches sqlx, for a source most deployments do not have.
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio", "tls-rustls", "mysql", "chrono", "rust_decimal", "json",
+] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }

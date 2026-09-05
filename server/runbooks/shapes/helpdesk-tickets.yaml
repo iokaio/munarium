@@ -1,0 +1,26 @@
+# Helpdesk ticket shape — 300 support tickets derived from a 200k-row public
+# ticket dataset. Bound by the
+# customer-support runbook.
+#
+#   mmctl apply -f runbooks/shapes/helpdesk-tickets.yaml
+#
+# Subjects admit the corpus's own ids (cs-000123, product-lines, channels) so
+# a ticket fact keys to the ticket it came from; keys stay dot-free.
+# Distinct from the `support-tickets@1` reference shape, which exists to
+# exercise the reindex pipeline and pins its own subject prefixes.
+apiVersion: munarium.ioka.io/v1
+kind: Shape
+metadata: { name: helpdesk-tickets, version: 1 }
+spec:
+  fact:
+    schema:
+      type: object
+      properties:
+        subject: { type: string, pattern: "^[a-z0-9][a-z0-9_-]{0,63}$" }
+        key: { type: string, pattern: "^[a-z][a-z0-9_:-]{0,63}$" }
+        value: { type: string, minLength: 1, maxLength: 512 }
+      required: [subject, key, value]
+    supersession:
+      identity: [subject, key]
+  chunking: { max_chars: 800 }
+  indexing: { rrf_k: 60, candidate_n: 80 }

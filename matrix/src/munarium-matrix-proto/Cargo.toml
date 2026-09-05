@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "munarium-matrix-proto"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Generated matrix.v1 types and the MatrixQuery gRPC stubs, plus the conversions to and from the contract types. Wire-only: the JSON schemas in matrix/contract/ stay the one normative contract, and a test round-trips every committed example through these messages to prove it."
+
+[dependencies]
+munarium-matrix-core = { workspace = true }
+munarium-matrix-types = { workspace = true }
+prost = { workspace = true }
+prost-types = { workspace = true }
+tonic = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+
+[build-dependencies]
+tonic-build = { workspace = true }
+protoc-bin-vendored = { workspace = true }

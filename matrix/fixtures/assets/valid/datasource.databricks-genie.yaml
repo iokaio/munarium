@@ -1,0 +1,49 @@
+# A Databricks source that opens an AI/BI Genie space.
+#
+# The `genie:` block lives inside `connection:` because that map is
+# adapter-owned by design and Genie is a Databricks surface. Putting it in the
+# shared DataSourceSpec would ask every other adapter to carry a field it can
+# never use, and would move the cross-tree contract for a vendor feature.
+#
+# Read `docs/api/planner.md` for what a planner may and may not do. The short
+# version: it proposes, Matrix decides, and this route executes nothing.
+apiVersion: munarium.ioka.io/v1
+kind: DataSource
+metadata:
+  name: crm-genie
+  version: 1
+spec:
+  adapter: databricks
+  connection:
+    host: adb-1234567890.7.azuredatabricks.net
+    warehouseId: abc123
+    catalog: main
+    schema: crm
+    auth:
+      oauthM2m:
+        clientId: sp-1
+        clientSecretRef: matrix-databricks
+    allowHosts: [adb-1234567890.7.azuredatabricks.net]
+    genie:
+      spaceId: 01ef-1234-5678
+      # Exact match, never a prefix. A glob here would be an allowlist that
+      # grows whenever somebody names a new asset conveniently.
+      trustedAssets:
+        - asset-open-pipeline-by-region
+      # Empty: this space may resolve reviewed assets and may NOT run SQL it
+      # generated. Declaring tables here is what admits generated SQL at all,
+      # and the SQL compiler then does the real work.
+      allowedTables: []
+      # Off. Calling a model surface costs money and produces output that must
+      # never be mistaken for a contract's, so evaluation is opted into.
+      evaluationEnabled: false
+  credentialRef: matrix-databricks
+  egress:
+    allowHosts: [adb-1234567890.7.azuredatabricks.net]
+  authorization:
+    strategy: source_native
+  limits:
+    maxRows: 500
+    maxBytes: 1048576
+    statementTimeoutMs: 30000
+    budgetPerHour: 20

@@ -1,0 +1,27 @@
+# Regulatory shape — 40 FDA clinical (BIMO) warning letters plus the 77
+# Title 21 CFR sections they cite.
+# Bound by the regulatory-compliance runbook.
+#
+#   mmctl apply -f runbooks/shapes/regulatory-documents.yaml
+#
+# CFR section ids are legal subjects (117.126, 312.62) — note that a DOTTED
+# SUBJECT is fine while a dotted KEY is not: `subject.key=value` splits at the
+# LAST dot, so 117.126.record_retention resolves exactly as intended, but a
+# key of its own with a dot in it would steal from the subject.
+apiVersion: munarium.ioka.io/v1
+kind: Shape
+metadata: { name: regulatory-documents, version: 1 }
+spec:
+  fact:
+    schema:
+      type: object
+      properties:
+        subject:
+          { type: string, pattern: "^([0-9]{2,3}[.][0-9]{1,4}|[a-z0-9][a-z0-9_-]{0,63})$" }
+        key: { type: string, pattern: "^[a-z][a-z0-9_:-]{0,63}$" }
+        value: { type: string, minLength: 1, maxLength: 512 }
+      required: [subject, key, value]
+    supersession:
+      identity: [subject, key]
+  chunking: { max_chars: 1200 }
+  indexing: { rrf_k: 60, candidate_n: 100 }

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: munarium-matrix
+description: Munarium Matrix — the structured-evidence plane beside munarium-server. One Deployment per runtime role; the registry, journal and queues in a Postgres schema the chart does not create.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

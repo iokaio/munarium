@@ -1,0 +1,14 @@
+apiVersion: munarium.ioka.io/v1
+kind: QueryContract
+metadata: { name: ambiguousstatement, version: 1 }
+spec:
+  source: crm
+  statementByDialect:
+    postgres:
+      inline: "SELECT region FROM opportunities"
+      file: query/open-pipeline.pg.sql
+      hash: "0000000000000000000000000000000000000000000000000000000000000000"
+  result:
+    columns:
+      region: { type: string, key: true }
+    columnOrder: [region]

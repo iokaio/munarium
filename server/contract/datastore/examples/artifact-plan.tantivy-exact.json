@@ -1,0 +1,41 @@
+{
+  "plan_version": 1,
+  "envelope": {
+    "format_version": 1,
+    "feature_bits": [
+      "records.v1"
+    ]
+  },
+  "lexical": {
+    "engine_id": "tantivy",
+    "engine_revision": "0.22.0",
+    "positions": true,
+    "segments": 1,
+    "compression": null
+  },
+  "vector": {
+    "engine_id": "munarium-flat",
+    "engine_revision": "0.1.0",
+    "kind": "exact",
+    "quantization": null,
+    "graph": null,
+    "rescore_depth": null
+  },
+  "records": {
+    "format": "munarium-records@1",
+    "compression": null
+  },
+  "range_map": null,
+  "shaper": {
+    "policy_version": 1,
+    "decisions": [
+      {
+        "setting": "vector.kind",
+        "chosen": "exact",
+        "because": "chunk count below the approximate threshold",
+        "threshold": 100000,
+        "observed": 2411
+      }
+    ]
+  }
+}

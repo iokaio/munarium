@@ -1,0 +1,14 @@
+# Line endings: every text file is stored with LF and checked out with LF on
+# every platform, so a Windows clone and a Linux runner see the same bytes
+# (the contract publishers and the OpenAPI drift check compare files as bytes).
+* text=auto eol=lf
+
+# Windows batch files need CRLF to run.
+*.bat text eol=crlf
+
+# Binary assets.
+*.png binary
+*.jar binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
