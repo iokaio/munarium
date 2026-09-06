@@ -99,6 +99,10 @@ thought. This system is built by people who agree with him.
 
 ### How to read this book
 
+If you want a first working corpus application before reading the full book,
+start with [Getting started](getting-started.md). It follows the published
+Docker image through ingestion, index approval and a verified retrieval turn.
+
 Nobody reads a developer's guide cover to cover, and this one is not designed
 for it. Suggested paths:
 
@@ -115,6 +119,10 @@ for it. Suggested paths:
 - **Application engineer building the thing:** §15–§18 in order, then the
   worked tutorial in §21, keeping [api/rest.md](../api/rest.md) and the
   [errors registry](../api/errors.md) open in the next tab.
+- **Application engineer deploying the published Server:** start with
+  [§10's Docker Hub walkthrough](#deploy-the-published-docker-hub-image).
+  It needs Docker Desktop and PowerShell, and uses the released binaries
+  directly. Return to §2–§3 when you need to change or build the Server.
 - **Anyone about to add a dependency, a migration, or an endpoint:** the
   matching recipe in §6, *before* you start. The recipes exist because each
   one encodes at least one mistake that has already been made.
@@ -379,6 +387,11 @@ abridged only where marked with `…`:
 cd server
 docker compose up --build        # postgres + munarium-server on :8080
 ```
+
+For the published 1.0.0 image, use
+[the Docker Hub walkthrough](#deploy-the-published-docker-hub-image) instead
+of this source build. It uses the same development tenant and token, with
+HTTP on **18080** by default; substitute that port in the examples below.
 
 **Step 1: every call carries three things.** The first is a bearer token. The
 compose profile ships `devtoken`, which maps to tenant `dev-tenant` with the
@@ -1967,35 +1980,20 @@ Profiles keep the default posture minimal: what you did not ask for does
 not start, does not take ports, and does not appear in `docker compose
 ps`.
 
-### `localdeploy.ps1`: the persistent stack
+### A persistent stack for application development
 
-Everything above is temporary by design. It uses memory stores, fresh
-tenants, and processes removed in `finally` blocks. For manual checks, demo
-corpora, or client-library work, you may want a stack that *keeps* its data
-across restarts. Use `localdeploy.ps1` for that purpose.
+For manual checks, corpus loading and client-library work, keep PostgreSQL
+in a named volume and replace only the Server container between versions.
+The public source Compose file supports this through its `pgdata` volume.
+To use the released binaries without a Rust toolchain, follow
+[§10's Docker Hub walkthrough](#deploy-the-published-docker-hub-image).
+It includes a write/recreate/read check and a backup/restore drill.
 
-This is the one script in this chapter that is cited instead of run. It is
-§2's compose dev profile plus a Docker image build, so it adds no new
-machinery. Its header is the contract (localdeploy.ps1:1-13):
-
-> build and run the full Munarium stack on local Docker Desktop: the
-> munarium-server container + a PostgreSQL (pgvector) container with
-> PERSISTENT storage (named volumes server_pgdata / server_objects
-> survive restarts and redeploys). No Azure involved.
-
-The switches are simple. Use no switch to build and deploy. Use `-Gateway`
-to include the Envoy plane, and `-NoBuild` to redeploy without rebuilding
-the image. Use `-Down` to stop and keep the volumes. Use `-Down -Purge` to
-stop and delete them.
-
-Host ports default to the §2 alternates: 18080/15051/19090 and gateway
-18443. Each can be changed with a flag (localdeploy.ps1:20-23). The script
-waits on `/healthz` like the test tiers. When the stack is up, it prints a
-try-it block whose last line is worth noticing (localdeploy.ps1:86-88). It
-gives you a *conformance* command:
-`cargo run -p mmp-conformance -- --http … --grpc … --token devtoken`.
-In this repo, the standard way to say "the stack works" is to prove the
-invariants over both planes. Checking one endpoint is not enough.
+Earlier revisions of this guide described a `localdeploy.ps1` operator
+script here. That script is not shipped in the public Server tree. The
+standalone Compose recipe in §10 is the public path; it requires no
+private deployment scripts. In either path, readiness is the first check,
+followed by an authenticated operation and a persistence check.
 
 ### Working smaller: one crate, one test, one mode
 
@@ -5999,10 +5997,11 @@ reaches a registry. One Helm chart
 ([deploy/helm/munarium](../../deploy/helm/munarium/README.md)) and one
 illustrative Terraform module
 ([deploy/terraform/example-aks](../../deploy/terraform/example-aks/README.md))
-are the deployment path. Releases — signed images and version tags — are
-cut by Ioka outside this repository, and this chapter says nothing more
-about them than that. The gate transcript below comes from a run on this
-tree.
+are the cluster deployment path. Releases are built and published by Ioka;
+the public Server image is now available as `docker.io/iokaio/munarium`.
+This chapter covers consuming that image locally and selecting it for a
+cluster, while the source-build and CI sections remain for contributors.
+The gate transcript below comes from a run on this tree.
 
 ### One list of gates, three mirrors
 
@@ -6357,31 +6356,29 @@ silently skipped where it is required.
 
 ### The image: what `build.ps1 -Image` produces
 
-The only artifact that leaves this tree is the container image, and the
-[Dockerfile](../../Dockerfile) is short enough to read in one sitting. Its
-header states the target: "Multi-stage build: static musl binary ->
-distroless. Target < 30 MB" (Dockerfile:2). The builder stage is
-`rust:1-alpine` with `musl-dev` and the `x86_64-unknown-linux-musl` target
-(Dockerfile:21-23); it compiles `munarium-server` and `munarium-cli` in
-release mode with BuildKit cache mounts for the cargo registry, git
-checkouts and the target directory, so a warm builder recompiles only the
-crates a commit touched (Dockerfile:33-40). The `FEATURES` build argument
-defaults to `vector-diskann` (Dockerfile:32), which is why CI's step 4
-exists: the image ships a feature the workspace test run does not see. The
-final stage is `gcr.io/distroless/static-debian12:nonroot` (Dockerfile:42):
-no shell, no package manager, two binaries (`/munarium-server` and
-`/mmctl`), the `nonroot` user, and `EXPOSE 8080 50051 9090` — REST and
-docs, direct gRPC, ops (Dockerfile:47).
+The [Dockerfile](../../Dockerfile) builds `munarium-server` and `mmctl`
+with the locked Cargo dependencies and Rust 1.98.0. The builder and final
+base images are pinned by digest. `tonistiigi/xx`, clang and lld support
+cross-compilation to `x86_64-unknown-linux-musl` and
+`aarch64-unknown-linux-musl`; the final verification checks both binaries
+for static linkage. BuildKit caches the Cargo registry and git checkouts,
+with separate target caches for AMD64 and ARM64. The `FEATURES` argument
+defaults to `vector-diskann`.
 
-Two facts about this image shape the rest of the chapter. It is
-**static**: §9's rustls-everywhere rule is what lets a musl binary link
-without a C toolchain in the builder, and the `< 30 MB` budget is a
-correctness property, not a vanity metric — a static binary with no dynamic
-loader has no library to be missing at runtime. And it is **rootless by
-name, not by number**: distroless's `nonroot` user is non-numeric, which
-Kubernetes' `runAsNonRoot` cannot verify; the Helm chart therefore pins
-`runAsUser`/`runAsGroup: 65532`, a defect the chart's first install found
-(§13 entry 8).
+The final distroless image contains `/munarium-server`, `/mmctl`, CA roots
+and license notices under `/usr/share/licenses/munarium/`. It has no shell
+or package manager. `docker exec ... sh` and an in-container `curl`
+healthcheck therefore cannot work: probe from the host or another service,
+and invoke `/mmctl` directly. Port 8080 serves REST and the dashboard,
+50051 serves direct gRPC, and 9090 serves operations/metrics. `EXPOSE`
+documents those ports; it does not publish them to the host.
+
+The image runs as distroless `nonroot`, UID/GID **65532**. Persistent
+directories mounted for filesystem sources or derived indexes must be
+writable by that identity. Kubernetes deployments should set numeric
+`runAsUser` and `runAsGroup` values so `runAsNonRoot` can verify the user.
+The Dockerfile's size comment is a build target, not a measured size for
+every release or a substitute for checking the published platform images.
 
 The build needs no database. Every sqlx query is a runtime-checked string,
 so the Dockerfile sets no `SQLX_OFFLINE` and carries no `.sqlx/` data;
@@ -6403,12 +6400,15 @@ and tag a dirty tree so it can never masquerade as a reproducible
 per-commit image (`local-<shortsha>-dirty-<timestamp>`, or any scheme
 that puts the word *dirty* in the name).
 
-**Registry tags are mutable; digests are not.** Pushing the same tag twice
-can leave a platform holding a stale cached image under an unchanged name.
-Pin what you deploy to the image digest (`repository@sha256:…`) wherever
-your platform allows, and treat the tag as a human label. The Helm chart's
-`image.tag` value is the update lever; give it a value that identifies one
-build.
+**Select a release, then record its digest.** On Docker Hub, `1.0.0` is
+immutable; `1.0` and `latest` may advance. Candidate tags such as
+`1.0.0-rc.1` are evaluation builds. The additional `sha-<full-source-sha>`
+tag identifies the released source revision. Pin deployments to the image
+index digest (`repository@sha256:…`) so the same declaration selects the
+same build on both AMD64 and ARM64. A locally built image can have a
+different index digest even at the same source commit, because build
+provenance is part of the index. Do not substitute it for the published
+artifact while retaining the published artifact's verification claims.
 
 **Check the contract, not just the pulse.** After a roll, compare the
 served `/openapi.json` path count with the committed
@@ -6426,6 +6426,348 @@ python3 -c "import json; print(len(json.load(open('docs/api/openapi.json', encod
 The two numbers must agree. This is CI's step 10 extended past the
 registry to the running host.
 
+### Deploy the published Docker Hub image
+
+This walkthrough uses **Server 1.0.0**, published at
+[iokaio/munarium](https://hub.docker.com/r/iokaio/munarium). The image contains
+the Server and its CLI; PostgreSQL, Matrix and your application UI are
+separate services. Pulling it needs no Docker Hub login. Application
+authentication is still required once it is running.
+
+#### Choose the artifact and the storage layout
+
+Use PowerShell 7.3 or later and Docker Desktop with Linux containers.
+You need no Rust compiler, source checkout, cloud account or model key for
+the checks below. Docker selects AMD64 or ARM64 from the multi-platform
+index. Keep its digest in the deployment definition rather than pinning
+only one architecture's child manifest:
+
+```powershell
+$image = 'docker.io/iokaio/munarium@sha256:9f5cd5dec2f52cef26aabce625ace1390164e4930c93b5cc0d2177806b498d4c'
+docker pull $image
+if ($LASTEXITCODE -ne 0) { throw 'Server image pull failed' }
+docker buildx imagetools inspect $image
+if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect the published index' }
+```
+
+The equivalent human-readable tag is `iokaio/munarium:1.0.0`. Release notes
+record source commit `154b9c4f33b13a9f58a2229f578c0d7644410449` and provide
+[the Cosign verification command](https://github.com/iokaio/munarium/releases/tag/v1.0.0).
+The signature binds the index digest to its CI signing identity. SBOM and
+provenance attestations are attached to the index; the Rust SBOM inventory
+also includes build and development dependencies, not just linked runtime
+code. Neither the signature nor the SBOM proves your own configuration is
+correct: that is what the deployment checks establish.
+
+There are three different things to persist:
+
+| Data | Configuration | Persistence in this walkthrough |
+|---|---|---|
+| Ledger, metadata, runbooks, sessions and provider configuration | `MUNARIUM_STORE=postgres`, `MUNARIUM_DATABASE_URL` | PostgreSQL's `pgdata` volume |
+| Raw ingested document bytes | `MUNARIUM_SOURCE_STORE` | `pg`, in the same PostgreSQL backup as the ledger |
+| Optional derived search artifacts and local cache | `MUNARIUM_DATASTORE_*` and `MUNARIUM_RETRIEVAL_MODE` | Not enabled; ordinary PostgreSQL retrieval needs no Server data volume |
+
+`MUNARIUM_STORE=postgres` does **not** imply `MUNARIUM_SOURCE_STORE=pg`.
+With a PostgreSQL ledger, the source-store default is `az`, which needs
+Azure configuration. Set `pg` explicitly for a self-contained installation.
+Conversely, `MUNARIUM_STORE=memory` and `MUNARIUM_SOURCE_STORE=mem` lose
+their data with the process; mounting an otherwise unused directory on that
+container does not make memory storage persistent.
+
+#### Create a standalone Compose project
+
+Choose an empty directory outside the source checkout. The example uses
+HTTP **18080** and gRPC **15051**, leaving the usual development ports free.
+Change the host ports in `.env` if they are occupied. Keep the same directory
+and project name when redeploying so Compose reuses the same named volume.
+
+```powershell
+$ErrorActionPreference = 'Stop'
+if (Test-Path .env) { throw 'Use an empty deployment directory; preserve existing secrets' }
+$dbPassword = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+$tokenSecret = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+@"
+MUNARIUM_IMAGE=$image
+POSTGRES_PASSWORD=$dbPassword
+MUNARIUM_TOKEN_SECRET=$tokenSecret
+MUNARIUM_HOST_HTTP=18080
+MUNARIUM_HOST_GRPC=15051
+"@ | Set-Content .env -Encoding utf8
+$dbPassword = $null
+$tokenSecret = $null
+```
+
+The generated hexadecimal password needs no URI escaping. `.env` is a
+private deployment file: restrict access and keep it out of Git. Compose
+interpolates it into the configuration; the Server itself does not read
+Compose's `.env`. Values supplied by the shell can override `.env`, so
+avoid stale `MUNARIUM_*` or `POSTGRES_PASSWORD` shell variables when following
+the example. `docker compose config` prints resolved secrets unless you use
+`--quiet`; do not attach that expanded output to an issue.
+
+Save this as `compose.yaml` in the same directory:
+
+```yaml
+name: munarium-hub
+services:
+  postgres:
+    image: pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: munarium
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: munarium
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U munarium -d munarium"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  server:
+    image: ${MUNARIUM_IMAGE:?Set MUNARIUM_IMAGE in .env}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MUNARIUM_STORE: postgres
+      MUNARIUM_DATABASE_URL: "postgres://munarium:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/munarium"
+      MUNARIUM_SOURCE_STORE: pg
+      MUNARIUM_RETRIEVAL_MODE: postgres
+      MUNARIUM_AUTH_MODE: static
+      MUNARIUM_STATIC_TOKENS: devtoken:dev-tenant:rw
+      MUNARIUM_TOKEN_SECRET: ${MUNARIUM_TOKEN_SECRET:?Set MUNARIUM_TOKEN_SECRET in .env}
+    ports:
+      - "127.0.0.1:${MUNARIUM_HOST_HTTP:-18080}:8080"
+      - "127.0.0.1:${MUNARIUM_HOST_GRPC:-15051}:50051"
+volumes:
+  pgdata:
+```
+
+`devtoken` is this guide's **local-only** credential. Before exposing a
+deployment, replace it with a private token registration and configure TLS
+ingress. The token format is `token:tenant:role`; `rw`, `ro` and `mgmt` are
+distinct roles. A `rw` token is enough for these examples. Token issuance and
+management-only routes need `mgmt`; do not solve a role failure by disabling
+authentication. `MUNARIUM_TOKEN_SECRET` is a separate signing key of at least
+32 bytes and must remain stable across Server recreations.
+
+Start the project and define a bounded readiness check:
+
+```powershell
+docker compose config --quiet
+if ($LASTEXITCODE -ne 0) { throw 'Invalid Compose configuration' }
+docker compose pull
+if ($LASTEXITCODE -ne 0) { throw 'Image pull failed' }
+docker compose up -d
+if ($LASTEXITCODE -ne 0) { throw 'Compose startup failed' }
+$httpPort = (docker compose port server 8080).Trim().Split(':')[-1]
+if ($LASTEXITCODE -ne 0) { throw 'Cannot discover the HTTP port' }
+$base = "http://127.0.0.1:$httpPort"
+function Wait-MunariumReady {
+    $deadline = [DateTime]::UtcNow.AddMinutes(2)
+    do {
+        try {
+            $response = Invoke-WebRequest "$base/readyz" -TimeoutSec 5
+            if ($response.StatusCode -eq 200) { return }
+        } catch { }
+        Start-Sleep -Seconds 2
+    } while ([DateTime]::UtcNow -lt $deadline)
+    throw 'Server did not become ready; inspect docker compose logs server postgres'
+}
+Wait-MunariumReady
+```
+
+The PostgreSQL role created by this local example can run the embedded
+migrations, including `CREATE EXTENSION IF NOT EXISTS vector`. The image
+supplies the extension files. A healthy PostgreSQL container means the
+database accepts connections; `/readyz` establishes that the Server finished
+its own startup. Open `$base/admin` and `$base/docs` in your browser.
+
+#### Verify identity, access and a persisted write
+
+Check the running container's requested image and its actual image ID.
+Then read the version from the process. These are complementary checks:
+the package version alone is not a build identity.
+
+```powershell
+$serverId = (docker compose ps -q server).Trim()
+if ($LASTEXITCODE -ne 0 -or -not $serverId) { throw 'Server container is missing' }
+docker inspect --format '{{.Config.Image}} {{.Image}}' $serverId
+if ($LASTEXITCODE -ne 0) { throw 'Container inspection failed' }
+Invoke-RestMethod "$base/version"
+$headers = @{ Authorization='Bearer devtoken'; 'X-Munarium-Uid'='user-1' }
+$writeHeaders = $headers.Clone()
+$writeHeaders['Idempotency-Key'] = [guid]::NewGuid().ToString()
+$version = Invoke-RestMethod "$base/v1/versions" -Method Post -Headers $writeHeaders -ContentType application/json -Body '{}'
+$versionId = $version.version_id
+$writeHeaders['Idempotency-Key'] = [guid]::NewGuid().ToString()
+$claim = @{claim_type='fact';subject='deployment';key='storage';value='postgres'} | ConvertTo-Json
+Invoke-RestMethod "$base/v1/versions/$versionId/claims" -Method Post -Headers $writeHeaders -ContentType application/json -Body $claim
+docker compose exec -T -e MUNARIUMCTL_TOKEN=devtoken -e MUNARIUMCTL_UID=user-1 server /mmctl runbook list
+if ($LASTEXITCODE -ne 0) { throw 'Authenticated CLI request failed' }
+```
+
+A fresh database has no applied runbooks; an empty successful list is
+expected. A running Server image does not preload your shapes, corpora or
+provider keys. Apply your reviewed configuration with `/mmctl` as described
+in [the CLI guide](../ops/mmctl.md), then ingest your own documents. Files
+passed to a CLI running inside a container must be mounted or copied into
+that container; a host path is not automatically a container path.
+
+Force a Server replacement, then check the fact survived. This exercises
+the database-backed write path without making any model calls:
+
+```powershell
+docker compose up -d --no-deps --force-recreate server
+if ($LASTEXITCODE -ne 0) { throw 'Server recreation failed' }
+Wait-MunariumReady
+$facts = Invoke-RestMethod "$base/v1/versions/$versionId/facts" -Headers $headers
+if (-not @($facts.facts | Where-Object { $_.subject -eq 'deployment' -and $_.key -eq 'storage' -and $_.value -eq 'postgres' }).Count) {
+    throw 'The persisted fact was not recovered after recreation'
+}
+```
+
+Keep `$versionId` in your verification record for future rolls. Repeat this
+with a representative document and runbook before accepting an application
+deployment. Direct gRPC is published separately on 15051; a REST check does
+not validate a proxy's gRPC routing. Run your client's gRPC acceptance suite
+against that endpoint, using HTTP/2 and the same tenant/uid contract.
+
+#### Back up and rehearse a restore
+
+`docker compose down` keeps the named `munarium-hub_pgdata` volume.
+`docker compose down -v` deletes it. Recreating the Server does neither.
+A retained Docker volume is not an independent backup and does not protect
+you from deleting the Docker Desktop data disk.
+
+For a local logical backup, stop Server writes and have PostgreSQL write a
+custom-format dump to a file. Copy the file out with Docker instead of
+piping binary output through PowerShell text handling:
+
+```powershell
+docker compose stop server
+if ($LASTEXITCODE -ne 0) { throw 'Could not stop Server writes' }
+docker compose exec -T postgres pg_dump -U munarium -d munarium -Fc -f /tmp/munarium.dump
+if ($LASTEXITCODE -ne 0) { throw 'Database backup failed' }
+New-Item -ItemType Directory -Force backups | Out-Null
+docker compose cp postgres:/tmp/munarium.dump ./backups/munarium.dump
+if ($LASTEXITCODE -ne 0) { throw 'Backup copy failed' }
+Get-FileHash ./backups/munarium.dump -Algorithm SHA256
+docker compose start server
+if ($LASTEXITCODE -ne 0) { throw 'Server restart failed' }
+Wait-MunariumReady
+```
+
+Rehearse restoration into a **new** database. The following drill refuses
+to create a database that already exists; it never drops the live database.
+The restore destination here is on the same local PostgreSQL service, so
+it proves the dump can be read and applied, not recovery from machine loss:
+
+```powershell
+docker compose exec -T postgres createdb -U munarium munarium_restore_check
+if ($LASTEXITCODE -ne 0) { throw 'Restore destination must be a new database' }
+docker compose cp ./backups/munarium.dump postgres:/tmp/munarium-restore.dump
+if ($LASTEXITCODE -ne 0) { throw 'Restore input copy failed' }
+docker compose exec -T postgres pg_restore -U munarium -d munarium_restore_check --no-owner --no-privileges --exit-on-error /tmp/munarium-restore.dump
+if ($LASTEXITCODE -ne 0) { throw 'Restore drill failed' }
+docker compose exec -T postgres psql -U munarium -d munarium_restore_check -v ON_ERROR_STOP=1 -c 'SELECT count(*) AS restored_events FROM ledger_events;'
+if ($LASTEXITCODE -ne 0) { throw 'Restored ledger could not be read' }
+```
+
+The walkthrough wrote an event, so the restored count must be nonzero. A
+production recovery drill also starts a Server against the restored database
+and checks known facts, source bytes and an application run. Keep the dump
+outside the Docker host and handle it as private application data. With
+`MUNARIUM_SOURCE_STORE=pg`, it includes document bytes; with `file`, `az`,
+`s3` or `gcs`, back up or retain those stores separately. See
+[backup and restore](../ops/backup-restore.md) for PITR and recovery limits.
+
+#### Use an existing PostgreSQL service
+
+Remove the Compose `postgres` service, the Server's `depends_on` entry and
+the `pgdata` declaration. Set the Server environment entry to
+`MUNARIUM_DATABASE_URL: ${MUNARIUM_DATABASE_URL:?Set the database URI}`
+and put the full URI in `.env`, preserving `MUNARIUM_STORE=postgres` and
+your explicit `MUNARIUM_SOURCE_STORE` choice. PostgreSQL must already have
+the database and pgvector extension files available. The application role
+needs schema migration privileges; a database administrator can enable
+`vector` first if extension creation is restricted.
+
+For Docker Desktop, a PostgreSQL instance on the Windows host is reachable
+through [`host.docker.internal`](https://docs.docker.com/desktop/features/networking/networking-how-tos/#connect-a-container-to-a-service-on-the-host).
+For example, use `postgres://user:password@host.docker.internal:5432/munarium`.
+Inside the Server container, `localhost` names the Server container itself.
+With Compose-managed PostgreSQL, `postgres:5432` names the database service;
+it does not use a host-side port mapping. Permit the connection in PostgreSQL's
+listener, host authentication rules and firewall. Percent-encode reserved URI
+characters in passwords, or use a generated hexadecimal password.
+
+For a remote database, configure verified TLS, for example
+`?sslmode=verify-full`. If the CA is not in the image's trust store, mount its
+certificate read-only and add `sslrootcert=/path/in/container/ca.pem` to the
+URI. The hostname must match the certificate. Store connection credentials
+in your deployment platform's secret facilities; do not put them into an
+image layer. `POSTGRES_PASSWORD` on the database container initializes a
+new database volume only: changing it in `.env` does not rotate an existing
+database role's password.
+
+#### Move document bytes or enable derived indexes
+
+For a filesystem source store, set `MUNARIUM_SOURCE_STORE=file` and
+`MUNARIUM_FILE_ROOT=/data/sources`, and mount persistent storage at
+`/data/sources`. Prepare that directory for UID/GID 65532 before starting
+the Server; a new root-owned mount can otherwise fail with permission denied.
+Persisting source bytes there supplements PostgreSQL rather than replacing
+the ledger. A multi-replica deployment needs a shared, consistently mounted
+filesystem or an object store; separate per-container disks do not share bytes.
+
+Azure Blob (`az`), S3 (`s3`) and Google Cloud Storage (`gcs`) use the same
+source-store interface. Configure the account/bucket and credentials from
+[source-stores.md](source-stores.md). Credential *references* such as
+`MUNARIUM_S3_SECRET_KEY_REF` name an environment variable or secret file;
+they are not the access-key value itself. Changing a backend variable does
+not copy existing objects to a new location. Plan and verify any existing
+document migration, and retain the original bytes until it is complete.
+
+Derived retrieval is a separate choice. Keep `MUNARIUM_RETRIEVAL_MODE=postgres`
+for the tested setup above. If you enable `mirror`, `shadow` or `datastore`,
+retain PostgreSQL and configure a writable `MUNARIUM_DATASTORE_LOCAL_ROOT`.
+A local artifact store additionally uses `MUNARIUM_DATASTORE_ARTIFACT_STORE=file`
+and `MUNARIUM_DATASTORE_ARTIFACT_ROOT`; staging uses
+`MUNARIUM_DATASTORE_STAGING_ROOT`. Make each mounted path writable by 65532
+and keep durable artifacts outside the replaceable container layer.
+`MUNARIUM_DATASTORE_BUILDER=enabled` runs the build-job worker; it does not
+create a collection or select an active index on its own. Follow §8A's
+build, validation and rollout procedure before selecting datastore serving.
+Setting an environment variable alone is not an index cutover.
+
+#### Upgrade, roll back and diagnose
+
+Before an upgrade, save the current image digest and configuration, take a
+database backup, and review the target release's migration and configuration
+notes. Change only `MUNARIUM_IMAGE` in `.env` to the verified target digest,
+then run `docker compose pull server` followed by
+`docker compose up -d --no-deps server`. Recheck identity, readiness and the
+saved fact/application checks. Use the previous digest and the same commands
+for a compatible rollback. Retain the database volume and signing secret in
+both directions; do not rerun the initial secret-generation step. Schema
+compatibility must be checked for the particular release, even when migrations
+are additive. This procedure replaces one local Server container and can
+briefly interrupt clients; it is not a rolling high-availability deployment.
+
+| Symptom | Check and correction |
+|---|---|
+| `no matching manifest` or a Windows image-platform error | Docker Desktop must use Linux containers; the release supports AMD64 and ARM64. |
+| Port allocation fails | Change only the host ports in `.env`; keep container ports 8080 and 50051. |
+| PostgreSQL is healthy but Server exits | Read `docker compose logs server`; check database URI, migration permissions and pgvector availability. |
+| Startup asks for an Azure storage account | Set `MUNARIUM_SOURCE_STORE=pg` for the local recipe, or configure the intended Azure backend. |
+| Password authentication fails after editing `.env` | An existing PostgreSQL volume still has its original role password. Reconcile the role and URI; do not delete the volume to repair credentials. |
+| Static auth fails or `/v1` reports `uid-required` | Send the configured bearer token and `X-Munarium-Uid`; use a management token only for management routes. |
+| Filesystem sources or datastore hydration report permission denied | Inspect mount ownership and grant UID 65532 the required access. The image has no shell for an in-container repair. |
+| `/healthz` works but the app does not | Check `/readyz`, actual container identity, authenticated operations and the app's applied runbooks/provider configuration. |
+
 ### The deployment path: the chart and the module
 
 What ships is a ladder with three rungs, and most readers should not start
@@ -6433,12 +6775,23 @@ at the top.
 
 | | What it gives you | Where |
 |---|---|---|
-| 1 | The whole product on a laptop, one command | `docker compose up --build`, or `localdeploy.ps1` for the persistent stack (§2, §3) |
+| 1 | A persistent Server on a laptop | The Docker Hub Compose walkthrough above; `docker compose up --build` from `server/` when developing the source |
 | 2 | A real cluster install, no cloud account | `helm install` from [deploy/helm/munarium](../../deploy/helm/munarium/README.md) against kind or minikube |
 | 3 | A cloud deployment with managed identity and blob storage | [deploy/terraform/example-aks](../../deploy/terraform/example-aks/README.md), which consumes the chart |
 
 Rung 1 is the whole evaluation. Nothing on rungs 2 and 3 is needed to
 decide whether Munarium does what you want.
+
+To select the public image in the existing Helm chart, set
+`image.repository=docker.io/iokaio/munarium` and `image.tag=1.0.0` in your
+reviewed values file. The current template renders `repository:tag` and has
+no separate `image.digest` value; supplying a digest as the repository would
+produce an invalid reference with an extra tag. Use the immutable version
+tag with this chart, and verify the running pod's `imageID` against the
+appropriate architecture manifest of the published index. The chart still
+requires an explicit repository even though older comments in its values
+file predate the public image. Its CNPG, gateway, identity and secret setup
+requirements are unchanged; a published image does not install those services.
 
 **The Helm chart.** One release is one CloudNativePG Postgres cell, the
 `munarium-server` deployment, and all three API planes: REST, the Envoy
@@ -6506,14 +6859,15 @@ for this reason.
 above, run against the rolled host, closes the loop from the commit that
 started the deploy to the surface on the wire.
 
-**Additive-only migrations make rollback safe.** Migrations run on connect
-(§8), and CI's step 19 guarantees none of them drops anything. An older
-image therefore starts cleanly against a newer schema — it ignores the
-columns and tables it does not know — so rolling an image back never
-requires rolling the database back. The one thing that breaks this promise
-is editing an applied migration in place, which strands every database
-that already applied the old bytes; recipe 3 in §6 is the rule and `0015`
-is its rehearsal.
+**Rehearse the rollback against the database you will retain.** Migrations
+run on connect (§8), and the additive-only policy preserves existing schema
+objects. That supports image rollback, but it does not replace checking the
+particular versions' migration validation, configuration and data compatibility.
+Test the previous image against a restored copy of the upgraded database
+before relying on that rollback path. Never edit an applied migration or
+delete migration records to force startup; recipe 3 in §6 explains the
+checksum contract. A database restore is a separate recovery operation with
+its own possible loss of writes after the restore point.
 
 **Destruction is its own flow.** A deploy that would destroy
 infrastructure — a storage account, a database — must refuse to proceed
@@ -6532,7 +6886,7 @@ The whole system, one table:
 | `gates.ps1` (local) | mirror¹ | mirror² | n/a | Local confidence; nothing deployed |
 | `build.ps1 -Image` (local) | n/a | n/a | n/a | A local image you name, tag and push yourself |
 | `helm upgrade` / `terraform apply` (operator) | n/a | n/a | n/a | Your cluster runs the image you named; verify per the rules above |
-| Release | n/a | n/a | n/a | Cut by Ioka outside this repository: a signed image and a version tag |
+| Published Server release | n/a | n/a | n/a | Ioka publishes a signed multi-platform `iokaio/munarium` image, SBOM/provenance and immutable version tag |
 
 ¹ the full lint-test list including the platform and cluster
 conformance steps (mirrored across all three copies).
@@ -6541,9 +6895,10 @@ conformance steps (mirrored across all three copies).
 Read the table's pattern once more because it sums up the chapter. The
 rows that *prove* run everywhere in the same automatic way. The rows that
 *publish* run only when a person pulls a lever, and nothing in this
-repository pulls one for you. Every image you deploy has run the same gate
-list at least twice — once on your desk and once on the push that produced
-the commit — and its name tells you which commit that was.
+repository pulls one for you. For your own builds, retain the gate results
+and source identity beside the image. For published releases, start from
+the released digest and verification metadata, then validate your actual
+deployment configuration and application behavior.
 
 ### Where you stand
 
@@ -12718,6 +13073,11 @@ That is BYOK working as designed: the picture `was_override: true`
 paints for the auditor costs nothing extra to keep.
 
 ### Step 8: Grade before you ship
+
+For a complete methodology without code examples, follow
+[Creating a laboratory for your corpus application](creating-a-lab.md).
+It covers case design, independent answer keys, controlled shape/runbook
+comparisons, failure diagnosis and acceptance on your actual Server deployment.
 
 This tutorial ends where every corpus application should begin: with an
 answer key. It was not run here at scale because a graded harness deserves
