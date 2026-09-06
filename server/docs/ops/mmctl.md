@@ -121,6 +121,9 @@ table formatting to scrape around.
 
 ### `mmctl datastore …` — the derived-index tier (2026-08-30/31)
 
+For deployment prerequisites and a complete build-to-rollout walkthrough, see
+the [Datastore guide](../guides/datastore.md).
+
 Operator commands over the datastore plane's REST routes ([../api/rest.md](../api/rest.md),
 "Datastore plane"). Every command names a LOGICAL version or collection;
 artifact ids appear only in output.
@@ -154,7 +157,8 @@ two-line `curl` in that page.
 | `0` | the call succeeded |
 | `1` | anything failed — unreadable file, connection error, or a non-2xx response (the problem+json `detail` is printed to stderr as `mmctl: <status>: <detail>`) |
 | `2` | usage error — unknown/missing command; the full usage text goes to stderr |
-| `3` | `matrix verify` and `matrix verify-view` only — the call succeeded and at least one verified question failed |
+| `3` | A Matrix verification failed; Datastore verification found a failed component; Datastore backfill is incomplete; or `datastore jobs get` reports a state other than `succeeded`, `failed` or `cancelled` (inspect the returned state, including `superseded`) |
+| `4` | `datastore jobs get` reports `failed` or `cancelled` |
 
 ## See also
 

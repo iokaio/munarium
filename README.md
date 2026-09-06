@@ -20,6 +20,8 @@ Three components, one repository, all under the Apache License 2.0:
   This tutorial focuses on approach and technique without code examples.
 - **[Managing keys and secrets](server/docs/guides/managing-key-and-secrets.md)** — configure
   AI providers, Docker secrets and PostgreSQL access; verify, rotate and revoke credentials.
+- **[Datastore](server/docs/guides/datastore.md)** — configure derived search artifacts,
+  build and verify indexes, roll out Datastore retrieval, and roll back to PostgreSQL.
 
 ## Run with Docker
 
