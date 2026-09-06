@@ -22,6 +22,8 @@ Three components, one repository, all under the Apache License 2.0:
   AI providers, Docker secrets and PostgreSQL access; verify, rotate and revoke credentials.
 - **[Datastore](server/docs/guides/datastore.md)** — configure derived search artifacts,
   build and verify indexes, roll out Datastore retrieval, and roll back to PostgreSQL.
+- **[Measuring performance](server/docs/guides/measuring-performance.md)** — measure
+  ingestion, indexing, retrieval and AI queries; identify bottlenecks and scale from evidence.
 
 ## Run with Docker
 

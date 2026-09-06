@@ -6,6 +6,9 @@
 
 **As of:** September 2, 2026
 
+For benchmark design, ingestion/indexing throughput, retrieval and AI-query
+scaling, see [Measuring performance](guides/measuring-performance.md).
+
 ## Executive answer
 
 Munarium Server has a production observability system today, but its boundary
@@ -91,8 +94,9 @@ probes the backing store. The fixed metric registry includes:
 - load-shed events; and
 - index-build outcomes, work volume, and phase duration.
 
-The histograms use fixed buckets from milliseconds through the provider timeout
-range. Gauges are read from live state when the metrics document is rendered.
+The histograms use fixed finite buckets from 5 milliseconds through 30 seconds,
+plus an overflow bucket. Provider calls and builds can exceed that range; retain
+raw durations for their tails. Gauges are read from live state when the metrics document is rendered.
 The registry and cardinality rules are implemented in
 [metrics.rs](../src/munarium-server/src/metrics.rs), and the health and
 readiness behavior is implemented in
@@ -109,8 +113,12 @@ comes from authenticated reports over the shared database.
 The server instruments REST and gRPC requests with tracing spans and can emit
 structured JSON lines. Every REST response carries a generated request ID; that
 same identifier appears in the request span and interaction row. The middleware
-measures caller-observed latency, including authentication and request-body
-capture, and records the terminal outcome of ordinary and streamed responses.
+measures Server-side latency, including authentication and request-body capture.
+Ordinary REST interaction timing ends when the handler returns, while the RED
+histogram includes subsequent response-body buffering. Streamed measurements
+finish at stream end and record the terminal outcome. Measure network, gateway
+and delivery time at the client; see the
+[performance timing boundaries](guides/measuring-performance.md#timing-boundaries-and-histogram-limits).
 The implementation is in
 [middleware.rs](../src/munarium-server/src/middleware.rs), with logging
 configuration documented in the [server README](../README.md#configuration-env-vars).
