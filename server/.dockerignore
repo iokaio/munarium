@@ -9,6 +9,7 @@ deploy/
 # how this was found (2026-08-20, first image build since authoring landed).
 conformance/fixtures/
 **/*.md
+!THIRD_PARTY_NOTICES.md
 .sqlx-cache/
 
 # contract/ is NOT excluded, and must not be (S-1.0). It holds the vendored
