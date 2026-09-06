@@ -1,0 +1,34 @@
+# Funding links for Munarium. GitHub renders this file as the "Sponsor" button on the
+# repository and on every issue and pull request; it does nothing else.
+#
+# The button is the front door, not the program. Sponsorship tiers, one-time amounts,
+# the funding goal and the sponsor-facing description are configured on the GitHub
+# Sponsors dashboard for the organisation, https://github.com/sponsors/iokaio/dashboard,
+# not here. That profile currently offers a custom amount only.
+#
+# The rule for every link below: it must be live, and it must give someone with a
+# budget a way to say yes. No page under construction, no placeholder.
+
+# The organisation, not a personal account, so that sponsorship funds the project
+# rather than a person and companies can pay by invoice. There is no personal
+# listing to add alongside it.
+github: [iokaio]
+
+# Up to four custom URLs, shown in the order listed. Each is a door a reader or an
+# organisation can walk through today:
+#
+#   enterprise  design partnerships and the Evidence Evaluation, for a company with
+#               a real problem to solve.
+#   book        Architecting Accountable AI, written alongside the project. Replace
+#               with the early-access store link once the book is on sale.
+#   contact     corporate sponsorship, funded open milestones (security audit, native
+#               OpenTelemetry, managed-Kubernetes validation) and sponsored research,
+#               until a dedicated support page exists.
+#
+# When https://www.ioka.io/support exists as the one page that presents all of these,
+# put it first and drop whichever of the others it makes redundant. Four is the cap.
+custom:
+  - https://www.ioka.io
+  - https://www.ioka.io/server
+  - https://www.ioka.io/enterprise
+  - https://www.ioka.io/contact
