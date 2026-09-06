@@ -167,9 +167,9 @@ All `MUNARIUM_`-prefixed. The contract is stable; unset-but-required vars fail c
 | `MUNARIUM_MAX_TOKENS_HIERARCHY_INTENT` | `480` | the evidence hierarchy's semantic-intent task |
 | `MUNARIUM_MAX_TOKENS_RUNBOOK_ADVISORY` | `2048` | the runbook validation AI advisory pass |
 | `MUNARIUM_MAX_TOKENS_AUTHORING_ASSIST` | `8192` | the guided-authoring assist draft. All eight: unset = built-in; set = must parse and sit in range or the server refuses to start |
-| `MUNARIUM_RETRIEVAL_MODE` | `postgres` | which engine serves retrieval: `postgres` \| `mirror` \| `shadow` \| `datastore` (the derived-index tier, the datastore section of the documentation). Anything but `postgres` needs the Postgres store and `MUNARIUM_DATASTORE_LOCAL_ROOT`; in `datastore` mode each scope's engine is the rollout selector's (`PUT /v1/retrieval-rollout`). An unknown value logs and falls back to `postgres` |
+| `MUNARIUM_RETRIEVAL_MODE` | `postgres` | which engine serves retrieval: `postgres` \| `mirror` \| `shadow` \| `datastore` ([Datastore guide](docs/guides/datastore.md)). Anything but `postgres` needs the Postgres store and `MUNARIUM_DATASTORE_LOCAL_ROOT`; in `datastore` mode each scope's engine is the rollout selector's (`PUT /v1/retrieval-rollout`). An unknown value logs and falls back to `postgres` |
 | `MUNARIUM_DATASTORE_LOCAL_ROOT` | unset | local-disk root for hydrated artifacts (the L1 tier) — required for every mode but `postgres`; `<root>/l2` and `<root>/staging` are the defaults of the two roots below |
-| `MUNARIUM_DATASTORE_ARTIFACT_STORE` | unset (= none) | where sealed artifacts live: `file` \| `az` \| `s3` \| `gcs` \| `pg` (the same backend family as `MUNARIUM_SOURCE_STORE`) |
+| `MUNARIUM_DATASTORE_ARTIFACT_STORE` | unset (= unavailable to capability detection) | set explicitly: `file` \| `az` \| `s3` \| `gcs`; the artifact factory does not implement `pg`. Its own fallback is `file`, but omitting the setting does not enable the artifact-store capability. Cloud clients reuse the cloud source-store configuration with a separate artifact container/bucket |
 | `MUNARIUM_DATASTORE_ARTIFACT_CONTAINER` | `indexes` | container / bucket for artifacts on `az` / `s3` / `gcs` |
 | `MUNARIUM_DATASTORE_ARTIFACT_PREFIX` | `v1` | key prefix under that container |
 | `MUNARIUM_DATASTORE_ARTIFACT_ROOT` | `<LOCAL_ROOT>/l2` | artifact root for the `file` store |
@@ -178,18 +178,20 @@ All `MUNARIUM_`-prefixed. The contract is stable; unset-but-required vars fail c
 | `MUNARIUM_DATASTORE_L0_OPEN_SHARDS` | `8` | how many shards stay open in memory; raise it when many small collections thrash the default |
 | `MUNARIUM_DATASTORE_PIN_HORIZON` | derived | seconds a retired index version stays serving-required so a live session's pin still resolves; unset DERIVES it from the session/runbook TTLs plus the recovery margin. With `MUNARIUM_SESSION_IDLE_TTL_SECS=0` (immortal sessions) nothing derivable covers a pin, and the server says so at boot |
 | `MUNARIUM_DATASTORE_ALLOW_SHORT_PIN_HORIZON` | `false` | `true` accepts a horizon below the TTLs in force; otherwise that configuration is refused |
-| `MUNARIUM_DATASTORE_RETIRED_RETENTION` | 2× the pin horizon (seconds) | how long retired artifacts stay on L1; a value below the horizon is refused |
+| `MUNARIUM_DATASTORE_RETIRED_RETENTION` | 2× the derived pin horizon (seconds) | retention policy validated against the configured pin horizon; a lower value is refused. An explicit longer pin horizon does not increase this default, so set retention explicitly as needed |
 | `MUNARIUM_DATASTORE_ROLLOUT_REFRESH_MS` | `15000` (min 1000) | the readiness warmer's re-read interval for the rollout selector |
 | `MUNARIUM_DATASTORE_STARTUP_HYDRATE_TIMEOUT_MS` | `120000` | how long startup hydration may take before `/readyz` reports the unmet scope |
-| `MUNARIUM_DATASTORE_RECONCILE_INTERVAL_SECS` | `60` | the catalog ↔ L1 reconcile sweep interval |
+| `MUNARIUM_DATASTORE_RECONCILE_INTERVAL_SECS` | `60` (min 30) | interval for reconciling interrupted sealed-build attempts/publication; also runs at startup |
 | `MUNARIUM_DATASTORE_BUILDER` | unset (off) | `enabled` runs the durable build-job loop on this process (`POST /v1/index-build-jobs`); any Postgres-connected process with the staging configuration can be a builder |
 | `MUNARIUM_DATASTORE_BUILDER_POLL_MS` | `5000` (min 250) | the builder's queue poll interval |
-| `MUNARIUM_DATASTORE_JOB_LEASE_SECS` | `600` | a claimed job's lease; a lapsed lease is re-offered until the attempt ceiling |
+| `MUNARIUM_DATASTORE_JOB_LEASE_SECS` | `600` (min 30) | a claimed job's lease; a lapsed lease is re-offered until the attempt ceiling |
 | `MUNARIUM_DATASTORE_SHADOW_SAMPLE_RATE` | `0` (off) | in `shadow` mode, run one turn in N through the datastore candidate path for comparison |
 | `MUNARIUM_DATASTORE_SHADOW_MAX_CONCURRENT` | `2` | shadow comparisons in flight |
-| `MUNARIUM_DATASTORE_QUERY_TIMEOUT_MS` | `5000` | the shadow query deadline |
-| `MUNARIUM_DATASTORE_VECTOR_APPROX_THRESHOLD` | `4096` | vector count above which a DIRECT build chooses the approximate engine (DiskANN, `vector-diskann` feature); below it the exact scan is sealed |
+| `MUNARIUM_DATASTORE_QUERY_TIMEOUT_MS` | `5000` (min 1) | the shadow query deadline; not a timeout for all serving requests |
+| `MUNARIUM_DATASTORE_VECTOR_APPROX_THRESHOLD` | `4096` | DIRECT builds with vectors choose DiskANN at or above this chunk-count threshold when `vector-diskann` is compiled in. `off` forces exact; numeric values clamp to at least 1; invalid values warn and select exact. Existing artifacts and mirror plans are unchanged |
 | `MUNARIUM_DEPLOYMENT_ENVIRONMENT_ID` | `local` | the environment scope of node snapshots and plane expectations (a process serves every tenant, so these are per environment, not per tenant) |
+| `MUNARIUM_DEPLOYMENT_PLANE` | `rest` | plane label in serving-node snapshots, matched by fleet promotion expectations |
+| `MUNARIUM_DEPLOYMENT_REVISION` | `local` | deployment revision label in serving-node snapshots, matched by fleet promotion expectations |
 | `MUNARIUM_SESSION_IDLE_TTL_SECS` | `0` (off) | idle-session expiry: open sessions idle longer than this are stamped `expired` by the janitor; further turns answer 409 `session-not-open` |
 | `MUNARIUM_INSTANCE_ID` | `HOSTNAME`→`COMPUTERNAME`→random | this instance's identity in logs and interaction rows |
 | `MUNARIUM_SHUTDOWN_GRACE_SECS` | `20` | drain window on SIGTERM/SIGINT (/readyz flips to 503 "draining" the moment the signal fires) |

@@ -5256,6 +5256,9 @@ was rejected, and the rules for adding the next one are §9's story.
 
 ## 8A. The datastore plane: derived indexes beside PostgreSQL
 
+For the operational walkthrough and complete configuration tables, see the
+dedicated [Datastore guide](datastore.md).
+
 *(Added 2026-09-02, lettered like §21A–C so the numbering of the chapters
 around it stays true. §8 is the system of record; this chapter is the tier
 derived from it.)*
@@ -5325,9 +5328,10 @@ header).
    attempt ceiling, and completes it idempotently as the holder. Outcomes:
    `published`, `converged`, `already_built`, `deferred` (another node holds
    the build). A direct build seals exactly the engine the plan names; only
-   the direct build decides exact-vs-approximate vectors, above
-   `MUNARIUM_DATASTORE_VECTOR_APPROX_THRESHOLD` (4,096) when the binary
-   carries `vector-diskann`.
+   the direct build decides exact-vs-approximate vectors, at or above
+   `MUNARIUM_DATASTORE_VECTOR_APPROX_THRESHOLD` (4,096 chunks) when the binary
+   carries `vector-diskann`; `off` selects exact vectors. Changing the setting
+   does not alter existing artifacts or mirror plans.
 2. **Verify.** `POST /v1/index-artifacts/{index_version_id}/verify` re-reads
    the stored bytes and re-checks the manifest and every component;
    `GET /v1/index-artifacts/{index_version_id}` shows the catalogued
@@ -5350,8 +5354,10 @@ header).
    one **pin horizon** from the moment it was deactivated
    (`index_versions.deactivated_at`, migration 0030 — §13.5 entry 27 records
    why the anchor moved off `built_at`), then falls out of the required set;
-   `MUNARIUM_DATASTORE_RETIRED_RETENTION` says how long its bytes stay on L1
-   after that.
+   `MUNARIUM_DATASTORE_RETIRED_RETENTION` is validated against that horizon.
+   Its default is twice the derived minimum, not twice an explicitly enlarged
+   horizon; set it explicitly when necessary. These settings are not a complete
+   L2 object-deletion policy.
 
 `mmctl datastore status|verify|rebuild|backfill|bind|promote|rollout|jobs`
 ([ops/mmctl.md](../ops/mmctl.md)) drives the same routes.
@@ -5373,13 +5379,14 @@ thrashes the default of 8, so size it to the collection count.
 
 ### The environment
 
-All 23 `MUNARIUM_DATASTORE_*` variables, `MUNARIUM_RETRIEVAL_MODE` and
+All 22 `MUNARIUM_DATASTORE_*` variables, `MUNARIUM_RETRIEVAL_MODE` and
 `MUNARIUM_DEPLOYMENT_ENVIRONMENT_ID` are in the
 [README's Configuration table](../../README.md#configuration-env-vars),
 per Appendix A's rule that the env contract lives in one place. The ones a
 developer meets first: `LOCAL_ROOT` (required for any mode but `postgres`;
 `<root>/l2` and `<root>/staging` default the artifact and staging roots),
-`ARTIFACT_STORE` (`file | az | s3 | gcs | pg`), the L1 watermarks, and
+`ARTIFACT_STORE` (`file | az | s3 | gcs`; `pg` is not implemented by the
+artifact factory), the L1 watermarks, and
 `BUILDER`.
 
 ### What a local server shows you, and what it cannot
