@@ -51,7 +51,9 @@ concurrency:
 jobs:
   live-server:
     name: against a REAL munarium-server (compose tier)
-    runs-on: ubuntu-8core
+    runs-on:
+      group: Default
+      labels: ubuntu-8core
     # A separate job so it runs in PARALLEL with `test` rather than adding its
     # server build to that job's wall clock.
     #
