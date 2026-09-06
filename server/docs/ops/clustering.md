@@ -1,5 +1,8 @@
 # Running munarium-server as a cluster (N instances, one PostgreSQL)
 
+Use [Measuring performance](../guides/measuring-performance.md) to establish
+capacity, identify shared bottlenecks and verify the benefit of adding instances.
+
 Since 2026-08-17 the server is correct to run as N identical instances
 sharing one PostgreSQL database. This page is the operator's contract: what
 is shared, what stays per-instance, how to run it, the pool math, and the
