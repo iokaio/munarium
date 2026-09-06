@@ -18,6 +18,8 @@
 # them. BuildKit is the default engine on Docker Desktop and GitHub Actions;
 # the `# syntax=` line above is required for `--mount`.
 
+# Include Cargo.lock from the public source context in the dependency SBOM.
+ARG BUILDKIT_SBOM_SCAN_CONTEXT=true
 FROM --platform=$BUILDPLATFORM tonistiigi/xx:1.8.0@sha256:add602d55daca18914838a78221f6bbe4284114b452c86a48f96d59aeb00f5c6 AS cross
 FROM --platform=$BUILDPLATFORM rust:1-alpine@sha256:a10e64dd139b7387337c7fbe8aca31b959b57b2fd4c8ae20a02cf1d6ea424dce AS builder
 # Compile on the builder's CPU, including C dependencies, for the requested target.

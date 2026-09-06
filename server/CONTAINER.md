@@ -68,7 +68,9 @@ See [Server configuration](https://github.com/iokaio/munarium/tree/main/server/d
 | 50051 | gRPC, requiring HTTP/2 through proxies |
 | 9090 | Operations and metrics |
 
-Run the bundled client with `docker exec <container> /mmctl --help`.
+The bundled client lists its commands with `docker exec <container> /mmctl`
+(usage exits with status 2). For an authenticated request, set `MUNARIUMCTL_URL`,
+`MUNARIUMCTL_TOKEN`, and `MUNARIUMCTL_UID`, then run `/mmctl runbook list`.
 
 ## Versions and verification
 
@@ -93,9 +95,14 @@ builder using the `docker-container` driver supports the OCI export and attestat
 docker buildx create --name munarium-builder --driver docker-container
 $revision = git rev-parse HEAD
 docker buildx build --builder munarium-builder --platform linux/amd64,linux/arm64 `
-  --build-arg SOURCE_REVISION=$revision --sbom=true --provenance=mode=max `
+  --build-arg SOURCE_REVISION=$revision `
+  --sbom=SELECT_CATALOGERS=+rust-cargo-lock-cataloger --provenance=mode=max `
   --output type=oci,dest=munarium.oci.tar ./server
 ```
 
 Building ARM64 does not prove it runs: execute and test each platform before
 publishing a multi-platform image.
+
+The SBOM includes operating-system packages and the public source's locked Rust
+dependencies. The source inventory includes build and development dependencies;
+it is broader than the set linked into either executable.
