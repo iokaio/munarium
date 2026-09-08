@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# Docker Compose endpoint; for a host process use http://127.0.0.1:11434.
+# Pull models in Ollama first. No credential is needed for a local endpoint.
+apiVersion: munarium.ioka.io/v1
+kind: ProviderConfig
+metadata: { name: example-ollama }
+spec:
+  provider: ollama
+  endpoint: http://ollama:11434
+  models:
+    complete: [qwen3:1.7b]
+    embed: [all-minilm:22m]
+    fast: qwen3:1.7b
+    capable: qwen3:1.7b
+  budgets: { rpm: 60, tpm: 100000 }

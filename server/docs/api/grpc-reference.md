@@ -981,7 +981,7 @@ visibility-only (same contract as REST).
 | 6 | temperature | double |  |
 | 7 | tools_json | string |  |
 | 8 | version_id | string | When set, the invocation is recorded as a ledger event in this lineage and its id comes back as invocation_event_id. Empty = not recorded. |
-| 9 | provider | string | Provider family override (anthropic\|openai\|openrouter). Only honored with config_name "default". Empty = default-priority rule. |
+| 9 | provider | string | Provider family override (anthropic\|openai\|openrouter\|ollama). Only honored with config_name "default". Empty = default-priority rule. |
 | 10 | tier | string | Model tier: "fast" (lesser model), "capable", or "frontier" (top model). Ignored when model set. |
 
 ### message CompleteResponse
@@ -1004,7 +1004,7 @@ visibility-only (same contract as REST).
 | 2 | model | string |  |
 | 3 | inputs | repeated string |  |
 | 4 | version_id | string | When set, the invocation is recorded as a ledger event in this lineage. |
-| 5 | provider | string | Provider family override (anthropic\|openai\|openrouter); only honored with config_name "default". |
+| 5 | provider | string | Provider family override (anthropic\|openai\|openrouter\|ollama); only honored with config_name "default". |
 
 ### message EmbedResponse
 

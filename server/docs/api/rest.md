@@ -1,5 +1,10 @@
 # munarium-server REST API
 
+Server 1.1 accepts `ollama` on the existing provider routes with an explicit base
+endpoint and optional credentials. Named health checks verify configured models;
+`/healthai` continues to cover cloud defaults. See the
+[Ollama guide](../guides/ollama.md) for configuration, routing and limitations.
+
 **Status: live.** Every `/v1` route (Command/Query, shapes, ingest, retrieval, providers,
 runbooks) plus the meta routes carries OpenAPI annotations, and the spec declares the
 `bearerAuth` security scheme. This document is the human guide; the machine

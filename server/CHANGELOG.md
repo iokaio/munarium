@@ -1,5 +1,31 @@
 # Munarium Server — release notes
 
+## 1.1.0
+
+- Add the `ollama` provider with native chat completion, batched embeddings and
+  named model-health checks over REST and gRPC. Local configurations require an
+  explicit endpoint and may omit credentials; authenticated proxies use the
+  existing environment/file secret references.
+- Support named Ollama configs and explicit family selection with configured
+  model tiers. Automatic cloud-provider priority remains unchanged.
+- Preserve token budgets, invocation provenance and truncation handling; include
+  provider family in embedding-cache identity. Validate Ollama response shapes
+  and reject unsupported tool requests and oversized embedding inputs.
+- Add a pinned Docker Desktop evaluation stack, model digest checks and live
+  REST/gRPC acceptance covering embeddings, retrieval and grounded completion.
+
+The MMP wire major remains 1; no database migration is required. Upgrade from
+1.0.0 with the existing PostgreSQL volume and configuration. Existing cloud
+providers retain their credential requirements. Ollama weights live in its own
+volume and are not distributed with the Munarium image.
+
+Rollback to 1.0 requires moving Ollama-dependent runbooks to a provider that 1.0
+supports. Existing ledger data and cloud configurations remain compatible.
+
+Ollama completion is non-streaming with thinking disabled. Index builds continue
+to use the existing local embedder; provider-backed index embeddings and tool
+execution are not included. The prior release's other accepted limitations remain.
+
 ## 1.0.0
 
 The first public release.

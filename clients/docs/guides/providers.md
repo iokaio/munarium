@@ -1,5 +1,13 @@
 # Providers: the BYOK gateway
 
+Server 1.1 adds `provider: ollama` to the same REST/gRPC operations. Apply a named
+config with an explicit Ollama base endpoint and models; local Ollama can omit
+`credentialRef`, while a proxy can use an environment/file bearer-key reference.
+Use the named config or `default` with `provider: ollama`. Local models have no
+built-in tiers and are not selected by automatic cloud-provider priority. See the
+[Server Ollama guide](../../../server/docs/guides/ollama.md) for a complete example,
+health semantics, embedding dimensions, and the existing index-builder limitation.
+
 The server speaks to LLM endpoints with the **tenant's** credentials,
 resolved through the secrets seam at call time (`credentialRef: {env: ...}`
 or `{file: ...}`) — keys never appear in messages, the ledger, or the

@@ -57,7 +57,7 @@ services:
       MUNARIUM_SOURCE_STORE: pg
       MUNARIUM_RETRIEVAL_MODE: postgres
       MUNARIUM_AUTH_MODE: static
-      MUNARIUM_STATIC_TOKENS: ollama-evaluation-token:ollama-evaluation:rw
+      MUNARIUM_STATIC_TOKENS: ollama-evaluation-token:ollama-evaluation:rw,ollama-other-token:ollama-other:rw
     ports:
       - "127.0.0.1:${MUNARIUM_OLLAMA_HTTP_PORT:-28080}:8080"
       - "127.0.0.1:${MUNARIUM_OLLAMA_GRPC_PORT:-25051}:50051"

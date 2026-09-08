@@ -1,4 +1,6 @@
 target/
+scratch/
+.env
 .git
 docs/
 deploy/

@@ -21,8 +21,8 @@ repository = "https://github.com/iokaio/munarium"
 # Deliberately absent: the server's core, conformance and conversion crates.
 # The conformance suite is client-native, so this graph contains exactly the
 # two crates that define the wire and nothing else.
-munarium-api-types = { path = "../../server/src/munarium-api-types", version = "1.0.0", features = ["proto"] }
-munarium-proto = { path = "../../server/src/munarium-proto", version = "1.0.0" }
+munarium-api-types = { path = "../../server/src/munarium-api-types", version = "1.1.0", features = ["proto"] }
+munarium-proto = { path = "../../server/src/munarium-proto", version = "1.1.0" }
 # async + transports (rustls everywhere — no openssl, matching the server workspace)
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
 tokio-stream = "0.1"

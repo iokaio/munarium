@@ -14,7 +14,7 @@ docker run --rm --name munarium-evaluation `
   -p 127.0.0.1:8080:8080 -p 127.0.0.1:50051:50051 `
   -e MUNARIUM_STORE=memory -e MUNARIUM_AUTH_MODE=static `
   -e MUNARIUM_STATIC_TOKENS=evaluation-token:evaluation:rw `
-  iokaio/munarium:1.0.0
+  iokaio/munarium:1.1.0
 ```
 
 Open `http://127.0.0.1:8080/admin` or `/docs`. Check `/healthz`, `/readyz`,
@@ -74,8 +74,8 @@ The bundled client lists its commands with `docker exec <container> /mmctl`
 
 ## Versions and verification
 
-`1.0.0` identifies one release. `1.0` and `latest` may advance; use a verified
-digest for deployments. Candidate tags such as `1.0.0-rc.1` are evaluation
+`1.1.0` identifies one release. `1.1` and `latest` may advance; use a verified
+digest for deployments. Candidate tags such as `1.1.0-rc.1` are evaluation
 builds and are not stable releases. Published source revisions are recorded in
 OCI labels, alongside SBOM and build provenance attestations. Release notes
 provide the certified digest and signing identity for verification.

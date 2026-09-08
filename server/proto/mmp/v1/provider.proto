@@ -40,7 +40,7 @@ message CompleteRequest {
   // When set, the invocation is recorded as a ledger event in this lineage
   // and its id comes back as invocation_event_id. Empty = not recorded.
   string version_id = 8;
-  // Provider family override (anthropic|openai|openrouter). Only honored
+  // Provider family override (anthropic|openai|openrouter|ollama). Only honored
   // with config_name "default". Empty = default-priority rule.
   string provider = 9;
   // Model tier: "fast" (lesser model), "capable", or "frontier" (top model).
@@ -65,7 +65,7 @@ message EmbedRequest {
   repeated string inputs = 3;
   // When set, the invocation is recorded as a ledger event in this lineage.
   string version_id = 4;
-  // Provider family override (anthropic|openai|openrouter); only honored
+  // Provider family override (anthropic|openai|openrouter|ollama); only honored
   // with config_name "default".
   string provider = 5;
 }

@@ -13,6 +13,12 @@ Keep the existing PostgreSQL volume and project name when making these changes.
 
 ## 1. Know which credential does which job
 
+Server 1.1 also supports [local Ollama](ollama.md). Its `ProviderConfig` requires
+an explicit endpoint and can omit `credentialRef`. If an Ollama proxy requires a
+bearer token, supply the usual environment/file reference; a configured reference
+must resolve. The other AI providers still require credentials. Local Ollama does
+not remove authentication requirements on Munarium's API.
+
 | Credential | Consumer | Supported input | When changes take effect |
 |---|---|---|---|
 | AI provider key | Server's outbound model requests | `ProviderConfig.spec.credentialRef` with an environment-variable name or file path | Resolved at use time; a changed container environment requires recreation |

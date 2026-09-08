@@ -7,7 +7,7 @@
       "name": "Apache-2.0",
       "identifier": "Apache-2.0"
     },
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "paths": {
     "/healthai": {
@@ -6272,7 +6272,7 @@
               "string",
               "null"
             ],
-            "description": "Provider family override (anthropic | openai | openrouter). Only\nhonored on the reserved `default` config name; combines with the\ndefault rule when unset."
+            "description": "Provider family override (anthropic | openai | openrouter | ollama). Only\nhonored on the reserved `default` config name; combines with the\ndefault rule when unset."
           },
           "system": {
             "type": [
@@ -6882,7 +6882,7 @@
               "string",
               "null"
             ],
-            "description": "Provider family override (anthropic | openai | openrouter); only\nhonored on the reserved `default` config name."
+            "description": "Provider family override (anthropic | openai | openrouter | ollama); only\nhonored on the reserved `default` config name."
           },
           "version_id": {
             "type": [
@@ -7440,7 +7440,7 @@
           },
           "provider": {
             "type": "string",
-            "description": "Provider family (anthropic | openai | openrouter)."
+            "description": "Provider family (anthropic | openai | openrouter | ollama)."
           },
           "skipped": {
             "type": "boolean",
@@ -8955,7 +8955,7 @@
           },
           "provider": {
             "type": "string",
-            "description": "The provider family (anthropic | openai | openrouter)."
+            "description": "The provider family (anthropic | openai | openrouter | ollama)."
           }
         }
       },
@@ -8992,7 +8992,7 @@
           },
           "credential_ok": {
             "type": "boolean",
-            "description": "Whether the config's credential currently resolves. Never the key."
+            "description": "Whether credentials resolve, or are unnecessary for local Ollama. Never the key."
           },
           "fast": {
             "type": [
@@ -9014,7 +9014,7 @@
           },
           "provider": {
             "type": "string",
-            "description": "Provider family (`anthropic` | `openai` | `openrouter`)."
+            "description": "Provider family (`anthropic` | `openai` | `openrouter` | `ollama`)."
           },
           "source": {
             "type": "string",

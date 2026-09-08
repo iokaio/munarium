@@ -554,7 +554,7 @@ pub struct ApplyProviderConfigResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ProviderHealthResponse {
     pub healthy: bool,
-    /// The provider family (anthropic | openai | openrouter).
+    /// The provider family (anthropic | openai | openrouter | ollama).
     pub provider: String,
     pub endpoint_fingerprint: String,
     /// Key validity / reachability detail — never key material.
@@ -567,7 +567,7 @@ pub struct CompleteRequest {
     /// tier default (when `tier` set) or the config's first complete model.
     #[serde(default)]
     pub model: Option<String>,
-    /// Provider family override (anthropic | openai | openrouter). Only
+    /// Provider family override (anthropic | openai | openrouter | ollama). Only
     /// honored on the reserved `default` config name; combines with the
     /// default rule when unset.
     #[serde(default)]
@@ -609,7 +609,7 @@ pub struct EmbedRequest {
     /// None = the config's first embed model.
     #[serde(default)]
     pub model: Option<String>,
-    /// Provider family override (anthropic | openai | openrouter); only
+    /// Provider family override (anthropic | openai | openrouter | ollama); only
     /// honored on the reserved `default` config name.
     #[serde(default)]
     pub provider: Option<String>,
@@ -636,7 +636,7 @@ pub struct EmbedResponse {
 /// One /healthai probe: a small live completion against one provider/tier.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct HealthAiCheck {
-    /// Provider family (anthropic | openai | openrouter).
+    /// Provider family (anthropic | openai | openrouter | ollama).
     pub provider: String,
     /// Tier probed (fast | capable).
     pub tier: String,
@@ -1636,12 +1636,12 @@ pub struct ProviderModelsDto {
     /// Config name (`demo-anthropic`, …) or `default-<family>` for the
     /// synthesized env-backed default.
     pub name: String,
-    /// Provider family (`anthropic` | `openai` | `openrouter`).
+    /// Provider family (`anthropic` | `openai` | `openrouter` | `ollama`).
     pub provider: String,
     /// `applied` (tenant-applied config) or `default` (synthesized from the
     /// conventional env var).
     pub source: String,
-    /// Whether the config's credential currently resolves. Never the key.
+    /// Whether credentials resolve, or are unnecessary for local Ollama. Never the key.
     pub credential_ok: bool,
     /// Concrete model the `fast` tier resolves to for this config.
     #[serde(default, skip_serializing_if = "Option::is_none")]

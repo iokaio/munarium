@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The ModelProvider trait — the BYOK seam. Implementations (anthropic,
-//! openai, openrouter in munarium-providers) own auth, retries, and dialects;
+//! openai, openrouter, ollama in munarium-providers) own auth, retries, and dialects;
 //! the kernel sees only these neutral shapes. Types only here: this crate
 //! never performs a provider call.
 
@@ -14,6 +14,7 @@ pub enum ProviderId {
     Anthropic,
     Openai,
     Openrouter,
+    Ollama,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

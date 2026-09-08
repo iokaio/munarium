@@ -2,8 +2,8 @@
 
 This isolated Docker Compose project runs Ollama and PostgreSQL on Docker Desktop
 for Windows in Linux container mode. The optional `server` profile builds Munarium
-from this checkout. Provider integration is being added on the 1.1 feature branch;
-the environment checks below call Ollama directly.
+from this checkout. Server 1.1 supports the local provider; the initial environment
+checks below call Ollama directly.
 
 Run these commands in PowerShell from `server/deploy/ollama`:
 
@@ -80,15 +80,34 @@ The project network uses `http://ollama:11434`; Windows uses
 PostgreSQL is reachable only on the project network. The database password and
 Munarium token in Compose are public local-evaluation credentials.
 
-After provider integration is available, build the optional Server:
+Build the optional Server and follow the [provider guide](../../docs/guides/ollama.md)
+to register its models:
 
 ```powershell
 docker compose --profile server up -d --build --wait
 Invoke-RestMethod http://127.0.0.1:28080/readyz
 ```
 
+For the live integration suite, install the repository's Python client test
+dependencies in a virtual environment (`python -m pip install -e clients/python`
+from the repository root), then run from this directory:
+
+```powershell
+python test_integration.py
+docker compose --profile server up -d --no-deps --force-recreate server
+# Wait for http://127.0.0.1:28080/readyz to return 200 before the next command.
+python test_integration.py --verify-persisted ../../scratch/ollama/integration.json --output ../../scratch/ollama/persisted-integration.json
+```
+
+The suite covers REST/gRPC provider calls and cache parity, isolation from the
+second test tenant, budgets and error paths, plus a unique two-document collection
+and grounded answer. It approves only that synthetic collection's index cutover.
+Index construction retains the existing local embedder; the Ollama embedding API
+is tested separately. All evidence stays under the ignored `server/scratch/ollama`.
+
 Server REST is on loopback port 28080 and gRPC on 25051. Its requests require
 `Authorization: Bearer ollama-evaluation-token` and `X-Munarium-Uid: evaluator`.
+The second token, `ollama-other-token`, selects a separate tenant for isolation tests.
 Change `OLLAMA_PORT`, `MUNARIUM_OLLAMA_HTTP_PORT`, or `MUNARIUM_OLLAMA_GRPC_PORT` in
 your shell if a host port is already occupied; adjust host-side requests too.
 The default Compose project name keeps these resources separate from other local
