@@ -1918,7 +1918,7 @@ dependencies = [
 
 [[package]]
 name = "mmp-conformance"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "async-trait",
  "base64",
@@ -1956,7 +1956,7 @@ checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
 
 [[package]]
 name = "munarium-access"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "jsonwebtoken",
  "serde",
@@ -1966,7 +1966,7 @@ dependencies = [
 
 [[package]]
 name = "munarium-api-conv"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "munarium-api-types",
  "munarium-core",
@@ -1974,7 +1974,7 @@ dependencies = [
 
 [[package]]
 name = "munarium-api-types"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "hex",
  "jsonschema",
@@ -1987,7 +1987,7 @@ dependencies = [
 
 [[package]]
 name = "munarium-authoring"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "hex",
  "munarium-runbooks",
@@ -2000,7 +2000,7 @@ dependencies = [
 
 [[package]]
 name = "munarium-azure-auth"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "munarium-core",
  "reqwest 0.12.28",
@@ -2012,7 +2012,7 @@ dependencies = [
 
 [[package]]
 name = "munarium-cli"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "base64",
  "hex",
@@ -2025,7 +2025,7 @@ dependencies = [
 
 [[package]]
 name = "munarium-core"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2040,7 +2040,7 @@ dependencies = [
 
 [[package]]
 name = "munarium-datastore"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "diskann",
  "diskann-vector",
@@ -2056,7 +2056,7 @@ dependencies = [
 
 [[package]]
 name = "munarium-docintel-az"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "async-trait",
  "base64",
@@ -2071,7 +2071,7 @@ dependencies = [
 
 [[package]]
 name = "munarium-extract"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "image",
  "lopdf",
@@ -2088,7 +2088,7 @@ dependencies = [
 
 [[package]]
 name = "munarium-proto"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "prost",
  "prost-types",
@@ -2099,7 +2099,7 @@ dependencies = [
 
 [[package]]
 name = "munarium-providers"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -2115,7 +2115,7 @@ dependencies = [
 
 [[package]]
 name = "munarium-retrieval"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "async-trait",
  "hex",
@@ -2133,7 +2133,7 @@ dependencies = [
 
 [[package]]
 name = "munarium-retrieval-pg"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "async-trait",
  "hex",
@@ -2154,7 +2154,7 @@ dependencies = [
 
 [[package]]
 name = "munarium-runbooks"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2163,7 +2163,7 @@ dependencies = [
 
 [[package]]
 name = "munarium-server"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "async-trait",
  "axum 0.8.9",
@@ -2211,7 +2211,7 @@ dependencies = [
 
 [[package]]
 name = "munarium-shapes"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "hex",
  "jsonschema",
@@ -2224,7 +2224,7 @@ dependencies = [
 
 [[package]]
 name = "munarium-store-mem"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2236,7 +2236,7 @@ dependencies = [
 
 [[package]]
 name = "munarium-store-objects"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "async-trait",
  "munarium-core",
@@ -2250,7 +2250,7 @@ dependencies = [
 
 [[package]]
 name = "munarium-store-pg"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "async-trait",
  "chrono",

@@ -15,7 +15,7 @@ use munarium_core::{KernelError, Result};
 use munarium_proto::mmp::v1 as pb;
 use munarium_providers::{
     build_provider, builtin_tier_model, default_config_doc, default_env_var, parse_provider_config,
-    resolve_complete_model, resolve_credential, ModelTier, ProviderConfigDoc, RateBudget,
+    resolve_complete_model, resolve_config_credential, ModelTier, ProviderConfigDoc, RateBudget,
     DEFAULT_PROVIDER_PRIORITY,
 };
 use std::collections::HashMap;
@@ -68,7 +68,7 @@ impl ProviderRegistry {
         let name = doc.metadata.name.clone();
         let entry = Arc::new(ProviderEntry {
             budget: RateBudget::new_shared(&doc.spec.budgets, state.config.replica_count),
-            provider: build_provider(&doc),
+            provider: build_provider(&doc)?,
             doc,
         });
         self.entries
@@ -139,6 +139,9 @@ impl ProviderRegistry {
                 .family_entry(state, tenant, family)
                 .await?
                 .ok_or_else(|| {
+                    if family == "ollama" {
+                        return KernelError::Provider("no usable applied Ollama config for this tenant".into());
+                    }
                     KernelError::Provider(format!(
                         "no usable credential for provider '{family}' (no applied config; env var '{}' not set)",
                         default_env_var(family).unwrap_or("?")
@@ -166,9 +169,9 @@ impl ProviderRegistry {
         tenant: &str,
         family: &str,
     ) -> Result<Option<Arc<ProviderEntry>>> {
-        if default_env_var(family).is_none() {
+        if family != "ollama" && default_env_var(family).is_none() {
             return Err(KernelError::InvalidInput(format!(
-                "unsupported provider '{family}' (anthropic|openai|openrouter)"
+                "unsupported provider '{family}' (anthropic|openai|openrouter|ollama)"
             )));
         }
         self.ensure_loaded(state, tenant).await?;
@@ -182,12 +185,12 @@ impl ProviderRegistry {
             .collect();
         candidates.sort_by(|a, b| a.doc.metadata.name.cmp(&b.doc.metadata.name));
         for c in candidates {
-            if resolve_credential(&c.doc.spec.credential_ref).is_ok() {
+            if resolve_config_credential(&c.doc.spec).is_ok() {
                 return Ok(Some(c));
             }
         }
         if let Some(entry) = self.default_entry(state, family).await {
-            if resolve_credential(&entry.doc.spec.credential_ref).is_ok() {
+            if resolve_config_credential(&entry.doc.spec).is_ok() {
                 return Ok(Some(entry));
             }
         }
@@ -201,7 +204,7 @@ impl ProviderRegistry {
         let doc = default_config_doc(family)?;
         let entry = Arc::new(ProviderEntry {
             budget: RateBudget::new_shared(&doc.spec.budgets, state.config.replica_count),
-            provider: build_provider(&doc),
+            provider: build_provider(&doc).ok()?,
             doc,
         });
         self.defaults
@@ -240,7 +243,7 @@ impl ProviderRegistry {
                             &doc.spec.budgets,
                             state.config.replica_count,
                         ),
-                        provider: build_provider(&doc),
+                        provider: build_provider(&doc)?,
                         doc,
                     });
                     self.entries.write().await.insert(key.clone(), entry);
@@ -528,7 +531,8 @@ pub async fn op_embed(
     entry.budget.check(est)?;
 
     let pre_hash = munarium_providers::request_hash(&serde_json::json!({
-        "embed": entry.doc.spec.endpoint, "model": model, "inputs": inputs,
+        "embed": entry.doc.spec.endpoint, "provider": entry.doc.spec.provider,
+        "model": model, "inputs": inputs,
     }));
     let started = std::time::Instant::now();
     let (out, cache_hit) = match state.providers.cached_embedding(tenant, &pre_hash).await {
@@ -615,12 +619,18 @@ pub async fn op_healthai(probe_max_tokens: u32) -> dto::HealthAiResponse {
                     latency_ms: None,
                     detail: String::new(),
                 };
-                if resolve_credential(&doc.spec.credential_ref).is_err() {
+                if resolve_config_credential(&doc.spec).is_err() {
                     check.skipped = true;
                     check.detail = format!("credential env var '{env}' is not set");
                     return check;
                 }
-                let provider = build_provider(&doc);
+                let provider = match build_provider(&doc) {
+                    Ok(provider) => provider,
+                    Err(error) => {
+                        check.detail = error.to_string();
+                        return check;
+                    }
+                };
                 let started = std::time::Instant::now();
                 let result = tokio::time::timeout(
                     std::time::Duration::from_secs(30),
@@ -754,7 +764,7 @@ pub async fn op_list_providers(
             name: entry.doc.metadata.name.clone(),
             provider: entry.doc.spec.provider.clone(),
             source: "applied".into(),
-            credential_ok: resolve_credential(&entry.doc.spec.credential_ref).is_ok(),
+            credential_ok: resolve_config_credential(&entry.doc.spec).is_ok(),
             fast,
             capable,
             frontier,
@@ -767,7 +777,7 @@ pub async fn op_list_providers(
                 name: doc.metadata.name.clone(),
                 provider: family.to_string(),
                 source: "default".into(),
-                credential_ok: resolve_credential(&doc.spec.credential_ref).is_ok(),
+                credential_ok: resolve_config_credential(&doc.spec).is_ok(),
                 fast,
                 capable,
                 frontier,
@@ -910,6 +920,25 @@ impl pb::provider_service_server::ProviderService for ProviderSvc {
         let ctx = crate::grpc::authenticate(&self.state, &req).await?;
         ctx.require_rw_pub()?;
         let inner = req.into_inner();
+        if !inner.tools_json.is_empty() {
+            let hint = crate::grpc::none_if_empty(&inner.provider);
+            let entry = self
+                .state
+                .providers
+                .resolve(
+                    &self.state,
+                    &ctx.tenant_id,
+                    &inner.config_name,
+                    hint.as_deref(),
+                )
+                .await
+                .map_err(|e| to_status(&e))?;
+            if entry.doc.spec.provider == "ollama" {
+                return Err(Status::invalid_argument(
+                    "Ollama tool requests are not supported by the completion contract",
+                ));
+            }
+        }
         let out = op_complete(
             &self.state,
             &ctx.tenant_id,

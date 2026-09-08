@@ -15,6 +15,10 @@ The authoritative design is [docs/architecture.md](docs/architecture.md).
 For Docker Hub images, quick starts, configuration, and source builds, see
 [the container guide](CONTAINER.md).
 
+Server 1.1 adds local **Ollama** chat and embeddings. Start with the
+[Ollama guide](docs/guides/ollama.md) for Docker Desktop, explicit model routing,
+credential-free local endpoints and an isolated evaluation environment.
+
 **The core invariants** (enforced by the [conformance suite](conformance/)): the ledger is
 append-only with supersession chains (a correction is a new row, never an update); governance is a
 property of the command path (blocked claims are recorded `disputed`, never dropped); one

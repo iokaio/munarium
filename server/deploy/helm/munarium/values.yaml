@@ -3,7 +3,7 @@ image:
   # edition, and a placeholder here fails at image-pull time with a confusing
   # error. Left empty, `helm install` refuses immediately and says why.
   repository: ""
-  tag: "1.0.0"
+  tag: "1.1.0"
 
 replicas: 2
 

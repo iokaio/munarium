@@ -35,6 +35,7 @@ document, add it here — an unlisted doc is an unread doc.
 | [guides/creating-a-lab.md](guides/creating-a-lab.md) | A tutorial without code examples for designing a corpus laboratory: independent answer keys, baseline and candidate shapes/runbooks, controlled experiments, failure diagnosis, acceptance and continued improvement |
 | [guides/retrieval-sizing.md](guides/retrieval-sizing.md) | Sizing the search over those documents (2026-08-30): why the engine defaults are a compatibility floor and not a recommendation, the topK / candidateN / contextCharBudget / maxTokens arithmetic to do before writing a `retrieval:` block, which of history-revolution's knobs are corpus-specific and must not be copied, and why a capable model's refusal is a retrieval measurement rather than a prompt bug |
 | [guides/source-stores.md](guides/source-stores.md) | Where document bytes live: Azure Blob / S3 / GCS / file / pg / mem, per-backend setup and credentials |
+| [guides/ollama.md](guides/ollama.md) | Local Ollama chat and embeddings, Docker Desktop setup, model routing, credential-free endpoints and integration checks |
 | [tokenbudgets.md](tokenbudgets.md) | **Token budgets (2026-09-02)**: the eight per-call `max_tokens` ceilings, their built-ins, the `MUNARIUM_MAX_TOKENS_*` environment, runbook precedence, and `GET`/`POST /v1/max-tokens` (whole-object replace, no partial update) with the client calls |
 | [guides/document-intelligence.md](guides/document-intelligence.md) | The paid OCR escalation: why it is off by default, and how to turn it on deliberately |
 | [guides/evidence-hierarchy.md](guides/evidence-hierarchy.md) | Research profiles, evidence layers and typed assertions (S-3.x, 2026-08-28): how a turn reads documents, a governed Matrix table and pinned ledger facts in declared trust order; what each kind of evidence may be used for; and why a turn naming no profile is byte-identical to the one that ran before |
@@ -52,5 +53,6 @@ document, add it here — an unlisted doc is an unread doc.
 | [ops/backup-restore.md](ops/backup-restore.md) | What a database restore covers and does not, and the point-in-time restore procedure for a managed PostgreSQL or a CNPG cell — drill it in your own environment before you need it |
 
 Deployment documentation lives with the deployment code:
+[../deploy/ollama/README.md](../deploy/ollama/README.md) (isolated local Ollama evaluation),
 [../deploy/helm/munarium/README.md](../deploy/helm/munarium/README.md) (the chart) and
 [../deploy/terraform/example-aks/README.md](../deploy/terraform/example-aks/README.md) (an illustrative AKS module that consumes it).

@@ -54,7 +54,7 @@ RUN --mount=type=cache,id=munarium-cargo-registry,target=/usr/local/cargo/regist
 
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 ARG SOURCE_REVISION="unknown"
-ARG BUILD_VERSION="1.0.0"
+ARG BUILD_VERSION="1.1.0"
 LABEL org.opencontainers.image.source="https://github.com/iokaio/munarium" \
       org.opencontainers.image.revision=$SOURCE_REVISION \
       org.opencontainers.image.version=$BUILD_VERSION \

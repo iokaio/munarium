@@ -7,7 +7,13 @@ License 2.0. Copy it, quote it and adapt it freely; the only thing the license
 does not grant is the use of the Munarium and Ioka names, which
 TRADEMARK.md explains.
 
-It documents version 1.0. What 1.0 commits to — the wire contract, the
+Server 1.1 adds [Ollama chat and embeddings](ollama.md); that guide describes the
+native adapter, optional local credentials, explicit endpoints and tier routing.
+The dated 1.0 deployment examples below retain their original image digest;
+[getting started](getting-started.md) and the [container guide](../../CONTAINER.md)
+provide the current release installation instructions.
+
+What 1.0 commits to — the wire contract, the
 `MUNARIUM_*` configuration contract, and additive-only migrations — is stable
 under semantic versioning. Internal APIs and crate boundaries are not, and this
 guide says so where it teaches them.
@@ -3705,9 +3711,9 @@ a test asserting slug + status (both transports if kernel) · one change.
 ### Recipe 5: Add a provider adapter
 
 **Canonical example:** [munarium-providers/src/lib.rs](../../src/munarium-providers/src/lib.rs)
-from end to end. It is one file. The three existing families are Anthropic,
-OpenAI, and OpenRouter. OpenRouter is a thin variation of the OpenAI shape.
-Together, they show every seam you must fill.
+and [the Ollama module](../../src/munarium-providers/src/ollama.rs). The four
+families are Anthropic, OpenAI, OpenRouter and Ollama. OpenRouter uses the OpenAI
+shape; Ollama uses native APIs and permits a missing credential reference.
 
 **Steps.**
 
@@ -3718,14 +3724,10 @@ Together, they show every seam you must fill.
 2. **Add the `build_provider` arm** (lib.rs:601-609):
 
    ```rust
-   pub fn build_provider(doc: &ProviderConfigDoc) -> Box<dyn ModelProvider> {
-       let endpoint = doc.spec.endpoint.as_deref();
-       let cred = doc.spec.credential_ref.clone();
-       match doc.spec.provider.as_str() {
-           "anthropic" => Box::new(AnthropicProvider::new(endpoint, cred)),
-           "openrouter" => Box::new(OpenAiProvider::openrouter(endpoint, cred)),
-           _ => Box::new(OpenAiProvider::new(endpoint, cred)),
-       }
+   // build_provider returns Result<Box<dyn ModelProvider>> in Server 1.1.
+   // Validate the provider's configuration before constructing its adapter.
+   if doc.spec.provider == "ollama" {
+       return Ok(Box::new(OllamaProvider::new(&doc.spec)?));
    }
    ```
 
@@ -3733,7 +3735,7 @@ Together, they show every seam you must fill.
    family names (the test at lib.rs:631-632 asserts that renaming
    `anthropic` to `watsonx` fails to parse). Your family must also join
    the parse allow-list, or no config document can ever name it.
-3. **Fill the tier and default tables:** a `builtin_tier_model` entry
+3. **Choose explicit or built-in model routing.** Ollama uses configured models and tiers, with no synthesized default or automatic priority entry. For a cloud family with conventional defaults, add a `builtin_tier_model` entry
    for both tiers. See lib.rs:106-116; `("anthropic", ModelTier::Fast) =>
    Some("claude-haiku-4-5")` is the shape), a `default_env_var` entry
    (the conventional `MUNARIUM_SECRET_<FAMILY>` name your secret store surfaces),
@@ -6399,7 +6401,7 @@ what is the artifact called? Three rules, each of which exists because the
 obvious answer lies.
 
 **The Cargo version is not a build identity.** `/version` reports
-`CARGO_PKG_VERSION`, which is the workspace version (`1.0.0` as this is
+`CARGO_PKG_VERSION`, which is the workspace version (`1.1.0` as this is
 written). Between releases, many commits share that number, so two
 different images can answer `/version` identically while serving different
 API surfaces. Tag images by commit — `sha-<shortsha>` from a clean tree —
@@ -7785,11 +7787,11 @@ checklist. Every spoke touched by the change must appear in the diff.
 The version story is deliberately small enough to hold in your head.
 
 **One source of truth.** `[workspace.package] version` in the root
-`server/Cargo.toml` (line 29; `1.0.0` as this is written). Every crate
+`server/Cargo.toml` (`1.1.0` for this release). Every crate
 takes `version.workspace = true`; `/version` reports
 `CARGO_PKG_VERSION`; the OpenAPI `info.version` carries it.
 
-**The tag must agree.** A release is a `server-v<version>` tag. Releases
+**The tag must agree.** A public Server release is a `v<version>` tag. Releases
 are cut by Ioka outside this repository, and the first thing a release
 procedure must do is assert tag == workspace version and refuse to build
 otherwise, because `/version` reads `CARGO_PKG_VERSION` and a tag that
@@ -7798,19 +7800,15 @@ wrong. Section 10 states the same rule from the deployment side: a package
 version is not a build identity, so name images by commit and pin them by
 digest. An identity that cannot lie is worth a failed build.
 
-**Clients move in lockstep.** Each client pins itself to the server
-version explicitly with a `TARGET_SERVER_VERSION` constant, and a server
-bump moves all eight sites. These are the four package versions
-(`clients/rust/Cargo.toml:7`, `clients/python/pyproject.toml:8`,
-`clients/dotnet/Directory.Build.props:11`, `clients/java/build.gradle.kts:25`)
-and the four constants (rust `munarium-client/src/lib.rs:61`, python
-`munarium_client/_options.py:9`,.NET `MunariumClient.cs:69` (spelled
-`TargetServerVersion` in C#), and Java `Munarium.java:7` (spelled
-`TARGET_SERVER_VERSION`, same as Rust)). All eight read `1.0.0` today. This
-was checked for this chapter because an unchecked lockstep claim is exactly
-the kind that drifts.
+**Clients version independently.** The authoritative record is
+[`clients/compatibility.json`](../../../clients/compatibility.json). A Server
+minor release does not require a client package bump when the wire contract is
+unchanged. Verify supported Server minors through client conformance before
+expanding that record. Rust's local path dependencies on `munarium-api-types`
+and `munarium-proto` follow their Server workspace versions; the client package
+version remains independent.
 
-**This guide is a ninth site.** A change that invalidates a claim here
+**Keep this guide current.** A change that invalidates a claim here
 commits to updating this document in the same change. When you bump the
 workspace version with a behavior change, this document is on your change
 surface too.

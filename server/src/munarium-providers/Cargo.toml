@@ -4,7 +4,7 @@ name = "munarium-providers"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "BYOK provider gateway: Anthropic (Messages), OpenAI (Chat + Embeddings, base-URL override covers Azure OpenAI/vLLM), OpenRouter (OpenAI dialect). Keys resolve through the SecretResolver seam at call time — never stored, never logged."
+description = "Provider gateway: Anthropic, OpenAI, OpenRouter, and local Ollama chat and embeddings. Optional Ollama proxy credentials and cloud keys resolve at call time."
 
 [dependencies]
 munarium-core = { path = "../munarium-core" }
@@ -20,4 +20,3 @@ tokio = { workspace = true }
 [dev-dependencies]
 axum = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
-

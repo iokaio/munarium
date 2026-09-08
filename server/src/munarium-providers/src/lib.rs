@@ -20,6 +20,9 @@ use serde::{Deserialize, Serialize};
 use sha2::Digest as _;
 use std::time::{Duration, Instant};
 
+mod ollama;
+pub use ollama::OllamaProvider;
+
 // ---------------------------------------------------------------------------
 // declarative ProviderConfig
 // ---------------------------------------------------------------------------
@@ -40,7 +43,7 @@ pub struct ProviderMeta {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderSpec {
-    /// anthropic | openai | openrouter
+    /// anthropic | openai | openrouter | ollama
     pub provider: String,
     /// Endpoint override; omit for the provider default. Covers Azure
     /// OpenAI-style and vLLM/enterprise-gateway deployments.
@@ -48,8 +51,13 @@ pub struct ProviderSpec {
     pub endpoint: Option<String>,
     #[serde(default)]
     pub models: ProviderModels,
-    #[serde(rename = "credentialRef")]
-    pub credential_ref: CredentialRef,
+    /// Optional only for Ollama. Existing providers require a secret reference.
+    #[serde(
+        rename = "credentialRef",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub credential_ref: Option<CredentialRef>,
     #[serde(default)]
     pub budgets: Budgets,
 }
@@ -153,7 +161,7 @@ pub fn default_config_doc(provider: &str) -> Option<ProviderConfigDoc> {
             provider: provider.into(),
             endpoint: None,
             models: ProviderModels::default(),
-            credential_ref: CredentialRef::Env { env: env.into() },
+            credential_ref: Some(CredentialRef::Env { env: env.into() }),
             budgets: Budgets::default(),
         },
     })
@@ -248,14 +256,31 @@ pub fn parse_provider_config(yaml: &str) -> std::result::Result<ProviderConfigDo
         return Err(format!("kind must be ProviderConfig, got '{}'", doc.kind));
     }
     match doc.spec.provider.as_str() {
-        "anthropic" | "openai" | "openrouter" => {}
+        "anthropic" | "openai" | "openrouter" => {
+            if doc.spec.credential_ref.is_none() {
+                return Err("credentialRef is required for this provider".into());
+            }
+        }
+        "ollama" => ollama::validate_endpoint(doc.spec.endpoint.as_deref())?,
         other => {
             return Err(format!(
-                "unsupported provider '{other}' (anthropic|openai|openrouter)"
+                "unsupported provider '{other}' (anthropic|openai|openrouter|ollama)"
             ))
         }
     }
     Ok(doc)
+}
+
+/// A local Ollama endpoint needs no credential. A configured proxy credential
+/// still must resolve, and cloud providers still require one.
+pub fn resolve_config_credential(spec: &ProviderSpec) -> Result<Option<String>> {
+    match &spec.credential_ref {
+        Some(reference) => resolve_credential(reference).map(Some),
+        None if spec.provider == "ollama" => Ok(None),
+        None => Err(KernelError::InvalidInput(
+            "credentialRef is required for this provider".into(),
+        )),
+    }
 }
 
 /// Resolves the credential at call time. Failure names the ref, never leaks
@@ -378,6 +403,14 @@ async fn send_with_retry(
     builder: impl Fn() -> reqwest::RequestBuilder,
     max_retries: u32,
 ) -> Result<reqwest::Response> {
+    send_with_retry_impl(builder, max_retries, false).await
+}
+
+async fn send_with_retry_impl(
+    builder: impl Fn() -> reqwest::RequestBuilder,
+    max_retries: u32,
+    redact_body: bool,
+) -> Result<reqwest::Response> {
     let mut attempt = 0;
     loop {
         let resp = builder()
@@ -390,7 +423,11 @@ async fn send_with_retry(
         }
         let retryable = status.as_u16() == 429 || status.is_server_error();
         if !retryable || attempt >= max_retries {
-            let body = resp.text().await.unwrap_or_default();
+            let body = if redact_body {
+                String::new()
+            } else {
+                resp.text().await.unwrap_or_default()
+            };
             let detail = format!(
                 "provider returned {status}: {}",
                 body.chars().take(300).collect::<String>()
@@ -753,14 +790,20 @@ fn fingerprint(endpoint: &str) -> String {
 }
 
 /// Factory from a validated config doc.
-pub fn build_provider(doc: &ProviderConfigDoc) -> Box<dyn ModelProvider> {
+pub fn build_provider(doc: &ProviderConfigDoc) -> Result<Box<dyn ModelProvider>> {
     let endpoint = doc.spec.endpoint.as_deref();
-    let cred = doc.spec.credential_ref.clone();
-    match doc.spec.provider.as_str() {
+    if doc.spec.provider == "ollama" {
+        return Ok(Box::new(OllamaProvider::new(&doc.spec)?));
+    }
+    let cred = doc.spec.credential_ref.clone().ok_or_else(|| {
+        KernelError::InvalidInput("credentialRef is required for this provider".into())
+    })?;
+    Ok(match doc.spec.provider.as_str() {
         "anthropic" => Box::new(AnthropicProvider::new(endpoint, cred)),
         "openrouter" => Box::new(OpenAiProvider::openrouter(endpoint, cred)),
-        _ => Box::new(OpenAiProvider::new(endpoint, cred)),
-    }
+        "openai" => Box::new(OpenAiProvider::new(endpoint, cred)),
+        _ => return Err(KernelError::InvalidInput("unsupported provider".into())),
+    })
 }
 
 #[cfg(test)]
@@ -781,7 +824,10 @@ spec:
 "#;
         let doc = parse_provider_config(yaml).expect("parses");
         assert_eq!(doc.metadata.name, "primary-anthropic");
-        assert!(matches!(doc.spec.credential_ref, CredentialRef::Env { .. }));
+        assert!(matches!(
+            doc.spec.credential_ref,
+            Some(CredentialRef::Env { .. })
+        ));
 
         let bad = yaml.replace("anthropic", "watsonx");
         assert!(parse_provider_config(&bad).is_err());
