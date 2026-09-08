@@ -52,5 +52,6 @@ document, add it here — an unlisted doc is an unread doc.
 | [ops/backup-restore.md](ops/backup-restore.md) | What a database restore covers and does not, and the point-in-time restore procedure for a managed PostgreSQL or a CNPG cell — drill it in your own environment before you need it |
 
 Deployment documentation lives with the deployment code:
+[../deploy/ollama/README.md](../deploy/ollama/README.md) (isolated local Ollama evaluation),
 [../deploy/helm/munarium/README.md](../deploy/helm/munarium/README.md) (the chart) and
 [../deploy/terraform/example-aks/README.md](../deploy/terraform/example-aks/README.md) (an illustrative AKS module that consumes it).
