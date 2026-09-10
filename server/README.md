@@ -27,16 +27,11 @@ deterministically rebuilt under a pin; every retrieval answer carries a provenan
 
 ## About this repository
 
-Munarium Server begins here, at version 1.0.0. Its design was worked out over an extended period of
-private research and development — experiments, measurements, superseded designs, and the
-operational records of the environments they ran in — and that history is deliberately not carried
-into this repository.
-
-It is omitted because it documents how the design was reached rather than how the software behaves,
-and it would give an evaluator, an operator or a contributor nothing they need. What that work
-produced is here in full: the implementation, its conformance suite, its API documentation and its
-deployment assets. The conformance scenarios are the executable specification, and they are the
-record worth reading.
+The current Server source version is **1.1.1**. It fixes model overrides so the
+selected provider/tier applies to query expansion as well as answer generation.
+See [release changes](CHANGELOG.md) and [published artifacts](CONTAINER.md#versions-and-verification).
+The first public release was 1.0.0; the private research and operational history
+that preceded it is excluded from this repository.
 
 ## What is built, and what is not
 
@@ -49,10 +44,10 @@ release's published limitations.
 | Capability | Scope | Status |
 |---|---|---|
 | **Memory kernel** | workspace, MMP protos, `munarium-core` kernel (all six gates incl. chronology), in-memory backend, conformance harness | Complete |
-| **PostgreSQL cell** | `munarium-store-pg`, partitioned ledger, `lineage_heads` FOR UPDATE seq allocation, additive migrations, pg conformance + concurrency tests | Built; hardening remains — slice resolution is not yet pushed into SQL, and sqlx offline query data is not committed |
+| **PostgreSQL cell** | `munarium-store-pg`, partitioned ledger, `lineage_heads` FOR UPDATE seq allocation, additive migrations, pg conformance + concurrency tests | Built; slice-resolution hardening remains. SQL queries are runtime-checked; compilation needs no database or sqlx offline cache |
 | **Server + container** | REST :8080 + direct gRPC :50051 planes, auth (static tokens, rw/ro), idempotency, problem+json, distroless image (~29 MB) | Complete — black-box conformance passes on both planes, against memory and postgres backends |
 | **Shapes + retrieval** | shape registry (schema violations -> disputed claims), content-addressed ingest, in-Postgres hybrid (tsvector + pgvector HNSW, RRF), provenance envelope, versioned immutable indexes | Complete — end-to-end incl. re-index and old-version resolvability |
-| **Providers (BYOK)** | Anthropic + OpenAI + OpenRouter, credentialRef seam (env/file = KV paths), rpm/tpm budgets, retry-after honor, embedding cache, invocation provenance events; `GET /v1/providers` free-tier→model disclosure with zero provider calls | Complete — contract tests against recorded fixtures |
+| **Providers** | Anthropic, OpenAI, OpenRouter and Ollama; environment/file credential references, rate and token budgets, embedding cache, invocation provenance; `GET /v1/providers` model disclosure without provider calls | Cloud providers use your credentials; local Ollama can omit them. Index construction uses the local embedder, independently of provider embedding APIs |
 | **Runbooks + mmctl** | checkpointed executor (transitions = ledger events), side-by-side build -> verify -> approval-gated cutover -> retireOld, `mmctl apply/run/approve` | Complete — full lifecycle covered |
 | **Deploy** | Helm chart, Envoy gateway plane (compose --profile gateway), an illustrative Terraform module for AKS + CNPG ([deploy/terraform/example-aks](deploy/terraform/example-aks/)), distroless image | Partial — the chart installs and probes on kind; the Terraform module validates but has never been applied end to end, and backup drills remain |
 | **Identity, interactions and capability tokens** | uid contract on every /v1 call (`X-Munarium-Uid` / `munarium-uid`), per-uid interaction capture, `mgmt`-role static tokens, `POST /v1/access-tokens` minting short-lived HS256 capability JWTs (level + compartments + query/ingest scopes), `munarium-access` crate — see [docs/security-posture.md](docs/security-posture.md) | Complete |
@@ -65,7 +60,9 @@ release's published limitations.
 
 ## Quickstart (dev profile)
 
-Prerequisites: Docker (all-in-one) or Rust ≥1.89 (source builds).
+Prerequisites: Docker with Compose for the container stack. Native Server builds
+use **Rust 1.98.0**, pinned in [rust-toolchain.toml](rust-toolchain.toml).
+Run the following from the repository root:
 
 ```powershell
 cd server
@@ -88,8 +85,16 @@ From source on Windows (native — never link musl locally; the Linux binary is 
 cd server
 cargo test --workspace                       # kernel + conformance, all offline
 cargo run -p mmp-conformance -- --in-process # the fixture report
-cargo run -p munarium-server                    # skeleton on :8080
+$env:MUNARIUM_STORE = 'memory'
+$env:MUNARIUM_SOURCE_STORE = 'mem'
+$env:MUNARIUM_AUTH_MODE = 'static'
+$env:MUNARIUM_STATIC_TOKENS = 'devtoken:demo:rw'
+cargo run -p munarium-server                 # temporary ledger API on :8080
 ```
+
+The native example loses data on exit. PostgreSQL is required for persistent
+storage and the full retrieval/runbook workflow. Compilation and offline tests
+do not require a running database; PostgreSQL integration tests do.
 
 ## API planes
 
@@ -99,7 +104,7 @@ Three planes, one service — each built and documented:
 |---|---|---|---|
 | **HTTP REST** | 8080 (443 via gateway) | JSON, problem+json errors, OpenAPI | [docs/api/rest.md](docs/api/rest.md) |
 | **gRPC via gateway** | 443 | HTTP/2, content-type routed by Envoy to the gRPC upstream | [docs/api/grpc.md](docs/api/grpc.md) |
-| **gRPC direct TCP** | 50051 | raw tonic listener (plaintext in demo; `MUNARIUM_GRPC_TLS_CERT/KEY` to arm TLS) | [docs/api/grpc.md](docs/api/grpc.md) |
+| **gRPC direct TCP** | 50051 | plaintext tonic listener; configure TLS on an external proxy for remote access | [docs/api/grpc.md](docs/api/grpc.md) |
 
 The proto files under [proto/mmp/v1/](proto/mmp/v1/) are normative. Errors:
 [docs/api/errors.md](docs/api/errors.md).
@@ -199,7 +204,6 @@ All `MUNARIUM_`-prefixed. The contract is stable; unset-but-required vars fail c
 | `MUNARIUM_SESSION_IDLE_TTL_SECS` | `0` (off) | idle-session expiry: open sessions idle longer than this are stamped `expired` by the janitor; further turns answer 409 `session-not-open` |
 | `MUNARIUM_INSTANCE_ID` | `HOSTNAME`→`COMPUTERNAME`→random | this instance's identity in logs and interaction rows |
 | `MUNARIUM_SHUTDOWN_GRACE_SECS` | `20` | drain window on SIGTERM/SIGINT (/readyz flips to 503 "draining" the moment the signal fires) |
-| `MUNARIUM_GRPC_TLS_CERT` / `MUNARIUM_GRPC_TLS_KEY` | unset | TLS for the direct gRPC port |
 | `MUNARIUM_SECRET_ANTHROPIC` / `MUNARIUM_SECRET_OPENAI` / `MUNARIUM_SECRET_OPENROUTER` | unset | default BYOK provider keys (inject them from your secret store in a deployed environment) — power the default-provider rule (config name `default`: anthropic → openai → openrouter) and `GET /healthai` (live probe of the nine built-in tier models: haiku/sonnet/fable-5-1, gpt-5.4-mini/gpt-5.4/gpt-5.6-sol, deepseek-v4-flash/glm-5.2/glm-5.3) |
 
 ## Workspace layout
@@ -222,13 +226,17 @@ Boundary rules (CI-checked): `munarium-core` never depends on sqlx/axum/tonic/re
 
 ## Demo vs production posture
 
+The deployment architecture includes targets beyond the current runtime.
+The table distinguishes the shipped defaults from operator configuration or
+future architecture; it is not a list of environment switches that enable every target.
+
 | Concern | This demo | Production (architecture.md) |
 |---|---|---|
 | Tenancy | single DB, `tenant_id` column, `TenantScopedStore` handle | database-per-tenant per CNPG cell |
 | Pooling | direct sqlx pool | pgcat transaction pooling, watermark-routed replicas |
 | Secrets | env/file in compose; your secret store (Key Vault, CSI) when deployed | Secrets Store CSI + customer vault |
 | Cells | one | share-nothing fleet, tenant placement |
-| gRPC direct TLS | plaintext (documented) | rustls via `MUNARIUM_GRPC_TLS_*` |
+| gRPC transport security | plaintext listener | TLS at an ingress/proxy; direct-listener TLS is not implemented |
 
 ## Conformance
 

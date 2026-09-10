@@ -115,8 +115,9 @@ Notes:
 - Rate limits (`rpm`/`tpm` budgets) surface as typed rate-limited errors.
   The clients deliberately do NOT auto-retry them — pace your own calls.
   They read a `Retry-After` header opportunistically into the error's
-  `retry_after`, but the server does not emit one today, so treat that
-  hint as absent and use your own backoff.
+  `retry_after`. Server REST 429 responses provide 60 seconds for rate budgets
+  or the time to UTC midnight for a daily cap. Respect the hint when present;
+  use your own backoff when a transport or intermediary omits it.
 - Provider calls are never auto-retried (a completion is not replayable).
 - gRPC sentinel note: `temperature: 0.0` / `max_tokens: 0` cannot ride the
   proto3 wire and are rejected — use REST when you need explicit zeros.

@@ -1,8 +1,18 @@
 # munarium-server documentation
 
-Everything under `server/docs/` in one place. Until now these documents were
-findable only by `ls` and folklore; this index is the map. If you add a
-document, add it here — an unlisted doc is an unread doc.
+Choose a starting point for your role:
+
+- **Evaluating the product:** [repository overview](../../README.md),
+  [current capabilities](../README.md#what-is-built-and-what-is-not) and
+  [support](../../SUPPORT.md).
+- **Building an application:** [getting started](guides/getting-started.md),
+  [client libraries](../../clients/README.md) and [API reference](api/rest.md).
+- **Operating a service:** [container setup](../CONTAINER.md),
+  [deployment](ops/deployment-runbook.md) and [backup/restore](ops/backup-restore.md).
+
+Installation guides target Server 1.1.1. Dated examples and measurements in the
+developer guide retain their original context; consult the current configuration
+and API references when applying them to a new deployment.
 
 ## Design and record
 
@@ -30,7 +40,7 @@ document, add it here — an unlisted doc is an unread doc.
 | [guides/managing-key-and-secrets.md](guides/managing-key-and-secrets.md) | Supported AI providers, environment and Docker file secrets, provider verification, rotation and revocation, PostgreSQL passwords, API tokens and capability signing keys |
 | [guides/datastore.md](guides/datastore.md) | Complete Datastore configuration, Docker storage setup, artifact builds and verification, promotion, serving rollout, fleet gates, testing, rollback and links to the existing references |
 | [guides/measuring-performance.md](guides/measuring-performance.md) | Metrics and persisted performance records, repeatable benchmarks, large ingest/index workloads, retrieval and AI query scaling, bottleneck diagnosis and engineering opportunities |
-| [guides/dev-guide.md](guides/dev-guide.md) | The developers guide — Parts I and II of the three-part book, with the Preface and Appendices A–F (verified against v0.1.2): I — developing munarium-server itself (setup, test tiers, crate map, recipes, CI); II — building AI-enabled corpus applications on the mesh (chat, research, red-flag review; the measured application patterns; §21A–§21C). |
+| [guides/dev-guide.md](guides/dev-guide.md) | Developing Server itself and building corpus applications: setup, test tiers, crate map, recipes, CI and measured application patterns. Includes historical v0.1.2 transcripts; the opening version note identifies the current setup references |
 | [guides/loading-corpora.md](guides/loading-corpora.md) | Getting documents in: filename-as-identity, which sample corpora are public datasets and which are not, the upload-prefix convention, extraction expectations |
 | [guides/creating-a-lab.md](guides/creating-a-lab.md) | A tutorial without code examples for designing a corpus laboratory: independent answer keys, baseline and candidate shapes/runbooks, controlled experiments, failure diagnosis, acceptance and continued improvement |
 | [guides/retrieval-sizing.md](guides/retrieval-sizing.md) | Sizing the search over those documents (2026-08-30): why the engine defaults are a compatibility floor and not a recommendation, the topK / candidateN / contextCharBudget / maxTokens arithmetic to do before writing a `retrieval:` block, which of history-revolution's knobs are corpus-specific and must not be copied, and why a capable model's refusal is a retrieval measurement rather than a prompt bug |

@@ -62,11 +62,13 @@ key. Wire them with two values:
 # server release: where the turn path reaches Matrix, and where a browser
 # reaches its console (the /admin/matrix reciprocal link).
 helm upgrade --install munarium server/deploy/helm/munarium \
+  --set image.repository=iokaio/munarium --set image.tag=1.1.1 \
   --set matrix.baseUrl=http://munarium-matrix-query:8180 \
   --set matrix.adminUrl=https://matrix.example.com/admin
 
 # matrix release: where Matrix seals evidence and reads the ledger.
 helm upgrade --install munarium-matrix matrix/deploy/helm/munarium-matrix \
+  --set image.repository=<your-matrix-image> --set image.tag=1.0.0 \
   --set server.url=http://munarium-server:8080 \
   --set database.secretName=munarium-matrix-db \
   --set server.tokenSecretName=munarium-matrix-server-token
@@ -97,7 +99,7 @@ that could rewrite its own contracts.
 ## Render it
 
 ```
-helm template mx matrix/deploy/helm/munarium-matrix | kubectl apply --dry-run=client -f -
+helm template mx matrix/deploy/helm/munarium-matrix --set image.repository=munarium-matrix --set image.tag=local | kubectl apply --dry-run=client -f -
 ```
 
 ## Install it on a laptop cluster

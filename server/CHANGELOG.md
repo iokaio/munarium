@@ -1,5 +1,8 @@
 # Munarium Server — release notes
 
+These are source release notes. See the [container publication record](CONTAINER.md#versions-and-verification)
+for registry availability, digests and public signing instructions.
+
 ## 1.1.1
 
 - Apply an allowed session-turn model override to both model-based query
@@ -51,10 +54,15 @@ finished. The list below is that gap, stated rather than implied.
 
 ### Accepted limitations
 
+- **Direct gRPC TLS is not implemented.** The listener serves plaintext;
+  earlier documentation incorrectly advertised `MUNARIUM_GRPC_TLS_CERT/KEY`.
+  Terminate TLS at an external proxy. The Helm gateway's default listener is
+  HTTP on port 80 and also needs explicit TLS configuration for remote use.
+
 - **PostgreSQL hardening is unfinished.** Slice resolution is not yet pushed
-  into SQL, and no sqlx offline query data is committed — a build therefore
-  needs a reachable database for the query macros rather than compiling from a
-  checked-in query cache.
+  into SQL. Correction to the original build guidance: queries are runtime-checked
+  strings, so compilation needs neither a database nor a sqlx offline cache.
+  PostgreSQL integration/conformance tests provide query validation.
 - **The AKS Terraform example has never been applied end to end.** It passes
   `terraform fmt -check`, `terraform init -backend=false` and
   `terraform validate` in CI, and the Helm chart has been installed and probed
@@ -74,15 +82,15 @@ finished. The list below is that gap, stated rather than implied.
   common in older court filings. The Azure Document Intelligence escalation
   (`munarium-docintel-az`, off by default) is what handles them; it bills per
   page and sends documents outside the cluster.
-- **The Helm chart's image repository is a placeholder** (`<your registry>/…`).
-  A default `helm install` will not pull. Supply your own registry, or build
-  the image from this repository.
+- **The Helm chart requires an explicit image repository.** Its default is
+  empty, so rendering fails until `image.repository` is supplied. Use
+  `iokaio/munarium` for the public Server image or your own source build.
 - **Releases are cut outside this repository.** Everything needed to *operate*
   Munarium without Ioka is here — deployment runbooks, clustering, backup and
-  restore, troubleshooting, the conformance suites. Signed images and version
-  tags are not: there is no public release workflow in this repository, so a
-  signed artifact cannot currently be reproduced from a public tag. Building
-  from source is reproducible; verifying an official signed image is not.
+  restore, troubleshooting, the conformance suites. The publishing workflow
+  is not public. This does not prevent checking an image using published
+  release-specific Cosign instructions; see the container publication record
+  above for which releases have those instructions.
 
 ### Known-gaps ledger
 

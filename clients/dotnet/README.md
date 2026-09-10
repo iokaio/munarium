@@ -10,9 +10,17 @@ ledger, and guides.
 
 ## Install
 
+Reference the project from a full checkout; adjust the path relative to your
+application's project file. Both projects require .NET 10.
+
 ```xml
-<PackageReference Include="Ioka.Munarium.Client" Version="1.0.0" />
+<ItemGroup>
+  <ProjectReference Include="path/to/munarium/clients/dotnet/src/Ioka.Munarium.Client/Ioka.Munarium.Client.csproj" />
+</ItemGroup>
 ```
+
+The source version is 1.0.0; a NuGet release was not available at the
+[publication check](../README.md#installation-and-publication).
 
 The gRPC stubs compile at build time from the normative protos under
 `server/proto/mmp/v1/` (Grpc.Tools — zero drift, nothing committed).

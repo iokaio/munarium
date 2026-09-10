@@ -1,7 +1,8 @@
 # Munarium
 
-**Governed memory for production AI systems**, and the structured-evidence plane that backs it with
-records rather than recollection.
+**Governed memory and traceable evidence for AI applications.** Munarium stores
+claims with their history, controls access to source material, and returns evidence
+that applications can show alongside an answer.
 
 Three components, one repository, all under the Apache License 2.0:
 
@@ -10,6 +11,17 @@ Three components, one repository, all under the Apache License 2.0:
 | **[server/](server/)** | The governed-memory service: an append-only fact ledger with governance in the write path, hybrid retrieval carrying a provenance envelope on every answer, declarative runbooks, and bring-your-own-key model providers. REST and gRPC, both speaking the Munarium Memory Protocol. | [server/README.md](server/README.md) |
 | **[matrix/](matrix/)** | Munarium Matrix core: registers formal data sources, materializes governed record collections, executes verified query contracts, and seals the exact typed evidence an answer used. | [matrix/README.md](matrix/README.md) |
 | **[clients/](clients/)** | The official client libraries — Rust, Python, .NET and Java for the Server, and .NET, Java and Python for Matrix — proven against the servers by the same conformance scenarios. | [clients/README.md](clients/README.md) |
+
+Use **Server** for document search, grounded chat and a governed fact ledger. Add
+**Matrix** when answers also need records from PostgreSQL, MySQL, SQL Server or
+immutable file exports. The separate [Munarium Demo](https://github.com/iokaio/munarium-demo)
+provides six working applications and bundled datasets for evaluation.
+
+**Versions checked on 2026-09-10:** the published Server image is **1.1.1**;
+Matrix and client source packages are **1.0.0**. Client packages are currently
+installed from source, not public package registries. See the
+[publication record](server/CONTAINER.md#versions-and-verification) and
+[client installation guide](clients/README.md#installation-and-publication).
 
 ## Guides
 
@@ -39,11 +51,13 @@ docker pull iokaio/munarium:1.1.1
 ```
 
 `1.1.1` is the immutable release tag. `1.1` tracks the current 1.1 release, and `latest`
-tracks the current stable release. Pin the verified digest listed in the release notes for reproducible deployments.
+tracks the current stable release. Pin the digest in the publication record below
+for reproducible deployments.
 
-The image includes license notices, SBOM and build provenance attestations, and a signature.
-The [1.1.1 release notes](https://github.com/iokaio/munarium/releases/tag/v1.1.1) include
-signature verification instructions. There is no trial key or time limit.
+The image includes license notices, SBOM and build provenance attestations.
+See the [publication and verification record](server/CONTAINER.md#versions-and-verification)
+for the 1.1.1 digest and the status of public signing instructions. There is no
+trial key or time limit.
 
 ### Quick evaluation in memory
 
@@ -227,21 +241,14 @@ reading:
 
 ## About this repository
 
-Munarium begins here, at version 1.0.0. Its design was worked out over an extended period of
-private research and development — experiments, measurements, superseded designs, and the
-operational records of the environments they ran in — and that history is deliberately not carried
-into this repository.
+The first public release was 1.0.0. This repository contains the implementations,
+conformance suites, API documentation and deployment assets. The private research
+and operational history preceding that release is excluded.
 
-It is omitted because it documents how the design was reached rather than how the software behaves,
-and it would give an evaluator, an operator or a contributor nothing they need. What that work
-produced is here in full: the implementations, their conformance suites, their API documentation
-and their deployment assets.
-
-**Version 1.0 is a compatibility and support commitment, not a claim that every planned capability
-is finished.** It commits to additive-only migrations, a stable wire contract under the N/N−1
+**The 1.x compatibility policy** covers additive-only migrations, a stable wire contract under the N/N−1
 policy, a stable `MUNARIUM_*` configuration contract, and Matrix's adapter interface as public API
-under semantic versioning. What it does not yet cover is published in each component's release
-notes, in the same voice its support matrix already uses:
+under semantic versioning. Commercial support is separate; the open-source license
+does not provide a support service. Current limitations and release changes are in
 [server/CHANGELOG.md](server/CHANGELOG.md), [matrix/CHANGELOG.md](matrix/CHANGELOG.md) and
 [clients/CHANGELOG.md](clients/CHANGELOG.md).
 

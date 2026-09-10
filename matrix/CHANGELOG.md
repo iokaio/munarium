@@ -29,9 +29,9 @@ rather than implied.
   names for adapters that are not here are not listed: a registry that
   advertises coverage the tree cannot execute is the failure mode the suite
   exists to prevent.
-- **The Helm chart's image repository is a placeholder** (`<your registry>/…`).
-  A default `helm install` will not pull. Supply your own registry, or build
-  the image from this repository.
+- **The Helm chart's image repository is required and empty by default.**
+  Rendering fails until you supply an image repository. Build the image from
+  this repository and make it available to your cluster.
 
 ### Verification
 

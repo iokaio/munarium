@@ -12,6 +12,20 @@ conflict to resolve in an application that already pins something. The
 server's .NET client carries gRPC packages because it serves a gRPC data
 plane; this one does not (see below), so it needs none of them.
 
+## Install from source
+
+Add this reference to your .NET 10 application, adjusting the path relative to
+its project file:
+
+```xml
+<ItemGroup>
+  <ProjectReference Include="path/to/munarium/clients/matrix-dotnet/src/Ioka.Munarium.Matrix.Client/Ioka.Munarium.Matrix.Client.csproj" />
+</ItemGroup>
+```
+
+The source version is 1.0.0; a NuGet release was not available at the
+[publication check](../README.md#installation-and-publication).
+
 ## Use
 
 ```csharp

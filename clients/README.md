@@ -1,9 +1,10 @@
 # munarium client libraries
 
-Official clients for [Munarium Server](../server/) — the governed-memory
-service. One plane surface, two transports, four languages, all proven by the
-server's own conformance scenarios; and three clients for [Munarium Matrix](../matrix/)
-under `matrix-python/`, `matrix-dotnet/` and `matrix-java/`.
+Official clients for [Munarium Server](../server/) in Rust, Python, .NET and
+Java, with REST and gRPC transports. Separate REST clients for
+[Munarium Matrix](../matrix/) live in `matrix-python/`, `matrix-dotnet/` and
+`matrix-java/`. Transport gaps are listed below; conformance tests exercise
+the supported operations against the services.
 
 New to Munarium? [`docs/concepts/`](docs/concepts/) explains the ideas — the fact ledger,
 sessions and turns, runbooks as the unit of access, capability tokens, evidence, and the
@@ -27,18 +28,19 @@ and is not supported is in [SUPPORT.md](../SUPPORT.md); conduct is the Contribut
 
 **The contract the clients build from is the server's own**: the ten protos under [`server/proto/mmp/v1/`](../server/proto/mmp/v1/), the REST reference and problem-slug registry under [`server/docs/api/`](../server/docs/api/), and the two Rust wire crates under `server/src/`. A wire change on the server side reaches every client immediately, and `clients-ci` proves them against a server built from the same commit.
 
-## About this repository
+## Installation and publication
 
-The Munarium client libraries begin here, at version 1.0.0. Its design was worked out over an extended period of
-private research and development — experiments, measurements, superseded designs, and the
-operational records of the environments they ran in — and that history is deliberately not carried
-into this repository.
+All seven client manifests declare **1.0.0**. On **2026-09-10**, their package
+names had no public releases in [PyPI](https://pypi.org/),
+[NuGet](https://www.nuget.org/), [crates.io](https://crates.io/) or
+[Maven Central](https://repo.maven.apache.org/maven2/io/ioka/munarium/).
+The registry names in `compatibility.json` describe intended publication
+destinations; they are not proof that packages are available there.
 
-It is omitted because it documents how the design was reached rather than how the software behaves,
-and it would give an evaluator, an operator or a contributor nothing they need. What that work
-produced is here in full: the implementation, its conformance suite, its API documentation and its
-deployment assets. The conformance scenarios are the executable specification, and they are the
-record worth reading.
+Use a complete checkout, recording its commit for reproducibility. Each language
+README provides installation from that checkout: Python local installs, .NET
+project references, Rust path dependencies and Java Gradle composite builds.
+Server client builds need the sibling `server/` tree for wire types or protobufs.
 
 ## Compatibility
 
@@ -50,6 +52,13 @@ Clients version independently of Server, so a shared number on a given release (
 first one, `1.0.0` on both sides) is a coincidence of that release, not a rule going forward.
 `clients/check_compatibility.py` fails CI if `compatibility.json`'s recorded version for a
 language ever drifts from what that language's own manifest declares.
+
+The record currently lists **Server 1.0** for Server clients and **Matrix 1.0**
+for Matrix clients. The [Server 1.1.0 release](https://github.com/iokaio/munarium/releases/tag/v1.1.0)
+reports source-client conformance against Server 1.1 without changing client
+versions. That is additional test evidence; the formal compatibility record has
+not yet been updated to list 1.1. Check your chosen source revision against the
+Server image you deploy, especially for newly added provider behavior.
 
 
 All four expose the same **ten planes** and encode the same invariants. The
@@ -280,11 +289,10 @@ detail, an `ABORTED` decodes as a head conflict with `expected`/`actual`
 conflicting until it clears). Identical in all four clients; the REST
 problem+json body never has this ambiguity.
 
-Server-side note: the server does not emit `Retry-After` today, so the
-rate-limit hint (`retry_after`) is null on **both** transports — the
-clients read it opportunistically (both the delta-seconds and HTTP-date
-forms) and will surface it the moment the server or an intermediary sends
-one.
+Server REST responses include `Retry-After`: 429 rate limits use 60 seconds,
+except daily caps, which use the time to the next UTC midnight. Load shedding
+returns 503 `overloaded` with a one-second hint. Clients parse supported hints
+when present; do not assume REST headers are also available on gRPC errors.
 
 Upload ceiling: `PUT /v1/sources` accepts up to **256 MiB** (the handler
 buffers, so the cap is the memory guard) and the gRPC `PutSource` decoder is
@@ -311,24 +319,26 @@ CI job — wheel and sdist, nupkg, jar, and `cargo package --list` — for the l
 the Apache-2.0 metadata, and anything that is not this tree's own: the proof that a
 published package carries no server material.
 
-To run conformance locally against a Munarium Server built from [server/](../server/) — REST
+Run each command below separately from the repository root. They use subshells
+so changing one language directory does not affect the next command. First start
+a Munarium Server built from [server/](../server/) — REST
 on 18080, gRPC on 15051, a static rw token `devtoken` and a mgmt token `devmgmt` for
 the same tenant:
 
 ```bash
 
-cd clients/rust && cargo run -p munarium-client-conformance -- \
+(cd clients/rust && cargo run -p munarium-client-conformance -- \
   --rest http://127.0.0.1:18080 --grpc http://127.0.0.1:15051 \
-  --token devtoken --mgmt-token devmgmt --smoke
-cd clients/python && MUNARIUM_REST_URL=http://127.0.0.1:18080 \
+  --token devtoken --mgmt-token devmgmt --smoke)
+(cd clients/python && MUNARIUM_REST_URL=http://127.0.0.1:18080 \
   MUNARIUM_GRPC_URL=127.0.0.1:15051 MUNARIUM_TOKEN=devtoken \
-  MUNARIUM_MGMT_TOKEN=devmgmt pytest conformance
-cd clients/dotnet && MUNARIUM_REST_URL=http://127.0.0.1:18080 \
+  MUNARIUM_MGMT_TOKEN=devmgmt pytest conformance)
+(cd clients/dotnet && MUNARIUM_REST_URL=http://127.0.0.1:18080 \
   MUNARIUM_GRPC_URL=http://127.0.0.1:15051 MUNARIUM_TOKEN=devtoken \
-  MUNARIUM_MGMT_TOKEN=devmgmt dotnet test tests/Ioka.Munarium.Client.Conformance
-cd clients/java && MUNARIUM_REST_URL=http://127.0.0.1:18080 \
+  MUNARIUM_MGMT_TOKEN=devmgmt dotnet test tests/Ioka.Munarium.Client.Conformance)
+(cd clients/java && MUNARIUM_REST_URL=http://127.0.0.1:18080 \
   MUNARIUM_GRPC_URL=127.0.0.1:15051 MUNARIUM_TOKEN=devtoken \
-  MUNARIUM_MGMT_TOKEN=devmgmt ./gradlew conformanceTest
+  MUNARIUM_MGMT_TOKEN=devmgmt ./gradlew conformanceTest)
 ```
 
 

@@ -335,8 +335,8 @@ text.
 | Family | Adapters | Primary pattern |
 |---|---|---|
 | Relational | PostgreSQL, MySQL, SQL Server | SQL contracts; snapshot/watermark; PostgreSQL also `pgoutput` CDC. |
-| Warehouses | BigQuery, Snowflake, Databricks | Bounded query jobs; snapshot/watermark or Databricks CDF; provider-specific cancellation and budgets. |
-| Semantic | Cube, dbt | Provider APIs for declared measures/dimensions; no table materialization. |
+| Warehouses (Enterprise) | BigQuery, Snowflake, Databricks | Separate proprietary adapters; unavailable in this core checkout. |
+| Semantic (Enterprise) | Cube, dbt | Separate proprietary adapters for provider-defined measures/dimensions. |
 | Landing | Filesystem, Azure Blob | Immutable manifest plus exact CSV/JSONL schema; materialization only. |
 
 ### 4.3 Current capability and evidence position
@@ -348,10 +348,6 @@ text.
 | Databricks, Snowflake, BigQuery, Cube, dbt | — | — | Not in this repository — Munarium Matrix Enterprise; a core build refuses them by name with `adapter_not_available` | Registered through `adapters::AdapterRegistry`. |
 | SQL Server | Snapshot, watermark | SQL | Compose 7/7 | No CDC; certificate mode must be chosen deliberately. |
 | MySQL | Snapshot, watermark | SQL | Compose 7/7 | No binlog CDC; cancellation capability is false. |
-| BigQuery | Snapshot/watermark implemented | Query live | Live Mode B 7/7 | Mode A remains unrun; no trustworthy snapshot marker yet. |
-| Snowflake | Snapshot/watermark implemented | SQL implemented | No live account | Both modes unrun; source-side row limiting capability is false. |
-| Cube | Refused | Semantic | Compose 4/4 | Semantic only. |
-| dbt | Refused | Semantic implemented | No live deployment | Unrun. |
 
 The full evidence and cycle record is maintained in
 [`build-matrix.md`](../../adapters/build-matrix.md). Treat that file, not the
@@ -360,8 +356,8 @@ existence of a crate, as the current support statement.
 Of the nine, **four are in this repository**: PostgreSQL, MySQL, SQL Server
 and Landing. Databricks, BigQuery, Snowflake, Cube and dbt are Munarium Matrix
 Enterprise adapters, registered through the same `SourceAdapter` interface;
-their rows describe the interface each meets and the evidence recorded when it
-was built. A core build refuses an asset naming one of them at execution with
+their implementation and validation belong to the Enterprise distribution.
+A core build refuses an asset naming one of them at execution with
 `adapter_not_available`.
 
 ### 4.4 Onboarding sequence
@@ -992,7 +988,7 @@ external topology and Figure 7 shows the role-independent enforcement path.
 ### 14.1 Local development
 
 From `matrix/`, Docker Compose provides Matrix PostgreSQL, an all-role Matrix
-service, and optionally Munarium Server. Profiles add SQL Server, MySQL, Cube,
+service, and optionally Munarium Server. Profiles add SQL Server, MySQL,
 and other test dependencies. Sealing tests need Server because a Matrix process
 that must seal cannot honestly succeed without its peer.
 

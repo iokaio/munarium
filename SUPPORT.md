@@ -20,8 +20,8 @@ defect may be closed as "recorded, not scheduled" — a truthful answer rather t
 ## What is not
 
 A production support relationship. If you need one — a response target, a supported-version window,
-long-term support branches, certified deployment architectures, upgrade tooling, storage backends
-beyond PostgreSQL, or the evidence adapters for Databricks, BigQuery, Snowflake, Cube and dbt —
+long-term support branches, certified deployment architectures, upgrade tooling,
+or the evidence adapters for Databricks, BigQuery, Snowflake, Cube and dbt —
 that is **Munarium Enterprise**, a separate proprietary distribution sold by subscription. It is not
 open source and this license grants no right to it.
 
@@ -34,8 +34,12 @@ the clustering guide, backup and restore, troubleshooting, the adapter support m
 conformance suites that tell you whether your deployment behaves. That is deliberate. The open
 edition is a complete product, not a trial.
 
-One thing is **not** here, and saying so is part of the same commitment: there is no public release
-workflow. Signed images and version tags are cut by Ioka outside this repository, so you can build
-and verify from source but you cannot currently reproduce an official signed artifact from a public
-tag. Building from this tree is the supported path for the open edition; see each component's
-release notes for what else that release does not cover.
+The open edition can be run from the public Server image or built from source.
+Its source-document backends include PostgreSQL, Azure Blob, S3, GCS and local
+files; these are part of the open-source implementation.
+
+Release publishing is operated outside this repository. A local source build
+does not reproduce Ioka's signing identity. Published images can be checked
+against the digest and signing instructions for that specific release where
+those instructions are available. See the [publication record](server/CONTAINER.md#versions-and-verification)
+for current artifacts and gaps, and each component's release notes for limitations.

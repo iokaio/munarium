@@ -6,6 +6,9 @@ is *registering assets, running the three modes, and reading what happened*.
 
 Depend on it by path from your own Gradle build:
 
+The source version is 1.0.0; a Maven Central release was not available at the
+[publication check](../README.md#installation-and-publication).
+
 ```kotlin
 // settings.gradle.kts
 includeBuild("path/to/munarium/clients/matrix-java")
