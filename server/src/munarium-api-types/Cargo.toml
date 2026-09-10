@@ -17,7 +17,7 @@ proto = ["dep:munarium-proto"]
 [dependencies]
 # `version` beside `path`: cargo publishes the registry dependency and drops
 # the path, so the crate can leave the workspace. munarium-proto goes first.
-munarium-proto = { path = "../munarium-proto", version = "1.1.0", optional = true }
+munarium-proto = { path = "../munarium-proto", version = "1.1.1", optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 utoipa = { workspace = true }

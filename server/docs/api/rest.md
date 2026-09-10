@@ -5,6 +5,15 @@ endpoint and optional credentials. Named health checks verify configured models;
 `/healthai` continues to cover cloud defaults. See the
 [Ollama guide](../guides/ollama.md) for configuration, routing and limitations.
 
+Session turns with `complete: true` apply an allowed `model_override` to both
+model-based query expansion and answer generation. Without an override, each
+task retains its configured runbook model. Invalid or disallowed overrides are
+rejected before query-expansion provider calls, even when expansion is optional.
+Server 1.1.1 corrects the original 1.1.0 behavior, which applied the override
+only to answer generation. Selecting a higher tier also applies it to expansion
+and can increase that step's cost and latency. Progress events report actual provider/model
+identities for each paid step.
+
 **Status: live.** Every `/v1` route (Command/Query, shapes, ingest, retrieval, providers,
 runbooks) plus the meta routes carries OpenAPI annotations, and the spec declares the
 `bearerAuth` security scheme. This document is the human guide; the machine

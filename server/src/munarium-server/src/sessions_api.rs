@@ -169,14 +169,37 @@ struct ModelExpansion {
     output_tokens: u64,
 }
 
+/// A turn's explicit selection applies to both lexical preparation and its
+/// answer. Without an override, each task retains its runbook-owned default.
+fn resolve_turn_model(
+    doc: &munarium_runbooks::RunbookDoc,
+    task: &str,
+    req: &dto::TurnRequest,
+) -> ApiResult<crate::models::ResolvedModel> {
+    let override_req = req
+        .model_override
+        .as_ref()
+        .map(|o| crate::models::ModelOverride {
+            provider: o.provider.clone(),
+            model: o.model.clone(),
+            tier: o.tier.clone(),
+        });
+    if override_req.as_ref().is_some_and(|o| !o.is_empty()) && !req.complete.unwrap_or(false) {
+        return Err(ApiError::Mesh(KernelError::InvalidInput(
+            "model_override requires complete: true".into(),
+        )));
+    }
+    crate::models::resolve_model(doc, task, override_req.as_ref())
+}
+
 async fn expand_query_with_model(
     state: &AppState,
     tenant: &str,
     doc: &munarium_runbooks::RunbookDoc,
-    query: &str,
+    req: &dto::TurnRequest,
     spec: &munarium_runbooks::ModelQueryExpansionSpec,
 ) -> ApiResult<ModelExpansion> {
-    let resolved = crate::models::resolve_model(doc, "query_expansion", None)?;
+    let resolved = resolve_turn_model(doc, "query_expansion", req)?;
     let store = state.store_for(tenant).await?;
     // The runbook's own `maxTokens` when declared, else the tenant's
     // `query_expansion` budget (`/v1/max-tokens`).
@@ -196,7 +219,7 @@ async fn expand_query_with_model(
         store.as_ref(),
         &resolved.provider_name,
         dto::CompleteRequest {
-            prompt: Some(model_expansion_prompt(query, spec.max_terms)),
+            prompt: Some(model_expansion_prompt(&req.query, spec.max_terms)),
             system: None,
             model: resolved.model,
             tier: resolved.tier,
@@ -207,7 +230,7 @@ async fn expand_query_with_model(
         },
     )
     .await?;
-    let terms = parse_model_expansion(&response.text, query, spec.max_terms)?;
+    let terms = parse_model_expansion(&response.text, &req.query, spec.max_terms)?;
     tracing::info!(
         provider = %response.provider,
         model = %response.model,
@@ -688,7 +711,7 @@ pub(crate) async fn retrieve_documents(
         params.top_k = params.top_k.max(selection.candidate_pool_per_collection);
     }
     if let Some(expansion) = &retrieval_spec.model_query_expansion {
-        match expand_query_with_model(state, tenant, doc, &req.query, expansion).await {
+        match expand_query_with_model(state, tenant, doc, req, expansion).await {
             Ok(result) => {
                 emit(
                     progress,
@@ -902,6 +925,20 @@ pub async fn op_turn(
     }
     let doc = session_runbook(state, tenant, &session.runbook_ref).await?;
 
+    // Reject invalid or disallowed selections before retrieval can spend on
+    // query expansion, including when expansion is optional.
+    if req.model_override.is_some() {
+        resolve_turn_model(&doc, "completion", &req)?;
+        if doc
+            .spec
+            .retrieval
+            .as_ref()
+            .is_some_and(|r| r.model_query_expansion.is_some())
+        {
+            resolve_turn_model(&doc, "query_expansion", &req)?;
+        }
+    }
+
     // Access filtering uses the SESSION's snapshot, not the live token.
     let permitted = permitted_collections(
         state,
@@ -1049,15 +1086,7 @@ pub async fn op_turn(
                     "this runbook declares no completion step (spec.completion)".into(),
                 )
             })?;
-        let override_req = req
-            .model_override
-            .as_ref()
-            .map(|o| crate::models::ModelOverride {
-                provider: o.provider.clone(),
-                model: o.model.clone(),
-                tier: o.tier.clone(),
-            });
-        let resolved = crate::models::resolve_model(&doc, "completion", override_req.as_ref())?;
+        let resolved = resolve_turn_model(&doc, "completion", &req)?;
         emit(
             &progress,
             dto::TurnProgressEvent::Model {
@@ -1343,17 +1372,6 @@ pub async fn op_turn(
             output_tokens: total_out,
             verification: verification_dto,
         });
-    } else if req
-        .model_override
-        .as_ref()
-        .map(|o| o.provider.is_some() || o.model.is_some() || o.tier.is_some())
-        == Some(true)
-    {
-        // An override without a completion request would silently do nothing;
-        // still enforce the policy so probing is visible, then reject.
-        return Err(ApiError::Mesh(KernelError::InvalidInput(
-            "model_override requires complete: true".into(),
-        )));
     }
 
     // Persist the turn: the ordinal is allocated inside the INSERT itself.
@@ -1852,8 +1870,91 @@ pub async fn get_session(
 }
 
 #[cfg(test)]
+#[path = "sessions_model_tests.rs"]
+mod model_integration_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn turn_selection_routes_preparation_and_answer_and_preserves_defaults() {
+        let doc = munarium_runbooks::parse_runbook(
+            r#"
+apiVersion: munarium.ioka.io/v1
+kind: Runbook
+metadata: { name: selection-test, version: 1 }
+spec:
+  collections: [{ name: articles, shape: article@1 }]
+  models:
+    allowOverrides: [router, ollama]
+    tasks:
+      query_expansion: { provider: default, tier: fast }
+      completion: { provider: default, tier: capable }
+  steps: [{ buildIndex: {} }]
+"#,
+        )
+        .unwrap();
+        for provider in ["router", "ollama"] {
+            for tier in ["fast", "capable"] {
+                let request: dto::TurnRequest = serde_json::from_value(serde_json::json!({
+                    "query": "test", "complete": true,
+                    "model_override": {"provider": provider, "tier": tier}
+                }))
+                .unwrap();
+                for task in ["query_expansion", "completion"] {
+                    let resolved = resolve_turn_model(&doc, task, &request).unwrap();
+                    assert_eq!(resolved.provider_name, provider);
+                    assert_eq!(resolved.tier.as_deref(), Some(tier));
+                    assert!(resolved.was_override);
+                }
+            }
+        }
+        let request: dto::TurnRequest = serde_json::from_value(serde_json::json!({
+            "query": "test", "complete": true,
+            "model_override": {"provider": "router", "model": "selected-model"}
+        }))
+        .unwrap();
+        assert_eq!(
+            resolve_turn_model(&doc, "query_expansion", &request)
+                .unwrap()
+                .model
+                .as_deref(),
+            Some("selected-model")
+        );
+        for complete in [true, false] {
+            let request: dto::TurnRequest = serde_json::from_value(serde_json::json!({
+                "query": "test", "complete": complete
+            }))
+            .unwrap();
+            let prep = resolve_turn_model(&doc, "query_expansion", &request).unwrap();
+            assert_eq!(prep.provider_name, "default");
+            assert_eq!(prep.tier.as_deref(), Some("fast"));
+            assert!(!prep.was_override);
+            assert_eq!(
+                resolve_turn_model(&doc, "completion", &request)
+                    .unwrap()
+                    .tier
+                    .as_deref(),
+                Some("capable")
+            );
+        }
+        for override_value in [
+            serde_json::json!({"provider":"forbidden"}),
+            serde_json::json!({"tier":"fast"}),
+        ] {
+            let request: dto::TurnRequest = serde_json::from_value(serde_json::json!({
+                "query":"test", "complete":true, "model_override":override_value
+            }))
+            .unwrap();
+            assert!(resolve_turn_model(&doc, "query_expansion", &request).is_err());
+        }
+        let request: dto::TurnRequest = serde_json::from_value(serde_json::json!({
+            "query":"test", "complete":false, "model_override":{"provider":"router"}
+        }))
+        .unwrap();
+        assert!(resolve_turn_model(&doc, "query_expansion", &request).is_err());
+    }
 
     fn collection(name: &str) -> munarium_core::retrieval::CollectionInfo {
         munarium_core::retrieval::CollectionInfo {

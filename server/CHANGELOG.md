@@ -1,5 +1,19 @@
 # Munarium Server — release notes
 
+## 1.1.1
+
+- Apply an allowed session-turn model override to both model-based query
+  expansion and answer generation. Previously, expansion always used its
+  runbook default, even when the caller selected another provider or tier.
+- Reject invalid or disallowed overrides before query expansion can call a
+  provider, including when expansion is optional.
+
+Without an override, each task retains its configured model. Retrieval-only
+turns still reject nonempty model overrides. Selecting a higher tier now also
+applies that tier to query expansion and can increase its cost and latency.
+No wire-contract or database migration is required. Rollback to 1.1.0 restores
+the previous routing behavior without changing stored data or configuration.
+
 ## 1.1.0
 
 - Add the `ollama` provider with native chat completion, batched embeddings and

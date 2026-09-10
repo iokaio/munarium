@@ -35,14 +35,14 @@ contains **Munarium Server and the `/mmctl` client**. It supports `linux/amd64` 
 in Linux container mode. Matrix is deployed separately; see [Matrix setup](matrix/README.md).
 
 ```console
-docker pull iokaio/munarium:1.1.0
+docker pull iokaio/munarium:1.1.1
 ```
 
-`1.1.0` is the immutable release tag. `1.1` tracks the current 1.1 release, and `latest`
+`1.1.1` is the immutable release tag. `1.1` tracks the current 1.1 release, and `latest`
 tracks the current stable release. Pin the verified digest listed in the release notes for reproducible deployments.
 
 The image includes license notices, SBOM and build provenance attestations, and a signature.
-The [1.1.0 release notes](https://github.com/iokaio/munarium/releases/tag/v1.1.0) include
+The [1.1.1 release notes](https://github.com/iokaio/munarium/releases/tag/v1.1.1) include
 signature verification instructions. There is no trial key or time limit.
 
 ### Quick evaluation in memory
@@ -50,7 +50,7 @@ signature verification instructions. There is no trial key or time limit.
 Run this single-line command in PowerShell or a Unix shell:
 
 ```console
-docker run --rm --name munarium-evaluation -p 127.0.0.1:8080:8080 -p 127.0.0.1:50051:50051 -e MUNARIUM_STORE=memory -e MUNARIUM_SOURCE_STORE=mem -e MUNARIUM_AUTH_MODE=static -e MUNARIUM_STATIC_TOKENS=evaluation-token:evaluation:rw iokaio/munarium:1.1.0
+docker run --rm --name munarium-evaluation -p 127.0.0.1:8080:8080 -p 127.0.0.1:50051:50051 -e MUNARIUM_STORE=memory -e MUNARIUM_SOURCE_STORE=mem -e MUNARIUM_AUTH_MODE=static -e MUNARIUM_STATIC_TOKENS=evaluation-token:evaluation:rw iokaio/munarium:1.1.1
 ```
 
 Open `http://localhost:8080/admin` for the dashboard or `http://localhost:8080/docs` for
@@ -108,7 +108,7 @@ services:
       retries: 20
 
   server:
-    image: iokaio/munarium:1.1.0
+    image: iokaio/munarium:1.1.1
     restart: unless-stopped
     depends_on:
       postgres:

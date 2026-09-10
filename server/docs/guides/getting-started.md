@@ -29,7 +29,7 @@ optional completion asks a configured model to turn that evidence into an answer
 ## 2. Start a persistent local Server
 
 You need PowerShell 7.3 or later and Docker Desktop running Linux containers.
-The public `iokaio/munarium:1.1.0` image supports AMD64 and ARM64 and includes
+The public `iokaio/munarium:1.1.1` image supports AMD64 and ARM64 and includes
 the Server and `/mmctl` CLI. Matrix and your application UI are separate
 deployments. No source checkout or Rust toolchain is required.
 
@@ -70,7 +70,7 @@ services:
       timeout: 3s
       retries: 20
   server:
-    image: iokaio/munarium:1.1.0
+    image: iokaio/munarium:1.1.1
     depends_on:
       postgres:
         condition: service_healthy
@@ -128,9 +128,9 @@ and `http://localhost:18080/docs` for the API documentation. Direct gRPC is
 available on port 15051; this walkthrough uses REST. If a host port is busy,
 change the left-hand port in Compose and update `$base` accordingly.
 
-`1.1.0` is immutable; `1.1` and `latest` can advance. For deployments you need
+`1.1.1` is immutable; `1.1` and `latest` can advance. For deployments you need
 to reproduce exactly, pin the verified image digest from the
-[release notes](https://github.com/iokaio/munarium/releases/tag/v1.1.0).
+[release notes](https://github.com/iokaio/munarium/releases/tag/v1.1.1).
 The [deployment walkthrough](dev-guide.md#deploy-the-published-docker-hub-image)
 covers signatures, external PostgreSQL, backups and image upgrades in detail.
 

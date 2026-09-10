@@ -107,8 +107,8 @@ from the components' own license files. Reviewed by: _(name, date)_.
 | memchr | 2.8.3 | Unlicense OR MIT | https://github.com/BurntSushi/memchr |
 | mime | 0.3.17 | MIT OR Apache-2.0 | https://github.com/hyperium/mime |
 | mio | 1.2.2 | MIT | https://github.com/tokio-rs/mio |
-| munarium-api-types | 1.1.0 | Apache-2.0 | https://github.com/iokaio/munarium |
-| munarium-proto | 1.1.0 | Apache-2.0 | https://github.com/iokaio/munarium |
+| munarium-api-types | 1.1.1 | Apache-2.0 | https://github.com/iokaio/munarium |
+| munarium-proto | 1.1.1 | Apache-2.0 | https://github.com/iokaio/munarium |
 | once_cell | 1.21.4 | MIT OR Apache-2.0 | https://github.com/matklad/once_cell |
 | openssl-probe | 0.2.1 | MIT OR Apache-2.0 | https://github.com/rustls/openssl-probe |
 | percent-encoding | 2.3.2 | MIT OR Apache-2.0 | https://github.com/servo/rust-url/ |
@@ -301,8 +301,8 @@ From each component's own license file, where one carries them.
 - **memchr 2.8.3**: Copyright (c) 2015 Andrew Gallant
 - **mime 0.3.17**: Copyright (c) 2014 Sean McArthur
 - **mio 1.2.2**: Copyright (c) 2014 Carl Lerche and other MIO contributors
-- **munarium-api-types 1.1.0**: Copyright (c) 2026 Ioka LLC
-- **munarium-proto 1.1.0**: Copyright (c) 2026 Ioka LLC
+- **munarium-api-types 1.1.1**: Copyright (c) 2026 Ioka LLC
+- **munarium-proto 1.1.1**: Copyright (c) 2026 Ioka LLC
 - **openssl-probe 0.2.1**: Copyright (c) 2014 Alex Crichton
 - **percent-encoding 2.3.2**: Copyright (c) 2013-2025 The rust-url developers
 - **potential_utf 0.1.5**: Copyright © 2020-2024 Unicode, Inc.
@@ -433,7 +433,7 @@ DEALINGS IN THE SOFTWARE.
 
 ### Text 948703bcf1cb — 71 component(s)
 
-Used by: atomic-waker 1.1.2 (LICENSE-APACHE), base64 0.22.1 (LICENSE-APACHE), bitflags 2.13.1 (LICENSE-APACHE), block-buffer 0.10.4 (LICENSE-APACHE), bumpalo 3.20.3 (LICENSE-APACHE), cfg-if 1.0.4 (LICENSE-APACHE), chacha20 0.10.1 (LICENSE-APACHE), core-foundation 0.10.1 (LICENSE-APACHE), core-foundation-sys 0.8.7 (LICENSE-APACHE), cpufeatures 0.2.17 (LICENSE-APACHE), cpufeatures 0.3.0 (LICENSE-APACHE), crypto-common 0.1.7 (LICENSE-APACHE), digest 0.10.7 (LICENSE-APACHE), displaydoc 0.2.7 (LICENSE-APACHE), either 1.17.0 (LICENSE-APACHE), equivalent 1.0.2 (LICENSE-APACHE), fnv 1.0.7 (LICENSE-APACHE), form_urlencoded 1.2.2 (LICENSE-APACHE), hashbrown 0.12.3 (LICENSE-APACHE), hashbrown 0.17.1 (LICENSE-APACHE), httparse 1.10.1 (LICENSE-APACHE), httpdate 1.0.3 (LICENSE-APACHE), hyper-rustls 0.27.9 (LICENSE-APACHE), hyper-timeout 0.5.2 (LICENSE-APACHE), idna 1.1.0 (LICENSE-APACHE), idna_adapter 1.2.2 (LICENSE-APACHE), indexmap 1.9.3 (LICENSE-APACHE), indexmap 2.14.0 (LICENSE-APACHE), itertools 0.14.0 (LICENSE-APACHE), js-sys 0.3.104 (LICENSE-APACHE), log 0.4.33 (LICENSE-APACHE), lru-slab 0.1.2 (LICENSE-APACHE), mime 0.3.17 (LICENSE-APACHE), munarium-api-types 1.1.0 (LICENSE), munarium-proto 1.1.0 (LICENSE), once_cell 1.21.4 (LICENSE-APACHE), openssl-probe 0.2.1 (LICENSE-APACHE), percent-encoding 2.3.2 (LICENSE-APACHE), prost 0.13.5 (LICENSE), prost-derive 0.13.5 (LICENSE), prost-types 0.13.5 (LICENSE), quinn 0.11.11 (LICENSE-APACHE), quinn-proto 0.11.16 (LICENSE-APACHE), quinn-udp 0.5.15 (LICENSE-APACHE), regex 1.13.1 (LICENSE-APACHE), regex-automata 0.4.18 (LICENSE-APACHE), regex-syntax 0.8.11 (LICENSE-APACHE), rustls 0.23.43 (LICENSE-APACHE), rustls-native-certs 0.8.4 (LICENSE-APACHE), rustls-pemfile 2.2.0 (LICENSE-APACHE), security-framework 3.7.0 (LICENSE-APACHE), security-framework-sys 2.17.0 (LICENSE-APACHE), sha2 0.10.9 (LICENSE-APACHE), smallvec 1.15.2 (LICENSE-APACHE), socket2 0.5.10 (LICENSE-APACHE), socket2 0.6.5 (LICENSE-APACHE), stable_deref_trait 1.2.1 (LICENSE-APACHE), tinyvec 1.12.0 (LICENSE-APACHE.md), url 2.5.8 (LICENSE-APACHE), utf8_iter 1.0.4 (LICENSE-APACHE), utoipa 5.5.0 (LICENSE-APACHE), utoipa-gen 5.5.0 (LICENSE-APACHE), uuid 1.24.0 (LICENSE-APACHE), wasi 0.11.1+wasi-snapshot-preview1 (LICENSE-APACHE), wasm-bindgen 0.2.127 (LICENSE-APACHE), wasm-bindgen-futures 0.4.77 (LICENSE-APACHE), wasm-bindgen-macro 0.2.127 (LICENSE-APACHE), wasm-bindgen-macro-support 0.2.127 (LICENSE-APACHE), wasm-bindgen-shared 0.2.127 (LICENSE-APACHE), web-sys 0.3.104 (LICENSE-APACHE), zeroize 1.9.0 (LICENSE-APACHE)
+Used by: atomic-waker 1.1.2 (LICENSE-APACHE), base64 0.22.1 (LICENSE-APACHE), bitflags 2.13.1 (LICENSE-APACHE), block-buffer 0.10.4 (LICENSE-APACHE), bumpalo 3.20.3 (LICENSE-APACHE), cfg-if 1.0.4 (LICENSE-APACHE), chacha20 0.10.1 (LICENSE-APACHE), core-foundation 0.10.1 (LICENSE-APACHE), core-foundation-sys 0.8.7 (LICENSE-APACHE), cpufeatures 0.2.17 (LICENSE-APACHE), cpufeatures 0.3.0 (LICENSE-APACHE), crypto-common 0.1.7 (LICENSE-APACHE), digest 0.10.7 (LICENSE-APACHE), displaydoc 0.2.7 (LICENSE-APACHE), either 1.17.0 (LICENSE-APACHE), equivalent 1.0.2 (LICENSE-APACHE), fnv 1.0.7 (LICENSE-APACHE), form_urlencoded 1.2.2 (LICENSE-APACHE), hashbrown 0.12.3 (LICENSE-APACHE), hashbrown 0.17.1 (LICENSE-APACHE), httparse 1.10.1 (LICENSE-APACHE), httpdate 1.0.3 (LICENSE-APACHE), hyper-rustls 0.27.9 (LICENSE-APACHE), hyper-timeout 0.5.2 (LICENSE-APACHE), idna 1.1.0 (LICENSE-APACHE), idna_adapter 1.2.2 (LICENSE-APACHE), indexmap 1.9.3 (LICENSE-APACHE), indexmap 2.14.0 (LICENSE-APACHE), itertools 0.14.0 (LICENSE-APACHE), js-sys 0.3.104 (LICENSE-APACHE), log 0.4.33 (LICENSE-APACHE), lru-slab 0.1.2 (LICENSE-APACHE), mime 0.3.17 (LICENSE-APACHE), munarium-api-types 1.1.1 (LICENSE), munarium-proto 1.1.1 (LICENSE), once_cell 1.21.4 (LICENSE-APACHE), openssl-probe 0.2.1 (LICENSE-APACHE), percent-encoding 2.3.2 (LICENSE-APACHE), prost 0.13.5 (LICENSE), prost-derive 0.13.5 (LICENSE), prost-types 0.13.5 (LICENSE), quinn 0.11.11 (LICENSE-APACHE), quinn-proto 0.11.16 (LICENSE-APACHE), quinn-udp 0.5.15 (LICENSE-APACHE), regex 1.13.1 (LICENSE-APACHE), regex-automata 0.4.18 (LICENSE-APACHE), regex-syntax 0.8.11 (LICENSE-APACHE), rustls 0.23.43 (LICENSE-APACHE), rustls-native-certs 0.8.4 (LICENSE-APACHE), rustls-pemfile 2.2.0 (LICENSE-APACHE), security-framework 3.7.0 (LICENSE-APACHE), security-framework-sys 2.17.0 (LICENSE-APACHE), sha2 0.10.9 (LICENSE-APACHE), smallvec 1.15.2 (LICENSE-APACHE), socket2 0.5.10 (LICENSE-APACHE), socket2 0.6.5 (LICENSE-APACHE), stable_deref_trait 1.2.1 (LICENSE-APACHE), tinyvec 1.12.0 (LICENSE-APACHE.md), url 2.5.8 (LICENSE-APACHE), utf8_iter 1.0.4 (LICENSE-APACHE), utoipa 5.5.0 (LICENSE-APACHE), utoipa-gen 5.5.0 (LICENSE-APACHE), uuid 1.24.0 (LICENSE-APACHE), wasi 0.11.1+wasi-snapshot-preview1 (LICENSE-APACHE), wasm-bindgen 0.2.127 (LICENSE-APACHE), wasm-bindgen-futures 0.4.77 (LICENSE-APACHE), wasm-bindgen-macro 0.2.127 (LICENSE-APACHE), wasm-bindgen-macro-support 0.2.127 (LICENSE-APACHE), wasm-bindgen-shared 0.2.127 (LICENSE-APACHE), web-sys 0.3.104 (LICENSE-APACHE), zeroize 1.9.0 (LICENSE-APACHE)
 
 ```text
 Apache License
@@ -1719,7 +1719,7 @@ the following restrictions:
 
 ### Text 05ee4fb446cc — 2 component(s)
 
-Used by: munarium-api-types 1.1.0 (NOTICE), munarium-proto 1.1.0 (NOTICE)
+Used by: munarium-api-types 1.1.1 (NOTICE), munarium-proto 1.1.1 (NOTICE)
 
 ```text
 Munarium Server
