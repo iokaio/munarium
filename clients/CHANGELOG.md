@@ -2,8 +2,10 @@
 
 ## 1.0.0
 
-The first public release of all seven clients: Rust, Python, .NET and Java for
-Munarium Server, and Python, .NET and Java for Munarium Matrix.
+The first public source release of all seven clients: Rust, Python, .NET and
+Java for Munarium Server, and Python, .NET and Java for Munarium Matrix.
+This version number does not imply registry publication; see
+[installation and publication](README.md#installation-and-publication).
 
 **What 1.0 commits to.** Each Clients minor release supports the current Server
 (or Matrix) minor and the one before it. A breaking MMP wire change bumps

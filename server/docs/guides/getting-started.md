@@ -130,7 +130,7 @@ change the left-hand port in Compose and update `$base` accordingly.
 
 `1.1.1` is immutable; `1.1` and `latest` can advance. For deployments you need
 to reproduce exactly, pin the verified image digest from the
-[release notes](https://github.com/iokaio/munarium/releases/tag/v1.1.1).
+[publication record](../../CONTAINER.md#versions-and-verification).
 The [deployment walkthrough](dev-guide.md#deploy-the-published-docker-hub-image)
 covers signatures, external PostgreSQL, backups and image upgrades in detail.
 

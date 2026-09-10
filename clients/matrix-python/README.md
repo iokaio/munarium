@@ -4,9 +4,14 @@ The Python client for **Munarium Matrix**, the structured-evidence plane. It
 speaks Matrix's REST API and it is deliberately small: Matrix's whole surface
 is *registering assets, running the three modes, and reading what happened*.
 
-```bash
-pip install munarium-matrix
+Install from the repository root with Python 3.10+:
+
+```console
+python -m pip install ./clients/matrix-python
 ```
+
+The source version is 1.0.0; a PyPI release was not available at the
+[publication check](../README.md#installation-and-publication).
 
 One runtime dependency, `httpx` — the same choice the server's Python client
 made, for the same reasons: one library for sync and async, a timeout that is

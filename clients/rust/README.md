@@ -9,10 +9,16 @@ ledger, and guides.
 
 ## Install
 
+Use a full checkout and a path relative to your application's `Cargo.toml`:
+
 ```toml
 [dependencies]
-munarium-client = "1.0"
+munarium-client = { path = "path/to/munarium/clients/rust/munarium-client" }
 ```
+
+The source version is 1.0.0; a crates.io release was not available at the
+[publication check](../README.md#installation-and-publication). The checkout's
+`server/` tree supplies the `munarium-api-types` and `munarium-proto` dependencies.
 
 Feature flags: `rest` (reqwest + rustls) and `grpc` (tonic) — both on by
 default; disable one to drop its dependency tree.
@@ -38,7 +44,7 @@ let outcome = client.propose_claim_with_retry(&v.version_id, |_head| {
         subject: "hero".into(), key: "eyes".into(), value: "green".into(),
         expected_head: None, scope_path: None, provenance: None,
         supersedes_id: None, entity_id: None, evidence: None,
-        confidence: None, shape_ref: None,
+        confidence: None, shape_ref: None, origin: None,
     }
 }, WriteLoopOptions::default()).await?;
 
@@ -59,7 +65,7 @@ over the server's 15 s heartbeats), unary turns are deadline-exempt and never
 auto-retried (they spend provider tokens a client abort cannot stop), bulk
 upload sessions ride `ingest.bulk_open/bulk_chunk/bulk_complete`, and
 `tokens`/`reports`/`authoring` cover the management plane (mint with a
-`devmgmt`-role bearer).
+`mgmt`-role bearer).
 
 The per-call output-token budgets ride the providers plane:
 `providers.max_tokens()` reads the tenant's effective set and where it comes

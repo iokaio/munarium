@@ -27,38 +27,45 @@ Both serve the identical services — the conformance suite diffs their answers.
 
 ### 1. Direct TCP port (50051)
 
-A dedicated raw tonic listener for direct client connections. **Plaintext by default**
-(documented tradeoff; no gateway TLS exists on this port). Set `MUNARIUM_GRPC_TLS_CERT` /
-`MUNARIUM_GRPC_TLS_KEY` to arm rustls. Disable the listener entirely with `MUNARIUM_GRPC_ADDR=disabled`.
+A dedicated plaintext tonic listener for direct client connections. **Server
+1.1.1 does not configure TLS on this listener**: `MUNARIUM_GRPC_TLS_CERT` and
+`MUNARIUM_GRPC_TLS_KEY` are not implemented and setting them does not enable
+encryption. Use a TLS-terminating proxy with HTTP/2 for remote access, or keep
+the plaintext port on a trusted private network. Disable the listener entirely
+with `MUNARIUM_GRPC_ADDR=disabled`.
 
 ```bash
 grpcurl -plaintext localhost:50051 list                       # reflection
 grpcurl -plaintext localhost:50051 grpc.health.v1.Health/Check
 grpcurl -plaintext \
   -H "authorization: Bearer devtoken" \
+  -H "munarium-uid: user-1" \
   -d '{"version_id":"memv-...","as_of_seq":"5"}' \
   localhost:50051 mmp.v1.QueryService/SliceFacts
 ```
 
 ### 2. Gateway plane (443, gRPC over HTTP/2)
 
-The gateway (Envoy) terminates TLS on 443 and routes by `content-type: application/grpc` to the
-gRPC upstream; everything else goes to REST. Locally, `docker compose --profile gateway up`
-demonstrates the same routing on :8443 (h2c).
+A production gateway can terminate TLS on 443 and route gRPC to port 50051 and
+REST to port 8080. Configure the HTTPS listener and certificate in your own
+ingress configuration: the shipped Helm Gateway declares **HTTP on port 80**,
+with no TLS certificate. Locally, `docker compose --profile gateway up`
+demonstrates routing on port 8443 using **h2c**, despite that port's name.
 
 ```bash
-# a TLS-terminating ingress in front of the REST plane (it must carry HTTP/2 through)
+# a configured TLS-terminating ingress routing gRPC to port 50051
 grpcurl -H "authorization: Bearer <token>" \
   <your gRPC host>:443 grpc.health.v1.Health/Check
 
-# the Helm chart's Envoy Gateway (-insecure while the listener runs a self-signed cert)
-grpcurl -insecure -H "authorization: Bearer <token>" <gateway-ip>:443 mmp.v1.QueryService/GetHead
+# authenticated query through that configured TLS ingress
+grpcurl -H "authorization: Bearer <token>" -H "munarium-uid: user-1" \
+  -d '{"version_id":"<existing-version-id>"}' <your-gRPC-host>:443 mmp.v1.QueryService/GetHead
 
 # local compose gateway (h2c)
 grpcurl -plaintext localhost:8443 grpc.health.v1.Health/Check
 ```
 
-Deployment note: the direct:50051 listener always runs in-container, but whether it is
+Deployment note: unless disabled, the direct:50051 listener runs in-container, but whether it is
 reachable from outside depends on the platform exposing a raw TCP port. The Helm chart does
 so with a LoadBalancer Service (`directGrpc.enabled`); a platform with a single HTTP ingress
 reaches gRPC through the 443 gateway plane instead.
@@ -71,8 +78,12 @@ reaches gRPC through the 443 gateway plane instead.
 | `idempotency-key` | all Command RPCs | required; replay-same-request returns the recorded outcome; replay-different-request fails `INVALID_ARGUMENT` (mmp:idempotency-mismatch) |
 | `munarium-uid` | all `mmp.v1.*` RPCs | required end-user id asserted by the API-management layer; missing → `INVALID_ARGUMENT` (mmp:uid-required) unless the bearer is a capability JWT, whose `sub` then supplies the uid; when present it must equal that `sub` → `PERMISSION_DENIED` (mmp:uid-mismatch). gRPC interaction rows record the call envelope (method, uid, tenant, latency) — full body capture is the REST plane. |
 
-Set deadlines on every call (`grpcurl -max-time`, tonic `Request::set_timeout`); the server
-enforces its own request timeout and load-shed (`RESOURCE_EXHAUSTED` under pressure).
+Set appropriate deadlines on bounded reads (`grpcurl -max-time`, tonic
+`Request::set_timeout`). The Server sheds requests at its concurrency limit
+(`RESOURCE_EXHAUSTED` with `overloaded` details); it does not configure a blanket
+gRPC request timeout. Session turns can spend provider tokens after a client
+disconnects, so the official clients exempt turns from automatic deadlines and
+retries. Inspect the session transcript before submitting a replacement turn.
 
 **platform parity (landed 2026-08-18):** the platform surface has gRPC
 twins, every one calling the SAME op function as its REST handler:
@@ -145,13 +156,12 @@ proto3 zero-sentinel rules, and surface the documented transport gaps as typed e
   `/admin` HTML dashboards are **REST-only management surfaces by design** (same
   posture as the existing reports routes): they serve operators and browsers, not
   data-plane clients, and get no gRPC twins.
-- Also REST-first as of 2026-08-17, tracked here per the parity ledger rule:
-  `POST /v1/sessions/{id}/close` (the session surface is REST-first overall),
-  `GET /v1/versions/{id}/findings`, the promises overdue view
+- Additional REST-only operations: `GET /v1/versions/{id}/findings`, the promises overdue view
   (`?overdue_scope=`/`?final=`), and the chronology-rules asset routes
   (`POST/GET /v1/chronology-rules`). The chronology GATE itself runs on BOTH
   planes — arming is per-version, so gRPC `ProposeClaim`/`AppendEvents` against
   an armed version draw the same `gate.chronology-*` findings.
+  Session close has a gRPC twin, `SessionService/CloseSession`.
 - `ClaimOrigin` is on BOTH planes (`ProposeClaimRequest.origin`,
   `Claim.origin`; the conformance scenario `ledger.origin-round-trips` runs on
   mem, pg, REST and gRPC). `POST /v1/versions/{id}/findings` is **REST-only**

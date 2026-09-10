@@ -12,8 +12,8 @@ provider, never writes a server table, and never issues DDL or DML against a
 customer source.
 
 
-> **Status.** Munarium Matrix 1.0 is the structured-evidence plane in production form: the runtime
-> and its three roles, the asset grammar, the refusal registry, the query compiler, materialization,
+> **Status.** Munarium Matrix source version **1.0.0** includes the runtime
+> and its four roles (`control`, `query`, `sync`, `reconcile`), the asset grammar, the refusal registry, the query compiler, materialization,
 > reconcile, and the adapters for the databases most applications already run. It is validated by a
 > conformance registry of scenarios that run on every push, and by a compose tier that exercises the
 > HTTP, gRPC, MCP and admin planes against a real Munarium Server.
@@ -38,16 +38,11 @@ customer source.
 
 ## About this repository
 
-Munarium Matrix begins here, at version 1.0.0. Its design was worked out over an extended period of
-private research and development — experiments, measurements, superseded designs, and the
-operational records of the environments they ran in — and that history is deliberately not carried
-into this repository.
-
-It is omitted because it documents how the design was reached rather than how the software behaves,
-and it would give an evaluator, an operator or a contributor nothing they need. What that work
-produced is here in full: the implementation, its conformance suite, its API documentation and its
-deployment assets. The conformance scenarios are the executable specification, and they are the
-record worth reading.
+Matrix versions independently of Server, whose current published image is 1.1.1.
+Build Matrix from this checkout using its Dockerfile or Rust workspace. The
+Server's `iokaio/munarium` image contains Server and `mmctl`; it does not contain
+Matrix or `mxctl`. Matrix's compatibility check distinguishes an exact version
+match from a compatible major; see [the user guide](docs/user-guide.md).
 
 ## What is here
 
@@ -76,7 +71,12 @@ matrix/
 
 ## Quickstart
 
+From the repository root, enter `matrix/`. The test scripts require PowerShell 7
+and the Rust toolchain selected by [rust-toolchain.toml](rust-toolchain.toml).
+Docker with Compose is needed for the database and service checks.
+
 ```powershell
+cd matrix
 # offline: unit tests, boundary checks, contract validation. No database.
 ./test.ps1
 
@@ -91,17 +91,30 @@ docker compose up -d postgres
 Run the service:
 
 ```powershell
-docker compose up            # matrix on :8180, ops on :9190
-mxctl version
-mxctl validate -f fixtures/assets/valid/datasource.crm.yaml
-mxctl apply    -f fixtures/assets/valid/datasource.crm.yaml
-mxctl list datasources
-mxctl sync crm                 # enqueue a sync, one job per authorization class
-mxctl verify open-pipeline-by-region   # exit 3 if a verified question moved
-mxctl mappings status captable-holdings          # promotion state + gate numbers
-mxctl mappings promote captable-holdings --decision CHG-42   # gates checked server-side
-mxctl mappings rollback captable-holdings --decision CHG-43  # supersede, never rewrite
+docker compose up -d --build  # REST :8180, gRPC :50151, ops :9190
+$env:MUNARIUM_MATRIX_TOKEN = 'mxdev'
+cargo run -p munarium-matrix-cli -- version
+cargo run -p munarium-matrix-cli -- validate -f fixtures/assets/valid/datasource.crm.yaml
+cargo run -p munarium-matrix-cli -- apply -f fixtures/assets/valid/datasource.crm.yaml
+cargo run -p munarium-matrix-cli -- list datasources
 ```
+
+These are development credentials and ports. `cargo run` executes `mxctl` from
+source; building the container does not install that command on your host.
+Contracts and mappings must be applied before verification or reconciliation.
+See [the user guide](docs/user-guide.md) for the full asset workflow.
+
+To exercise evidence sealing, also start a Server and configure Matrix's peer.
+From the same `matrix/` directory:
+
+```powershell
+$env:MUNARIUM_SERVER_IMAGE = 'iokaio/munarium:1.1.1'
+$env:MUNARIUM_MATRIX_COMPOSE_SERVER_URL = 'http://munarium-server:8080'
+docker compose --profile server up -d --build
+```
+
+The base stack alone can manage assets; operations that need the Server to seal
+evidence fail without that peer. The optional Server publishes port 18080.
 
 ## The five ideas worth knowing
 
@@ -157,7 +170,7 @@ Two tiers, both free.
 | offline | `./test.ps1` | $0 | every change |
 | compose | `./test.ps1 -Postgres -BlackBox` | $0 | every change, and in CI |
 
-The compose tier also stands up the MySQL, SQL Server and Cube engine tiers from
+The compose tier also stands up the MySQL and SQL Server engine tiers from
 compose profiles. Live tiers against analytics platforms belong to Munarium
 Matrix Enterprise and are not part of this repository.
 
@@ -167,6 +180,7 @@ Matrix Enterprise and are not part of this repository.
 |---|---|
 | `MUNARIUM_MATRIX_ROLE` | `control` \| `query` \| `sync` \| `reconcile` \| `all` |
 | `MUNARIUM_MATRIX_HTTP_ADDR` / `_OPS_ADDR` | listeners; default `0.0.0.0:8180` / `0.0.0.0:9190` |
+| `MUNARIUM_MATRIX_GRPC_ADDR` | query-role listener; default `0.0.0.0:50151`; `disabled` turns it off |
 | `MUNARIUM_MATRIX_DATABASE_URL` | schema `matrix`, role `matrix_owner` |
 | `MUNARIUM_MATRIX_AUTH_MODE` | `static` (default) \| `disabled` |
 | `MUNARIUM_MATRIX_STATIC_TOKENS` | `token:tenant:role,...` where role is `rw` \| `ro` \| `mgmt` |
@@ -183,5 +197,5 @@ registry because it does not mount those routes at all.
 
 ## Ports
 
-REST 8180, ops 9190 — no clash with the server's 8080/50051/9090 on one
+REST 8180, gRPC 50151, ops 9190 — no clash with the server's 8080/50051/9090 on one
 laptop. The compose Postgres is on 5434 for the same reason.

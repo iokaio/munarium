@@ -38,18 +38,23 @@ the kind install ran `replicas: 2` against one cell for real.
 - The **CNPG operator** (the chart declares a `postgresql.cnpg.io/v1
   Cluster`; nothing installs the operator for you).
 - **Gateway API CRDs + Envoy Gateway**, if `gateway.enabled` (default true).
-- A cluster that can pull `<your registry>/munarium-server` (or
-  override `image.repository`).
+- A cluster that can pull `iokaio/munarium` or your own Server image.
+  `image.repository` is empty by default and must be supplied explicitly.
 
 ## Install / upgrade
 
 ```bash
-helm install munarium deploy/helm/munarium -n munarium --create-namespace
-helm upgrade munarium deploy/helm/munarium -n munarium --set image.tag=sha-<shortsha>
+# Run from server/. Supply private production values in your own values file.
+helm install munarium deploy/helm/munarium -n munarium --create-namespace \
+  --set image.repository=iokaio/munarium --set image.tag=1.1.1
+helm upgrade munarium deploy/helm/munarium -n munarium --reuse-values \
+  --set image.tag=1.1.1
 ```
 
 The default `image.tag` is `"1.1.1"`, the current server release — set the
-tag you mean, by digest where you can.
+tag you mean. The current chart constructs `repository:tag` and has no separate
+digest value; use a Helm post-renderer to replace the image with
+`repository@sha256:...` when pinning by digest.
 
 ## Values
 
@@ -67,11 +72,15 @@ tag you mean, by digest where you can.
 | `cell.instances` | `2` | CNPG cluster size (1 primary + 1 replica) |
 | `cell.storage` | `10Gi` | per-instance volume |
 | `cell.imageName` | `ghcr.io/cloudnative-pg/postgresql:16` | CNPG operand image; the official image ships pgvector (the old tensorchord pin was webhook-rejected — see Status) |
-| `gateway.enabled` | `true` | plane 2: Envoy Gateway (GatewayClass + Gateway + HTTPRoute + GRPCRoute) |
+| `gateway.enabled` | `true` | Envoy Gateway resources; the shipped listener is HTTP on port 80. Add an HTTPS listener and certificate for TLS |
 | `directGrpc.enabled` / `directGrpc.port` | `true` / `50051` | plane 3: LoadBalancer straight to the gRPC port |
 
 The database URL is not a value: it comes from the CNPG-generated app secret
 (`munarium-cell-a-app`, key `uri`), wired by the deployment template.
+
+The direct gRPC LoadBalancer also exposes a plaintext listener. For remote
+clients, terminate TLS at a configured ingress/proxy and disable the direct
+LoadBalancer with `directGrpc.enabled=false` if it is not needed.
 
 ## What the chart does NOT wire (and the workaround)
 
@@ -84,10 +93,11 @@ workaround until one lands: create the secret yourself and patch the env in —
 
 ```bash
 kubectl -n munarium create secret generic munarium-secrets \
-  --from-literal=token-secret=$(openssl rand -hex 32)
+  --from-literal=MUNARIUM_TOKEN_SECRET=$(openssl rand -hex 32)
 kubectl -n munarium set env deployment/munarium-server \
-  --from=secret/munarium-secrets --prefix=MUNARIUM_TOKEN_
-# yields MUNARIUM_TOKEN_SECRET from the token-secret key; repeat for MUNARIUM_SECRET_*
+  --from=secret/munarium-secrets
+# The Secret key is already the exact environment-variable name.
+# Add provider keys using their full MUNARIUM_SECRET_* names when needed.
 ```
 
 (or a kustomize/post-render patch, which survives `helm upgrade` better).

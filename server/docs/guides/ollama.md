@@ -1,8 +1,12 @@
 # Ollama provider
 
-Server 1.1.0 supports local Ollama chat completions and embeddings through the
+Server 1.1 supports local Ollama chat completions and embeddings through the
 existing REST and gRPC provider APIs. Models run in a separate Ollama service;
 Munarium does not download models or include their weights in its image.
+
+Use Server **1.1.1** for the examples. Its session-turn fix applies an allowed
+model override to both query expansion and answer generation; 1.1.0 always used
+the runbook default for expansion. See the [changelog](../../CHANGELOG.md#111).
 
 For Docker Desktop on Windows, start with the
 [isolated Compose evaluation](../../deploy/ollama/README.md). It supplies pinned

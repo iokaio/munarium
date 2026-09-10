@@ -16,13 +16,14 @@ applied end to end. Expect a shakedown pass on a first cloud install.
   (the chart declares a `postgresql.cnpg.io/v1 Cluster`; nothing installs
   the operator for you), and **Gateway API CRDs + Envoy Gateway** if you keep
   `gateway.enabled=true`.
-- A registry the cluster can pull from, and the credentials to push to it.
-- Docker (BuildKit), Rust stable and PowerShell 7 on the build machine — or
+- A registry the cluster can pull from; publishing your own build also needs push credentials.
+- Docker (BuildKit), the pinned Rust toolchain and PowerShell 7 on the build machine — or
   a released image, pinned by digest, in which case skip §2.
 - Secrets decided ahead of time: `MUNARIUM_TOKEN_SECRET` (≥ 32 random
   bytes), the `MUNARIUM_SECRET_*` provider keys you intend to use, and the
-  static tokens that replace the chart's placeholders. The chart wires none
-  of these; see its README for the workaround.
+  static tokens that replace the chart's demo values. `staticTokens` is a chart
+  value; capability signing secrets and provider keys need the additional
+  Secret/environment wiring documented in the chart README.
 
 ## 1. Gate
 
@@ -62,11 +63,16 @@ before** the image they belong to, never after.
 ```bash
 helm install munarium deploy/helm/munarium -n munarium --create-namespace \
   --set image.repository=<registry>/munarium-server --set image.tag=<tag> \
-  --set staticTokens="<rw-token>:<tenant>:rw,<ro-token>:<tenant>:ro,<mgmt-token>:<tenant>:mgmt"
+  -f /path/to/private-values.yaml
 
 helm upgrade munarium deploy/helm/munarium -n munarium --reuse-values --set image.tag=<new-tag>
 kubectl -n munarium rollout status deployment/munarium-server
 ```
+
+The private values file must set `staticTokens` to your comma-separated
+`token:tenant:role` registrations. Using a YAML value avoids Helm interpreting
+the commas as separate `--set` assignments. For the published Server image,
+use `image.repository=iokaio/munarium` and `image.tag=1.1.1`.
 
 Then add what the chart does not wire — the token secret and provider keys —
 as a Kubernetes Secret patched into the deployment's environment (or a
@@ -88,7 +94,7 @@ crash-loops, so "the site is up" proves nothing about the new image. Check
 the new pods:
 
 ```bash
-kubectl -n munarium get pods -l app.kubernetes.io/name=munarium \
+kubectl -n munarium get pods -l app=munarium-server \
   -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.containers[0].image}{"\t"}{.status.phase}{"\n"}{end}'
 
 curl -fsS https://<host>/healthz
@@ -98,9 +104,10 @@ curl -fsS https://<host>/openapi.json | jq '.paths | length'
 jq '.paths | length' docs/api/openapi.json      # must be the same number
 ```
 
-A served path count that differs from the committed spec is a stale image
-behind the hostname — the single most common "deploy succeeded, old behaviour
-serves" cause. Then exercise the planes: a gated write with the rw token and
+A different path count indicates that the served API and local specification
+need investigation. A matching count alone does not prove they are identical;
+check the pod image digest and `/version` as well. Then exercise the planes:
+a gated write with the rw token and
 a read-back with the ro token on REST; `grpcurl … grpc.health.v1.Health/Check`
 through the gateway (and on :50051 if `directGrpc.enabled`); and, through a
 port-forward (never an ingress), `/metrics` on :9090 reporting
@@ -117,8 +124,11 @@ kubectl -n munarium rollout status deployment/munarium-server
 ```
 
 or set `image.tag` back to the previous value and upgrade. Migrations are
-additive-only (CI-greped), so a rolled-back binary runs correctly against a
-newer schema; there is no down-migration and none is needed. A datastore
+additive-only, but read the candidate release's compatibility and rollback
+instructions before reusing its database with an older binary. Server 1.1.1
+adds no migration; rollback to 1.1.0 restores the earlier query-expansion
+routing behavior, and rollback to 1.0 requires removing Ollama dependencies.
+A datastore
 rollout is independent of the image: `PUT /v1/retrieval-rollout` with
 `serving: postgres` (or `mmctl datastore rollout set … postgres`) is the
 per-scope rollback and is never gated.

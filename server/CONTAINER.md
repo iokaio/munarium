@@ -77,8 +77,30 @@ The bundled client lists its commands with `docker exec <container> /mmctl`
 `1.1.1` identifies one release. `1.1` and `latest` may advance; use a verified
 digest for deployments. Candidate tags such as `1.1.1-rc.1` are evaluation
 builds and are not stable releases. Published source revisions are recorded in
-OCI labels, alongside SBOM and build provenance attestations. Release notes
-provide the certified digest and signing identity for verification.
+OCI labels, alongside SBOM and build provenance attestations.
+
+Publication check on **2026-09-10**:
+
+| Artifact | Public status |
+|---|---|
+| Server `1.1.1` | Available on [Docker Hub](https://hub.docker.com/r/iokaio/munarium/tags); `1.1` and `latest` resolved to the same index at the time of the check |
+| OCI index digest | `sha256:e19bbe4c8cb0851771d04b509be64769bb07b46c8b490b80dceabb72faa4c64f` |
+| Source revision | [`91c34b1b2a416cfa5e504b5bfe945be89f6ace89`](https://github.com/iokaio/munarium/commit/91c34b1b2a416cfa5e504b5bfe945be89f6ace89) |
+| GitHub release/tag `v1.1.1` | Not published at the time of the check; [GitHub releases](https://github.com/iokaio/munarium/releases) ended at `v1.1.0` |
+
+Pin the published index to select these exact image bytes:
+
+```console
+docker pull iokaio/munarium@sha256:e19bbe4c8cb0851771d04b509be64769bb07b46c8b490b80dceabb72faa4c64f
+```
+
+The [source changelog](CHANGELOG.md#111) describes the 1.1.1 routing fix.
+Public [1.1.0 release notes](https://github.com/iokaio/munarium/releases/tag/v1.1.0)
+include a Cosign digest and signing identity for **1.1.0 only**. They do not
+verify 1.1.1. The 1.1.1 publication's public signing instructions remain a
+documentation gap; a registry digest identifies bytes but does not authenticate
+their publisher. The publication check above queried registry metadata and did
+not repeat image execution or signature verification.
 
 The image includes `LICENSE`, `NOTICE`, and dependency notices under
 `/usr/share/licenses/munarium/`. Third-party components retain their own

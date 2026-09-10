@@ -11,10 +11,16 @@ Python ≥ 3.11 · fully typed (`py.typed`, mypy --strict clean).
 
 ## Install
 
-```bash
-pip install munarium-client
-# from a checkout: pip install -e ".[dev]" inside python/
+From the repository root (Python 3.11+):
+
+```console
+python -m pip install ./clients/python
+# For client development:
+python -m pip install -e "./clients/python[dev]"
 ```
+
+The source version is 1.0.0; a PyPI release was not available at the
+[publication check](../README.md#installation-and-publication).
 
 ## Use
 

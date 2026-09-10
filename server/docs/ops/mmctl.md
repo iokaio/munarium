@@ -1,11 +1,9 @@
 # mmctl — the operator CLI
 
-`mmctl` is deliberately thin: every operation is exactly one REST call, so
-anything mmctl does, CI can do with `curl`. That is the point — it exists
-so that shapes, provider configs, and runbooks are **files you review in Git
-and apply**, not state you click together. It ships inside the same ~29 MB
-container as the server (source: `src/munarium-cli/src/main.rs`; std-arg-parsed,
-no subcommand framework).
+`mmctl` manages shapes, providers, runbooks, bulk uploads and derived indexes
+through the REST API. Simple commands make one request; uploads, watched runs
+and bundle operations coordinate several. It ships as `/mmctl` in the Server
+container; its source is `src/munarium-cli/src/main.rs`.
 
 ## Environment
 
@@ -21,7 +19,8 @@ operations can be slow by design.
 
 ## Commands
 
-Everything below is the complete surface; there are no hidden flags.
+Common commands are listed below. The [Datastore guide](../guides/datastore.md)
+covers the additional build, verification, promotion and rollout commands.
 
 ```text
 mmctl apply -f <file.yaml>                # kind-sniffed: Shape | ProviderConfig | Runbook | ChronologyRules
@@ -40,13 +39,17 @@ mmctl author assist <draft-id> [--description D] [--instructions I] [--provider 
 mmctl author export <draft-id> --out <dir>
 mmctl bundle apply -f <bundle.json> [--dir <dir>]  # hash-verified prod deploy
 mmctl token issue <uid> <level> <scopes,csv> [compartments,csv]
+mmctl bulk upload --dir <dir> [--prefix <p/>] [--label L] [--resume <bulk-id>]
+mmctl bulk status <bulk-id> [--needed]
+mmctl bulk complete <bulk-id>
 mmctl matrix version | apply -f <yaml> | validate -f <yaml> | introspect <source> | probe <source>
 mmctl matrix verify <contract> | verify-view <view> | sync <source> | reconcile <mapping> | journal [--limit N]
 ```
 
 **`apply -f <file.yaml>`** — reads the file, routes by its `kind:` line
 (`Shape` → `POST /v1/shapes`, `ProviderConfig` → `/v1/providers`, `Runbook` →
-`/v1/runbooks`), and posts the YAML as-is. Any other kind is refused.
+`/v1/runbooks`, `ChronologyRules` → `/v1/chronology-rules`), and posts
+the YAML. Any other kind is refused.
 
 **`run <runbook> [--version-id V] [--watch]`** — starts a run
 (`POST /v1/runbooks/{name}/runs`). `--version-id` pins the memory version.
@@ -98,15 +101,15 @@ curl.
 **`matrix …`** — one CLI for GitOps across both trees. Every subcommand is one REST call to **Munarium Matrix's** own API,
 forwarded verbatim: `version` → `GET /version`; `apply -f` / `validate -f` →
 `POST /v1/assets` / `/v1/assets/validate` (the YAML posted as `text/yaml`,
-kind-sniffed by Matrix — DataSource, QueryContract, RecordCollection,
-ObservationMapping); `introspect` / `probe` / `sync` → `POST
+kind-sniffed by Matrix — DataSource, QueryContract, ClaimMapping, MetricView,
+DataView); `introspect` / `probe` / `sync` → `POST
 /v1/datasources/{name}/introspect|probe|sync`; `verify` → `POST
 /v1/contracts/{name}/verify`; `verify-view` → `POST /v1/metricviews/{name}/verify`, else `/v1/dataviews/{name}/verify`
 on a 404 (a metric view's or a native data view's questions, recording the
 definition fingerprint); `reconcile` → `POST /v1/mappings/{name}/run`;
 `journal` → `GET /v1/journal?limit=N` (default 50). It reads
 `MUNARIUMCTL_MATRIX_URL` (default `http://localhost:8180`),
-`MUNARIUMCTL_MATRIX_TOKEN` (a Matrix static token or JWT, sent as a bearer)
+`MUNARIUMCTL_MATRIX_TOKEN` (a Matrix static token, sent as a bearer)
 and the shared `MUNARIUMCTL_UID`. **Nothing is validated locally**: ground
 rule 1 forbids a `server/` crate from depending on a `matrix/` crate, so the
 plan's "reuse mxctl's validators via the Rust client" would have been exactly

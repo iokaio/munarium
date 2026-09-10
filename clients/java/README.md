@@ -7,8 +7,8 @@ problem-slug registry, and the head-conflict write loop built in.
 
 - **Coordinates**: `io.ioka.munarium:munarium-client`, Apache-2.0
   ([LICENSE](../LICENSE); the POM declares it, the jar carries LICENSE and
-  NOTICE under `META-INF`). Maven Central publication is a release-time step
-  of the public Clients repository — see [compatibility.json](../compatibility.json).
+  NOTICE under `META-INF`). Maven Central publication was not available at the
+  [publication check](../README.md#installation-and-publication).
   Package `io.ioka.munarium.client`.
 - **Toolchain**: bytecode targets Java 21 (LTS) via `--release`; builds on
   any newer JDK. Only the JDK is needed — the committed
@@ -32,6 +32,18 @@ problem-slug registry, and the head-conflict write loop built in.
   `proto-google-common-protos`) is `implementation`-scoped — nothing
   pb-typed is in the public API, so it never lands on a consumer's compile
   classpath.
+
+## Install from source
+
+Use a complete checkout so the build can read `server/proto`. Add it to your
+application's Gradle build, adjusting the path for your checkout:
+
+```kotlin
+// settings.gradle.kts
+includeBuild("path/to/munarium/clients/java")
+// build.gradle.kts
+dependencies { implementation("io.ioka.munarium:munarium-client:1.0.0") }
+```
 
 ## Quickstart
 

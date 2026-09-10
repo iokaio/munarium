@@ -3,6 +3,11 @@
 Start with the repo-level [README](../README.md) for what Matrix is and how to
 run it. This index covers everything else.
 
+For an evaluation, read the [adapter support matrix](adapters/build-matrix.md)
+and [release limitations](../CHANGELOG.md) first. For implementation detail, use
+the [technical guide](guides/technical/matrix-technical-guide.md); its Enterprise
+adapter descriptions identify capabilities outside this open-source checkout.
+
 ## Using it
 
 | Document | What it answers |
