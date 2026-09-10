@@ -42,7 +42,9 @@ public final class Providers {
     /**
      * One provider config's resolved tier models — free introspection
      * ({@code GET /v1/providers}), zero provider calls, credential never
-     * echoed.
+     * echoed. The family includes {@code ollama}; {@code credentialOk} means
+     * credentials resolve or are unnecessary for local Ollama, not that the
+     * endpoint is reachable or its models are installed.
      */
     public record ProviderModels(
             String name,

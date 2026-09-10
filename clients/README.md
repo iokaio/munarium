@@ -53,12 +53,15 @@ first one, `1.0.0` on both sides) is a coincidence of that release, not a rule g
 `clients/check_compatibility.py` fails CI if `compatibility.json`'s recorded version for a
 language ever drifts from what that language's own manifest declares.
 
-The record currently lists **Server 1.0** for Server clients and **Matrix 1.0**
-for Matrix clients. The [Server 1.1.0 release](https://github.com/iokaio/munarium/releases/tag/v1.1.0)
-reports source-client conformance against Server 1.1 without changing client
-versions. That is additional test evidence; the formal compatibility record has
-not yet been updated to list 1.1. Check your chosen source revision against the
-Server image you deploy, especially for newly added provider behavior.
+The four Server clients target **Server 1.1.1**, with supported minor versions **1.1 and 1.0** recorded in `compatibility.json`. Client packages remain **1.0.0** because they version independently: these Server releases require no new wire fields or MMP major. Matrix clients remain on **Matrix 1.0**, independently of Server compatibility.
+
+| Server version | Client-visible behavior |
+|---|---|
+| 1.0 | Existing cloud providers and the baseline MMP 1 operations, subject to the transport gaps below |
+| 1.1.0 | Adds named Ollama configurations, credential-free local endpoints, completion, embedding, and named health checks through the existing provider fields |
+| 1.1.1 (target) | An allowed session model override controls both query expansion and completion; invalid/disallowed overrides are rejected before expansion calls a provider |
+
+Without an override, each task retains its configured model. Nonempty overrides on retrieval-only turns are rejected. Higher tiers can now increase expansion cost as well as completion cost. Use the [Server 1.1.1 alignment guide](docs/guides/server-1.1.1.md) for setup, feature requirements, and validation. Supporting the 1.0 baseline does not backport Ollama or the 1.1.1 routing fix.
 
 
 All four expose the same **ten planes** and encode the same invariants. The
@@ -257,7 +260,7 @@ per-item outcome contract). What remains REST-only surfaces as a typed
 - **`query.findings`** (QueryService has no findings RPC).
 - **Chronology-rules** put/get on the runbooks plane.
 - **`providers.list`** (the free `GET /v1/providers` disclosure) and
-  **`health_ai`** (the live six-model default probe).
+  **`health_ai`** (the live nine-model cloud-default probe; named Ollama health uses the provider health operation on either transport).
 - **`providers.max_tokens` / `providers.replace_max_tokens`** (`GET`/`POST /v1/max-tokens`, the per-call output-token ceilings read and
   replaced as a whole — an operator setting beside the provider configs; no
   RPC exists).

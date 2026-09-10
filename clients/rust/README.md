@@ -1,5 +1,7 @@
 # munarium-client (Rust)
 
+Targets **Munarium Server 1.1.1**, with the Server 1.0 minor baseline retained. The client package version remains **1.0.0**. See the [1.1.1 alignment guide](../docs/guides/server-1.1.1.md) for Ollama setup, session override behavior, and validation.
+
 Official Rust client for munarium-server: the full ten-plane surface
 (`commands`, `query`, `ingest`, `retrieval`, `runbooks`, `providers`,
 `sessions`, `tokens`, `reports`, `authoring`) on both transports. Async

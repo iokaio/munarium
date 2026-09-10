@@ -102,6 +102,10 @@ compartment boundary.
 
 ## Model overrides — honored or refused, never downgraded
 
+On **Server 1.1.1**, an allowed `model_override` on a completing turn controls both model-based query expansion and answer generation. Server validates it before expansion can call a provider, even when expansion is optional. Without an override, each task keeps its configured runbook model. Server 1.1.0 applied overrides only to completion; upgrading can therefore change expansion results, latency, and token cost. Both REST unary/streaming turns and gRPC unary turns use this behavior; no new client request fields are needed.
+
+Set `complete: true` when requesting a model override. Retrieval-only turns (`complete: false`) reject nonempty overrides, although their configured query expansion can still call a model. Expansion progress carries the actual `provider`, `model`, `terms`, `input_tokens`, and `output_tokens`; completion echoes its own provider/model and `was_override`. For a named Ollama config, put its config name in the session override's `provider` field and allow that name in `models.allowOverrides`. See the [1.1.1 guide](server-1.1.1.md).
+
 A turn may carry a `model_override` (`provider`/`model`/`tier`). It is
 honored only under the runbook's `models.allowOverrides` policy; a
 disallowed override draws the typed `override-not-allowed` error (the

@@ -1,4 +1,4 @@
-# Providers: the BYOK gateway
+# Providers: cloud and local model gateway
 
 Server 1.1 adds `provider: ollama` to the same REST/gRPC operations. Apply a named
 config with an explicit Ollama base endpoint and models; local Ollama can omit
@@ -8,18 +8,16 @@ built-in tiers and are not selected by automatic cloud-provider priority. See th
 [Server Ollama guide](../../../server/docs/guides/ollama.md) for a complete example,
 health semantics, embedding dimensions, and the existing index-builder limitation.
 
-The server speaks to LLM endpoints with the **tenant's** credentials,
-resolved through the secrets seam at call time (`credentialRef: {env: ...}`
-or `{file: ...}`) — keys never appear in messages, the ledger, or the
-config responses. Credentials fail **closed**: a missing secret is a typed
-provider error, never a silent skip.
+Target **Server 1.1.1** when an application selects session models: its allowed override applies to both query expansion and completion. See the [client alignment guide](server-1.1.1.md) for the feature/version matrix, credential-free configuration, and repeatable qualification tests.
+
+The server resolves configured credentials at call time (`credentialRef: {env: ...}` or `{file: ...}`); keys never appear in messages, the ledger, or configuration responses. Cloud providers require credentials. Local Ollama may omit `credentialRef`, but an explicitly configured missing or empty secret still fails closed. Munarium API authentication remains required regardless of provider credentials.
 
 ```yaml
 apiVersion: munarium.ioka.io/v1
 kind: ProviderConfig
 metadata: { name: prod-anthropic }
 spec:
-  provider: anthropic          # anthropic | openai | openrouter
+  provider: anthropic          # anthropic | openai | openrouter | ollama
   models: { complete: [claude-sonnet-4-6] }
   credentialRef: { env: MUNARIUM_SECRET_ANTHROPIC }
 ```
@@ -103,6 +101,8 @@ itself is never echoed; use it to disclose which model a request WOULD get
 before spending anything (Rust `client.providers.list()`, Python
 `client.providers.list()`, .NET `client.Providers.ListAsync()`, Java
 `client.providers.list()`).
+
+For Ollama, `credential_ok` is also true when no credential is required; it does not establish reachability. Call `health` on the named config to check connectivity and installed models without inference. The cloud-default `/healthai` probe does not test Ollama. Configure Ollama tier names explicitly; it has no built-in tier table or automatic cloud-priority fallback.
 
 Notes:
 

@@ -1,5 +1,7 @@
 # Ioka.Munarium.Client (.NET)
 
+Targets **Munarium Server 1.1.1**, with the Server 1.0 minor baseline retained. The client package version remains **1.0.0**. See the [1.1.1 alignment guide](../docs/guides/server-1.1.1.md) for Ollama setup, session override behavior, and validation.
+
 Official .NET client for munarium-server: the full ten-plane surface
 (`Commands`, `Query`, `Ingest`, `Retrieval`, `Runbooks`, `Providers`,
 `Sessions`, `Tokens`, `Reports`, `Authoring`). net10.0, async-only

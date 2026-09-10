@@ -11,7 +11,9 @@ public final class SessionsApi {
     /**
      * API-level model override — honored only under the runbook's
      * {@code models.allowOverrides} policy; a disallowed override draws the
-     * typed 403, never a silent downgrade.
+     * typed 403, never a silent downgrade. Server 1.1.1 applies it to query
+     * expansion and completion; nonempty overrides require a completing turn.
+     * Provider names refer to configured providers, including named Ollama configs.
      */
     public record ModelOverride(String provider, String model, String tier) {
         public static ModelOverride tier(String tier) {

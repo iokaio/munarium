@@ -376,6 +376,8 @@ pub struct ValidateOptions {
 /// `provider` family override, and (complete only) a `tier` of `fast`,
 /// `capable` or `frontier` resolved to the built-in tier models server-side.
 /// Explicit `model` always wins and may name any model the provider supports.
+/// Server 1.1 adds `ollama`: use a named config or explicitly select the family.
+/// Local credentials are optional, but its endpoint and tier models must be configured.
 #[async_trait]
 pub trait ProvidersPlane: Send + Sync {
     async fn apply_config(&self, yaml: &str) -> Result<dto::ApplyProviderConfigResponse>;
@@ -473,6 +475,8 @@ pub trait SessionsPlane: Send + Sync {
     /// one). `req.model_override` is honored only under the runbook's
     /// `models.allowOverrides` policy — a disallowed override draws the
     /// typed `override-not-allowed` error, never a silent downgrade.
+    /// Server 1.1.1 applies the override to query expansion and completion;
+    /// nonempty overrides require a completing turn.
     ///
     /// `req.research_profile` runs the turn through a named
     /// evidence hierarchy and fills `resp.hierarchy` with the decision. Left
