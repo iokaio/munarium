@@ -76,7 +76,7 @@ def main() -> None:
         print(f"PASS {name}", flush=True)
 
     try:
-        assert http("/version")["version"] == "1.1.0"
+        assert http("/version")["version"] == "1.1.1"
         http("/readyz")
         if args.verify_persisted:
             prior = json.loads(args.verify_persisted.read_text())

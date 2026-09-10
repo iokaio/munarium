@@ -1,7 +1,7 @@
 # Munarium Helm chart
 
 One release = one CNPG Postgres cell + the munarium-server deployment + all three
-API planes (REST, gateway, direct gRPC). Chart version `0.2.0`, app version `1.1.0`.
+API planes (REST, gateway, direct gRPC). Chart version `0.2.1`, app version `1.1.1`.
 
 **Status: first install validated on kind; identity exchange and gateway
 plane still unexercised.** The chart's first `helm install` ran against a
@@ -48,7 +48,7 @@ helm install munarium deploy/helm/munarium -n munarium --create-namespace
 helm upgrade munarium deploy/helm/munarium -n munarium --set image.tag=sha-<shortsha>
 ```
 
-The default `image.tag` is `"1.1.0"`, the current server release — set the
+The default `image.tag` is `"1.1.1"`, the current server release — set the
 tag you mean, by digest where you can.
 
 ## Values
@@ -56,7 +56,7 @@ tag you mean, by digest where you can.
 | Key | Default | What it does |
 |---|---|---|
 | `image.repository` | _(required)_ | server image; `helm install` refuses without it |
-| `image.tag` | `"1.1.0"` | image tag — the update lever |
+| `image.tag` | `"1.1.1"` | image tag — the update lever |
 | `replicas` | `2` | server pods |
 | `staticTokens` | `demo-rw-token:demo:rw,demo-ro-token:demo:ro` | `MUNARIUM_STATIC_TOKENS` — demo literals; replace them |
 | `workloadIdentity.clientId` | `""` | Azure workload-identity UAMI client id. Set: pods get the `azure.workload.identity/use` label + a `munarium` ServiceAccount annotated for federation. Empty: no annotation, so the chart still installs on a non-Azure cluster |
