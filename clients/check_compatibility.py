@@ -200,9 +200,33 @@ READERS = {
 }
 
 
+def server_support_problems(record: dict) -> list[str]:
+    """Keep the patch target and Server N/N-1 ranges consistent, separately from Matrix."""
+    target = record.get("target_server", "")
+    if not isinstance(target, str) or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", target):
+        return ["target_server must name an exact Server release (major.minor.patch)"]
+    major, minor, _ = (int(part) for part in target.split("."))
+    expected = [f"{major}.{minor}"]
+    if minor > 0:
+        expected.append(f"{major}.{minor - 1}")
+    bad = []
+    for lang in ("rust", "python", "dotnet", "java"):
+        entry = record["clients"].get(lang, {})
+        if entry.get("supported_server") != expected:
+            bad.append(f"{lang}: supported_server must be {expected!r} for target {target}")
+        if "supported_matrix" in entry or entry.get("speaks_to") == "matrix":
+            bad.append(f"{lang}: a Server client must not declare Matrix compatibility")
+    for lang, entry in record["clients"].items():
+        if lang.startswith("matrix-") and (
+            entry.get("speaks_to") != "matrix" or "supported_server" in entry
+        ):
+            bad.append(f"{lang}: Matrix compatibility must remain separate from Server")
+    return bad
+
+
 def main() -> int:
     record = json.loads((ROOT / "compatibility.json").read_text(encoding="utf-8"))
-    bad: list[str] = []
+    bad: list[str] = server_support_problems(record)
 
     # Every entry in the record needs a reader, and every reader an entry --
     # otherwise a client can be added to one and forgotten in the other.
@@ -243,7 +267,7 @@ def main() -> int:
               "fix the manifest or the record, whichever is wrong")
         return 1
     print(f"check_compatibility: {len(READERS)} client(s) -- version, package id, "
-          "registry and publishability all agree with compatibility.json -- ok")
+          "registry, publishability and Server target/ranges agree with compatibility.json -- ok")
     return 0
 
 

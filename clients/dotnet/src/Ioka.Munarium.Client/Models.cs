@@ -276,7 +276,7 @@ public sealed record CompleteResult
     [JsonPropertyName("stop_reason")] public required string StopReason { get; init; }
     [JsonPropertyName("input_tokens")] public ulong InputTokens { get; init; }
     [JsonPropertyName("output_tokens")] public ulong OutputTokens { get; init; }
-    /// <summary>The provider family that served the request (anthropic|openai|openrouter).</summary>
+    /// <summary>The provider family that served the request (anthropic|openai|openrouter|ollama).</summary>
     [JsonPropertyName("provider")] public string Provider { get; init; } = "";
     /// <summary>The resolved model id that served the request.</summary>
     [JsonPropertyName("model")] public string Model { get; init; } = "";

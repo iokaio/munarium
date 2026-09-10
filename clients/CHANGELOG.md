@@ -1,5 +1,15 @@
 # Munarium clients — release notes
 
+## Unreleased — Server 1.1.1 alignment
+
+- Target Server 1.1.1 in the compatibility record and retain the Server 1.0 minor baseline. Client package versions remain 1.0.0; MMP major remains 1. Matrix client compatibility is unchanged.
+- Raise the Rust wire-crate dependency requirements to 1.1.1, matching the source checkout and lockfile.
+- Document Ollama configuration, named health checks, optional local credentials, and the Server 1.1.1 rule that session model overrides apply to both query expansion and completion. Preserve the existing transport gaps and send-once behavior for provider calls and session turns.
+- Add a disposable Server 1.1.1 qualification stack and an opt-in Python sync/async REST/gRPC regression suite for Ollama health, completion, embeddings, invocation provenance, caching, override routing, and rejection before provider calls. Check actual model and usage fields on streaming progress.
+- Validate Server target/minor ranges separately from Matrix compatibility and test that stale or mixed service records fail the check.
+
+See the [alignment guide](docs/guides/server-1.1.1.md) for the compatibility boundary and validation procedure.
+
 ## 1.0.0
 
 The first public source release of all seven clients: Rust, Python, .NET and

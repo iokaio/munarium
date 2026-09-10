@@ -239,15 +239,16 @@ public interface IRunbooksPlane
 /// <summary>BYOK provider gateway. The reserved config name <c>default</c>
 /// engages the server's default rule (anthropic → openai → openrouter, first
 /// family with a usable credential); <c>provider</c> overrides the family and
-/// <c>tier</c> (<c>fast</c>|<c>capable</c>) resolves the built-in tier models
+/// <c>tier</c> (<c>fast</c>|<c>capable</c>|<c>frontier</c>) resolves tier models
 /// server-side. An explicit <c>model</c> always wins and may name any model
-/// the provider supports.</summary>
+/// the provider supports. Server 1.1 adds Ollama with an explicit endpoint,
+/// configured tier models, and optional credentials for local endpoints.</summary>
 public interface IProvidersPlane
 {
     Task<string> ApplyConfigAsync(string yaml, CancellationToken ct = default);
     Task<ProviderHealth> HealthAsync(string name, CancellationToken ct = default);
-    /// <summary>Live probe of the server's six built-in default models (three
-    /// provider families × two tiers) — spends real provider tokens. REST-only:
+    /// <summary>Live probe of the server's nine built-in cloud-default models (three
+    /// provider families × three tiers) — spends real provider tokens. REST-only:
     /// the gRPC client throws <see cref="UnsupportedTransportException"/>.</summary>
     Task<HealthAiResult> HealthAiAsync(CancellationToken ct = default);
     Task<CompleteResult> CompleteAsync(
@@ -261,7 +262,7 @@ public interface IProvidersPlane
 
     /// <summary>Free disclosure of every provider config visible to the
     /// tenant — applied configs plus synthesized env defaults, each with its
-    /// resolved fast/capable tier models and credential status. Zero
+    /// resolved fast/capable/frontier tier models and credential status. Zero
     /// provider calls; the credential itself is never echoed. REST-only
     /// (GET /v1/providers).</summary>
     Task<IReadOnlyList<ProviderModels>> ListAsync(CancellationToken ct = default);

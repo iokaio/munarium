@@ -6,6 +6,8 @@ authoritative, machine-readable answer, and this page is the short prose explana
 
 ## Compatibility
 
+The current Server target is **1.1.1**, with supported minor versions **1.1 and 1.0**. Client packages remain **1.0.0**; Matrix clients retain Matrix **1.0** independently. Ollama requires Server 1.1, and applying a session override to query expansion as well as completion requires Server 1.1.1. See the [alignment guide](../guides/server-1.1.1.md) for behavior differences and validation.
+
 **[`compatibility.json`](../../compatibility.json)**, at the root of this tree, is the
 authoritative record of which server versions each client supports. The policy it encodes: a
 client's minor version supports the current server minor and the one immediately before it, so

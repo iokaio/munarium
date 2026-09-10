@@ -365,8 +365,8 @@ class RestProviders:
         return self._t.run(s.provider_health(name))
 
     def health_ai(self) -> m.HealthAiResult:
-        """Live probe of the server's six built-in default models (three
-        provider families x two tiers) — spends real provider tokens."""
+        """Live probe of the server's nine built-in cloud-default models (three
+        provider families x three tiers) — spends real provider tokens."""
         return self._t.run(s.health_ai())
 
     def complete(
@@ -410,7 +410,7 @@ class RestProviders:
     def list(self) -> list[m.ProviderModels]:
         """Free disclosure of every provider config visible to the tenant —
         applied configs plus synthesized env defaults, each with its
-        resolved fast/capable tier models and ``credential_ok``. Zero
+        resolved fast/capable/frontier tier models and ``credential_ok``. Zero
         provider calls; the credential itself is never echoed."""
         return self._t.run(s.list_providers())
 
@@ -1038,8 +1038,8 @@ class AsyncRestProviders:
         return await self._t.run(s.provider_health(name))
 
     async def health_ai(self) -> m.HealthAiResult:
-        """Live probe of the server's six built-in default models (three
-        provider families x two tiers) — spends real provider tokens."""
+        """Live probe of the server's nine built-in cloud-default models (three
+        provider families x three tiers) — spends real provider tokens."""
         return await self._t.run(s.health_ai())
 
     async def complete(

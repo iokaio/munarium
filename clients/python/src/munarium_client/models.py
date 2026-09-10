@@ -273,7 +273,7 @@ class CompleteResult(_Model):
     stop_reason: str
     input_tokens: int
     output_tokens: int
-    #: The provider family that served the request (anthropic|openai|openrouter).
+    #: The provider family that served the request (anthropic|openai|openrouter|ollama).
     provider: str = ""
     #: The resolved model id that served the request.
     model: str = ""
@@ -317,11 +317,13 @@ class EmbedResult(_Model):
 class ModelOverride(_Model):
     """API-level model override for a session turn — honored only under the
     runbook's ``models.allowOverrides`` policy. A disallowed override draws
-    the typed ``override-not-allowed`` error, never a silent downgrade."""
+    the typed ``override-not-allowed`` error, never a silent downgrade.
+    Server 1.1.1 applies it to query expansion and completion; nonempty
+    overrides require a completing turn. Provider names refer to configs."""
 
     provider: str | None = None
     model: str | None = None
-    #: fast | capable
+    #: fast | capable | frontier
     tier: str | None = None
 
 
@@ -963,10 +965,11 @@ class ProviderModels(_Model):
 
     #: Config name, or default-<family> for the synthesized env default.
     name: str
-    #: anthropic | openai | openrouter.
+    #: anthropic | openai | openrouter | ollama.
     provider: str
     #: applied | default.
     source: str
+    #: Credentials resolve or are unnecessary for local Ollama; not a health check.
     credential_ok: bool
     fast: str | None = None
     capable: str | None = None

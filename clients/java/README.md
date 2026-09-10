@@ -1,5 +1,7 @@
 # munarium-client (Java)
 
+Targets **Munarium Server 1.1.1**, with the Server 1.0 minor baseline retained. The client package version remains **1.0.0**. See the [1.1.1 alignment guide](../docs/guides/server-1.1.1.md) for Ollama setup, session override behavior, and validation.
+
 Official Java client for [munarium-server](../../server/): the ten-plane
 surface on both transports (REST via `java.net.http`, gRPC via
 netty-shaded), **sync and async** facades, typed exceptions keyed on the

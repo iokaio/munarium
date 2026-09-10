@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: Apache-2.0
+# Isolated, disposable qualification stack. Credentials are test-only.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: munarium
+      POSTGRES_PASSWORD: clients-test-only
+      POSTGRES_DB: munarium
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U munarium"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  ollama:
+    image: python:3.12-slim
+    command: [python, /fixture.py, --bind, "0.0.0.0"]
+    volumes:
+      - ./ollama_fixture.py:/fixture.py:ro
+    ports:
+      - "127.0.0.1:38114:11434"
+  server:
+    image: iokaio/munarium:1.1.1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    environment:
+      MUNARIUM_STORE: postgres
+      MUNARIUM_SOURCE_STORE: pg
+      MUNARIUM_DATABASE_URL: postgres://munarium:clients-test-only@postgres:5432/munarium
+      MUNARIUM_AUTH_MODE: static
+      MUNARIUM_STATIC_TOKENS: "citoken:ci-clients:rw,cimgmt:ci-clients:mgmt"
+      MUNARIUM_TOKEN_SECRET: ci-clients-conformance-hs256-key-0001
+    ports:
+      - "127.0.0.1:38080:8080"
+      - "127.0.0.1:35051:50051"

@@ -311,11 +311,12 @@ public sealed record ProviderModels
     /// <summary>Config name, or default-&lt;family&gt; for the synthesized
     /// env-backed default.</summary>
     [JsonPropertyName("name")] public required string Name { get; init; }
-    /// <summary>Provider family (anthropic | openai | openrouter).</summary>
+    /// <summary>Provider family (anthropic | openai | openrouter | ollama).</summary>
     [JsonPropertyName("provider")] public required string Provider { get; init; }
     /// <summary>applied (tenant-applied config) or default (synthesized).</summary>
     [JsonPropertyName("source")] public required string Source { get; init; }
-    /// <summary>Whether the config's credential currently resolves.</summary>
+    /// <summary>Credentials resolve or are unnecessary for local Ollama.
+    /// This does not establish endpoint reachability or model availability.</summary>
     [JsonPropertyName("credential_ok")] public bool CredentialOk { get; init; }
     [JsonPropertyName("fast")] public string? Fast { get; init; }
     [JsonPropertyName("capable")] public string? Capable { get; init; }
@@ -419,7 +420,9 @@ public sealed record SessionCreated
 
 /// <summary>API-level model override — honored only under the runbook's
 /// <c>models.allowOverrides</c> policy; a disallowed override draws the
-/// typed <see cref="ForbiddenException"/>, never a silent downgrade.</summary>
+/// typed <see cref="ForbiddenException"/>, never a silent downgrade.
+/// Server 1.1.1 applies it to query expansion and completion; nonempty
+/// overrides require a completing turn. Provider names refer to configs.</summary>
 public sealed record ModelOverride
 {
     [JsonPropertyName("provider")] public string? Provider { get; init; }
