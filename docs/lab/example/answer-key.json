@@ -1,0 +1,71 @@
+{
+  "runbook": "halvard-support@1",
+  "notes": "Held by the grader only. This file is never uploaded, mounted or indexed.",
+  "cases": [
+    {
+      "id": "q1",
+      "family": "direct lookup with a revision qualifier",
+      "ask": "What is the calibration acceptance tolerance for an HX-200 revision B unit?",
+      "caller": { "level": 0, "compartments": [] },
+      "expect": {
+        "cite_any": ["halvard/manuals/hx200-rev-b-calibration.md", "halvard/bulletins/sb-09.md"],
+        "contains_all": ["0.5"]
+      }
+    },
+    {
+      "id": "q2",
+      "family": "conflict between a ticket and a later bulletin",
+      "ask": "Should step 4 of the revision A calibration procedure, the manual zero offset, still be performed?",
+      "caller": { "level": 0, "compartments": [] },
+      "expect": {
+        "conflict": {
+          "cite_all": ["halvard/bulletins/sb-07.md"],
+          "cite_any": ["halvard/tickets/t-1042.md", "halvard/manuals/hx200-rev-a-calibration.md"],
+          "sides": [["withdrawn"], ["step 4"]]
+        }
+      }
+    },
+    {
+      "id": "q3",
+      "family": "absence under a lexical collision",
+      "ask": "What is the outstanding balance on the Meridian Diagnostics service contract?",
+      "caller": { "level": 0, "compartments": [] },
+      "expect": { "insufficient": true }
+    },
+    {
+      "id": "q4",
+      "family": "access boundary, unprivileged caller",
+      "ask": "What caused the pump failures reported from the field this year?",
+      "caller": { "level": 0, "compartments": [] },
+      "expect": { "must_not_cite": ["halvard/engineering/"], "insufficient": true }
+    },
+    {
+      "id": "q5",
+      "family": "access boundary, cleared caller",
+      "ask": "What caused the pump failures reported from the field this year?",
+      "caller": { "level": 1, "compartments": ["engineering"] },
+      "expect": {
+        "cite_any": ["halvard/engineering/rca-pump-2026.md"],
+        "contains_all": ["supplier"]
+      }
+    },
+    {
+      "id": "q6",
+      "family": "enumeration",
+      "ask": "Which HX-200 error codes indicate a pump fault?",
+      "caller": { "level": 0, "compartments": [] },
+      "expect": {
+        "cite_any": ["halvard/manuals/hx200-error-codes.md"],
+        "contains_all": ["E41", "E42", "E47"]
+      }
+    }
+  ],
+  "ledger": {
+    "subject": "hx200_rev_a_calibration",
+    "key": "step_4",
+    "first_value": "required",
+    "conflicting_value": "withdrawn",
+    "expect_disputed_before_review": 1,
+    "expect_canon_after_review": "withdrawn"
+  }
+}

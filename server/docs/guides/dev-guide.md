@@ -142,7 +142,9 @@ for it. Suggested paths:
   it still asks you to measure) → §21 step 8 (grade against an answer key
   before you ship). Stand up a lab for that measurement before the first
   production index build; the numbers in this book calibrate yours, they do
-  not replace them.
+  not replace them. [Build your own AI memory governance
+  lab](../../../docs/lab/README.md) is the runnable guide to that lab, with a
+  worked example.
 
 ### The three commitments
 
@@ -13089,6 +13091,9 @@ For a complete methodology without code examples, follow
 [Creating a laboratory for your corpus application](creating-a-lab.md).
 It covers case design, independent answer keys, controlled shape/runbook
 comparisons, failure diagnosis and acceptance on your actual Server deployment.
+For the same loop as commands, a grader script and a corpus you can run in
+fifteen minutes, follow [Build your own AI memory governance
+lab](../../../docs/lab/README.md).
 
 This tutorial ends where every corpus application should begin: with an
 answer key. It was not run here at scale because a graded harness deserves
@@ -13223,7 +13228,8 @@ was decided by measurement somewhere, on a corpus, at a stated cost. Your
 corpus deserves the same. Before a shape or a runbook goes to production,
 give it a lab — a disposable server, a slice of the real documents, and a
 graded answer key — and let measurement, not this book, decide what your
-corpus needs.
+corpus needs. [Build your own AI memory governance
+lab](../../../docs/lab/README.md) shows that lab end to end.
 
 ## 21A. Operating runbooks: publish, run, gate, evolve, retire
 

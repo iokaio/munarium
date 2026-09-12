@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="330" viewBox="0 0 880 330" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">
+  <title>One pass through a memory-governance lab</title>
+  <desc>A disposable Server holds the corpus, the shape, the runbook and the built index. A grader outside that boundary holds the answer key, sends turns, scores hits and completions, and the scorecard decides the next candidate.</desc>
+  <rect x="0" y="0" width="880" height="330" fill="#fbfaf7"/>
+  <rect x="20" y="40" width="560" height="200" rx="10" fill="#f1efe8" stroke="#8a8578" stroke-dasharray="6 4"/>
+  <text x="34" y="62" fill="#5a5647" font-weight="600">Disposable Munarium Server (pinned image, its own database)</text>
+
+  <rect x="40" y="90" width="120" height="70" rx="8" fill="#ffffff" stroke="#2f5d8a"/>
+  <text x="100" y="118" text-anchor="middle" fill="#1d3a57" font-weight="600">Corpus slice</text>
+  <text x="100" y="138" text-anchor="middle" fill="#5a5647">prefixes = access</text>
+
+  <rect x="200" y="90" width="120" height="70" rx="8" fill="#ffffff" stroke="#2f5d8a"/>
+  <text x="260" y="118" text-anchor="middle" fill="#1d3a57" font-weight="600">Shape</text>
+  <text x="260" y="138" text-anchor="middle" fill="#5a5647">chunking, facts</text>
+
+  <rect x="360" y="90" width="120" height="70" rx="8" fill="#ffffff" stroke="#2f5d8a"/>
+  <text x="420" y="118" text-anchor="middle" fill="#1d3a57" font-weight="600">Runbook</text>
+  <text x="420" y="138" text-anchor="middle" fill="#5a5647">collections, policy</text>
+
+  <rect x="200" y="180" width="280" height="44" rx="8" fill="#ffffff" stroke="#2f5d8a"/>
+  <text x="340" y="207" text-anchor="middle" fill="#1d3a57" font-weight="600">Built index + ledger (run, verify, approve)</text>
+
+  <line x1="160" y1="125" x2="200" y2="125" stroke="#2f5d8a" marker-end="url(#a)"/>
+  <line x1="320" y1="125" x2="360" y2="125" stroke="#2f5d8a" marker-end="url(#a)"/>
+  <line x1="420" y1="160" x2="420" y2="180" stroke="#2f5d8a" marker-end="url(#a)"/>
+  <line x1="260" y1="160" x2="260" y2="180" stroke="#2f5d8a" marker-end="url(#a)"/>
+
+  <rect x="640" y="40" width="220" height="200" rx="10" fill="#fff4e0" stroke="#b7791f"/>
+  <text x="750" y="62" text-anchor="middle" fill="#6b4a0f" font-weight="600">Grader (outside the Server)</text>
+  <rect x="660" y="80" width="180" height="44" rx="8" fill="#ffffff" stroke="#b7791f"/>
+  <text x="750" y="100" text-anchor="middle" fill="#6b4a0f" font-weight="600">Answer key</text>
+  <text x="750" y="116" text-anchor="middle" fill="#5a5647">never uploaded or mounted</text>
+  <rect x="660" y="140" width="180" height="44" rx="8" fill="#ffffff" stroke="#b7791f"/>
+  <text x="750" y="160" text-anchor="middle" fill="#6b4a0f" font-weight="600">One session per case</text>
+  <text x="750" y="176" text-anchor="middle" fill="#5a5647">scoped caller, one turn</text>
+  <rect x="660" y="196" width="180" height="36" rx="8" fill="#ffffff" stroke="#b7791f"/>
+  <text x="750" y="219" text-anchor="middle" fill="#6b4a0f" font-weight="600">Scorecard</text>
+
+  <line x1="640" y1="162" x2="480" y2="202" stroke="#b7791f" marker-end="url(#b)"/>
+  <text x="560" y="172" text-anchor="middle" fill="#6b4a0f">turns in, hits and text out</text>
+
+  <path d="M 750 232 L 750 280 L 100 280 L 100 160" fill="none" stroke="#6b4a0f" stroke-dasharray="5 4" marker-end="url(#b)"/>
+  <text x="425" y="298" text-anchor="middle" fill="#6b4a0f">iterate: one variable per candidate, same key, fresh sessions, before every production index build</text>
+
+  <defs>
+    <marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2f5d8a"/></marker>
+    <marker id="b" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#6b4a0f"/></marker>
+  </defs>
+</svg>

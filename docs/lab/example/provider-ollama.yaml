@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+# Optional: a local Ollama endpoint for the model-backed grades. The
+# endpoint below reaches an Ollama server running on the Docker host; for
+# an Ollama container on the same Compose network use http://ollama:11434.
+# Pull the model first: ollama pull qwen3:1.7b
+apiVersion: munarium.ioka.io/v1
+kind: ProviderConfig
+metadata: { name: lab-ollama }
+spec:
+  provider: ollama
+  endpoint: http://host.docker.internal:11434
+  models:
+    complete: [qwen3:1.7b]
+    fast: qwen3:1.7b
+    capable: qwen3:1.7b
+  budgets: { rpm: 60, tpm: 100000 }

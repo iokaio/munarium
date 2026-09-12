@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: Apache-2.0
+# A disposable Munarium Server for one lab run. Differences from the
+# persistent setup in the repository README, each deliberate:
+#   - the image is pinned by digest (the 1.1.1 OCI index digest recorded in
+#     server/CONTAINER.md), so the record of a run names exact bytes;
+#   - two static tokens: `rw` applies, runs, approves and grades; `mgmt`
+#     mints the scoped capability tokens each graded case runs under;
+#   - only ./corpus and the three YAML assets are mounted into the server,
+#     read-only, each named individually. The answer key beside this file is
+#     not reachable from the container.
+# Use a distinct project name (-p) so this stack never shares a volume with
+# another one.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: munarium
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: munarium
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U munarium -d munarium"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  server:
+    image: iokaio/munarium@sha256:e19bbe4c8cb0851771d04b509be64769bb07b46c8b490b80dceabb72faa4c64f
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MUNARIUM_STORE: postgres
+      MUNARIUM_DATABASE_URL: "postgres://munarium:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/munarium"
+      MUNARIUM_SOURCE_STORE: pg
+      MUNARIUM_RETRIEVAL_MODE: postgres
+      MUNARIUM_AUTH_MODE: static
+      MUNARIUM_STATIC_TOKENS: "${MUNARIUM_RW_TOKEN:?Set MUNARIUM_RW_TOKEN in .env}:halvard-lab:rw,${MUNARIUM_MGMT_TOKEN:?Set MUNARIUM_MGMT_TOKEN in .env}:halvard-lab:mgmt"
+      MUNARIUM_TOKEN_SECRET: ${MUNARIUM_TOKEN_SECRET:?Set MUNARIUM_TOKEN_SECRET in .env}
+      MUNARIUMCTL_URL: http://127.0.0.1:8080
+      MUNARIUMCTL_TOKEN: ${MUNARIUM_RW_TOKEN}
+      MUNARIUMCTL_UID: lab-operator
+    volumes:
+      - ./corpus:/corpus:ro
+      - ./shape.yaml:/lab/shape.yaml:ro
+      - ./runbook.yaml:/lab/runbook.yaml:ro
+      - ./provider-ollama.yaml:/lab/provider-ollama.yaml:ro
+    ports:
+      - "127.0.0.1:${LAB_HOST_PORT:-8080}:8080"
+
+volumes:
+  pgdata:

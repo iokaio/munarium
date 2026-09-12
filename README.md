@@ -30,6 +30,9 @@ installed from source, not public package registries. See the
 - **[Creating a lab](server/docs/guides/creating-a-lab.md)** — design experiments, build
   answer keys, and improve shapes and runbooks for your corpora and application use cases.
   This tutorial focuses on approach and technique without code examples.
+- **[Build your own AI memory governance lab](docs/lab/README.md)** — the runnable companion:
+  a disposable Server, a corpus slice, a shape and runbook, a grader script with an answer key,
+  and the ledger's handling of a contradiction, in a worked example that runs in fifteen minutes.
 - **[Managing keys and secrets](server/docs/guides/managing-key-and-secrets.md)** — configure
   AI providers, Docker secrets and PostgreSQL access; verify, rotate and revoke credentials.
 - **[Local Ollama](server/docs/guides/ollama.md)** — run a small local model in Docker

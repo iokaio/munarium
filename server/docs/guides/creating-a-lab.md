@@ -478,6 +478,9 @@ serves.
 
 ## Where to go next
 
+- [Build your own AI memory governance lab](../../../docs/lab/README.md): this
+  method as commands, files and a grader script, with a worked example over a
+  fictional support corpus that runs in about fifteen minutes.
 - [Developer guide](dev-guide.md): Server deployment, shapes, runbooks, application
   integration and the worked authoring workflow.
 - [Loading corpora](loading-corpora.md): source identity, collection bindings and

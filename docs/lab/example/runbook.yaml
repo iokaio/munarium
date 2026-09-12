@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: Apache-2.0
+# The worked example's application: an equipment support assistant over
+# manuals, service bulletins and tickets, with one engineering-only
+# collection behind a level and a compartment.
+#
+# The prefix layout IS the access layout: three public prefixes at level 0,
+# one restricted prefix at level 1 that also requires the `engineering`
+# compartment. The answer key lives outside every prefix here and is never
+# uploaded.
+apiVersion: munarium.ioka.io/v1
+kind: Runbook
+metadata: { name: halvard-support, version: 1 }
+spec:
+  sources:
+    container: sources
+    prefix: "halvard/"
+  collections:
+    - name: halvard-manuals
+      shape: halvard-support-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "halvard/manuals/", mediaTypes: [text/markdown] }
+    - name: halvard-bulletins
+      shape: halvard-support-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "halvard/bulletins/", mediaTypes: [text/markdown] }
+    - name: halvard-tickets
+      shape: halvard-support-documents@1
+      accessLevel: 0
+      sources: { filenamePrefix: "halvard/tickets/", mediaTypes: [text/markdown] }
+    - name: halvard-engineering
+      shape: halvard-support-documents@1
+      accessLevel: 1
+      compartments: [engineering]
+      sources: { filenamePrefix: "halvard/engineering/", mediaTypes: [text/markdown] }
+  retrieval: { topK: 6, rrfK: 60, candidateN: 50 }
+  models:
+    default: { provider: lab-ollama, tier: fast }
+    tasks:
+      completion: { provider: lab-ollama, tier: fast }
+    allowOverrides: [lab-ollama]
+  completion:
+    contextCharBudget: 6000
+    maxTokens: 1024
+    promptTemplate: |
+      You are an equipment support assistant for the HX-200 bench analyser.
+      Answer only from the supplied evidence. Name the document each fact
+      came from. Where two documents disagree, report both positions and
+      which document is newer. If the evidence does not establish an answer,
+      reply with the words "insufficient evidence" and say what is missing.
+      Never invent a figure, a document or a cause.
+
+      Evidence:
+      {context}
+
+      Question: {query}
+  steps:
+    - resolveSources: {}
+    - buildIndex: {}
+    - verify: {}
+    - cutover: { approval: required }
+    - retireOld: { keep_versions: 2 }

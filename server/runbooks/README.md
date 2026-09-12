@@ -60,7 +60,9 @@ removed 2026-08-27 — the operator console instead shows the applied result
 (`/admin/runbooks`, `/admin/shapes/{ref}`). Export refuses while error
 findings exist, and `bundle apply` dies on any hash drift between export
 and deploy — so what reaches production is exactly the validated set that
-left the authoring server.
+left the authoring server. Between export and deploy belongs a measurement:
+[Build your own AI memory governance lab](../../docs/lab/README.md) grades an
+exported set against an answer key on a disposable server.
 
 ## The sample set
 

@@ -36,6 +36,12 @@ jobs:
       - name: private material scan
         run: python3 scripts/private_material_scan.py
 
+      # The component link checkers stop at server/docs and matrix/. The root
+      # docs/ tree and the root markdown files are gated here instead: every
+      # relative link resolves, every page is listed from its directory index.
+      - name: root docs links and indexes
+        run: python3 scripts/docs_linkcheck.py
+
       # Apache-2.0 headers, licence texts and notice files, across the whole
       # tree rather than one component of it.
       - name: licence and notice check
