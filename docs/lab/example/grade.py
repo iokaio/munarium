@@ -132,6 +132,7 @@ def grade_case(case: dict, turn: dict, complete: bool) -> dict:
 
     return {
         "id": case["id"],
+        "ask": case["ask"],
         "family": case.get("family", ""),
         "caller": case["caller"],
         "evidence": evidence,
@@ -142,6 +143,9 @@ def grade_case(case: dict, turn: dict, complete: bool) -> dict:
         "collections_searched": turn.get("collections_searched", []),
         "skipped": turn.get("skipped", []),
         "completion": turn.get("completion"),
+        # Keep the wire response as well as the compact scorecard fields:
+        # hit text, scores and index envelopes are needed to diagnose a run.
+        "turn": {k: v for k, v in turn.items() if k != "_permitted_collections"},
     }
 
 
@@ -169,21 +173,44 @@ def grade_ledger(base: str, rw_token: str, key: dict) -> tuple[str, str]:
                          {"claim_type": "fact", "subject": spec["subject"], "key": spec["key"], "value": spec["conflicting_value"]},
                          idempotent=True)
     disputed = server.call("GET", f"/v1/versions/{vid}/facts", query={"statuses": "disputed"})
-    rows = disputed.get("facts", disputed if isinstance(disputed, list) else [])
-    server.call("POST", f"/v1/versions/{vid}/claims",
+    rows = disputed["facts"]
+    correction = server.call("POST", f"/v1/versions/{vid}/claims",
                 {"claim_type": "correction", "subject": spec["subject"], "key": spec["key"],
                  "value": spec["conflicting_value"], "supersedes_id": first["claim"]["id"]},
                 idempotent=True)
     head = server.call("GET", f"/v1/versions/{vid}/facts")
-    head_rows = head.get("facts", head if isinstance(head, list) else [])
-    canon = {r["normalized_text"] for r in head_rows if r.get("status") == "accepted"}
+    head_rows = head["facts"]
+    canon = [r["normalized_text"] for r in head_rows if r.get("status") == "accepted"]
     expected_canon = f"{spec['subject']}.{spec['key']}={spec['expect_canon_after_review']}"
-    ok = (second["claim"]["status"] == "disputed"
-          and len(rows) == spec["expect_disputed_before_review"]
-          and expected_canon in canon)
+    first_seq = first["claim"]["seq"]
+    pinned = server.call("GET", f"/v1/versions/{vid}/facts", query={"as_of_seq": first_seq})
+    old_canon = [r["normalized_text"] for r in pinned["facts"] if r.get("status") == "accepted"]
+    expected_old = f"{spec['subject']}.{spec['key']}={spec['first_value']}"
+    findings = server.call("GET", f"/v1/versions/{vid}/findings")["findings"]
+
+    def is_conflict(finding):
+        return finding.get("rule_id") == "gate.ledger-conflict" and finding.get("severity") == "block"
+
+    checks = {
+        "first claim accepted": first["claim"]["status"] == "accepted",
+        "second claim disputed": second["claim"]["status"] == "disputed",
+        "conflict finding returned": any(is_conflict(f) for f in second["findings"]),
+        "disputed slice": (len(rows) == spec["expect_disputed_before_review"]
+                           and any(r["id"] == second["claim"]["id"] and r["status"] == "disputed" for r in rows)),
+        "correction accepted": correction["claim"]["status"] == "accepted",
+        "canon after review": canon == [expected_canon],
+        "point-in-time canon": (pinned["as_of_seq"] == first_seq and old_canon == [expected_old]),
+        "conflict finding persisted": any(
+            f["seq"] == second["claim"]["seq"] and is_conflict(f["finding"]) for f in findings
+        ),
+    }
+    failed = [name for name, ok in checks.items() if not ok]
     detail = (f"second claim {second['claim']['status']}, {len(rows)} disputed before review, "
-              f"canon after review {sorted(canon)}")
-    return ("PASS" if ok else "FAIL"), detail
+              f"canon after review {sorted(canon)}, as_of_seq={first_seq} {old_canon}, "
+              f"persisted conflict {'ok' if checks['conflict finding persisted'] else 'FAIL'}")
+    if failed:
+        detail += "; failed: " + ", ".join(failed)
+    return ("FAIL" if failed else "PASS"), detail
 
 
 def main(argv: list[str]) -> int:
@@ -197,6 +224,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--ledger", action="store_true", help="also run and grade the memory-governance sequence")
     parser.add_argument("--out", default="results.json")
     args = parser.parse_args(argv)
+    if args.ledger and not args.rw_token:
+        parser.error("--ledger needs --rw-token")
 
     key = json.loads(pathlib.Path(args.key).read_text(encoding="utf-8"))
     runbook = key["runbook"]
@@ -234,8 +263,6 @@ def main(argv: list[str]) -> int:
         print(f"{case['id']:5} {caller:22} {ev:9} {an:7} {hard:5} {notes}")
 
     if args.ledger:
-        if not args.rw_token:
-            sys.exit("--ledger needs --rw-token")
         status, detail = grade_ledger(args.base_url, args.rw_token, key)
         results.append({"id": "ledger", "verdict": status, "detail": detail})
         if status != "PASS":

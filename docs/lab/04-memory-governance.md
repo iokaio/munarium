@@ -13,7 +13,7 @@ This page is optional on a first pass. Come back to it once the retrieval scorec
 
 The worked corpus contains one planted disagreement. Ticket T-1042 (2025) tells a technician to
 perform step 4 of the revision A calibration; service bulletin SB-07 (2026) withdraws that step.
-An extraction pass working through the corpus in folder order meets the ticket first.
+The helper deliberately proposes the ticket's reading before the bulletin's reading.
 [example/lab.py](example/lab.py) `ledger` runs the sequence and prints every response:
 
 ```console
@@ -58,9 +58,12 @@ runs the sequence and checks them:
 
 | Expectation | Why |
 |---|---|
+| The first proposal and the correction are accepted | Both writes established canon |
 | The second proposal lands `disputed`, not `accepted` and not rejected | The gate caught the contradiction and kept it |
-| Exactly one disputed fact before review | The review queue has the case, and only the case |
-| Canon after the correction equals the reviewed value | The front-door supersession worked and the old value remains readable at its sequence |
+| Exactly one disputed fact before review, naming the second claim | The review queue has the case, and only the case |
+| Canon after the correction contains only the reviewed value | Supersession removed the old value from current canon |
+| The pinned read returns only the first value at the first claim's sequence | The old canon remains readable after correction |
+| A `gate.ledger-conflict` block finding appears in the write response and persists at the second claim's sequence | The audit survives beyond the write response |
 
 "Disputed is a success status." A lab that grades governance is looking for the block finding;
 its absence on a planted contradiction is the failure.
@@ -68,8 +71,9 @@ its absence on a planted contradiction is the failure.
 For your own corpus, plant the contradictions the key already names in the retrieval cases (the
 conflict family in [03-grading.md](03-grading.md)) and extract their facts with the subject and
 key discipline above. A contradiction the ledger did not catch is almost always a spelling: two
-subjects for one entity, or a key with a dot in it. The shape's fact schema is where that
-discipline is enforced, which is why the example shape declares one.
+subjects for one entity, or a key with a dot in it. This helper submits explicit ledger claims
+to a new lineage; it does not extract claims from the documents or attach the collection's
+shape to that lineage. It exercises the ledger gates independently of the retrieval index.
 
 ## Where to go next
 

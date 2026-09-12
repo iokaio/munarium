@@ -74,7 +74,7 @@ expected to fail, or, better, as a runbook variant that must never exist.
 and `grade.py --ledger` reports:
 
 ```text
-ledger PASS: second claim disputed, 1 disputed before review, canon after review ['hx200_rev_a_calibration.step_4=withdrawn']
+ledger PASS: second claim disputed, 1 disputed before review, canon after review ['hx200_rev_a_calibration.step_4=withdrawn'], as_of_seq=1 ['hx200_rev_a_calibration.step_4=required'], persisted conflict ok
 ```
 
 ## With a local model

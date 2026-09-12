@@ -26,6 +26,11 @@ Dev-guide §21 step 8 introduced the vocabulary with three kinds; a lab needs a 
 | `contains_all: [terms]` | Every term appears in the completion text | yes |
 | `insufficient: true` | The completion declares that the evidence does not establish an answer. A confident answer fails. Under §17's fourth lesson insufficiency is a success state, and the negative control proves the assistant can reach it | yes |
 
+The answer checks are substring heuristics. They do not establish semantic correctness:
+an answer can include a required term while denying it, or mention "insufficient evidence"
+and then invent a cause. Review the saved answers for those failures. Likewise, `must_not_cite`
+checks retrieved paths; it does not detect restricted facts repeated only in completion text.
+
 Write the evidence expectations first. They are the ones that never need a provider, and they
 locate a failure in the retrieval path before a prompt can hide it.
 
@@ -57,11 +62,13 @@ scoped callers added. For each case it:
    clearance filter decides which collections the case can see;
 3. sends one turn, with `complete` on or off;
 4. applies the deterministic checks to `hits[].source_path` and `completion.text`;
-5. prints one scorecard row and writes the full turn response to `results.json`.
+5. prints one scorecard row and writes the question and full turn response to `results.json`.
+   Each result's `turn` field preserves hit text and scores, index envelopes, session identity,
+   and any additional server response fields alongside the compact scorecard.
 
 It exits `0` only when every grade that ran passed. A hard fail or any failed grade exits `1`. If
-answer grades were requested and a turn came back without a completion, it exits `2` rather than
-counting the missing grade as anything.
+answer grades were requested and a turn came back without a completion, it exits `2` unless
+another check already failed (exit `1` takes precedence).
 
 ### Keyless first, always
 

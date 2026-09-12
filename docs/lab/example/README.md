@@ -116,7 +116,14 @@ py grade.py --base-url http://127.0.0.1:8080 --mgmt-token <mgmt> --rw-token <rw>
 The first prints the seven-step sequence from [04-memory-governance.md](../04-memory-governance.md):
 accepted, disputed with `gate.ledger-conflict`, the disputed slice, the correction, canon at the
 head and at sequence 1, the persisted finding. The second checks the key's `ledger` expectations
-and reports `ledger PASS`.
+and reports `ledger PASS` only when the correction leaves exactly the reviewed canon, the
+historical read still returns the first value, and the conflict finding is returned and persisted.
+
+The offline regression tests for the grader and documentation gate run from the repository root:
+
+```console
+py -m unittest discover -s scripts -p "test_*.py"
+```
 
 ## 7. Grade with a local model (optional)
 

@@ -34,8 +34,8 @@ DOCS = ROOT / "docs"
 # checked; the index rule is not applied to it.
 DATA_DIR_NAMES = {"corpus"}
 
-LINK = re.compile(r"(?<!!)\[[^\]]*\]\(<?([^)>\s]+)>?(?:\s+\"[^\"]*\")?\)")
-FENCE = re.compile(r"^\s*(```|~~~)")
+LINK = re.compile(r"!?\[[^\]]*\]\(<?([^)>\s]+)>?(?:\s+\"[^\"]*\")?\)")
+FENCE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
 
 
 def markdown_files() -> list[pathlib.Path]:
@@ -47,12 +47,16 @@ def markdown_files() -> list[pathlib.Path]:
 
 def links_in(text: str) -> list[tuple[int, str]]:
     out: list[tuple[int, str]] = []
-    fenced = False
+    fence = None
     for lineno, line in enumerate(text.splitlines(), 1):
-        if FENCE.match(line):
-            fenced = not fenced
+        marker = FENCE.match(line)
+        if fence is not None:
+            if (marker and marker[1][0] == fence[0]
+                    and len(marker[1]) >= len(fence) and not marker[2].strip()):
+                fence = None
             continue
-        if fenced:
+        if marker:
+            fence = marker[1]
             continue
         for match in LINK.finditer(line):
             target = match.group(1)
@@ -76,7 +80,8 @@ def main() -> int:
             if not resolved.exists():
                 rel = file.relative_to(ROOT).as_posix()
                 findings.append(f"{rel}:{lineno}: broken link -> {target}")
-            elif file.name == "README.md" and resolved.suffix == ".md":
+            elif (file.name == "README.md" and resolved.suffix == ".md"
+                  and file.parent.resolve() in resolved.parents):
                 linked_from_index.add(resolved)
 
     def is_data(path: pathlib.Path) -> bool:
