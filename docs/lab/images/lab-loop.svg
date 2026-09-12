@@ -1,0 +1,194 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title description">
+  <title id="title">The Munarium memory governance loop</title>
+  <desc id="description">A disposable Munarium Server contains a corpus slice, shape, runbook, verified index and governed ledger. An independent grader keeps the answer key outside the Server, opens a fresh scoped session per case, and grades returned evidence and optional model answers. The scorecard drives one change at a time, using the same key and fresh sessions before every production index build.</desc>
+  <defs>
+    <linearGradient id="night" x2="0.8" y2="1">
+      <stop stop-color="#071321"/>
+      <stop offset="0.55" stop-color="#040c16"/>
+      <stop offset="1" stop-color="#081525"/>
+    </linearGradient>
+    <linearGradient id="panel" x2="0.8" y2="1">
+      <stop stop-color="#102337"/>
+      <stop offset="1" stop-color="#081421"/>
+    </linearGradient>
+    <linearGradient id="gold-panel" x2="0" y2="1">
+      <stop stop-color="#25251f"/>
+      <stop offset="1" stop-color="#101b25"/>
+    </linearGradient>
+    <linearGradient id="gold">
+      <stop stop-color="#8b6938"/>
+      <stop offset="0.5" stop-color="#f1d291"/>
+      <stop offset="1" stop-color="#ad8446"/>
+    </linearGradient>
+    <radialGradient id="halo">
+      <stop stop-color="#185a8f" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="#185a8f" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="stars" width="90" height="90" patternUnits="userSpaceOnUse">
+      <circle cx="12" cy="20" r="0.8" fill="#72baf0" opacity="0.35"/>
+      <circle cx="61" cy="68" r="0.6" fill="#9cc6e4" opacity="0.2"/>
+    </pattern>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000810" flood-opacity="0.45"/>
+    </filter>
+    <marker id="blue-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M1 1 9 5 1 9" fill="none" stroke="#79c5fc" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="gold-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M1 1 9 5 1 9" fill="none" stroke="#dfbc7b" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <g id="document" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 5h19l9 9v30H9z M28 5v10h9 M16 23h14 M16 29h14 M16 35h9"/>
+      <path d="M5 12H2v37h28v-2" opacity="0.45"/>
+    </g>
+    <g id="shape" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m24 4 20 11v23L24 49 4 38V15z M4 15l20 12 20-12 M24 27v22 M14 10l20 12v11"/>
+      <circle cx="24" cy="27" r="3" fill="#102337"/>
+    </g>
+    <g id="runbook" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 7h14l5 4 5-4h14v35H29l-5 4-5-4H5z M24 11v35 M11 17h7 M11 24h7 M11 31h7 M30 17h7 M30 24h7 M30 31h7"/>
+    </g>
+    <g id="database" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+      <ellipse cx="25" cy="10" rx="21" ry="7"/>
+      <path d="M4 10v31c0 9 42 9 42 0V10 M4 21c0 9 42 9 42 0 M4 31c0 9 42 9 42 0"/>
+      <path d="M10 20v20 M15 22v20" opacity="0.25"/>
+    </g>
+    <g id="ledger" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M8 4h32v42H8z M14 4v42 M21 13h12 M21 21h12 M21 29h6"/>
+      <circle cx="38" cy="38" r="11" fill="#0d1e2e"/>
+      <path d="m33 38 4 4 7-8"/>
+    </g>
+    <g id="lock" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 22v-9a12 12 0 0 1 24 0v9 M7 22h34v27H7z"/>
+      <circle cx="24" cy="33" r="3"/><path d="M24 36v5"/>
+    </g>
+    <g id="session" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="18" cy="12" r="7"/><path d="M5 37v-7c0-12 26-12 26 0v7 M33 11h11v24H34 M38 18h2 M38 24h2"/>
+    </g>
+    <g id="scorecard" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M8 4h33v43H8z M16 4v-2h17v2 M15 16l2 2 4-5 M26 16h8 M15 27l2 2 4-5 M26 27h8 M15 37h6 M26 37h8"/>
+    </g>
+    <style>
+      text { font-family: 'Segoe UI', Arial, sans-serif; }
+      .serif { font-family: Georgia, 'Times New Roman', serif; }
+      .eyebrow { font-size: 13px; font-weight: 600; letter-spacing: 2.2px; }
+      .label { font-size: 23px; font-weight: 600; fill: #ecf2f6; }
+      .body { font-size: 18px; fill: #b7c9d8; }
+      .small { font-size: 16px; fill: #aac0d3; }
+      .blue { color: #83cdff; }
+      .gold { color: #e4c184; }
+    </style>
+  </defs>
+
+  <!-- Explicit background and native SVG artwork keep the figure portable. -->
+  <rect width="1440" height="900" rx="18" fill="url(#night)"/>
+  <rect width="1440" height="900" rx="18" fill="url(#stars)"/>
+  <ellipse cx="450" cy="440" rx="580" ry="410" fill="url(#halo)"/>
+  <g fill="none" stroke="#366181" opacity="0.12">
+    <ellipse cx="449" cy="438" rx="436" ry="348"/>
+    <ellipse cx="449" cy="438" rx="451" ry="363"/>
+    <path d="M22 840h1396 M22 848h1396"/>
+  </g>
+
+  <!-- Editorial header: Munarium's midnight blue, warm gold and serif type. -->
+  <text x="720" y="43" text-anchor="middle" class="eyebrow" fill="#debe83">MUNARIUM · BUILD YOUR OWN LAB</text>
+  <text x="720" y="104" text-anchor="middle" class="serif" font-size="48" fill="#f5ead5">The memory governance loop</text>
+  <text x="720" y="140" text-anchor="middle" font-size="20" fill="#b8ccdc">A disposable rig. An independent answer key. Evidence for every change.</text>
+  <path d="M420 164h288 M732 164h288" stroke="#c29b5e" opacity="0.7"/>
+  <path d="m720 158 6 6-6 6-6-6z" fill="none" stroke="#d4ae6d"/>
+
+  <!-- The Server boundary contains the candidate, never the answer key. -->
+  <rect x="56" y="196" width="780" height="466" rx="18" fill="url(#panel)" stroke="#386385" filter="url(#shadow)"/>
+  <path d="M80 196h150 M56 220v70 M662 662h150 M836 568v70" fill="none" stroke="#77bff0" stroke-width="2"/>
+  <circle cx="80" cy="196" r="3" fill="#a2dcff" filter="url(#glow)"/>
+  <text x="88" y="227" class="eyebrow" fill="#85c7f4">01 / PREPARE THE CANDIDATE</text>
+  <text x="88" y="269" class="serif" font-size="34" fill="#f0e6d2">A disposable Server</text>
+  <text x="802" y="266" text-anchor="end" class="small">Pinned image · isolated database</text>
+
+  <g fill="#0a1929" stroke="#31516d">
+    <rect x="88" y="298" width="222" height="130" rx="10"/>
+    <rect x="334" y="298" width="222" height="130" rx="10"/>
+    <rect x="580" y="298" width="224" height="130" rx="10"/>
+  </g>
+  <use href="#document" x="104" y="316" class="blue"/>
+  <text x="159" y="345" class="label">Corpus slice</text>
+  <text x="108" y="386" class="body">Documents &amp; prefixes</text>
+  <text x="108" y="410" class="small">Read-only mount</text>
+  <use href="#shape" x="350" y="313" class="blue"/>
+  <text x="406" y="345" class="label">Shape</text>
+  <text x="354" y="386" class="body">Chunks &amp; fact schema</text>
+  <text x="354" y="410" class="small">Versioned representation</text>
+  <use href="#runbook" x="596" y="315" class="blue"/>
+  <text x="652" y="345" class="label">Runbook</text>
+  <text x="600" y="386" class="body">Scope &amp; model policy</text>
+  <text x="600" y="410" class="small">Versioned application</text>
+
+  <g fill="none" stroke="#4d86b0" stroke-width="1.5">
+    <path d="M199 428v32h90 M692 428v32h-88 M445 428v14"/>
+  </g>
+  <text x="446" y="466" text-anchor="middle" font-size="16" letter-spacing="1.6" fill="#d8be8f">RUN · VERIFY · APPROVE</text>
+
+  <g fill="#0b1c2c" stroke="#446987">
+    <rect x="88" y="492" width="342" height="138" rx="10"/>
+    <rect x="450" y="492" width="354" height="138" rx="10"/>
+  </g>
+  <circle cx="129" cy="534" r="31" fill="#10283b" stroke="#355d7b"/>
+  <use href="#database" x="104" y="509" class="blue"/>
+  <text x="174" y="540" class="label">Verified index</text>
+  <text x="108" y="586" class="body">Scoped retrieval + provenance</text>
+  <text x="108" y="611" class="small">Evidence for each answer</text>
+  <circle cx="491" cy="534" r="31" fill="#1b252b" stroke="#786540"/>
+  <use href="#ledger" x="466" y="509" class="gold"/>
+  <text x="536" y="540" class="label">Governed ledger</text>
+  <text x="470" y="586" class="body">Dispute · review · supersede</text>
+  <text x="470" y="611" class="small">History remains readable</text>
+
+  <!-- Independent evaluator: the answer key has no route into the rig. -->
+  <rect x="1036" y="196" width="348" height="466" rx="18" fill="url(#panel)" stroke="#8a7048" filter="url(#shadow)"/>
+  <path d="M1060 196h110 M1384 220v70 M1058 662h110" fill="none" stroke="url(#gold)" stroke-width="2"/>
+  <text x="1060" y="227" class="eyebrow" fill="#dfbf85">02 / GRADE INDEPENDENTLY</text>
+  <text x="1060" y="269" class="serif" font-size="30" fill="#f0e6d2">Outside the Server</text>
+
+  <rect x="1060" y="298" width="300" height="100" rx="10" fill="url(#gold-panel)" stroke="#9b8050"/>
+  <use href="#lock" x="1075" y="317" class="gold"/>
+  <text x="1138" y="335" class="label" style="fill:#f1d69f">Answer key</text>
+  <text x="1138" y="364" class="small" style="fill:#d7c6a6">Never uploaded</text>
+  <text x="1138" y="385" class="small" style="fill:#d7c6a6">Never mounted</text>
+
+  <path d="M1210 398v17" stroke="#8e794f" stroke-width="1.5"/>
+  <rect x="1060" y="416" width="300" height="93" rx="10" fill="#0b1c2c" stroke="#446987"/>
+  <use href="#session" x="1076" y="435" class="blue"/>
+  <text x="1138" y="453" class="label">Fresh session</text>
+  <text x="1138" y="482" class="small">Scoped caller · one case</text>
+
+  <path d="M1210 509v20" stroke="#4d86b0" stroke-width="1.5" marker-end="url(#blue-arrow)"/>
+  <rect x="1060" y="538" width="300" height="92" rx="10" fill="#0b1c2c" stroke="#446987"/>
+  <use href="#scorecard" x="1076" y="557" class="gold"/>
+  <text x="1138" y="573" class="label">Scorecard</text>
+  <text x="1138" y="601" class="small">Evidence + answer grades</text>
+
+  <!-- Separate, labeled request and response paths keep direction unambiguous. -->
+  <g fill="none" stroke="#7dc8fc" stroke-width="2">
+    <path d="M1035 440H839" marker-end="url(#blue-arrow)"/>
+    <path d="M837 494h196" marker-end="url(#blue-arrow)"/>
+  </g>
+  <circle cx="1036" cy="440" r="3" fill="#c0e8ff" filter="url(#glow)"/>
+  <circle cx="836" cy="494" r="3" fill="#c0e8ff" filter="url(#glow)"/>
+  <text x="936" y="425" text-anchor="middle" font-size="18" fill="#a0d7fb">Scoped turn</text>
+  <text x="936" y="521" text-anchor="middle" font-size="18" fill="#a0d7fb">Hits + answer</text>
+  <text x="936" y="547" text-anchor="middle" font-size="14" fill="#90a9bf">Model optional</text>
+
+  <!-- The gold return path is the experiment loop, not a production data path. -->
+  <path d="M1210 662v37q0 17-17 17H215q-16 0-16-16v-36" fill="none" stroke="#d1aa69" stroke-width="2" marker-end="url(#gold-arrow)"/>
+  <rect x="391" y="696" width="658" height="40" rx="20" fill="#081421" stroke="#645334"/>
+  <text x="720" y="722" text-anchor="middle" font-size="17" fill="#e6c58d">03 / REFINE · One variable · Same key · Fresh sessions</text>
+
+  <rect x="56" y="765" width="1328" height="94" rx="12" fill="#0a1826" stroke="#35495b"/>
+  <path d="M80 790v44" stroke="#d8b577" stroke-width="3"/>
+  <text x="103" y="803" class="serif" font-size="29" fill="#f0e6d2">Measure before every production index build.</text>
+  <text x="104" y="834" font-size="18" fill="#b7c9d8">Keep the scorecard, corpus manifest, configuration versions and index identities with the release decision.</text>
+</svg>

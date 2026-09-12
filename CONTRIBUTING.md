@@ -56,6 +56,8 @@ Rules the gates enforce that are easy to trip:
 - **Documentation.** Every directory under a component's `docs/` has an index; an unlisted document
   is an unread document. The server's `docs_coverage` test fails the build when a served route or a
   problem slug is missing from the API reference, or when a relative link under `docs/` is dead.
+  The root `docs/` tree and the root markdown files are held to the same two rules by
+  `scripts/docs_linkcheck.py`, which the repository-wide hygiene workflow runs.
 - **Migrations are additive-only**, enforced in CI. This repository has been at 1.0 since its first
   release, so an applied migration is never edited: `sqlx` validates a checksum per migration and
   an edit stops the server booting against any existing database.

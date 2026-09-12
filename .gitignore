@@ -10,6 +10,10 @@ Thumbs.db
 .idea/
 .vscode/
 
+# Local agent guidance. Keep the two root copies identical and untracked.
+/AGENTS.md
+/CLAUDE.md
+
 # Build output and tool residue wherever a toolchain leaves it. None of these
 # names is a source directory in this tree (Rust `src/bin/` is not matched).
 **/target/
@@ -151,3 +155,10 @@ clients/Thumbs.db
 # The release-time copy of server/proto that cargo package needs inside the
 # crate; the normative protos stay at server/proto and this must never land.
 server/src/munarium-proto/proto/
+
+# ------------------------------------------------------------- docs/ ---
+# The lab example's local secrets and the files a run writes beside them.
+docs/lab/example/.env
+docs/lab/example/ingest-manifest.json
+docs/lab/example/results*.json
+docs/lab/example/ledger-results.json

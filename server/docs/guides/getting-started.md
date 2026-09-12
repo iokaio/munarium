@@ -359,8 +359,10 @@ binding. When you want generation:
 
 The main walkthrough stops at verified retrieval. Follow
 [Creating a laboratory](creating-a-lab.md) to improve your shapes and runbooks
-for real corpora, and [Retrieval sizing](retrieval-sizing.md) to choose candidate,
-context and output limits appropriate to those corpora.
+for real corpora, [Build your own AI memory governance lab](../../../docs/lab/README.md)
+to grade them against an answer key before production, and
+[Retrieval sizing](retrieval-sizing.md) to choose candidate, context and output
+limits appropriate to those corpora.
 
 ## Common first-run problems
 
