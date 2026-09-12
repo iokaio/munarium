@@ -76,6 +76,11 @@ side, and the worked example grades both.
 - [Loading corpora](../../server/docs/guides/loading-corpora.md) and
   [Retrieval sizing](../../server/docs/guides/retrieval-sizing.md) are the operational references
   for the two decisions a lab exists to test.
+- The [Munarium Demo](https://github.com/iokaio/munarium-demo) repository holds larger labs of
+  the same shape. Its retrieval evaluation bench varies one retrieval setting at a time over a
+  labelled workload, and its invoice-exception and master-data-reconciliation demos generate a
+  corpus and an answer key from a seed, reproducibly, with the key mounted where neither the
+  Server nor the model can read it. Start there when the twelve-document example is outgrown.
 
 ## Scope
 
