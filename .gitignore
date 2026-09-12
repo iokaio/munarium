@@ -10,6 +10,10 @@ Thumbs.db
 .idea/
 .vscode/
 
+# Local agent guidance. Keep the two root copies identical and untracked.
+/AGENTS.md
+/CLAUDE.md
+
 # Build output and tool residue wherever a toolchain leaves it. None of these
 # names is a source directory in this tree (Rust `src/bin/` is not matched).
 **/target/
