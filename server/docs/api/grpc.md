@@ -9,13 +9,14 @@ reference is [grpc-reference.md](grpc-reference.md) — regenerate with
 
 | Service | Purpose |
 |---|---|
+| `mmp.v1.ServerApiService` | Server 1.2 complete named API: every documented REST operation, including vocabulary, answers, reports, authoring, source metadata, bulk ingest and server-streaming turns. Same handlers, authorization and audit as REST. See the [complete API guide](../../../clients/docs/guides/server-1.2.md). |
 | `mmp.v1.CommandService` | writes through the gates: CreateVersion, ProposeClaim, AppendEvents, OpenPromise, FulfillPromise, LockAnchor, RecordCounts, UpsertDigest |
 | `mmp.v1.QueryService` | GetHead, GetClaim, SliceFacts, GetLineage, ListAnchors, ListPromises, ComposeContext, CounterTotals, ListDigests — every read takes `as_of_seq` |
 | `mmp.v1.RetrievalService` | HybridSearch (+ ProvenanceEnvelope), GetIndexVersion; collection twins: CreateCollection, ListCollections, GetCollection |
 | `mmp.v1.IngestService` | PutSource (client-streaming, content-addressed), RecordIngest; REST twin: IngestFiles (1..500, native bytes, per-item outcomes) |
 | `mmp.v1.RunbookService` | ApplyShape, ApplyRunbook, RunRunbook, GetRun, ApproveStep; REST twins: ListRunbooks, GetRunbookInfo, ValidateRunbook, RequestRemoval, ConfirmRemoval |
 | `mmp.v1.ProviderService` | ApplyProviderConfig, ProviderHealth, Complete, Embed |
-| `mmp.v1.SessionService` | multiturn sessions (2026-08-18): CreateSession / Turn / GetSession / CloseSession — data-plane auth (capability JWT + `munarium-uid`); no streaming turn RPC (SSE is REST-only) |
+| `mmp.v1.SessionService` | CreateSession / Turn / GetSession / CloseSession — data-plane auth (capability JWT + `munarium-uid`). Streaming turns use `ServerApiService/TurnStream`. |
 | `mmp.v1.AdminService` | **partially served** (2026-08-18): Issue/List/RevokeAccessToken (mgmt role — the tokens plane's gRPC twin); CreateTenant/ListTenants/Usage answer UNIMPLEMENTED honestly |
 | `grpc.health.v1.Health` | standard health checking (tonic-health) |
 
@@ -151,28 +152,19 @@ proto3 zero-sentinel rules, and surface the documented transport gaps as typed e
 
 ## Plane parity notes
 
-- The management reporting views added 2026-08-17 — `GET /v1/reports/timeseries`,
-  `/v1/reports/endpoints`, `/v1/reports/runbooks`, `/v1/reports/sessions` — and the
-  `/admin` HTML dashboards are **REST-only management surfaces by design** (same
-  posture as the existing reports routes): they serve operators and browsers, not
-  data-plane clients, and get no gRPC twins.
-- Additional REST-only operations: `GET /v1/versions/{id}/findings`, the promises overdue view
-  (`?overdue_scope=`/`?final=`), and the chronology-rules asset routes
-  (`POST/GET /v1/chronology-rules`). The chronology GATE itself runs on BOTH
-  planes — arming is per-version, so gRPC `ProposeClaim`/`AppendEvents` against
-  an armed version draw the same `gate.chronology-*` findings.
-  Session close has a gRPC twin, `SessionService/CloseSession`.
-- `ClaimOrigin` is on BOTH planes (`ProposeClaimRequest.origin`,
-  `Claim.origin`; the conformance scenario `ledger.origin-round-trips` runs on
-  mem, pg, REST and gRPC). `POST /v1/versions/{id}/findings` is **REST-only**
-  by the same rule as the findings read it pairs with; `rule_prefix=` on the
-  read is REST-only likewise.
-- Token budgets (2026-09-02): `GET`/`POST /v1/max-tokens` — the eight per-call
-  output-token ceilings, read and replaced as a whole — are **REST-only** by
-  the same rule as the provider-config and report surfaces they sit beside:
-  an operator setting, not a data-plane call. The clients raise their
-  unsupported-transport error on gRPC. Reference:
-  [../tokenbudgets.md](../tokenbudgets.md).
+- Server 1.2 supplies a named `ServerApiService` RPC for every documented REST
+  operation, including reports, findings, chronology rules, provider budgets,
+  authoring, bulk ingest, artifact administration and streaming turns. Operator
+  role requirements are preserved; being a management operation is not a
+  transport exception. `/admin` HTML and `/docs` Swagger UI remain browser
+  representations, not additional programmatic APIs.
+- The complete API request preserves optional query values (including zero),
+  explicit JSON null and 64-bit integers. Existing specialized RPCs retain their
+  historical proto3 scalar conventions; use the complete API for exact REST
+  payload parity. Both dispatch to the same validation and service code.
+- `ClaimOrigin` is on both transports. Findings reads/writes, `rule_prefix`,
+  overdue-promise filters and per-call token budgets are also available through
+  the complete API. See [token budgets](../tokenbudgets.md).
 - `ApplyShape` accepts an optional `version_id`; when set, the publication is recorded as a
   ledger claim and `event_id` is returned — identical to REST `POST /v1/shapes?version_id=`.
 - `ApplyRunbookResponse.event_id` and `ApproveStepResponse.event_id` are **reserved-empty** on
@@ -186,7 +178,7 @@ proto3 zero-sentinel rules, and surface the documented transport gaps as typed e
   ignoring them.
 
 Server 1.2 vocabulary CRUD/settings/refresh, explicit vocabulary-scoped search and
-checked narrative answers under `/v1.2/` are REST-only. Existing gRPC session turns
-use the shared collection-vocabulary retrieval path. Existing hit metadata can carry
-new pinned locations without a protobuf change. See the
+checked narrative answers under `/v1.2/` have native RPCs and methods in all four
+Server SDKs. Existing gRPC session turns also use the shared collection-vocabulary
+retrieval path. Hit metadata carries pinned source locations. See the
 [1.2 guide](../guides/collection-vocabularies.md).

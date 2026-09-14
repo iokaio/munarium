@@ -53,8 +53,14 @@ from ._errors import (
 )
 from ._options import TARGET_SERVER_VERSION, ClientOptions, WriteLoopOptions
 from ._retry import sleep_async, sleep_sync
+from ._server_api import ApiRequest, ApiResponse
+from .server_api import AsyncServerApiClient, ServerApiClient
 
 __all__ = [
+    "ApiRequest",
+    "ApiResponse",
+    "AsyncServerApiClient",
+    "ServerApiClient",
     "TARGET_SERVER_VERSION",
     "AsyncMunariumClient",
     "ChunkSource",

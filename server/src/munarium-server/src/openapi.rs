@@ -148,6 +148,7 @@ impl Modify for SecurityAddon {
         crate::rest::healthz,
         crate::rest::readyz,
         crate::rest::version_info,
+        crate::rest::openapi_json,
         crate::providers_api::apply_provider,
         crate::providers_api::list_providers,
         crate::providers_api::provider_health,

@@ -24,6 +24,7 @@
 
 mod platform_smoke;
 mod scenarios;
+mod server_api;
 mod smoke;
 
 use munarium_client::{MunariumClient, MunariumClientOptions};
@@ -119,6 +120,12 @@ async fn main() {
     }
 
     if smoke {
+        if let Some(endpoint) = &rest {
+            failed += server_api::run(endpoint, &token, false).await;
+        }
+        if let Some(endpoint) = &grpc {
+            failed += server_api::run(endpoint, &token, true).await;
+        }
         match &rest_client {
             Some(rest) => {
                 failed += smoke::run(rest, grpc_client.as_ref()).await;

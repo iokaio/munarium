@@ -35,6 +35,7 @@
        unwrapped by the client. -->
   <ItemGroup>
     <Protobuf Include="..\..\..\..\server\proto\mmp\v1\common.proto" ProtoRoot="..\..\..\..\server\proto" GrpcServices="None" />
+    <Protobuf Include="..\..\..\..\server\proto\mmp\v1\server_api.proto" ProtoRoot="..\..\..\..\server\proto" GrpcServices="Client" />
     <Protobuf Include="..\..\..\..\server\proto\mmp\v1\ledger.proto" ProtoRoot="..\..\..\..\server\proto" GrpcServices="None" />
     <Protobuf Include="..\..\..\..\server\proto\mmp\v1\command.proto" ProtoRoot="..\..\..\..\server\proto" GrpcServices="Client" />
     <Protobuf Include="..\..\..\..\server\proto\mmp\v1\query.proto" ProtoRoot="..\..\..\..\server\proto" GrpcServices="Client" />

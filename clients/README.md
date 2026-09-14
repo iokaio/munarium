@@ -53,13 +53,21 @@ first one, `1.0.0` on both sides) is a coincidence of that release, not a rule g
 `clients/check_compatibility.py` fails CI if `compatibility.json`'s recorded version for a
 language ever drifts from what that language's own manifest declares.
 
-The four Server clients target **Server 1.1.1**, with supported minor versions **1.1 and 1.0** recorded in `compatibility.json`. Client packages remain **1.0.0** because they version independently: these Server releases require no new wire fields or MMP major. Matrix clients remain on **Matrix 1.0**, independently of Server compatibility.
+The four Server client packages are **1.1.0**, targeting **Server 1.2.0**, with
+supported Server minors **1.2 and 1.1** recorded in `compatibility.json`.
+`ServerApiClient` provides every documented operation over REST and native gRPC,
+including vocabulary, answers, source references and streaming turns. Read the
+[Server 1.2 guide](docs/guides/server-1.2.md) for language examples. Existing typed
+`MunariumClient` planes retain their Server 1.1 baseline and historical transport
+limitations; the complete API client closes those gaps on Server 1.2. Matrix
+clients remain on **Matrix 1.0**, independently of Server compatibility.
 
 | Server version | Client-visible behavior |
 |---|---|
 | 1.0 | Existing cloud providers and the baseline MMP 1 operations, subject to the transport gaps below |
 | 1.1.0 | Adds named Ollama configurations, credential-free local endpoints, completion, embedding, and named health checks through the existing provider fields |
-| 1.1.1 (target) | An allowed session model override controls both query expansion and completion; invalid/disallowed overrides are rejected before expansion calls a provider |
+| 1.1.1 | An allowed session model override controls both query expansion and completion; invalid/disallowed overrides are rejected before expansion calls a provider |
+| 1.2.0 (target) | Complete named API on both transports, collection vocabulary generation/management, checked narrative answers and pinned file locations |
 
 Without an override, each task retains its configured model. Nonempty overrides on retrieval-only turns are rejected. Higher tiers can now increase expansion cost as well as completion cost. Use the [Server 1.1.1 alignment guide](docs/guides/server-1.1.1.md) for setup, feature requirements, and validation. Supporting the 1.0 baseline does not backport Ollama or the 1.1.1 routing fix.
 

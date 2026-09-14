@@ -58,7 +58,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent          # server/contract/mmp
 SERVER = HERE.parent.parent                     # server/
-PROTOS = ["common", "ledger", "command", "query", "retrieval", "ingest", "runbook", "provider", "admin", "session"]
+PROTOS = ["common", "ledger", "command", "query", "retrieval", "ingest", "runbook", "provider", "admin", "session", "server_api"]
 SPDX = "// SPDX-License-Identifier: Apache-2.0\n"
 PUBLIC_LICENSE = "Apache-2.0"
 # The canonical copies of the two wire crates carry their own SPDX line. The cut removes

@@ -13,13 +13,83 @@ use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 use tower::ServiceExt;
 
+struct TestApi {
+    rest: axum::Router,
+    grpc: Option<tonic::transport::Channel>,
+}
+
 async fn call(
-    app: &axum::Router,
+    app: &TestApi,
     method: &str,
     path: &str,
     token: &str,
     body: Value,
 ) -> (StatusCode, Value) {
+    if let Some(channel) = &app.grpc {
+        use munarium_proto::mmp::v1 as pb;
+        let parts: Vec<_> = path.split('/').collect();
+        let mut input = pb::ServerApiRequest {
+            body: body.to_string().into_bytes(),
+            ..Default::default()
+        };
+        let operation = match (method, path) {
+            ("GET", "/v1.2/vocabulary-settings") => "GetVocabularySettings",
+            ("PUT", "/v1.2/vocabulary-settings") => "ReplaceVocabularySettings",
+            ("POST", "/v1.2/answers") => "ComposeAnswer",
+            ("POST", "/v1.2/search") => "SearchCollection",
+            _ => {
+                assert_eq!(parts[2], "collections");
+                input.path_parameters.insert("id".into(), parts[3].into());
+                match (method, parts.get(5).copied()) {
+                    ("GET", Some("revision")) => "GetVocabularyRevision",
+                    ("POST", Some("refresh")) => "RefreshCollectionVocabulary",
+                    ("GET", None) => "GetCollectionVocabulary",
+                    ("PUT", None) => "ReplaceCollectionVocabulary",
+                    ("PATCH", None) => "UpdateCollectionVocabulary",
+                    other => panic!("unmapped test operation: {other:?}"),
+                }
+            }
+        };
+        let mut request = tonic::Request::new(input);
+        request
+            .metadata_mut()
+            .insert("authorization", format!("Bearer {token}").parse().unwrap());
+        request
+            .metadata_mut()
+            .insert("munarium-uid", "fixture-user".parse().unwrap());
+        let mut client = tonic::client::Grpc::new(channel.clone());
+        client.ready().await.unwrap();
+        let result: Result<tonic::Response<pb::ServerApiResponse>, _> = client
+            .unary(
+                request,
+                format!("/mmp.v1.ServerApiService/{operation}")
+                    .parse()
+                    .unwrap(),
+                tonic::codec::ProstCodec::default(),
+            )
+            .await;
+        return match result {
+            Ok(response) => {
+                let response = response.into_inner();
+                (
+                    StatusCode::from_u16(response.status as u16).unwrap(),
+                    serde_json::from_slice(&response.body).unwrap(),
+                )
+            }
+            Err(error) => {
+                let status = match error.code() {
+                    tonic::Code::InvalidArgument => StatusCode::BAD_REQUEST,
+                    tonic::Code::PermissionDenied => StatusCode::FORBIDDEN,
+                    tonic::Code::NotFound => StatusCode::NOT_FOUND,
+                    tonic::Code::Unauthenticated => StatusCode::UNAUTHORIZED,
+                    tonic::Code::Aborted => StatusCode::CONFLICT,
+                    tonic::Code::Unavailable => StatusCode::BAD_GATEWAY,
+                    other => panic!("unexpected RPC error: {other:?} {error}"),
+                };
+                (status, Value::Null)
+            }
+        };
+    }
     let request = Request::builder()
         .method(method)
         .uri(path)
@@ -28,7 +98,7 @@ async fn call(
         .header("content-type", "application/json")
         .body(Body::from(body.to_string()))
         .unwrap();
-    let response = app.clone().oneshot(request).await.unwrap();
+    let response = app.rest.clone().oneshot(request).await.unwrap();
     let status = response.status();
     let bytes = axum::body::to_bytes(response.into_body(), 1_000_000)
         .await
@@ -41,6 +111,15 @@ async fn call(
 
 #[tokio::test]
 async fn collection_vocabulary_generation_authorization_revisions_and_query_application() {
+    vocabulary_scenario(false).await;
+}
+
+#[tokio::test]
+async fn grpc_collection_vocabulary_generation_authorization_revisions_and_query_application() {
+    vocabulary_scenario(true).await;
+}
+
+async fn vocabulary_scenario(grpc: bool) {
     let Ok(database_url) = std::env::var("MUNARIUM_TEST_DATABASE_URL") else {
         eprintln!("SKIPPED: MUNARIUM_TEST_DATABASE_URL is unset");
         return;
@@ -159,7 +238,39 @@ async fn collection_vocabulary_generation_authorization_revisions_and_query_appl
         "query-fixture".into(),
     )
     .unwrap();
-    let app = crate::rest::router(state.clone());
+    let mut grpc_task = None;
+    let channel = if grpc {
+        use munarium_proto::mmp::v1 as pb;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = format!("http://{}", listener.local_addr().unwrap());
+        let service = pb::server_api_service_server::ServerApiServiceServer::new(
+            crate::grpc_api::ServerApiSvc::new(state.clone()),
+        );
+        let capture = crate::middleware::GrpcCaptureLayer {
+            state: state.clone(),
+        };
+        grpc_task = Some(tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .layer(capture)
+                .add_service(service)
+                .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+                .await
+                .unwrap();
+        }));
+        Some(
+            tonic::transport::Channel::from_shared(address)
+                .unwrap()
+                .connect()
+                .await
+                .unwrap(),
+        )
+    } else {
+        None
+    };
+    let app = TestApi {
+        rest: crate::rest::router(state.clone()),
+        grpc: channel,
+    };
     let path = format!("/v1.2/collections/{}/vocabulary", collection.id);
     let (status, mut defaults) = call(
         &app,
@@ -383,4 +494,7 @@ async fn collection_vocabulary_generation_authorization_revisions_and_query_appl
         retained["revision"].as_i64().unwrap()
     );
     task.abort();
+    if let Some(task) = grpc_task {
+        task.abort();
+    }
 }

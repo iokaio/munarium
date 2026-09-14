@@ -1,6 +1,6 @@
 # munarium-client (Rust)
 
-Targets **Munarium Server 1.1.1**, with the Server 1.0 minor baseline retained. The client package version remains **1.0.0**. See the [1.1.1 alignment guide](../docs/guides/server-1.1.1.md) for Ollama setup, session override behavior, and validation.
+Targets **Munarium Server 1.2.0**. Client package **1.1.0** adds the complete `ServerApiClient` over REST and native gRPC, while the existing typed planes retain their Server 1.1 baseline. See the [Server 1.2 guide](../docs/guides/server-1.2.md) for vocabulary, answers, source references and every named API operation.
 
 Official Rust client for munarium-server: the full ten-plane surface
 (`commands`, `query`, `ingest`, `retrieval`, `runbooks`, `providers`,

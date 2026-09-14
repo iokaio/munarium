@@ -1,5 +1,19 @@
 # Munarium clients — release notes
 
+## 1.1.0 — Server 1.2 complete API
+
+- Add `ServerApiClient` in Rust, Python, .NET and Java with a named method for
+  every documented Server REST operation over REST and native gRPC, including
+  collection vocabulary management, answer composition and streaming turns.
+- Generate the method catalog and RPC contract from OpenAPI, with a CI drift
+  check. Preserve null/presence, 64-bit integer values, typed errors and send-once
+  behavior; route both transports through the same authorized Server handlers.
+- Target Server 1.2.0 and retain the existing typed planes' Server 1.1 baseline.
+  Matrix clients remain independent and unchanged. Package versions describe
+  source; they do not assert registry publication.
+
+See the [Server 1.2 guide](docs/guides/server-1.2.md).
+
 ## Unreleased — Server 1.1.1 alignment
 
 - Target Server 1.1.1 in the compatibility record and retain the Server 1.0 minor baseline. Client package versions remain 1.0.0; MMP major remains 1. Matrix client compatibility is unchanged.
