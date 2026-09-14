@@ -5,6 +5,22 @@ for registry availability, digests and public signing instructions.
 
 ## Unreleased — 1.2.1
 
+- Add collection-scoped query orchestration, retained publication governance,
+  and original-file authorization over REST and native gRPC. Query callers send
+  their question and collection scope; Server selects governing versions,
+  applies vocabulary, retrieves passages and composes the narrative.
+- Add append-only migration 0034 and revision-checked publication snapshots.
+  Withdrawals do not revive superseded originals; a governance change during
+  completion rejects the in-flight answer. Applications keep serving file bytes.
+- Publish model routes and budgets by exact access clearance, and apply the
+  collection's model/processing policy to vocabulary generation. Only activated
+  indexes may be registered as published sources.
+- Preserve explanatory answers and verified citations for insufficient and
+  review results. Request provider-native structured output for answer and
+  vocabulary protocols while retaining ordinary completion behavior.
+- Keep per-index BM25 statistics separate during cross-file ranking, without
+  letting index names or task completion order starve later files of context.
+- Support explicit OpenRouter downstream routing through ProviderConfig.
 - Give the answer model request-local passage IDs and map checked citations back
   to the caller's original IDs. Keep source paths, hashes and opaque caller IDs
   out of the model's citation namespace. Unknown IDs and altered quotes fail closed.

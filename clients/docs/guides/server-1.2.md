@@ -13,6 +13,25 @@ index administration, source metadata and the complete provider surface over
 either transport. New gRPC operations require Server 1.2; they are not emulated
 with HTTP network calls against an older Server.
 
+The **unreleased Server 1.2.1 candidate** extends this surface to 121 named
+operations. All four SDKs include `QueryCollections`, `GetCollectionGovernance`,
+`ReplaceCollectionGovernance` and `AuthorizePublication` (using each language's
+naming convention) over REST and gRPC. These operations require 1.2.1; a 1.2.0
+server does not supply them.
+
+A collection query supplies `question`, `collections` and optional `effective_on`.
+The capability carries the acting user's clearance and collection compartments.
+Server owns governing versions, vocabulary application, retrieval and answer
+composition. Applications transfer authoring metadata separately through the
+governance API; they do not send selected passages with a collection query.
+
+Display `content.answer` as the explanation and list `references` underneath it.
+The `insufficient` and `review` statuses may also contain explanatory prose and
+verified references. Retain those explanations. References identify indexed
+sources, never download URLs. The ingesting application maps them to retained
+originals and rechecks access with `AuthorizePublication` before serving a file.
+See the [governance and answer contract](../../../server/docs/guides/collection-vocabularies.md).
+
 ## Contract and representation
 
 [`server-api.json`](../../server-api.json) lists every method, RPC name, route,

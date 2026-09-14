@@ -1321,6 +1321,16 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/v1/indexes/{shape_ref}", get(get_index))
         .route("/v1/search", post(hybrid_search))
         .route("/v1.2/answers", post(crate::answers_api::answer))
+        .route("/v1.2/query", post(crate::query_api::query_collections))
+        .route(
+            "/v1.2/collections/{id}/publications/{publication_id}",
+            get(crate::query_api::authorize_publication),
+        )
+        .route(
+            "/v1.2/collections/{id}/governance",
+            get(crate::governance_api::get_collection_governance)
+                .put(crate::governance_api::replace_collection_governance),
+        )
         .route("/v1.2/search", post(crate::search_v12::search))
         .route(
             "/v1.2/collections/{id}/vocabulary/revision",

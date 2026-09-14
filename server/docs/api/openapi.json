@@ -152,6 +152,155 @@
         }
       }
     },
+    "/v1.2/collections/{id}/governance": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on every /v1 request (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "governance"
+        ],
+        "operationId": "get_collection_governance",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionGovernance"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "governance"
+        ],
+        "operationId": "replace_collection_governance",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectionGovernance"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionGovernance"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "revision changed"
+          }
+        }
+      }
+    },
+    "/v1.2/collections/{id}/publications/{publication_id}": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on every /v1 request (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "answers"
+        ],
+        "summary": "Authorize a retained original without downloading it or invoking a model.\nThe ingesting application owns the mapping from this identity to its bytes.",
+        "operationId": "authorize_publication",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "publication_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "effective_on",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Publication"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "historical clearance required"
+          },
+          "404": {
+            "description": "publication unavailable"
+          }
+        }
+      }
+    },
     "/v1.2/collections/{id}/vocabulary": {
       "parameters": [
         {
@@ -358,6 +507,53 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/v1.2/query": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on every /v1 request (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "answers"
+        ],
+        "operationId": "query_collections",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectionQuery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionQueryResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "query scope required"
+          },
+          "404": {
+            "description": "collection unavailable"
           }
         }
       }
@@ -5526,6 +5722,42 @@
   },
   "components": {
     "schemas": {
+      "AccessModelRoute": {
+        "type": "object",
+        "required": [
+          "access_level",
+          "provider",
+          "tier",
+          "max_context_characters",
+          "max_output_tokens",
+          "enabled"
+        ],
+        "properties": {
+          "access_level": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "max_context_characters": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_output_tokens": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "provider": {
+            "type": "string"
+          },
+          "tier": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "AnchorDto": {
         "type": "object",
         "required": [
@@ -6694,6 +6926,52 @@
           }
         }
       },
+      "CollectionGovernance": {
+        "type": "object",
+        "properties": {
+          "publications": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Publication"
+            },
+            "default": []
+          },
+          "query": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/QueryPolicy"
+              }
+            ],
+            "default": {
+              "allow_external_processing": false,
+              "candidates_per_index": 12,
+              "enabled": true,
+              "historical_access_level": 2,
+              "max_context_characters": 60000,
+              "max_output_tokens": null,
+              "max_passages": 24,
+              "model_routes": [],
+              "provider": null,
+              "retrieval_concurrency": 20,
+              "tier": null
+            }
+          },
+          "relations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DocumentRelation"
+            },
+            "default": []
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Expected current revision on PUT; the returned revision is incremented.",
+            "default": 0
+          }
+        },
+        "additionalProperties": false
+      },
       "CollectionIndexActivateRequest": {
         "type": "object",
         "description": "§7.3 logical activation of a collection's index version, as a\ncompare-and-swap. For a datastore-routed collection the server refuses to\nactivate a version without a verified `serving` binding — promote first.",
@@ -6731,6 +7009,72 @@
             "description": "The collection's active version AFTER this call, whichever way it went."
           }
         }
+      },
+      "CollectionQuery": {
+        "type": "object",
+        "required": [
+          "question",
+          "collections"
+        ],
+        "properties": {
+          "collections": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "effective_on": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Governing business date; defaults to today. It is not a caller version pin."
+          },
+          "question": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CollectionQueryResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AnswerResponse"
+          },
+          {
+            "type": "object",
+            "required": [
+              "governance_revisions",
+              "vocabulary_revisions",
+              "effective_on"
+            ],
+            "properties": {
+              "effective_on": {
+                "type": "string"
+              },
+              "governance_revisions": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "propertyNames": {
+                  "type": "string"
+                }
+              },
+              "vocabulary_revisions": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "propertyNames": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ]
       },
       "CollectionsResponse": {
         "type": "object",
@@ -7179,6 +7523,36 @@
             "type": "string"
           }
         }
+      },
+      "DocumentRelation": {
+        "type": "object",
+        "required": [
+          "from_document",
+          "to_document",
+          "kind",
+          "effective_from"
+        ],
+        "properties": {
+          "effective_from": {
+            "type": "string"
+          },
+          "effective_until": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "from_document": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "to_document": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       },
       "DraftDeleteResponse": {
         "type": "object",
@@ -9547,6 +9921,58 @@
           }
         }
       },
+      "Publication": {
+        "type": "object",
+        "required": [
+          "id",
+          "document_id",
+          "collection",
+          "index_version",
+          "source_id",
+          "source_content_hash",
+          "effective_from",
+          "published_at",
+          "state"
+        ],
+        "properties": {
+          "collection": {
+            "type": "string",
+            "description": "Internal immutable index scope, resolved and checked by Server at authoring."
+          },
+          "document_id": {
+            "type": "string"
+          },
+          "effective_from": {
+            "type": "string"
+          },
+          "effective_until": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "index_version": {
+            "type": "string"
+          },
+          "published_at": {
+            "type": "string"
+          },
+          "source_content_hash": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "description": "approved, superseded, or withdrawn. A withdrawal never revives an older revision."
+          }
+        },
+        "additionalProperties": false
+      },
       "PurgeEvidenceResponse": {
         "type": "object",
         "description": "`DELETE /v1/evidence/{id}` — purge the bytes now.",
@@ -9596,6 +10022,78 @@
             "description": "Stable identity of the source — derived from its logical path, and the\nhandle for binding and `GET /v1/sources/{source_id}`."
           }
         }
+      },
+      "QueryPolicy": {
+        "type": "object",
+        "properties": {
+          "allow_external_processing": {
+            "type": "boolean",
+            "default": false
+          },
+          "candidates_per_index": {
+            "type": "integer",
+            "default": 12,
+            "minimum": 0
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "historical_access_level": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Historical queries require this clearance as well as collection access.",
+            "default": 2
+          },
+          "max_context_characters": {
+            "type": "integer",
+            "default": 60000,
+            "minimum": 0
+          },
+          "max_output_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "default": null,
+            "minimum": 0
+          },
+          "max_passages": {
+            "type": "integer",
+            "default": 24,
+            "minimum": 0
+          },
+          "model_routes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccessModelRoute"
+            },
+            "description": "Exact clearance-level overrides, authored independently of query callers.",
+            "default": []
+          },
+          "provider": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "None inherits the Server vocabulary model routing configuration.",
+            "default": null
+          },
+          "retrieval_concurrency": {
+            "type": "integer",
+            "default": 20,
+            "minimum": 0
+          },
+          "tier": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          }
+        },
+        "additionalProperties": false
       },
       "RecordCountsRequest": {
         "type": "object",

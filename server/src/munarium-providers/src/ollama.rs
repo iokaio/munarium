@@ -21,10 +21,12 @@ pub(crate) fn validate_endpoint(endpoint: Option<&str>) -> std::result::Result<(
     Ok(())
 }
 
+#[derive(Clone)]
 pub struct OllamaProvider {
     endpoint: String,
     spec: ProviderSpec,
     http: reqwest::Client,
+    output_schema: Option<Value>,
 }
 
 impl OllamaProvider {
@@ -44,6 +46,7 @@ impl OllamaProvider {
                 .into(),
             spec: spec.clone(),
             http: http_client(),
+            output_schema: None,
         })
     }
 
@@ -148,6 +151,16 @@ impl ModelProvider for OllamaProvider {
         ProviderId::Ollama
     }
 
+    async fn complete_structured(
+        &self,
+        req: CompletionRequest,
+        schema: Value,
+    ) -> Result<CompletionResponse> {
+        let mut request_provider = self.clone();
+        request_provider.output_schema = Some(schema);
+        request_provider.complete(req).await
+    }
+
     async fn complete(&self, req: CompletionRequest) -> Result<CompletionResponse> {
         if req.tools.as_ref().is_some_and(|tools| tools != &json!([])) {
             return Err(KernelError::InvalidInput(
@@ -163,7 +176,10 @@ impl ModelProvider for OllamaProvider {
         if let Some(temperature) = req.temperature {
             options["temperature"] = json!(temperature);
         }
-        let body = json!({"model": req.model, "messages": messages, "stream": false, "think": false, "options": options});
+        let mut body = json!({"model": req.model, "messages": messages, "stream": false, "think": false, "options": options});
+        if let Some(schema) = &self.output_schema {
+            body["format"] = schema.clone();
+        }
         let hash =
             request_hash(&json!({"ollama": self.endpoint, "operation": "chat", "body": body}));
         let value = self.request("/api/chat", Some(&body)).await?;

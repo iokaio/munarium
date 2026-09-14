@@ -994,10 +994,11 @@ async fn a_selected_scope_serves_from_the_datastore_and_rolls_back_by_selector()
         &munarium_retrieval_pg::LocalHashEmbedder,
     );
 
-    let served = retrieval
-        .search_collection_prepared(&h.collection_id, &prepared, None)
+    let (served, domain) = retrieval
+        .search_collection_measured(&h.collection_id, &prepared, None)
         .await
         .unwrap();
+    assert_eq!(domain, "datastore/bm25/munarium-en@1");
     assert!(!served.hits.is_empty(), "every document mentions the tea");
     assert_eq!(served.envelope.index_version, h.version_id);
     assert!(
@@ -1090,10 +1091,11 @@ async fn a_selected_scope_serves_from_the_datastore_and_rolls_back_by_selector()
         .await
         .unwrap()
         .expect("the generation was fresh");
-    let back = retrieval
-        .search_collection_prepared(&h.collection_id, &prepared, None)
+    let (back, domain) = retrieval
+        .search_collection_measured(&h.collection_id, &prepared, None)
         .await
         .unwrap();
+    assert_eq!(domain, munarium_retrieval::merge::PG_LEXICAL_DOMAIN);
     assert_eq!(
         back.envelope.provider_fingerprint, reference.envelope.provider_fingerprint,
         "after rollback the postgres engine answers again"

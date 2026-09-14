@@ -14185,103 +14185,106 @@ route family needs one rule there.
 
 | Route | Methods | OpenAPI tag | Where this book teaches it |
 |---|---|---|---|
-| `/healthai` | GET | providers | §11 |
-| `/healthz` | GET | meta | §5, §11 |
+| `/healthai` | GET | providers | �11 |
+| `/healthz` | GET | meta | �5, �11 |
 | `/openapi.json` | GET | meta | rest.md |
-| `/readyz` | GET | meta | §5, §8A (datastore readiness), §11 |
+| `/readyz` | GET | meta | �5, �8A (datastore readiness), �11 |
 | `/v1.2/answers` | POST | answers | rest.md |
-| `/v1.2/collections/{id}/vocabulary` | GET · PUT · PATCH | vocabulary | rest.md |
+| `/v1.2/collections/{id}/governance` | GET � PUT | governance | rest.md |
+| `/v1.2/collections/{id}/publications/{publication_id}` | GET | answers | rest.md |
+| `/v1.2/collections/{id}/vocabulary` | GET � PUT � PATCH | vocabulary | rest.md |
 | `/v1.2/collections/{id}/vocabulary/refresh` | POST | vocabulary | rest.md |
 | `/v1.2/collections/{id}/vocabulary/revision` | GET | vocabulary | rest.md |
+| `/v1.2/query` | POST | answers | rest.md |
 | `/v1.2/search` | POST | retrieval | rest.md |
-| `/v1.2/vocabulary-settings` | GET · PUT | vocabulary | rest.md |
-| `/v1/access-tokens` | GET · POST | access-tokens | §20 |
-| `/v1/access-tokens/{jti}/revoke` | POST | access-tokens | §20 |
-| `/v1/authoring/drafts` | GET · POST | authoring | §21B |
-| `/v1/authoring/drafts/{draft_id}` | GET · DELETE | authoring | §21B |
-| `/v1/authoring/drafts/{draft_id}/answers` | PUT | authoring | §21B |
-| `/v1/authoring/drafts/{draft_id}/apply` | POST | authoring | §21B |
-| `/v1/authoring/drafts/{draft_id}/assist` | POST | authoring | §21B |
-| `/v1/authoring/drafts/{draft_id}/export` | POST | authoring | §21B |
-| `/v1/authoring/drafts/{draft_id}/validate` | POST | authoring | §21B |
-| `/v1/authoring/patterns` | GET | authoring | §21B |
-| `/v1/authoring/patterns/{id}` | GET | authoring | §21B |
-| `/v1/chronology-rules` | POST | command | §18 |
-| `/v1/chronology-rules/{name}` | GET | query | §18 |
-| `/v1/claims/{claim_id}` | GET | query | §18 |
-| `/v1/collections` | GET · POST | collections | §16 |
-| `/v1/collections/{collection_id}/activate-index` | POST | index-artifacts | §8A |
-| `/v1/collections/{id}` | GET | collections | §16 |
-| `/v1/evidence` | POST | evidence | §21C |
-| `/v1/evidence/{evidence_id}` | GET · DELETE | evidence | §21C |
-| `/v1/evidence/{evidence_id}/accesses` | GET | evidence | §21C |
-| `/v1/evidence/{evidence_id}/bytes` | PUT | evidence | §21C |
-| `/v1/evidence/{evidence_id}/commit` | POST | evidence | §21C |
-| `/v1/evidence/{evidence_id}/legal-hold` | POST | evidence | §21C |
-| `/v1/evidence/{evidence_id}/rows` | GET | evidence | §21C |
-| `/v1/index-artifacts/backfill` | POST | index-artifacts | §8A |
-| `/v1/index-artifacts/{index_version_id}` | GET | index-artifacts | §8A |
-| `/v1/index-artifacts/{index_version_id}/bind` | POST | index-artifacts | §8A |
-| `/v1/index-artifacts/{index_version_id}/promote` | POST | index-artifacts | §8A |
-| `/v1/index-artifacts/{index_version_id}/rebuild` | POST | index-artifacts | §8A |
-| `/v1/index-artifacts/{index_version_id}/verify` | POST | index-artifacts | §8A |
-| `/v1/index-build-jobs` | GET · POST | index-artifacts | §8A |
-| `/v1/index-build-jobs/{job_id}` | GET | index-artifacts | §8A |
-| `/v1/index-build-jobs/{job_id}/cancel` | POST | index-artifacts | §8A |
-| `/v1/indexes/{shape_ref}` | GET | retrieval | §16 |
-| `/v1/indexes/{shape_ref}/build` | POST | retrieval | §16 |
-| `/v1/ingest` | POST | ingest | §15, §21 |
-| `/v1/ingest/batch` | POST | ingest | §15, §21 |
-| `/v1/ingest/bulk` | POST | ingest | §15, §21 |
-| `/v1/ingest/bulk/{bulk_id}` | GET | ingest | §15, §21 |
-| `/v1/ingest/bulk/{bulk_id}/chunk` | POST | ingest | §15, §21 |
-| `/v1/ingest/bulk/{bulk_id}/complete` | POST | ingest | §15, §21 |
-| `/v1/max-tokens` | GET · POST | providers | §20 (spend governance); docs/tokenbudgets.md |
-| `/v1/providers` | GET · POST | providers | §11 (BYOK diagnostic), §17 |
-| `/v1/providers/{name}/complete` | POST | providers | §11 (BYOK diagnostic), §17 |
-| `/v1/providers/{name}/embed` | POST | providers | §11 (BYOK diagnostic), §17 |
-| `/v1/providers/{name}/health` | GET | providers | §11 (BYOK diagnostic), §17 |
-| `/v1/reports/audit` | GET | reports | §20; rest.md Reports rows |
-| `/v1/reports/budgets` | GET | reports | §20 (spend governance) |
-| `/v1/reports/cost` | GET | reports | §20; rest.md Reports rows |
-| `/v1/reports/endpoints` | GET | reports | §20; rest.md Reports rows |
-| `/v1/reports/evidence` | GET | reports | §20; rest.md Reports rows |
-| `/v1/reports/matrix` | GET | reports | §20; rest.md Reports rows |
-| `/v1/reports/runbooks` | GET | reports | §20; rest.md Reports rows |
-| `/v1/reports/sessions` | GET | reports | §20; rest.md Reports rows |
-| `/v1/reports/timeseries` | GET | reports | §20; rest.md Reports rows |
-| `/v1/reports/usage` | GET | reports | §20; rest.md Reports rows |
-| `/v1/retrieval-rollout` | PUT | retrieval-rollout | §8A |
-| `/v1/retrieval-rollout/{scope_kind}/{scope_id}` | GET | retrieval-rollout | §8A |
-| `/v1/runbooks` | GET · POST | runbooks | §21A |
-| `/v1/runbooks/validate` | POST | runbooks | §21A |
-| `/v1/runbooks/{name}` | GET | runbooks | §21A |
-| `/v1/runbooks/{name}/remove-confirm` | POST | runbooks | §21A |
-| `/v1/runbooks/{name}/remove-request` | POST | runbooks | §21A |
-| `/v1/runbooks/{name}/runs` | POST | runbooks | §21A |
-| `/v1/runbooks/{name}/sessions` | POST | sessions | §21A |
-| `/v1/runs/{run_id}` | GET | runbooks | §21A |
-| `/v1/runs/{run_id}/steps/{ordinal}/approve` | POST | runbooks | §21A |
-| `/v1/search` | POST | retrieval | §16 |
-| `/v1/sessions/{id}` | GET | sessions | §17 |
-| `/v1/sessions/{id}/close` | POST | sessions | §17 |
-| `/v1/sessions/{id}/turns` | POST | sessions | §17 |
-| `/v1/sessions/{id}/turns/stream` | POST | sessions | §17 |
-| `/v1/shapes` | POST | shapes | §16 |
-| `/v1/sources` | PUT | ingest | §6, §15 |
-| `/v1/sources/{source_id}` | GET | ingest | §6, §15 |
-| `/v1/versions` | POST | command | §5, §6 (recipes), §18 |
-| `/v1/versions/{version_id}/anchors` | GET · POST | command, query | §5, §6 (recipes), §18 |
-| `/v1/versions/{version_id}/claims` | POST | command | §5, §6 (recipes), §18 |
-| `/v1/versions/{version_id}/context` | GET | query | §5, §6 (recipes), §18 |
-| `/v1/versions/{version_id}/counters` | GET · POST | command, query | §5, §6 (recipes), §18 |
-| `/v1/versions/{version_id}/digests` | GET · PUT | command, query | §5, §6 (recipes), §18 |
-| `/v1/versions/{version_id}/events` | POST | command | §5, §6 (recipes), §18 |
-| `/v1/versions/{version_id}/facts` | GET | query | §5, §6 (recipes), §18 |
-| `/v1/versions/{version_id}/findings` | GET · POST | command, query | §5, §6 (recipes), §18 |
-| `/v1/versions/{version_id}/head` | GET | query | §5, §6 (recipes), §18 |
-| `/v1/versions/{version_id}/ingests` | POST | ingest | §5, §6 (recipes), §18 |
-| `/v1/versions/{version_id}/lineage` | GET | query | §5, §6 (recipes), §18 |
-| `/v1/versions/{version_id}/promises` | GET · POST | command, query | §5, §6 (recipes), §18 |
-| `/v1/versions/{version_id}/promises/{key}/fulfill` | POST | command | §5, §6 (recipes), §18 |
-| `/version` | GET | meta | §5 |
+| `/v1.2/vocabulary-settings` | GET � PUT | vocabulary | rest.md |
+| `/v1/access-tokens` | GET � POST | access-tokens | �20 |
+| `/v1/access-tokens/{jti}/revoke` | POST | access-tokens | �20 |
+| `/v1/authoring/drafts` | GET � POST | authoring | �21B |
+| `/v1/authoring/drafts/{draft_id}` | GET � DELETE | authoring | �21B |
+| `/v1/authoring/drafts/{draft_id}/answers` | PUT | authoring | �21B |
+| `/v1/authoring/drafts/{draft_id}/apply` | POST | authoring | �21B |
+| `/v1/authoring/drafts/{draft_id}/assist` | POST | authoring | �21B |
+| `/v1/authoring/drafts/{draft_id}/export` | POST | authoring | �21B |
+| `/v1/authoring/drafts/{draft_id}/validate` | POST | authoring | �21B |
+| `/v1/authoring/patterns` | GET | authoring | �21B |
+| `/v1/authoring/patterns/{id}` | GET | authoring | �21B |
+| `/v1/chronology-rules` | POST | command | �18 |
+| `/v1/chronology-rules/{name}` | GET | query | �18 |
+| `/v1/claims/{claim_id}` | GET | query | �18 |
+| `/v1/collections` | GET � POST | collections | �16 |
+| `/v1/collections/{collection_id}/activate-index` | POST | index-artifacts | �8A |
+| `/v1/collections/{id}` | GET | collections | �16 |
+| `/v1/evidence` | POST | evidence | �21C |
+| `/v1/evidence/{evidence_id}` | GET � DELETE | evidence | �21C |
+| `/v1/evidence/{evidence_id}/accesses` | GET | evidence | �21C |
+| `/v1/evidence/{evidence_id}/bytes` | PUT | evidence | �21C |
+| `/v1/evidence/{evidence_id}/commit` | POST | evidence | �21C |
+| `/v1/evidence/{evidence_id}/legal-hold` | POST | evidence | �21C |
+| `/v1/evidence/{evidence_id}/rows` | GET | evidence | �21C |
+| `/v1/index-artifacts/backfill` | POST | index-artifacts | �8A |
+| `/v1/index-artifacts/{index_version_id}` | GET | index-artifacts | �8A |
+| `/v1/index-artifacts/{index_version_id}/bind` | POST | index-artifacts | �8A |
+| `/v1/index-artifacts/{index_version_id}/promote` | POST | index-artifacts | �8A |
+| `/v1/index-artifacts/{index_version_id}/rebuild` | POST | index-artifacts | �8A |
+| `/v1/index-artifacts/{index_version_id}/verify` | POST | index-artifacts | �8A |
+| `/v1/index-build-jobs` | GET � POST | index-artifacts | �8A |
+| `/v1/index-build-jobs/{job_id}` | GET | index-artifacts | �8A |
+| `/v1/index-build-jobs/{job_id}/cancel` | POST | index-artifacts | �8A |
+| `/v1/indexes/{shape_ref}` | GET | retrieval | �16 |
+| `/v1/indexes/{shape_ref}/build` | POST | retrieval | �16 |
+| `/v1/ingest` | POST | ingest | �15, �21 |
+| `/v1/ingest/batch` | POST | ingest | �15, �21 |
+| `/v1/ingest/bulk` | POST | ingest | �15, �21 |
+| `/v1/ingest/bulk/{bulk_id}` | GET | ingest | �15, �21 |
+| `/v1/ingest/bulk/{bulk_id}/chunk` | POST | ingest | �15, �21 |
+| `/v1/ingest/bulk/{bulk_id}/complete` | POST | ingest | �15, �21 |
+| `/v1/max-tokens` | GET � POST | providers | �20 (spend governance); docs/tokenbudgets.md |
+| `/v1/providers` | GET � POST | providers | �11 (BYOK diagnostic), �17 |
+| `/v1/providers/{name}/complete` | POST | providers | �11 (BYOK diagnostic), �17 |
+| `/v1/providers/{name}/embed` | POST | providers | �11 (BYOK diagnostic), �17 |
+| `/v1/providers/{name}/health` | GET | providers | �11 (BYOK diagnostic), �17 |
+| `/v1/reports/audit` | GET | reports | �20; rest.md Reports rows |
+| `/v1/reports/budgets` | GET | reports | �20 (spend governance) |
+| `/v1/reports/cost` | GET | reports | �20; rest.md Reports rows |
+| `/v1/reports/endpoints` | GET | reports | �20; rest.md Reports rows |
+| `/v1/reports/evidence` | GET | reports | �20; rest.md Reports rows |
+| `/v1/reports/matrix` | GET | reports | �20; rest.md Reports rows |
+| `/v1/reports/runbooks` | GET | reports | �20; rest.md Reports rows |
+| `/v1/reports/sessions` | GET | reports | �20; rest.md Reports rows |
+| `/v1/reports/timeseries` | GET | reports | �20; rest.md Reports rows |
+| `/v1/reports/usage` | GET | reports | �20; rest.md Reports rows |
+| `/v1/retrieval-rollout` | PUT | retrieval-rollout | �8A |
+| `/v1/retrieval-rollout/{scope_kind}/{scope_id}` | GET | retrieval-rollout | �8A |
+| `/v1/runbooks` | GET � POST | runbooks | �21A |
+| `/v1/runbooks/validate` | POST | runbooks | �21A |
+| `/v1/runbooks/{name}` | GET | runbooks | �21A |
+| `/v1/runbooks/{name}/remove-confirm` | POST | runbooks | �21A |
+| `/v1/runbooks/{name}/remove-request` | POST | runbooks | �21A |
+| `/v1/runbooks/{name}/runs` | POST | runbooks | �21A |
+| `/v1/runbooks/{name}/sessions` | POST | sessions | �21A |
+| `/v1/runs/{run_id}` | GET | runbooks | �21A |
+| `/v1/runs/{run_id}/steps/{ordinal}/approve` | POST | runbooks | �21A |
+| `/v1/search` | POST | retrieval | �16 |
+| `/v1/sessions/{id}` | GET | sessions | �17 |
+| `/v1/sessions/{id}/close` | POST | sessions | �17 |
+| `/v1/sessions/{id}/turns` | POST | sessions | �17 |
+| `/v1/sessions/{id}/turns/stream` | POST | sessions | �17 |
+| `/v1/shapes` | POST | shapes | �16 |
+| `/v1/sources` | PUT | ingest | �6, �15 |
+| `/v1/sources/{source_id}` | GET | ingest | �6, �15 |
+| `/v1/versions` | POST | command | �5, �6 (recipes), �18 |
+| `/v1/versions/{version_id}/anchors` | GET � POST | command, query | �5, �6 (recipes), �18 |
+| `/v1/versions/{version_id}/claims` | POST | command | �5, �6 (recipes), �18 |
+| `/v1/versions/{version_id}/context` | GET | query | �5, �6 (recipes), �18 |
+| `/v1/versions/{version_id}/counters` | GET � POST | command, query | �5, �6 (recipes), �18 |
+| `/v1/versions/{version_id}/digests` | GET � PUT | command, query | �5, �6 (recipes), �18 |
+| `/v1/versions/{version_id}/events` | POST | command | �5, �6 (recipes), �18 |
+| `/v1/versions/{version_id}/facts` | GET | query | �5, �6 (recipes), �18 |
+| `/v1/versions/{version_id}/findings` | GET � POST | command, query | �5, �6 (recipes), �18 |
+| `/v1/versions/{version_id}/head` | GET | query | �5, �6 (recipes), �18 |
+| `/v1/versions/{version_id}/ingests` | POST | ingest | �5, �6 (recipes), �18 |
+| `/v1/versions/{version_id}/lineage` | GET | query | �5, �6 (recipes), �18 |
+| `/v1/versions/{version_id}/promises` | GET � POST | command, query | �5, �6 (recipes), �18 |
+| `/v1/versions/{version_id}/promises/{key}/fulfill` | POST | command | �5, �6 (recipes), �18 |
+| `/version` | GET | meta | �5 |

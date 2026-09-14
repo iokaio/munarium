@@ -73,6 +73,45 @@ class ServerApiClient(BaseServerApi):
             request,
         )
 
+    def get_collection_governance(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1.2/collections/{id}/governance"""
+        return self._call(
+            "GetCollectionGovernance",
+            "GET",
+            "/v1.2/collections/{id}/governance",
+            "application/json",
+            request,
+        )
+
+    def replace_collection_governance(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """PUT /v1.2/collections/{id}/governance"""
+        return self._call(
+            "ReplaceCollectionGovernance",
+            "PUT",
+            "/v1.2/collections/{id}/governance",
+            "application/json",
+            request,
+        )
+
+    def authorize_publication(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1.2/collections/{id}/publications/{publication_id}"""
+        return self._call(
+            "AuthorizePublication",
+            "GET",
+            "/v1.2/collections/{id}/publications/{publication_id}",
+            "application/json",
+            request,
+        )
+
     def get_collection_vocabulary(
         self,
         request: ApiRequest | None = None,
@@ -134,6 +173,19 @@ class ServerApiClient(BaseServerApi):
             "GetVocabularyRevision",
             "GET",
             "/v1.2/collections/{id}/vocabulary/revision",
+            "application/json",
+            request,
+        )
+
+    def query_collections(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """POST /v1.2/query"""
+        return self._call(
+            "QueryCollections",
+            "POST",
+            "/v1.2/query",
             "application/json",
             request,
         )
@@ -1596,6 +1648,45 @@ class AsyncServerApiClient(BaseAsyncServerApi):
             request,
         )
 
+    async def get_collection_governance(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1.2/collections/{id}/governance"""
+        return await self._call(
+            "GetCollectionGovernance",
+            "GET",
+            "/v1.2/collections/{id}/governance",
+            "application/json",
+            request,
+        )
+
+    async def replace_collection_governance(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """PUT /v1.2/collections/{id}/governance"""
+        return await self._call(
+            "ReplaceCollectionGovernance",
+            "PUT",
+            "/v1.2/collections/{id}/governance",
+            "application/json",
+            request,
+        )
+
+    async def authorize_publication(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1.2/collections/{id}/publications/{publication_id}"""
+        return await self._call(
+            "AuthorizePublication",
+            "GET",
+            "/v1.2/collections/{id}/publications/{publication_id}",
+            "application/json",
+            request,
+        )
+
     async def get_collection_vocabulary(
         self,
         request: ApiRequest | None = None,
@@ -1657,6 +1748,19 @@ class AsyncServerApiClient(BaseAsyncServerApi):
             "GetVocabularyRevision",
             "GET",
             "/v1.2/collections/{id}/vocabulary/revision",
+            "application/json",
+            request,
+        )
+
+    async def query_collections(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """POST /v1.2/query"""
+        return await self._call(
+            "QueryCollections",
+            "POST",
+            "/v1.2/query",
             "application/json",
             request,
         )

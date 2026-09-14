@@ -13,6 +13,12 @@ public sealed partial class ServerApiClient {
     public Task<ApiResponse> ReadyzAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("Readyz", "GET", "/readyz", "application/json", request ?? new(), ct);
     /// <summary>POST /v1.2/answers</summary>
     public Task<ApiResponse> ComposeAnswerAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("ComposeAnswer", "POST", "/v1.2/answers", "application/json", request ?? new(), ct);
+    /// <summary>GET /v1.2/collections/{id}/governance</summary>
+    public Task<ApiResponse> GetCollectionGovernanceAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("GetCollectionGovernance", "GET", "/v1.2/collections/{id}/governance", "application/json", request ?? new(), ct);
+    /// <summary>PUT /v1.2/collections/{id}/governance</summary>
+    public Task<ApiResponse> ReplaceCollectionGovernanceAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("ReplaceCollectionGovernance", "PUT", "/v1.2/collections/{id}/governance", "application/json", request ?? new(), ct);
+    /// <summary>GET /v1.2/collections/{id}/publications/{publication_id}</summary>
+    public Task<ApiResponse> AuthorizePublicationAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("AuthorizePublication", "GET", "/v1.2/collections/{id}/publications/{publication_id}", "application/json", request ?? new(), ct);
     /// <summary>GET /v1.2/collections/{id}/vocabulary</summary>
     public Task<ApiResponse> GetCollectionVocabularyAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("GetCollectionVocabulary", "GET", "/v1.2/collections/{id}/vocabulary", "application/json", request ?? new(), ct);
     /// <summary>PATCH /v1.2/collections/{id}/vocabulary</summary>
@@ -23,6 +29,8 @@ public sealed partial class ServerApiClient {
     public Task<ApiResponse> RefreshCollectionVocabularyAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("RefreshCollectionVocabulary", "POST", "/v1.2/collections/{id}/vocabulary/refresh", "application/json", request ?? new(), ct);
     /// <summary>GET /v1.2/collections/{id}/vocabulary/revision</summary>
     public Task<ApiResponse> GetVocabularyRevisionAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("GetVocabularyRevision", "GET", "/v1.2/collections/{id}/vocabulary/revision", "application/json", request ?? new(), ct);
+    /// <summary>POST /v1.2/query</summary>
+    public Task<ApiResponse> QueryCollectionsAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("QueryCollections", "POST", "/v1.2/query", "application/json", request ?? new(), ct);
     /// <summary>POST /v1.2/search</summary>
     public Task<ApiResponse> SearchCollectionAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("SearchCollection", "POST", "/v1.2/search", "application/json", request ?? new(), ct);
     /// <summary>GET /v1.2/vocabulary-settings</summary>

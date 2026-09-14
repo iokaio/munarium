@@ -451,6 +451,32 @@ async fn generate(
     automatic: bool,
 ) -> Result<Vocabulary> {
     let config = settings(state, tenant).await?;
+    let governance = crate::governance_api::load(state, tenant, collection).await?;
+    let provider = governance
+        .as_ref()
+        .and_then(|g| g.query.provider.as_deref())
+        .unwrap_or(&config.provider);
+    let tier = governance
+        .as_ref()
+        .and_then(|g| g.query.tier.as_deref())
+        .unwrap_or(&config.tier);
+    if governance.as_ref().is_some_and(|g| !g.query.enabled) {
+        return Err(invalid("collection publication is disabled"));
+    }
+    if governance
+        .as_ref()
+        .is_some_and(|g| !g.query.allow_external_processing)
+    {
+        let entry = state
+            .providers
+            .resolve(state, tenant, provider, None)
+            .await?;
+        if !matches!(entry.doc.spec.provider.as_str(), "ollama" | "local") {
+            return Err(KernelError::Forbidden(
+                "external vocabulary processing is disabled for this collection".into(),
+            ));
+        }
+    }
     let fingerprint = corpus_fingerprint(state, tenant, collection).await?;
     let mut value = load(state, tenant, collection).await?;
     if automatic
@@ -510,10 +536,12 @@ async fn generate(
         }
         if documents.is_empty() {return Err(invalid("sampled sources contained no extractable text"));}
         let store=state.store_for(tenant).await?;
-        let reply=crate::providers_api::op_complete(state,tenant,store.as_ref(),&config.provider,
-            munarium_api_types::CompleteRequest {provider:None,model:None,tier:Some(config.tier.clone()),system:Some(GENERATE.into()),
+        let reply=crate::providers_api::op_complete_structured(state,tenant,store.as_ref(),provider,
+            munarium_api_types::CompleteRequest {provider:None,model:None,tier:Some(tier.to_string()),system:Some(GENERATE.into()),
                 prompt:Some(serde_json::json!({"max_groups":config.max_groups,"documents":documents}).to_string()),
-                max_tokens:Some(state.max_tokens.effective(state,tenant).await?.complete_default),temperature:Some(0.0),version_id:None}).await?;
+                max_tokens:Some(state.max_tokens.effective(state,tenant).await?.complete_default),temperature:Some(0.0),version_id:None},
+            serde_json::json!({"type":"object","additionalProperties":false,"required":["groups"],"properties":{
+                "groups":{"type":"array","items":{"type":"array","items":{"type":"string"}}}}})).await?;
         if matches!(reply.stop_reason.as_str(),"length"|"max_tokens"|"content_filter") {return Err(KernelError::Provider("vocabulary generation did not complete".into()));}
         #[derive(Deserialize)] #[serde(deny_unknown_fields)] struct Generated {groups:Vec<Vec<String>>}
         let generated:Generated=serde_json::from_str(&reply.text).map_err(|_| KernelError::Provider("invalid vocabulary response".into()))?;
@@ -523,6 +551,9 @@ async fn generate(
             return Err(KernelError::Provider("generated vocabulary did not match its sampled documents".into()));
         }
         if settings(state,tenant).await? != config {return Err(invalid("vocabulary defaults changed during generation"));}
+        if crate::governance_api::load(state,tenant,collection).await?.map(|g|g.revision) != governance.as_ref().map(|g|g.revision) {
+            return Err(invalid("collection governance changed during generation"));
+        }
         for d in &documents {
             let source=retrieval.source_info(d["source_id"].as_str().unwrap()).await?;
             if source.content_hash!=d["hash"].as_str().unwrap() {return Err(invalid("sampled source changed during generation"));}

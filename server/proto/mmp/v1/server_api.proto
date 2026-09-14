@@ -34,6 +34,12 @@ service ServerApiService {
   rpc Readyz(ServerApiRequest) returns (ServerApiResponse);
   // POST /v1.2/answers
   rpc ComposeAnswer(ServerApiRequest) returns (ServerApiResponse);
+  // GET /v1.2/collections/{id}/governance
+  rpc GetCollectionGovernance(ServerApiRequest) returns (ServerApiResponse);
+  // PUT /v1.2/collections/{id}/governance
+  rpc ReplaceCollectionGovernance(ServerApiRequest) returns (ServerApiResponse);
+  // GET /v1.2/collections/{id}/publications/{publication_id}
+  rpc AuthorizePublication(ServerApiRequest) returns (ServerApiResponse);
   // GET /v1.2/collections/{id}/vocabulary
   rpc GetCollectionVocabulary(ServerApiRequest) returns (ServerApiResponse);
   // PATCH /v1.2/collections/{id}/vocabulary
@@ -44,6 +50,8 @@ service ServerApiService {
   rpc RefreshCollectionVocabulary(ServerApiRequest) returns (ServerApiResponse);
   // GET /v1.2/collections/{id}/vocabulary/revision
   rpc GetVocabularyRevision(ServerApiRequest) returns (ServerApiResponse);
+  // POST /v1.2/query
+  rpc QueryCollections(ServerApiRequest) returns (ServerApiResponse);
   // POST /v1.2/search
   rpc SearchCollection(ServerApiRequest) returns (ServerApiResponse);
   // GET /v1.2/vocabulary-settings

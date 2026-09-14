@@ -147,6 +147,22 @@ async fn native_completion_embeddings_health_and_request_identity() {
         .unwrap();
     assert_eq!(embedding.dimensions, 2);
     assert_eq!(embedding.vectors[1], vec![0.5, 1.0]);
+    let schema = json!({"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":false});
+    let structured = provider
+        .complete_structured(request("qwen3:1.7b"), schema.clone())
+        .await
+        .unwrap();
+    assert_ne!(structured.request_hash, answer.request_hash);
+    assert_eq!(calls.lock().unwrap().last().unwrap().1["format"], schema);
+    provider.complete(request("qwen3:1.7b")).await.unwrap();
+    assert!(calls
+        .lock()
+        .unwrap()
+        .last()
+        .unwrap()
+        .1
+        .get("format")
+        .is_none());
     doc.spec.models.frontier = Some("not-installed".into());
     assert!(
         !build_provider(&doc)

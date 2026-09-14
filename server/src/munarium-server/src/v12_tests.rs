@@ -37,16 +37,30 @@ async fn call(
             ("PUT", "/v1.2/vocabulary-settings") => "ReplaceVocabularySettings",
             ("POST", "/v1.2/answers") => "ComposeAnswer",
             ("POST", "/v1.2/search") => "SearchCollection",
+            ("POST", "/v1.2/query") => "QueryCollections",
             _ => {
                 assert_eq!(parts[2], "collections");
                 input.path_parameters.insert("id".into(), parts[3].into());
-                match (method, parts.get(5).copied()) {
-                    ("GET", Some("revision")) => "GetVocabularyRevision",
-                    ("POST", Some("refresh")) => "RefreshCollectionVocabulary",
-                    ("GET", None) => "GetCollectionVocabulary",
-                    ("PUT", None) => "ReplaceCollectionVocabulary",
-                    ("PATCH", None) => "UpdateCollectionVocabulary",
-                    other => panic!("unmapped test operation: {other:?}"),
+                if parts[4] == "publications" {
+                    input
+                        .path_parameters
+                        .insert("publication_id".into(), parts[5].into());
+                    "AuthorizePublication"
+                } else if parts[4] == "governance" {
+                    match method {
+                        "GET" => "GetCollectionGovernance",
+                        "PUT" => "ReplaceCollectionGovernance",
+                        _ => panic!("unexpected governance method"),
+                    }
+                } else {
+                    match (method, parts.get(5).copied()) {
+                        ("GET", Some("revision")) => "GetVocabularyRevision",
+                        ("POST", Some("refresh")) => "RefreshCollectionVocabulary",
+                        ("GET", None) => "GetCollectionVocabulary",
+                        ("PUT", None) => "ReplaceCollectionVocabulary",
+                        ("PATCH", None) => "UpdateCollectionVocabulary",
+                        other => panic!("unmapped test operation: {other:?}"),
+                    }
                 }
             }
         };
@@ -140,7 +154,7 @@ async fn vocabulary_scenario(grpc: bool) {
         token_ttl_secs: 3600,
         require_uid: true,
         interaction_body_max: 32768,
-        token_revocation_check: false,
+        token_revocation_check: true,
         matrix_base_url: None,
         matrix_admin_url: None,
         max_concurrency: 4,
@@ -163,9 +177,18 @@ async fn vocabulary_scenario(grpc: bool) {
     ));
     let capture = calls.clone();
     let reply = output.clone();
+    let pause_model = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let model_entered = Arc::new(tokio::sync::Notify::new());
+    let model_release = Arc::new(tokio::sync::Notify::new());
+    let paused = pause_model.clone();
+    let entered = model_entered.clone();
+    let released = model_release.clone();
     let provider = axum::Router::new().route("/api/chat", axum::routing::post(move |Json(body): Json<Value>| {
         let capture = capture.clone(); let reply = reply.clone();
-        async move { capture.lock().unwrap().push(body.clone()); Json(json!({"model":body["model"],"done":true,"done_reason":"stop",
+        let paused = paused.clone(); let entered = entered.clone(); let released = released.clone();
+        async move { capture.lock().unwrap().push(body.clone());
+            if paused.swap(false,std::sync::atomic::Ordering::SeqCst) { entered.notify_one(); released.notified().await; }
+            Json(json!({"model":body["model"],"done":true,"done_reason":"stop",
             "message":{"role":"assistant","content":reply.lock().unwrap().clone()},"prompt_eval_count":20,"eval_count":12})) }
     }));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -523,13 +546,14 @@ async fn vocabulary_scenario(grpc: bool) {
     );
     assert_eq!(calls.lock().unwrap().len(), count);
     // Do not rescue malformed or fabricated model citations by guessing a
-    // source. Unsupported assertions never turn into a successful answer.
+    // source. A supported answer requires citations; all statuses validate
+    // every citation while permitting explanatory prose.
     for invalid in [
         json!({"status":"supported","answer":"Approval is automatic.","citations":[{"id":"p1","quote":"Approval is automatic."}]}),
         json!({"status":"supported","answer":"Approval is required.","citations":[{"id":"c1","quote":text}]}),
         json!({"status":"supported","answer":"Approval is required.","citations":[]}),
-        json!({"status":"insufficient","answer":"An unsupported assertion.","citations":[]}),
-        json!({"status":"review","answer":"Choose this rule.","citations":[]}),
+        json!({"status":"insufficient","answer":"Explanation.","citations":[{"id":"unknown","quote":text}]}),
+        json!({"status":"review","answer":"Explanation.","citations":[{"id":"p1","quote":"Invented quotation."}]}),
     ] {
         *output.lock().unwrap() = invalid.to_string();
         let (status, detail) =
@@ -540,13 +564,291 @@ async fn vocabulary_scenario(grpc: bool) {
         );
     }
     for status in ["insufficient", "review"] {
-        *output.lock().unwrap() = json!({"status":status,"answer":"","citations":[]}).to_string();
+        *output.lock().unwrap() = json!({"status":status,"answer":"The files do not establish the requested deadline.","citations":[]}).to_string();
         let (code, response) =
             call(&app, "POST", "/v1.2/answers", &query, answer_body.clone()).await;
         assert_eq!(code, StatusCode::OK, "{response}");
         assert_eq!(response["content"]["status"], status);
+        assert_eq!(
+            response["content"]["answer"],
+            "The files do not establish the requested deadline."
+        );
         assert_eq!(response["references"], json!([]));
     }
+    // The collection query accepts only a question and logical scope. The
+    // publication registry, source selection and citations belong to Server.
+    let governed = retrieval
+        .ensure_collection(
+            "governed-manuals",
+            "text@1",
+            1,
+            &["governed-manuals".into()],
+            None,
+        )
+        .await
+        .unwrap();
+    let (governed_token, _) = munarium_access::issue(
+        &[47; 32],
+        "fixture-user",
+        &tenant,
+        1,
+        vec!["governed-manuals".into()],
+        vec!["query".into()],
+        None,
+        600,
+        "governed-query".into(),
+    )
+    .unwrap();
+    let governance_path = format!("/v1.2/collections/{}/governance", governed.id);
+    state.providers.apply(&state,&tenant,&format!("apiVersion: munarium.ioka.io/v1\nkind: ProviderConfig\nmetadata: {{name: fixture-review}}\nspec:\n  provider: ollama\n  endpoint: {endpoint}\n  models:\n    complete: [review-model]\n    fast: review-model\n")).await.unwrap();
+    let governance = json!({"revision":0,"publications":[{"id":"edition-one","document_id":"ordering",
+        "collection":collection.id,"index_version":index.id,"source_id":source,"source_content_hash":hash,
+        "effective_from":"2020-01-01","effective_until":null,"published_at":"2020-01-01T00:00:00Z","state":"approved"}],
+        "relations":[],"query":{"provider":"fixture","model_routes":[{"access_level":2,"provider":"fixture-review","tier":"fast","max_context_characters":12000,"max_output_tokens":1500,"enabled":true}]}});
+    assert!(!call(
+        &app,
+        "PUT",
+        &governance_path,
+        &governed_token,
+        governance.clone()
+    )
+    .await
+    .0
+    .is_success());
+    assert!(!call(
+        &app,
+        "PUT",
+        &governance_path,
+        "fixture-ro",
+        governance.clone()
+    )
+    .await
+    .0
+    .is_success());
+    let mut forged = governance.clone();
+    forged["publications"][0]["source_content_hash"] = json!("0".repeat(64));
+    assert_eq!(
+        call(&app, "PUT", &governance_path, "fixture-rw", forged)
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+    let activation: chrono::DateTime<chrono::Utc> =
+        sqlx::query_scalar("SELECT activated_at FROM index_versions WHERE tenant_id=$1 AND id=$2")
+            .bind(&tenant)
+            .bind(&index.id)
+            .fetch_one(state.pg_pool().unwrap())
+            .await
+            .unwrap();
+    sqlx::query("UPDATE index_versions SET activated_at=NULL WHERE tenant_id=$1 AND id=$2")
+        .bind(&tenant)
+        .bind(&index.id)
+        .execute(state.pg_pool().unwrap())
+        .await
+        .unwrap();
+    assert_eq!(
+        call(
+            &app,
+            "PUT",
+            &governance_path,
+            "fixture-rw",
+            governance.clone()
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    sqlx::query("UPDATE index_versions SET activated_at=$3 WHERE tenant_id=$1 AND id=$2")
+        .bind(&tenant)
+        .bind(&index.id)
+        .bind(activation)
+        .execute(state.pg_pool().unwrap())
+        .await
+        .unwrap();
+    let (code, mut stored) = call(
+        &app,
+        "PUT",
+        &governance_path,
+        "fixture-rw",
+        governance.clone(),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{stored}");
+    assert_eq!(stored["revision"], 1);
+    assert_eq!(
+        call(
+            &app,
+            "PUT",
+            &governance_path,
+            "fixture-rw",
+            governance.clone()
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    let question = json!({"question":"purchase order","collections":[governed.id]});
+    let mut injected = question.clone();
+    injected["sources"] = answer_body["sources"].clone();
+    assert_eq!(
+        call(&app, "POST", "/v1.2/query", &governed_token, injected)
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+    *output.lock().unwrap()=json!({"status":"supported","answer":"Supervisor approval is required before ordering goods.","citations":[{"id":"p1","quote":text}]}).to_string();
+    let (code, answered) = call(
+        &app,
+        "POST",
+        "/v1.2/query",
+        &governed_token,
+        question.clone(),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{answered}");
+    assert_eq!(answered["content"]["status"], "supported");
+    assert_eq!(answered["references"][0]["source_id"], source);
+    assert_eq!(answered["references"][0]["source_content_hash"], hash);
+    assert_eq!(answered["references"][0]["index_version"], index.id);
+    let original_path = format!("/v1.2/collections/{}/publications/edition-one", governed.id);
+    let (code, original) = call(&app, "GET", &original_path, &governed_token, Value::Null).await;
+    assert_eq!(code, StatusCode::OK, "{original}");
+    assert_eq!(original["source_id"], source);
+    assert_eq!(original["source_content_hash"], hash);
+    assert!(original.get("content").is_none());
+    let (review_token, _) = munarium_access::issue(
+        &[47; 32],
+        "fixture-user",
+        &tenant,
+        2,
+        vec!["governed-manuals".into()],
+        vec!["query".into()],
+        None,
+        600,
+        "review-query".into(),
+    )
+    .unwrap();
+    let (code, review_answer) =
+        call(&app, "POST", "/v1.2/query", &review_token, question.clone()).await;
+    assert_eq!(code, StatusCode::OK, "{review_answer}");
+    assert_eq!(review_answer["model"], "review-model");
+    assert_eq!(
+        calls.lock().unwrap().last().unwrap()["options"]["num_predict"],
+        1500
+    );
+    let count = calls.lock().unwrap().len();
+    let (revoked, _) = munarium_access::issue(
+        &[47; 32],
+        "fixture-user",
+        &tenant,
+        1,
+        vec!["governed-manuals".into()],
+        vec!["query".into()],
+        None,
+        600,
+        "revoked-governed-query".into(),
+    )
+    .unwrap();
+    sqlx::query("INSERT INTO access_tokens (tenant_id,jti,uid,access_level,scopes,issued_by,expires_at,revoked_at) VALUES ($1,'revoked-governed-query','fixture-user',1,ARRAY['query'],'fixture-manager',now()+interval '10 minutes',now())")
+        .bind(&tenant).execute(state.pg_pool().unwrap()).await.unwrap();
+    assert_eq!(
+        call(&app, "POST", "/v1.2/query", &revoked, question.clone())
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        call(&app, "GET", &original_path, &revoked, Value::Null)
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(calls.lock().unwrap().len(), count);
+    let mut historical = question.clone();
+    historical["effective_on"] = json!("2025-01-01");
+    assert_eq!(
+        call(&app, "POST", "/v1.2/query", &governed_token, historical)
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    // A collection token does not also grant direct access to its internal
+    // indexes, nor to any other logical collection.
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            "/v1.2/query",
+            &governed_token,
+            json!({"question":"purchase order","collections":[collection.id]})
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    assert!(!call(
+        &app,
+        "POST",
+        "/v1.2/answers",
+        &governed_token,
+        answer_body.clone()
+    )
+    .await
+    .0
+    .is_success());
+    assert_eq!(calls.lock().unwrap().len(), count);
+    stored["publications"][0]["state"] = json!("withdrawn");
+    // A withdrawal committed while the model is composing must prevent the
+    // already-running query from returning its now-ineligible source.
+    pause_model.store(true, std::sync::atomic::Ordering::SeqCst);
+    let (inflight, (code, withdrawn)) = tokio::join!(
+        call(
+            &app,
+            "POST",
+            "/v1.2/query",
+            &governed_token,
+            question.clone()
+        ),
+        async {
+            tokio::time::timeout(std::time::Duration::from_secs(10), model_entered.notified())
+                .await
+                .expect("query did not reach the model");
+            let response = call(&app, "PUT", &governance_path, "fixture-rw", stored).await;
+            model_release.notify_one();
+            response
+        }
+    );
+    assert_eq!(code, StatusCode::OK, "{withdrawn}");
+    assert_eq!(inflight.0, StatusCode::FORBIDDEN, "{:?}", inflight.1);
+    let (code, absent) = call(&app, "POST", "/v1.2/query", &governed_token, question).await;
+    assert_eq!(code, StatusCode::OK, "{absent}");
+    assert_eq!(absent["content"]["status"], "insufficient");
+    assert_eq!(absent["references"], json!([]));
+    assert_eq!(calls.lock().unwrap().len(), count + 1);
+    assert_eq!(
+        call(&app, "GET", &original_path, &governed_token, Value::Null)
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+    let history: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM collection_governance WHERE tenant_id=$1 AND collection_id=$2",
+    )
+    .bind(&tenant)
+    .bind(&governed.id)
+    .fetch_one(state.pg_pool().unwrap())
+    .await
+    .unwrap();
+    assert_eq!(history, 2);
+    assert!(sqlx::query(
+        "DELETE FROM collection_governance WHERE tenant_id=$1 AND collection_id=$2"
+    )
+    .bind(&tenant)
+    .bind(&governed.id)
+    .execute(state.pg_pool().unwrap())
+    .await
+    .is_err());
+
     // The default-on ingest worker creates a vocabulary for a newly bound
     // collection, while retaining an explicitly edited vocabulary.
     call(

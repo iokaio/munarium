@@ -276,6 +276,19 @@ impl Retrieval {
         prepared: &PreparedSearchQuery,
         index_version: Option<&str>,
     ) -> Result<SearchResult> {
+        self.search_collection_measured(collection_id, prepared, index_version)
+            .await
+            .map(|(result, _)| result)
+    }
+
+    /// Return the lexical measurement domain chosen by the actual dispatch.
+    /// Consumers must not compare PostgreSQL rank magnitudes to Datastore BM25.
+    pub async fn search_collection_measured(
+        &self,
+        collection_id: &str,
+        prepared: &PreparedSearchQuery,
+        index_version: Option<&str>,
+    ) -> Result<(SearchResult, &'static str)> {
         if self.mode == RetrievalMode::Datastore {
             let Some(plane) = &self.serving else {
                 // Fail closed, not over to PostgreSQL: without the selector
@@ -309,13 +322,15 @@ impl Retrieval {
                             watermark as u64,
                             &prepared,
                         )
-                        .await;
+                        .await
+                        .map(|result| (result, "datastore/bm25/munarium-en@1"));
                 }
             }
         }
         self.pg
             .search_collection_prepared(collection_id, prepared, index_version)
             .await
+            .map(|result| (result, merge::PG_LEXICAL_DOMAIN))
     }
 
     /// Search one collection, preparing inline.

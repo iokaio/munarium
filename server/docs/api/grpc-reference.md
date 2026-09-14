@@ -1210,11 +1210,15 @@ no evidence rows appear here.
 | OpenapiJson | ServerApiRequest | ServerApiResponse | GET /openapi.json |
 | Readyz | ServerApiRequest | ServerApiResponse | GET /readyz |
 | ComposeAnswer | ServerApiRequest | ServerApiResponse | POST /v1.2/answers |
+| GetCollectionGovernance | ServerApiRequest | ServerApiResponse | GET /v1.2/collections/{id}/governance |
+| ReplaceCollectionGovernance | ServerApiRequest | ServerApiResponse | PUT /v1.2/collections/{id}/governance |
+| AuthorizePublication | ServerApiRequest | ServerApiResponse | GET /v1.2/collections/{id}/publications/{publication_id} |
 | GetCollectionVocabulary | ServerApiRequest | ServerApiResponse | GET /v1.2/collections/{id}/vocabulary |
 | UpdateCollectionVocabulary | ServerApiRequest | ServerApiResponse | PATCH /v1.2/collections/{id}/vocabulary |
 | ReplaceCollectionVocabulary | ServerApiRequest | ServerApiResponse | PUT /v1.2/collections/{id}/vocabulary |
 | RefreshCollectionVocabulary | ServerApiRequest | ServerApiResponse | POST /v1.2/collections/{id}/vocabulary/refresh |
 | GetVocabularyRevision | ServerApiRequest | ServerApiResponse | GET /v1.2/collections/{id}/vocabulary/revision |
+| QueryCollections | ServerApiRequest | ServerApiResponse | POST /v1.2/query |
 | SearchCollection | ServerApiRequest | ServerApiResponse | POST /v1.2/search |
 | GetVocabularySettings | ServerApiRequest | ServerApiResponse | GET /v1.2/vocabulary-settings |
 | ReplaceVocabularySettings | ServerApiRequest | ServerApiResponse | PUT /v1.2/vocabulary-settings |
