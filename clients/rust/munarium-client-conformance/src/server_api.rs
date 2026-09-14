@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 
 async fn scenario(api: ServerApiClient) -> Result<()> {
     let version: Value = api.version_info(ApiRequest::default()).await?.json()?;
-    assert_eq!(version["version"], "1.2.0");
+    assert_eq!(version["version"], munarium_client::TARGET_SERVER_VERSION);
     let shape = "apiVersion: munarium.ioka.io/v1\nkind: Shape\nmetadata: {name: api-rust-docs, version: 1}\nspec:\n  fact:\n    schema: {type: object}\n";
     api.apply_shape(ApiRequest {
         body: shape.as_bytes().to_vec(),

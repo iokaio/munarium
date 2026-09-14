@@ -60,7 +60,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// The server version this client tracks (lockstep with the repo workspace).
-pub const TARGET_SERVER_VERSION: &str = "1.2.0";
+pub const TARGET_SERVER_VERSION: &str = "1.2.1";
 
 /// Connection + behavior options, shared by both transports.
 #[derive(Debug, Clone)]

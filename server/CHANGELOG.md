@@ -13,6 +13,8 @@ for registry availability, digests and public signing instructions.
 - Extend REST/gRPC regressions for forged provenance, access levels, collection
   scopes, user/tenant isolation, expired tokens and invalid model citations.
 - Derive the generated client API inventory's version from OpenAPI.
+- Align all four Server SDK target constants with 1.2.1 and check them against
+  the compatibility record. Live conformance uses those checked constants.
 
 Release qualification and application integration remain pending. No 1.2.1
 container or release tag is published by these source changes.
