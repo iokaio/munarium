@@ -157,7 +157,7 @@ Do not turn each retrieved chunk into a competing answer.
 
 ## Mapping references to original files
 
-### Collection queries (unreleased 1.2.1)
+### Collection queries (1.2.1)
 
 `POST /v1.2/query` accepts `question`, `collections`, and optional `effective_on`
 in ISO calendar-date form. Send keyword topics unchanged. The query capability
@@ -251,9 +251,9 @@ the returned identity/hash before serving the retained original. A URL is not
 an access grant. All four new operations have named native RPCs and generated
 methods in each of the four Server SDKs.
 
-1.2.1 remains a candidate: these source contracts are not available in the
-published 1.2.0 image. Release qualification and consumer migration must finish
-before switching an application to these operations.
+These operations require the published 1.2.1 image; 1.2.0 does not provide them.
+Validate the consumer integration and preserve a pre-upgrade database backup
+before switching an existing application to these operations.
 
 Keep the ingest response's `source_id`, `filename` and `sha256` against the application's
 immutable file record. Source identity is `src-` followed by the first 16 hex characters

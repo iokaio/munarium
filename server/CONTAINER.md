@@ -14,7 +14,7 @@ docker run --rm --name munarium-evaluation `
   -p 127.0.0.1:8080:8080 -p 127.0.0.1:50051:50051 `
   -e MUNARIUM_STORE=memory -e MUNARIUM_AUTH_MODE=static `
   -e MUNARIUM_STATIC_TOKENS=evaluation-token:evaluation:rw `
-  iokaio/munarium:1.2.0
+  iokaio/munarium:1.2.1
 ```
 
 Open `http://127.0.0.1:8080/admin` or `/docs`. Check `/healthz`, `/readyz`,
@@ -74,42 +74,42 @@ The bundled client lists its commands with `docker exec <container> /mmctl`
 
 ## Versions and verification
 
-`1.2.0` identifies one release. `1.2` and `latest` may advance; use a verified
-digest for deployments. Candidate tags such as `1.2.0-rc.1` are evaluation
+`1.2.1` identifies one release. `1.2` and `latest` may advance; use a verified
+digest for deployments. Candidate tags such as `1.2.1-rc.1` are evaluation
 builds. Prior numeric release tags remain unchanged.
 
 Published and verified on **2026-09-14**:
 
 | Artifact | Identity |
 |---|---|
-| Server | `1.2.0`, `1.2`, `latest` on [Docker Hub](https://hub.docker.com/r/iokaio/munarium/tags) |
-| OCI index | `sha256:b1ef684bdb4d432dcb3cf750d5cd51938821232f2850496557f3fa95bc213d51` |
-| AMD64 manifest | `sha256:4d09f9414cf8320947797cfca1b9745f647247e7c03b1f67e963e5a38e839493` |
-| ARM64 manifest | `sha256:7814f404755886781b182f0105087f1c9f35c936a212ba000d70a82dd2a936cf` |
-| Image source | [`d9face75f0766d93ce195f230f77d41f2ef7eec4`](https://github.com/iokaio/munarium/commit/d9face75f0766d93ce195f230f77d41f2ef7eec4) |
-| Version-aware acceptance harness | [`2aee87b1c643063513c98a25c4e95476ffa8a152`](https://github.com/iokaio/munarium/commit/2aee87b1c643063513c98a25c4e95476ffa8a152) |
+| Server | `1.2.1`, `1.2`, `latest` on [Docker Hub](https://hub.docker.com/r/iokaio/munarium/tags) |
+| OCI index | `sha256:8c937f91b5ab952fa080bdfbc748e041fffd5b69270f5ea4052b96afdebb2df7` |
+| AMD64 manifest | `sha256:2515c419524974ca02db10a79631ac75bc451e3253047620b9cacbff69a51141` |
+| ARM64 manifest | `sha256:b5f53e3d0f55598d7a99cbeaa0ce0e068bc40863bd2e50a0cd49ab641b71c760` |
+| Image and acceptance-suite source | [`c638a8e56fff45cef358ff2f4a5b5ba57957ba59`](https://github.com/iokaio/munarium/commit/c638a8e56fff45cef358ff2f4a5b5ba57957ba59) |
 
 Both architectures passed runtime, authentication, PostgreSQL write/read,
 CLI and restart checks, plus real Ollama REST/gRPC completion, embeddings,
 retrieval and persistence tests. These tests passed again on exact manifests
 pulled from the public registry. AMD64 ran natively; ARM64 ran under emulation,
 not on physical ARM64 hardware. Image audits, both-platform security scans and
-all 11 main-branch source CI checks passed. The original model test first
-refused the version because it hardcoded 1.1.1; the recorded newer harness
-accepts an explicit expected version. The image was not rebuilt for that fix.
+all 11 main-branch source CI checks passed. The separate Matrix CI and client
+checks also passed on this source. These are repeatable synthetic container
+checks, not certification of every hosted model or customer installation.
 
-A synthetic database rehearsal passed 1.1.1 → 1.2.0, then restored its pre-upgrade
-backup and successfully restarted 1.1.1 with the original data/configuration.
+A synthetic database rehearsal passed 1.2.0 → 1.2.1, then restored its pre-upgrade
+backup and successfully restarted 1.2.0 with the original data/configuration.
 **Rollback requires that database restore**; an older binary cannot open the
-new migrations. See [upgrade and vocabulary controls](docs/guides/collection-vocabularies.md).
+new migration 0034. See [upgrade and vocabulary controls](docs/guides/collection-vocabularies.md).
 Automatic vocabulary generation is enabled by default and may use configured
-paid providers for existing eligible collections after upgrade.
+paid providers for existing eligible collections after upgrade. Review generated
+vocabularies for semantic accuracy and retain administrator editing controls.
 
 Pin and verify the published image:
 
 ```console
-docker pull iokaio/munarium@sha256:b1ef684bdb4d432dcb3cf750d5cd51938821232f2850496557f3fa95bc213d51
-cosign verify --certificate-identity https://github.com/iokaio/munarium-int/.github/workflows/server-release.yml@refs/heads/release/server-1.2 --certificate-oidc-issuer https://token.actions.githubusercontent.com docker.io/iokaio/munarium@sha256:b1ef684bdb4d432dcb3cf750d5cd51938821232f2850496557f3fa95bc213d51
+docker pull iokaio/munarium@sha256:8c937f91b5ab952fa080bdfbc748e041fffd5b69270f5ea4052b96afdebb2df7
+cosign verify --certificate-identity https://github.com/iokaio/munarium-int/.github/workflows/server-release.yml@refs/heads/main --certificate-oidc-issuer https://token.actions.githubusercontent.com docker.io/iokaio/munarium@sha256:8c937f91b5ab952fa080bdfbc748e041fffd5b69270f5ea4052b96afdebb2df7
 ```
 
 The signature was independently verified, including its transparency-log claim,
@@ -118,6 +118,10 @@ The signing identity above is the identity in the public certificate; it does
 not require access to the operator repository. SBOM and build provenance
 attestations accompany the OCI index. Client packages remain source-installed;
 this container publication does not publish packages to language registries.
+
+The previous [1.2.0 release](https://github.com/iokaio/munarium/releases/tag/v1.2.0)
+remains at index `sha256:b1ef684bdb4d432dcb3cf750d5cd51938821232f2850496557f3fa95bc213d51`.
+Its historical qualification remains separate from this release.
 
 The image includes `LICENSE`, `NOTICE`, and dependency notices under
 `/usr/share/licenses/munarium/`. Third-party components retain their own
@@ -134,7 +138,7 @@ builder using the `docker-container` driver supports the OCI export and attestat
 docker buildx create --name munarium-builder --driver docker-container
 $revision = git rev-parse HEAD
 docker buildx build --builder munarium-builder --platform linux/amd64,linux/arm64 `
-  --build-arg SOURCE_REVISION=$revision `
+  --build-arg SOURCE_REVISION=$revision --build-arg BUILD_VERSION=1.2.1 `
   --sbom=SELECT_CATALOGERS=+rust-cargo-lock-cataloger --provenance=mode=max `
   --output type=oci,dest=munarium.oci.tar ./server
 ```
