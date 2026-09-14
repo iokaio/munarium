@@ -30,7 +30,8 @@ and is not supported is in [SUPPORT.md](../SUPPORT.md); conduct is the Contribut
 
 ## Installation and publication
 
-All seven client manifests declare **1.0.0**. On **2026-09-10**, their package
+The four Server client manifests declare **1.1.0**; the three Matrix client
+manifests declare **1.0.0**. On **2026-09-10**, their package
 names had no public releases in [PyPI](https://pypi.org/),
 [NuGet](https://www.nuget.org/), [crates.io](https://crates.io/) or
 [Maven Central](https://repo.maven.apache.org/maven2/io/ioka/munarium/).
@@ -53,7 +54,8 @@ first one, `1.0.0` on both sides) is a coincidence of that release, not a rule g
 `clients/check_compatibility.py` fails CI if `compatibility.json`'s recorded version for a
 language ever drifts from what that language's own manifest declares.
 
-The four Server client packages are **1.1.0**, targeting **Server 1.2.0**, with
+The four Server client packages are **1.1.0**, targeting the **Server 1.2.1
+candidate**, with
 supported Server minors **1.2 and 1.1** recorded in `compatibility.json`.
 `ServerApiClient` provides every documented operation over REST and native gRPC,
 including vocabulary, answers, source references and streaming turns. Read the
@@ -67,7 +69,8 @@ clients remain on **Matrix 1.0**, independently of Server compatibility.
 | 1.0 | Existing cloud providers and the baseline MMP 1 operations, subject to the transport gaps below |
 | 1.1.0 | Adds named Ollama configurations, credential-free local endpoints, completion, embedding, and named health checks through the existing provider fields |
 | 1.1.1 | An allowed session model override controls both query expansion and completion; invalid/disallowed overrides are rejected before expansion calls a provider |
-| 1.2.0 (target) | Complete named API on both transports, collection vocabulary generation/management, checked narrative answers and pinned file locations |
+| 1.2.0 (published) | Complete named API on both transports, collection vocabulary generation/management, checked narrative answers and pinned file locations |
+| 1.2.1 (unpublished candidate) | 121 named operations, including collection queries, publication governance and original-reference authorization; Server selects governed passages and explains the files, while the ingesting application serves originals |
 
 Without an override, each task retains its configured model. Nonempty overrides on retrieval-only turns are rejected. Higher tiers can now increase expansion cost as well as completion cost. Use the [Server 1.1.1 alignment guide](docs/guides/server-1.1.1.md) for setup, feature requirements, and validation. Supporting the 1.0 baseline does not backport Ollama or the 1.1.1 routing fix.
 
