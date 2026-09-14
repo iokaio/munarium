@@ -58,6 +58,13 @@ pub struct ProviderSpec {
         skip_serializing_if = "Option::is_none"
     )]
     pub credential_ref: Option<CredentialRef>,
+    /// Optional explicit OpenRouter downstream. When set, fallback is disabled.
+    #[serde(
+        default,
+        rename = "openrouterProvider",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub openrouter_provider: Option<String>,
     #[serde(default)]
     pub budgets: Budgets,
 }
@@ -162,6 +169,7 @@ pub fn default_config_doc(provider: &str) -> Option<ProviderConfigDoc> {
             endpoint: None,
             models: ProviderModels::default(),
             credential_ref: Some(CredentialRef::Env { env: env.into() }),
+            openrouter_provider: None,
             budgets: Budgets::default(),
         },
     })
@@ -254,6 +262,17 @@ pub fn parse_provider_config(yaml: &str) -> std::result::Result<ProviderConfigDo
         serde_yaml::from_str(yaml).map_err(|e| format!("provider config yaml: {e}"))?;
     if doc.kind != "ProviderConfig" {
         return Err(format!("kind must be ProviderConfig, got '{}'", doc.kind));
+    }
+    if let Some(slug) = &doc.spec.openrouter_provider {
+        if doc.spec.provider != "openrouter"
+            || slug.is_empty()
+            || slug.len() > 100
+            || !slug
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '/'))
+        {
+            return Err("openrouterProvider requires one valid downstream slug on an OpenRouter configuration".into());
+        }
     }
     match doc.spec.provider.as_str() {
         "anthropic" | "openai" | "openrouter" => {
@@ -496,9 +515,11 @@ fn anthropic_text(v: &serde_json::Value) -> String {
 // Anthropic (Messages API)
 // ---------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct AnthropicProvider {
     pub endpoint: String,
     pub cred: CredentialRef,
+    output_schema: Option<serde_json::Value>,
     http: reqwest::Client,
 }
 
@@ -510,6 +531,7 @@ impl AnthropicProvider {
                 .trim_end_matches('/')
                 .into(),
             cred,
+            output_schema: None,
             http: http_client(),
         }
     }
@@ -519,6 +541,16 @@ impl AnthropicProvider {
 impl ModelProvider for AnthropicProvider {
     fn id(&self) -> ProviderId {
         ProviderId::Anthropic
+    }
+
+    async fn complete_structured(
+        &self,
+        req: CompletionRequest,
+        schema: serde_json::Value,
+    ) -> Result<CompletionResponse> {
+        let mut request_provider = self.clone();
+        request_provider.output_schema = Some(schema);
+        request_provider.complete(req).await
     }
 
     async fn complete(&self, req: CompletionRequest) -> Result<CompletionResponse> {
@@ -531,6 +563,10 @@ impl ModelProvider for AnthropicProvider {
             "max_tokens": req.max_tokens.max(1),
             "messages": [{ "role": "user", "content": req.prompt }],
         });
+        if let Some(schema) = &self.output_schema {
+            body["output_config"] =
+                serde_json::json!({"format":{"type":"json_schema","schema":schema}});
+        }
         if let Some(system) = &req.system {
             body["system"] = serde_json::json!(system);
         }
@@ -592,12 +628,15 @@ impl ModelProvider for AnthropicProvider {
 // OpenAI (Chat Completions + Embeddings; base-URL override)
 // ---------------------------------------------------------------------------
 
+#[derive(Clone)]
 pub struct OpenAiProvider {
     pub endpoint: String,
     pub cred: CredentialRef,
     /// openrouter specialization: extra attribution headers.
     pub extra_headers: Vec<(String, String)>,
     pub provider_id: ProviderId,
+    pub downstream_provider: Option<String>,
+    output_schema: Option<serde_json::Value>,
     http: reqwest::Client,
 }
 
@@ -611,6 +650,8 @@ impl OpenAiProvider {
             cred,
             extra_headers: Vec::new(),
             provider_id: ProviderId::Openai,
+            downstream_provider: None,
+            output_schema: None,
             http: http_client(),
         }
     }
@@ -627,6 +668,8 @@ impl OpenAiProvider {
                 ("X-Title".into(), "munarium-server".into()),
             ],
             provider_id: ProviderId::Openrouter,
+            downstream_provider: None,
+            output_schema: None,
             http: http_client(),
         }
     }
@@ -703,6 +746,16 @@ impl ModelProvider for OpenAiProvider {
         self.provider_id
     }
 
+    async fn complete_structured(
+        &self,
+        req: CompletionRequest,
+        schema: serde_json::Value,
+    ) -> Result<CompletionResponse> {
+        let mut request_provider = self.clone();
+        request_provider.output_schema = Some(schema);
+        request_provider.complete(req).await
+    }
+
     async fn complete(&self, req: CompletionRequest) -> Result<CompletionResponse> {
         let key = resolve_credential(&self.cred)?;
         let mut messages = Vec::new();
@@ -723,6 +776,12 @@ impl ModelProvider for OpenAiProvider {
             "messages": messages,
         });
         body[max_tokens_field] = serde_json::json!(req.max_tokens.max(1));
+        if let Some(schema) = &self.output_schema {
+            body["response_format"] = serde_json::json!({"type":"json_schema","json_schema":{"name":"munarium_response","strict":true,"schema":schema}});
+        }
+        if let Some(slug) = &self.downstream_provider {
+            body["provider"] = serde_json::json!({"only":[slug],"allow_fallbacks":false,"require_parameters":true,"data_collection":"deny"});
+        }
         if let Some(t) = req.temperature {
             body["temperature"] = serde_json::json!(t);
         }
@@ -800,7 +859,11 @@ pub fn build_provider(doc: &ProviderConfigDoc) -> Result<Box<dyn ModelProvider>>
     })?;
     Ok(match doc.spec.provider.as_str() {
         "anthropic" => Box::new(AnthropicProvider::new(endpoint, cred)),
-        "openrouter" => Box::new(OpenAiProvider::openrouter(endpoint, cred)),
+        "openrouter" => {
+            let mut provider = OpenAiProvider::openrouter(endpoint, cred);
+            provider.downstream_provider = doc.spec.openrouter_provider.clone();
+            Box::new(provider)
+        }
         "openai" => Box::new(OpenAiProvider::new(endpoint, cred)),
         _ => return Err(KernelError::InvalidInput("unsupported provider".into())),
     })

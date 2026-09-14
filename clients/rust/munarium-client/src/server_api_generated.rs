@@ -22,6 +22,18 @@ impl ServerApiClient {
     pub async fn compose_answer(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("ComposeAnswer", "POST", "/v1.2/answers", "application/json", request).await
     }
+    /// GET /v1.2/collections/{id}/governance
+    pub async fn get_collection_governance(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("GetCollectionGovernance", "GET", "/v1.2/collections/{id}/governance", "application/json", request).await
+    }
+    /// PUT /v1.2/collections/{id}/governance
+    pub async fn replace_collection_governance(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("ReplaceCollectionGovernance", "PUT", "/v1.2/collections/{id}/governance", "application/json", request).await
+    }
+    /// GET /v1.2/collections/{id}/publications/{publication_id}
+    pub async fn authorize_publication(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("AuthorizePublication", "GET", "/v1.2/collections/{id}/publications/{publication_id}", "application/json", request).await
+    }
     /// GET /v1.2/collections/{id}/vocabulary
     pub async fn get_collection_vocabulary(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("GetCollectionVocabulary", "GET", "/v1.2/collections/{id}/vocabulary", "application/json", request).await
@@ -41,6 +53,10 @@ impl ServerApiClient {
     /// GET /v1.2/collections/{id}/vocabulary/revision
     pub async fn get_vocabulary_revision(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("GetVocabularyRevision", "GET", "/v1.2/collections/{id}/vocabulary/revision", "application/json", request).await
+    }
+    /// POST /v1.2/query
+    pub async fn query_collections(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("QueryCollections", "POST", "/v1.2/query", "application/json", request).await
     }
     /// POST /v1.2/search
     pub async fn search_collection(&self, request: ApiRequest) -> Result<ApiResponse> {

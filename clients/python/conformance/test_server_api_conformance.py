@@ -12,7 +12,13 @@ from pathlib import Path
 import grpc
 import pytest
 
-from munarium_client import ApiRequest, AsyncServerApiClient, ClientOptions, ServerApiClient
+from munarium_client import (
+    TARGET_SERVER_VERSION,
+    ApiRequest,
+    AsyncServerApiClient,
+    ClientOptions,
+    ServerApiClient,
+)
 from munarium_client._errors import InvalidInputError, MunariumError, NotFoundError
 from munarium_client._grpc_common import target_from_endpoint
 from munarium_client._proto.mmp.v1 import server_api_pb2 as pb
@@ -33,7 +39,7 @@ def test_vocabulary_source_identity_and_old_platform_gaps(grpc_transport):
     client = ServerApiClient(options(grpc_transport), grpc_transport=grpc_transport)
     name = "api-" + uuid.uuid4().hex
     try:
-        assert client.version_info().json()["version"] == "1.2.0"
+        assert client.version_info().json()["version"] == TARGET_SERVER_VERSION
         shape = (
             "apiVersion: munarium.ioka.io/v1\nkind: Shape\n"
             "metadata: {name: api-docs, version: 1}\nspec:\n"
@@ -111,7 +117,7 @@ def test_vocabulary_source_identity_and_old_platform_gaps(grpc_transport):
 async def test_async_complete_surface_reads(grpc_transport):
     client = AsyncServerApiClient(options(grpc_transport), grpc_transport=grpc_transport)
     try:
-        assert (await client.version_info()).json()["version"] == "1.2.0"
+        assert (await client.version_info()).json()["version"] == TARGET_SERVER_VERSION
         assert "sampling" in (await client.get_vocabulary_settings()).json()
     finally:
         await client.close()

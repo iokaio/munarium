@@ -2,6 +2,7 @@
 package io.ioka.munarium.client.conformance;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.ioka.munarium.client.Munarium;
 import io.ioka.munarium.client.MunariumClientOptions;
 import io.ioka.munarium.client.ServerApiClient;
 import io.ioka.munarium.client.ServerApiTransport.ApiRequest;
@@ -26,7 +27,7 @@ class ServerApiTest {
         var options = MunariumClientOptions.of(endpoint).withToken(Env.TOKEN == null ? "devtoken" : Env.TOKEN).withUid("api-java-conformance");
         var json = new ObjectMapper();
         try (var api = new ServerApiClient(options, grpc)) {
-            assertEquals("1.2.0", api.versionInfoAsync(null).get().json().get("version").asText());
+            assertEquals(Munarium.TARGET_SERVER_VERSION, api.versionInfoAsync(null).get().json().get("version").asText());
             var shape = "apiVersion: munarium.ioka.io/v1\nkind: Shape\nmetadata: {name: api-java-docs, version: 1}\nspec:\n  fact:\n    schema: {type: object}\n";
             api.applyShape(new ApiRequest(Map.of(), List.of(), shape.getBytes(StandardCharsets.UTF_8), "text/yaml", Map.of(), null));
             var name = "api-java-" + UUID.randomUUID().toString();

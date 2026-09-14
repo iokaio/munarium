@@ -20,6 +20,21 @@ RECORD = json.loads((ROOT / "compatibility.json").read_text(encoding="utf-8"))
 
 def test_record_agrees_with_target() -> None:
     assert CHECK.server_support_problems(RECORD) == []
+    assert CHECK.server_target_constants_problems(RECORD) == []
+
+
+@pytest.mark.parametrize("lang", ["python", "dotnet", "java", "rust"])
+def test_stale_or_missing_target_constant_is_detected(lang: str, tmp_path: Path) -> None:
+    for name, (relative, _) in CHECK.TARGET_CONSTANTS.items():
+        destination = tmp_path / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        text = (ROOT / relative).read_text(encoding="utf-8")
+        if name == lang:
+            text = text.replace(RECORD["target_server"], "0.0.0")
+        destination.write_text(text, encoding="utf-8")
+    assert len(CHECK.server_target_constants_problems(RECORD, tmp_path)) == 1
+    (tmp_path / CHECK.TARGET_CONSTANTS[lang][0]).unlink()
+    assert len(CHECK.server_target_constants_problems(RECORD, tmp_path)) == 1
 
 
 @pytest.mark.parametrize("target", [None, "1.1", "latest", "1.1.1-rc.1"])

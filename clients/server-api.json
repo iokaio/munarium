@@ -1,5 +1,5 @@
 {
-  "server_version": "1.2.0",
+  "server_version": "1.2.1",
   "operations": [
     {
       "name": "healthai",
@@ -42,6 +42,30 @@
       "streaming": false
     },
     {
+      "name": "get_collection_governance",
+      "rpc": "GetCollectionGovernance",
+      "method": "GET",
+      "path": "/v1.2/collections/{id}/governance",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "replace_collection_governance",
+      "rpc": "ReplaceCollectionGovernance",
+      "method": "PUT",
+      "path": "/v1.2/collections/{id}/governance",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "authorize_publication",
+      "rpc": "AuthorizePublication",
+      "method": "GET",
+      "path": "/v1.2/collections/{id}/publications/{publication_id}",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
       "name": "get_collection_vocabulary",
       "rpc": "GetCollectionVocabulary",
       "method": "GET",
@@ -78,6 +102,14 @@
       "rpc": "GetVocabularyRevision",
       "method": "GET",
       "path": "/v1.2/collections/{id}/vocabulary/revision",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "query_collections",
+      "rpc": "QueryCollections",
+      "method": "POST",
+      "path": "/v1.2/query",
       "content_type": "application/json",
       "streaming": false
     },

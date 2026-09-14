@@ -346,6 +346,28 @@ pub async fn op_complete(
     name: &str,
     req: dto::CompleteRequest,
 ) -> Result<dto::CompleteResponse> {
+    complete_with_schema(state, tenant, store, name, req, None).await
+}
+
+pub(crate) async fn op_complete_structured(
+    state: &AppState,
+    tenant: &str,
+    store: &dyn munarium_core::storage::StorageBackend,
+    name: &str,
+    req: dto::CompleteRequest,
+    schema: serde_json::Value,
+) -> Result<dto::CompleteResponse> {
+    complete_with_schema(state, tenant, store, name, req, Some(schema)).await
+}
+
+async fn complete_with_schema(
+    state: &AppState,
+    tenant: &str,
+    store: &dyn munarium_core::storage::StorageBackend,
+    name: &str,
+    req: dto::CompleteRequest,
+    schema: Option<serde_json::Value>,
+) -> Result<dto::CompleteResponse> {
     let tier = req
         .tier
         .as_deref()
@@ -417,17 +439,18 @@ pub async fn op_complete(
         }
     }
     let started = std::time::Instant::now();
-    let result = entry
-        .provider
-        .complete(CompletionRequest {
-            model: model.clone(),
-            system: req.system,
-            prompt,
-            max_tokens,
-            temperature: req.temperature,
-            tools: None,
-        })
-        .await;
+    let input = CompletionRequest {
+        model: model.clone(),
+        system: req.system,
+        prompt,
+        max_tokens,
+        temperature: req.temperature,
+        tools: None,
+    };
+    let result = match schema {
+        Some(schema) => entry.provider.complete_structured(input, schema).await,
+        None => entry.provider.complete(input).await,
+    };
     // Settle whatever happened: actuals on success, the estimate on failure
     // (the provider may have been reached — spent, never free). A settle
     // failure must not fail a completion that already happened; the stale

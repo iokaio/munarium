@@ -96,6 +96,45 @@ fn test_cred() -> CredentialRef {
 }
 
 #[tokio::test]
+async fn configured_openrouter_route_is_explicit_and_legacy_routes_are_unchanged() {
+    let recorded = Arc::new(std::sync::Mutex::new(Vec::<serde_json::Value>::new()));
+    let sink = recorded.clone();
+    let app = Router::new().route("/chat/completions", post(move |Json(body): Json<serde_json::Value>| {
+        sink.lock().unwrap().push(body);
+        async { Json(serde_json::json!({"choices":[{"message":{"content":"fixture"},"finish_reason":"stop"}]})) }
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    for downstream in [None, Some("fixture/vendor".to_string())] {
+        let mut provider = OpenAiProvider::openrouter(Some(&endpoint), test_cred());
+        provider.downstream_provider = downstream;
+        provider
+            .complete(CompletionRequest {
+                model: "fixture/model".into(),
+                system: None,
+                prompt: "fixture".into(),
+                max_tokens: 64,
+                temperature: None,
+                tools: None,
+            })
+            .await
+            .unwrap();
+    }
+    let calls = recorded.lock().unwrap();
+    assert!(calls[0].get("provider").is_none());
+    assert_eq!(
+        calls[1]["provider"],
+        serde_json::json!({"only":["fixture/vendor"],"allow_fallbacks":false,"require_parameters":true,"data_collection":"deny"})
+    );
+    assert_eq!(calls[1]["max_tokens"], 64);
+    assert!(calls[1].get("max_completion_tokens").is_none());
+    server.abort();
+}
+
+#[tokio::test]
 async fn anthropic_messages_dialect() {
     let (base, _) = spawn_mock().await;
     let p = AnthropicProvider::new(Some(&base), test_cred());
@@ -117,6 +156,64 @@ async fn anthropic_messages_dialect() {
 
     let health = p.health().await.expect("health");
     assert!(health.healthy);
+}
+
+#[tokio::test]
+async fn structured_completion_is_scoped_to_the_request_in_each_hosted_dialect() {
+    let recorded = Arc::new(std::sync::Mutex::new(Vec::<serde_json::Value>::new()));
+    let sink = recorded.clone();
+    let handler = move |Json(body): Json<serde_json::Value>| {
+        sink.lock().unwrap().push(body);
+        async {
+            Json(
+                serde_json::json!({"choices":[{"message":{"content":"fixture"},"finish_reason":"stop"}],
+            "content":[{"type":"text","text":"fixture"}],"stop_reason":"end_turn","usage":{}}),
+            )
+        }
+    };
+    let app = Router::new()
+        .route("/chat/completions", post(handler.clone()))
+        .route("/v1/messages", post(handler));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    let schema = serde_json::json!({"type":"object","additionalProperties":false,"required":["answer"],"properties":{"answer":{"type":"string"}}});
+    let providers: Vec<Box<dyn ModelProvider>> = vec![
+        Box::new(OpenAiProvider::new(Some(&endpoint), test_cred())),
+        Box::new(OpenAiProvider::openrouter(Some(&endpoint), test_cred())),
+        Box::new(AnthropicProvider::new(Some(&endpoint), test_cred())),
+    ];
+    for provider in providers {
+        let request = CompletionRequest {
+            model: "fixture".into(),
+            system: None,
+            prompt: "Return JSON".into(),
+            max_tokens: 64,
+            temperature: None,
+            tools: None,
+        };
+        let before = provider.complete(request.clone()).await.unwrap();
+        let structured = provider
+            .complete_structured(request.clone(), schema.clone())
+            .await
+            .unwrap();
+        let after = provider.complete(request).await.unwrap();
+        assert_eq!(before.request_hash, after.request_hash);
+        assert_ne!(before.request_hash, structured.request_hash);
+    }
+    let calls = recorded.lock().unwrap();
+    for i in [0, 2, 3, 5, 6, 8] {
+        assert!(calls[i].get("response_format").is_none());
+        assert!(calls[i].get("output_config").is_none());
+    }
+    for i in [1, 4] {
+        assert_eq!(calls[i]["response_format"]["json_schema"]["schema"], schema);
+        assert_eq!(calls[i]["response_format"]["json_schema"]["strict"], true);
+    }
+    assert_eq!(calls[7]["output_config"]["format"]["schema"], schema);
+    server.abort();
 }
 
 #[tokio::test]

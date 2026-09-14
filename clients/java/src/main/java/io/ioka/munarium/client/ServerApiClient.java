@@ -20,6 +20,15 @@ public final class ServerApiClient extends ServerApiTransport {
     /** POST /v1.2/answers */
     public ApiResponse composeAnswer(ApiRequest request) { return call("ComposeAnswer", "POST", "/v1.2/answers", "application/json", request); }
     public CompletableFuture<ApiResponse> composeAnswerAsync(ApiRequest request) { return async(() -> composeAnswer(request)); }
+    /** GET /v1.2/collections/{id}/governance */
+    public ApiResponse getCollectionGovernance(ApiRequest request) { return call("GetCollectionGovernance", "GET", "/v1.2/collections/{id}/governance", "application/json", request); }
+    public CompletableFuture<ApiResponse> getCollectionGovernanceAsync(ApiRequest request) { return async(() -> getCollectionGovernance(request)); }
+    /** PUT /v1.2/collections/{id}/governance */
+    public ApiResponse replaceCollectionGovernance(ApiRequest request) { return call("ReplaceCollectionGovernance", "PUT", "/v1.2/collections/{id}/governance", "application/json", request); }
+    public CompletableFuture<ApiResponse> replaceCollectionGovernanceAsync(ApiRequest request) { return async(() -> replaceCollectionGovernance(request)); }
+    /** GET /v1.2/collections/{id}/publications/{publication_id} */
+    public ApiResponse authorizePublication(ApiRequest request) { return call("AuthorizePublication", "GET", "/v1.2/collections/{id}/publications/{publication_id}", "application/json", request); }
+    public CompletableFuture<ApiResponse> authorizePublicationAsync(ApiRequest request) { return async(() -> authorizePublication(request)); }
     /** GET /v1.2/collections/{id}/vocabulary */
     public ApiResponse getCollectionVocabulary(ApiRequest request) { return call("GetCollectionVocabulary", "GET", "/v1.2/collections/{id}/vocabulary", "application/json", request); }
     public CompletableFuture<ApiResponse> getCollectionVocabularyAsync(ApiRequest request) { return async(() -> getCollectionVocabulary(request)); }
@@ -35,6 +44,9 @@ public final class ServerApiClient extends ServerApiTransport {
     /** GET /v1.2/collections/{id}/vocabulary/revision */
     public ApiResponse getVocabularyRevision(ApiRequest request) { return call("GetVocabularyRevision", "GET", "/v1.2/collections/{id}/vocabulary/revision", "application/json", request); }
     public CompletableFuture<ApiResponse> getVocabularyRevisionAsync(ApiRequest request) { return async(() -> getVocabularyRevision(request)); }
+    /** POST /v1.2/query */
+    public ApiResponse queryCollections(ApiRequest request) { return call("QueryCollections", "POST", "/v1.2/query", "application/json", request); }
+    public CompletableFuture<ApiResponse> queryCollectionsAsync(ApiRequest request) { return async(() -> queryCollections(request)); }
     /** POST /v1.2/search */
     public ApiResponse searchCollection(ApiRequest request) { return call("SearchCollection", "POST", "/v1.2/search", "application/json", request); }
     public CompletableFuture<ApiResponse> searchCollectionAsync(ApiRequest request) { return async(() -> searchCollection(request)); }

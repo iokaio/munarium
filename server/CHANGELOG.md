@@ -3,6 +3,38 @@
 These are source release notes. See the [container publication record](CONTAINER.md#versions-and-verification)
 for registry availability, digests and public signing instructions.
 
+## Unreleased — 1.2.1
+
+- Add collection-scoped query orchestration, retained publication governance,
+  and original-file authorization over REST and native gRPC. Query callers send
+  their question and collection scope; Server selects governing versions,
+  applies vocabulary, retrieves passages and composes the narrative.
+- Add append-only migration 0034 and revision-checked publication snapshots.
+  Withdrawals do not revive superseded originals; a governance change during
+  completion rejects the in-flight answer. Applications keep serving file bytes.
+- Publish model routes and budgets by exact access clearance, and apply the
+  collection's model/processing policy to vocabulary generation. Only activated
+  indexes may be registered as published sources.
+- Preserve explanatory answers and verified citations for insufficient and
+  review results. Request provider-native structured output for answer and
+  vocabulary protocols while retaining ordinary completion behavior.
+- Keep per-index BM25 statistics separate during cross-file ranking, without
+  letting index names or task completion order starve later files of context.
+- Support explicit OpenRouter downstream routing through ProviderConfig.
+- Give the answer model request-local passage IDs and map checked citations back
+  to the caller's original IDs. Keep source paths, hashes and opaque caller IDs
+  out of the model's citation namespace. Unknown IDs and altered quotes fail closed.
+- Clarify generic answer instructions for keyword topics and partially supported
+  requests without adding domain-specific aliases or inferred facts.
+- Extend REST/gRPC regressions for forged provenance, access levels, collection
+  scopes, user/tenant isolation, expired tokens and invalid model citations.
+- Derive the generated client API inventory's version from OpenAPI.
+- Align all four Server SDK target constants with 1.2.1 and check them against
+  the compatibility record. Live conformance uses those checked constants.
+
+Release qualification and application integration remain pending. No 1.2.1
+container or release tag is published by these source changes.
+
 ## 1.2.0
 
 - Add the complete `ServerApiService`: every documented REST operation has a

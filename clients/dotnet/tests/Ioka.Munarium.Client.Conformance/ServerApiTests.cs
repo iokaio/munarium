@@ -15,7 +15,7 @@ public class ServerApiTests
         Skip.If(endpoint == null, "live Server endpoint unset");
         var options = new MunariumClientOptions { Endpoint = endpoint!, Token = Environment.GetEnvironmentVariable("MUNARIUM_TOKEN") ?? "devtoken", Uid = "api-dotnet-conformance" };
         await using var api = grpc ? ServerApiClient.Grpc(options) : ServerApiClient.Rest(options);
-        Assert.Equal("1.2.0", (await api.VersionInfoAsync()).Json().GetProperty("version").GetString());
+        Assert.Equal(MunariumClient.TargetServerVersion, (await api.VersionInfoAsync()).Json().GetProperty("version").GetString());
         var shape = "apiVersion: munarium.ioka.io/v1\nkind: Shape\nmetadata: {name: api-dotnet-docs, version: 1}\nspec:\n  fact:\n    schema: {type: object}\n";
         await api.ApplyShapeAsync(new ApiRequest { Body = Encoding.UTF8.GetBytes(shape), ContentType = "text/yaml" });
         var name = "api-dotnet-" + Guid.NewGuid().ToString("N");

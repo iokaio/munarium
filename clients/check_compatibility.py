@@ -224,9 +224,28 @@ def server_support_problems(record: dict) -> list[str]:
     return bad
 
 
+TARGET_CONSTANTS = {
+    "rust": ("rust/munarium-client/src/lib.rs", r'TARGET_SERVER_VERSION: &str = "([^"]+)"'),
+    "python": ("python/src/munarium_client/_options.py", r'TARGET_SERVER_VERSION = "([^"]+)"'),
+    "dotnet": ("dotnet/src/Ioka.Munarium.Client/MunariumClient.cs", r'TargetServerVersion = "([^"]+)"'),
+    "java": ("java/src/main/java/io/ioka/munarium/client/Munarium.java", r'TARGET_SERVER_VERSION = "([^"]+)"'),
+}
+
+
+def server_target_constants_problems(record: dict, root: Path = ROOT) -> list[str]:
+    bad = []
+    for lang, (path, pattern) in TARGET_CONSTANTS.items():
+        source = root / path
+        found = re.findall(pattern, source.read_text(encoding="utf-8")) if source.is_file() else []
+        if found != [record["target_server"]]:
+            bad.append(f"{lang}: target Server constant must equal {record['target_server']}")
+    return bad
+
+
 def main() -> int:
     record = json.loads((ROOT / "compatibility.json").read_text(encoding="utf-8"))
     bad: list[str] = server_support_problems(record)
+    bad.extend(server_target_constants_problems(record))
 
     # Every entry in the record needs a reader, and every reader an entry --
     # otherwise a client can be added to one and forgotten in the other.

@@ -56,6 +56,24 @@ pub fn merge_hits_weighted(
     rrf_k: f64,
     weights: &MergeWeights,
 ) -> Vec<(String, SearchHit)> {
+    merge_hits_in_domains(
+        results,
+        top_k,
+        rrf_k,
+        weights,
+        &std::collections::HashMap::new(),
+    )
+}
+
+/// Explicit comparability domains for new callers that know the serving engine
+/// and prepared query. Missing entries retain the legacy PostgreSQL contract.
+pub fn merge_hits_in_domains(
+    results: &[CollectionSearchResult],
+    top_k: usize,
+    rrf_k: f64,
+    weights: &MergeWeights,
+    domains: &std::collections::HashMap<String, (String, String)>,
+) -> Vec<(String, SearchHit)> {
     // Flattened in input order, exactly as the historical merge did — the
     // ordinal is the tie-of-ties preserver.
     let flat: Vec<(&str, &SearchHit)> = results
@@ -76,13 +94,19 @@ pub fn merge_hits_weighted(
             ordinal,
             chunk_id: hit.chunk_id.clone(),
             lexical: hit.lexical_score.map(|v| Measure {
-                domain: PG_LEXICAL_DOMAIN.into(),
+                domain: domains
+                    .get(*pool)
+                    .map(|d| d.0.clone())
+                    .unwrap_or_else(|| PG_LEXICAL_DOMAIN.into()),
                 value: v,
             }),
             // Negated: the pooled merge is canonical higher-is-better, and
             // negation preserves the ordering distance gave, ties included.
             vector: hit.vector_distance.map(|d| Measure {
-                domain: LOCAL_VECTOR_DOMAIN.into(),
+                domain: domains
+                    .get(*pool)
+                    .map(|d| d.1.clone())
+                    .unwrap_or_else(|| LOCAL_VECTOR_DOMAIN.into()),
                 value: -d,
             }),
         })
@@ -102,7 +126,11 @@ pub fn merge_hits_weighted(
         probe_weight: weights.probe_weight,
     };
 
-    let outcome = fuse_pools(&candidates, top_k, &pooled);
+    let outcome = if domains.is_empty() {
+        fuse_pools(&candidates, top_k, &pooled)
+    } else {
+        munarium_datastore::fusion::fuse_pools_partial_domains(&candidates, top_k, &pooled)
+    };
     if outcome.diagnostics.mixed_domain {
         // Unreachable while the selector covers whole multi-search sets. If it
         // fires, the ordering above was decided by rank interleave rather than
@@ -130,6 +158,54 @@ pub fn merge_hits_weighted(
 mod tests {
     use super::*;
     use munarium_core::retrieval::{ProvenanceEnvelope, SearchResult};
+
+    #[test]
+    fn independent_index_names_and_bm25_scales_do_not_starve_a_relevant_late_file() {
+        let mut results: Vec<_> = (0..80)
+            .map(|i| {
+                coll(
+                    &format!("index-{i:03}"),
+                    vec![hit(
+                        &format!("noise-{i:03}"),
+                        Some(1000.0 + i as f64),
+                        Some(0.95),
+                    )],
+                )
+            })
+            .collect();
+        results.push(coll(
+            "last-index",
+            vec![hit("relevant", Some(0.001), Some(0.01))],
+        ));
+        let domains = results
+            .iter()
+            .map(|r| {
+                (
+                    r.collection_name.clone(),
+                    (r.collection_name.clone(), LOCAL_VECTOR_DOMAIN.into()),
+                )
+            })
+            .collect();
+        let first = merge_hits_in_domains(&results, 24, 60.0, &MergeWeights::default(), &domains);
+        assert_eq!(first[0].1.chunk_id, "relevant");
+        results.reverse();
+        for result in &mut results {
+            for hit in &mut result.result.hits {
+                hit.lexical_score = hit.lexical_score.map(|v| v * 0.000001);
+            }
+        }
+        let second = merge_hits_in_domains(&results, 24, 60.0, &MergeWeights::default(), &domains);
+        assert_eq!(
+            first
+                .iter()
+                .map(|(_, h)| (&h.chunk_id, h.score))
+                .collect::<Vec<_>>(),
+            second
+                .iter()
+                .map(|(_, h)| (&h.chunk_id, h.score))
+                .collect::<Vec<_>>()
+        );
+    }
 
     fn hit(chunk_id: &str, lexical_score: Option<f64>, vector_distance: Option<f64>) -> SearchHit {
         SearchHit {

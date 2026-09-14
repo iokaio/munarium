@@ -246,5 +246,9 @@ All documented REST operations also have named native RPCs on "mmp.v1.ServerApiS
 | `GET /v1.2/collections/{id}/vocabulary/revision` | `query`, with collection clearance | Read revision only, for answer-cache invalidation |
 | `POST /v1.2/search` | `query` | Search an explicit collection and optional pinned index with its vocabulary |
 | `POST /v1.2/answers` | `query` for every supplied collection | Verify pinned passages, generate a narrative and return checked citations |
+| `GET /v1.2/collections/{id}/governance` | Static `rw` | Read retained publication metadata and query policy (unreleased 1.2.1) |
+| `PUT /v1.2/collections/{id}/governance` | Static `rw` | Append a revision-checked governance snapshot (unreleased 1.2.1) |
+| `POST /v1.2/query` | `query`, with collection clearance | Server selects governing publications, retrieves and composes (unreleased 1.2.1) |
+| `GET /v1.2/collections/{id}/publications/{publication_id}` | `query`, with collection clearance | Authorize an original's identity for the optional `effective_on` date; never serve bytes (unreleased 1.2.1) |
 
 See [collection vocabularies and file references](../guides/collection-vocabularies.md) for request schemas, defaults, authorization and upgrade requirements.

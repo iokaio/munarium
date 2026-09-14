@@ -264,6 +264,26 @@ pub fn fuse_pools(
     top_k: usize,
     w: &PoolMergeWeights,
 ) -> PoolMergeOutcome {
+    fuse_pools_with_domain_policy(candidates, top_k, w, false)
+}
+
+/// Preserve equal rank across incomparable measurement domains. In particular,
+/// independent BM25 indexes must not gain relevance from their domain names;
+/// the comparable vector leg can still rank all their candidates together.
+pub fn fuse_pools_partial_domains(
+    candidates: &[PoolCandidate],
+    top_k: usize,
+    w: &PoolMergeWeights,
+) -> PoolMergeOutcome {
+    fuse_pools_with_domain_policy(candidates, top_k, w, true)
+}
+
+fn fuse_pools_with_domain_policy(
+    candidates: &[PoolCandidate],
+    top_k: usize,
+    w: &PoolMergeWeights,
+    partial_domains: bool,
+) -> PoolMergeOutcome {
     let k = if w.rrf_k > 0.0 { w.rrf_k } else { 60.0 };
     let is_probe = |c: &PoolCandidate| w.probe_pools.contains(&c.pool);
 
@@ -345,6 +365,12 @@ pub fn fuse_pools(
                     own.sort_by(by_value);
                     with_rank.extend(own.into_iter().enumerate());
                 }
+                if partial_domains {
+                    for (rank, i) in with_rank {
+                        fused[i] += stratum_weight * leg_weight / (k + rank as f64 + 1.0);
+                    }
+                    continue;
+                }
                 with_rank.sort_by(|&(ra, a), &(rb, b)| {
                     ra.cmp(&rb)
                         .then_with(|| {
@@ -383,7 +409,11 @@ pub fn fuse_pools(
     PoolMergeOutcome {
         ranked,
         diagnostics: PoolMergeDiagnostics {
-            policy_version: POOL_MERGE_POLICY_VERSION,
+            policy_version: if partial_domains {
+                2
+            } else {
+                POOL_MERGE_POLICY_VERSION
+            },
             lexical_domains,
             vector_domains,
             mixed_domain: mixed,

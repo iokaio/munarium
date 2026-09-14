@@ -62,6 +62,16 @@ pub struct ProviderHealth {
 pub trait ModelProvider: Send + Sync {
     fn id(&self) -> ProviderId;
     async fn complete(&self, req: CompletionRequest) -> Result<CompletionResponse>;
+    /// Request structured output for Server-owned protocols. Providers without
+    /// constrained decoding retain prompt-based completion; consumers still
+    /// validate the returned structure and provenance before using it.
+    async fn complete_structured(
+        &self,
+        req: CompletionRequest,
+        _schema: serde_json::Value,
+    ) -> Result<CompletionResponse> {
+        self.complete(req).await
+    }
     async fn embed(&self, req: EmbeddingRequest) -> Result<EmbeddingResponse>;
     async fn health(&self) -> Result<ProviderHealth>;
 }

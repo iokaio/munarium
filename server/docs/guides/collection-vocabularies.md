@@ -157,6 +157,104 @@ Do not turn each retrieved chunk into a competing answer.
 
 ## Mapping references to original files
 
+### Collection queries (unreleased 1.2.1)
+
+`POST /v1.2/query` accepts `question`, `collections`, and optional `effective_on`
+in ISO calendar-date form. Send keyword topics unchanged. The query capability
+supplies the user's clearance and compartments. The request does not accept
+passages, file allowlists, index pins, model overrides, or prompts. Server applies
+the collection vocabulary, chooses governing publications, retrieves and ranks
+their passages, and returns the same checked narrative/reference envelope.
+
+A publisher with a static `rw` credential manages publication snapshots through
+`GET` and `PUT /v1.2/collections/{id}/governance`. A snapshot contains a revision,
+all retained publication records, dated document relationships, and query policy.
+Each record has `id`, `document_id`, internal `collection`, `index_version`,
+`source_id`, `source_content_hash`, `effective_from`, optional `effective_until`,
+`published_at`, and `state` (`approved`, `superseded`, or `withdrawn`). Server checks
+the pinned source against an activated internal index before accepting an active record.
+Those internal indexes remain inaccessible to a query capability containing only
+the parent collection's compartment; the author's explicit binding delegates
+their use through Server's governed query. A child cannot require a higher access
+level than the parent.
+
+PUT uses the last revision and returns an incremented revision; stale writes fail
+with `409 head-conflict`. Retained identities, source hashes and publication dates
+cannot be rewritten, withdrawn records cannot be reactivated, and missing records
+must be retained as withdrawal tombstones. Migration 0034 stores append-only
+snapshots. Rebuilding an index may update its pin while preserving source identity
+and bytes. Existing indexes do not need rebuilding merely to register governance.
+
+Server chooses the latest eligible publication in each document family before
+checking expiry or withdrawal. It never revives an older version to fill a gap.
+Ambiguous versions, unresolved supersession chains, conflicts, and missing
+prerequisites require review. Dated amendments to selected content also require
+review. When authorized passages are available, Server still asks the model to
+explain their content and the review qualification, while retaining the review
+status. It does not ask the model to adjudicate precedence.
+Clearance and snapshot revisions are checked again after model completion. A
+concurrent policy change rejects the in-flight result.
+
+Query policy defaults are: enabled, historical clearance level 2, 24 passages,
+60,000 serialized context characters, retrieval concurrency 20, and 12 candidates
+per internal index. These bound each answer's work, not the number of documents
+in a collection. Provider and tier inherit the Server vocabulary model settings;
+the publisher can configure them per collection. External processing is disabled
+unless explicitly allowed. Multiple selected collections must agree on model
+routing; restrictive processing and context/concurrency settings apply together.
+
+`query.model_routes` optionally overrides provider, tier, context budget, output
+token budget and enabled state for an exact `access_level`. A higher clearance
+does not inherit a lower clearance's route. Duplicate levels are rejected.
+`query.max_output_tokens` defaults to the tenant completion budget when omitted.
+Automatic and manual vocabulary generation use the collection's base provider
+and tier, with the same external-processing policy. A governance revision change
+during generation discards the result.
+
+Collection queries rank comparable scores together. Datastore BM25 scores from
+different indexes have separate statistical domains; equally ranked hits from
+those domains receive equal lexical contributions. Comparable vector scores can
+then distinguish relevance across files. Index names and completion order do not
+give early files priority. Legacy search/session fusion retains its existing policy.
+
+The `content.answer` field contains the model's explanation, including partial
+findings and gaps. `insufficient` and `review` may also carry explanatory prose
+and verified citations. Consumers should display that explanation and its file
+references, rather than replace it with a generic search-result message. Each
+citation still has to match a pinned passage. A supported answer requires at
+least one verified citation; a description of missing information need not cite
+a nonexistent fact.
+
+Server requests structured output for answer and vocabulary protocols using
+[OpenAI](https://developers.openai.com/api/docs/guides/structured-outputs),
+[OpenRouter](https://openrouter.ai/docs/guides/features/structured-outputs),
+[Anthropic](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)
+and [local Ollama](https://docs.ollama.com/capabilities/structured-outputs)
+schema controls. Select a model/endpoint that supports them. The schema organizes
+the response; it does not verify its factual meaning. Server continues checking
+status, citation identities, exact quotes, scope and concurrent policy changes.
+Ordinary provider completion requests retain their existing response format.
+
+For OpenRouter, `ProviderConfig.spec.openrouterProvider` can select one downstream
+provider slug. Server sends `only`, disables fallback, requires parameter support
+and requests `data_collection: deny`. This is an explicit routing request, not an
+independent guarantee about a provider's retention practices. Omitting the field
+retains the existing provider routing behavior.
+
+`GET /v1.2/collections/{id}/publications/{publication_id}` authorizes an original
+for the caller's current collection clearance and optional `effective_on` date.
+It returns the publication identity, never file bytes or a download URL. Use it
+when opening a saved citation to recheck Server's current governance. Disabling
+queries does not by itself delete retained originals or authorize historical
+access. The ingesting application still checks its own current membership and
+the returned identity/hash before serving the retained original. A URL is not
+an access grant. All four new operations have named native RPCs and generated
+methods in each of the four Server SDKs.
+
+1.2.1 remains a candidate: these source contracts are not available in the
+published 1.2.0 image. Release qualification and consumer migration must finish
+before switching an application to these operations.
+
 Keep the ingest response's `source_id`, `filename` and `sha256` against the application's
 immutable file record. Source identity is `src-` followed by the first 16 hex characters
 of SHA-256 over `{tenant}/{logical-path}`. The content hash is separate: equal bytes at

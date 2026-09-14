@@ -18,6 +18,15 @@ impl pb::server_api_service_server::ServerApiService for ServerApiSvc {
     async fn compose_answer(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "POST", "/v1.2/answers", "application/json").await
     }
+    async fn get_collection_governance(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "GET", "/v1.2/collections/{id}/governance", "application/json").await
+    }
+    async fn replace_collection_governance(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "PUT", "/v1.2/collections/{id}/governance", "application/json").await
+    }
+    async fn authorize_publication(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "GET", "/v1.2/collections/{id}/publications/{publication_id}", "application/json").await
+    }
     async fn get_collection_vocabulary(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "GET", "/v1.2/collections/{id}/vocabulary", "application/json").await
     }
@@ -32,6 +41,9 @@ impl pb::server_api_service_server::ServerApiService for ServerApiSvc {
     }
     async fn get_vocabulary_revision(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "GET", "/v1.2/collections/{id}/vocabulary/revision", "application/json").await
+    }
+    async fn query_collections(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "POST", "/v1.2/query", "application/json").await
     }
     async fn search_collection(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "POST", "/v1.2/search", "application/json").await
