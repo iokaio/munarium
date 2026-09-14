@@ -1,12 +1,17 @@
 # Guided authoring: pattern → draft → validate → export → hosted
 
+This guide describes the existing typed client interfaces. For Server 1.2's
+complete REST/gRPC surface, including methods described below as unsupported
+in the older gRPC interfaces, use [ServerApiClient](server-1.2.md).
+
 Writing a production runbook + shape set from scratch means internalizing a
 design guide. The `authoring` plane packages that guide as a service: start
 from a measured **pattern**, answer an **interview**, let deterministic
 **validation** (and optional AI **assist**) drive the YAML to green, then
 **export** a hash-manifested bundle or **apply** it directly. Eleven
-methods over nine routes, REST-only (no authoring RPCs exist — the gRPC
-clients raise the typed `Unsupported` error).
+methods over nine routes in the historical typed client. Its authoring plane
+is REST-only; Server 1.2's complete `ServerApiClient` supports these operations
+over both transports through named `ServerApiService` RPCs.
 
 One structural note up front: `delete_draft` is the entire client surface's
 **one DELETE** — it soft-removes a *workspace draft*, never ledger data, so

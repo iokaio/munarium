@@ -22,7 +22,8 @@ for registry availability, digests and public signing instructions.
   migrations directory changes. Existing indexes remain immutable.
 
 See [configuration, API and upgrade details](docs/guides/collection-vocabularies.md).
-The new APIs are REST-only. Automatic generation is on by default, including after
+The new APIs are available over REST and `ServerApiService` gRPC. Automatic
+generation is on by default, including after
 upgrade; configure it before loading credentials if existing collection policies
 need review. New location metadata requires a new index build.
 ## 1.1.1

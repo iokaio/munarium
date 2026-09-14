@@ -1,14 +1,19 @@
 # Sealed evidence: resolving a citation
 
+This guide describes the existing typed client interfaces. For Server 1.2's
+complete REST/gRPC surface, including methods described below as unsupported
+in the older gRPC interfaces, use [ServerApiClient](server-1.2.md).
+
 A structured answer from Munarium cites rows, not documents:
 `[evidence/<id>#<row>]`. The `<id>` is a sealed evidence artifact —
 typed rows Munarium Matrix executed against a governed source and sealed
 into the server with two hashes (the logical result and the stored bytes) —
 and `<row>` is a row identity inside it (the key columns joined with `|`, or
 a position when the result declared no keys). This guide is how a client
-reads one back. Sealing is deliberately **absent** from every client: a
-manifest is a statement about work the *sealer* did, and an SDK that offered
-it would invite an application to assert provenance it cannot vouch for.
+reads one back through the historical typed client. Server 1.2's complete
+`ServerApiClient` also exposes sealing, retention and legal-hold operations
+over both transports. A manifest is a statement about work the sealer actually
+performed: permission to call the API does not establish truthful provenance.
 
 ## The two reads
 

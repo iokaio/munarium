@@ -1,5 +1,9 @@
 # Retrieval: hybrid search and the ProvenanceEnvelope
 
+This guide describes the existing typed client interfaces. For Server 1.2's
+complete REST/gRPC surface, including methods described below as unsupported
+in the older gRPC interfaces, use [ServerApiClient](server-1.2.md).
+
 Search runs over **versioned immutable indexes** (tsvector lexical +
 pgvector fused by RRF). Build an index side-by-side and flip it atomically;
 search the active index or pin a specific `index_version`. Requires the

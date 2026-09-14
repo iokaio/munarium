@@ -1,5 +1,9 @@
 # Tokens and reports: the management plane
 
+This guide describes the existing typed client interfaces. For Server 1.2's
+complete REST/gRPC surface, including methods described below as unsupported
+in the older gRPC interfaces, use [ServerApiClient](server-1.2.md).
+
 Two credentials exist in this system, and keeping them straight is most of
 the guide:
 

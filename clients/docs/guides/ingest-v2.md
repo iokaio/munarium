@@ -1,5 +1,9 @@
 # Ingest v2: the file plane, collection binding, and bulk upload sessions
 
+This guide describes the existing typed client interfaces. For Server 1.2's
+complete REST/gRPC surface, including methods described below as unsupported
+in the older gRPC interfaces, use [ServerApiClient](server-1.2.md).
+
 The streamed `put_source` + ingest-event path
 ([ingest.md](ingest.md)) binds sources into a *ledger lineage*. The **file plane** is the other front door: one-shot document ingestion into
 **collections** — the compartmentalized retrieval stores that runbooks and

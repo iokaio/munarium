@@ -1,5 +1,9 @@
 # Providers: cloud and local model gateway
 
+This guide describes the existing typed client interfaces. For Server 1.2's
+complete REST/gRPC surface, including methods described below as unsupported
+in the older gRPC interfaces, use [ServerApiClient](server-1.2.md).
+
 Server 1.1 adds `provider: ollama` to the same REST/gRPC operations. Apply a named
 config with an explicit Ollama base endpoint and models; local Ollama can omit
 `credentialRef`, while a proxy can use an environment/file bearer-key reference.

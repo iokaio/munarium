@@ -1,5 +1,11 @@
 # Munarium Server: Developers Guide
 
+Server 1.2 adds [collection vocabularies](collection-vocabularies.md), checked
+answers and the [complete REST/gRPC API](../../../clients/docs/guides/server-1.2.md).
+Historical implementation entries below describe the interfaces available when
+they were written. Their REST-only statements do not limit Server 1.2's named
+ServerApiService operations; consult the current API guide for transport support.
+
 ## About this guide
 
 This guide is part of Munarium Server and is licensed with it under the Apache
