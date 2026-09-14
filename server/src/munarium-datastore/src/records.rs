@@ -29,6 +29,9 @@ pub struct ChunkRecord {
     /// Lowercase hex of the chunk text's SHA-256, so a hit can be shown to be
     /// the bytes that were indexed rather than a later edit of them.
     pub text_sha256: String,
+    /// Optional on pre-1.2 artifacts; preserved independently of mutable catalogs.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub metadata: std::collections::BTreeMap<String, String>,
 }
 
 /// The serialized pair: `chunks.bin` (bodies) and `chunks.idx` (offsets).
@@ -108,6 +111,7 @@ mod tests {
             ordinal: 0,
             text: format!("body of {id}"),
             text_sha256: "0".repeat(64),
+            metadata: Default::default(),
         }
     }
 

@@ -21,10 +21,9 @@
 //!   the `serving` binding. An exact-version request either opens that exact
 //!   verified artifact or fails; it never substitutes a newer version.
 //!
-//! Source provenance is enriched from PostgreSQL at answer time: the artifact
-//! records carry each chunk's text and build-time path, and PostgreSQL is
-//! truth for source content hashes in every mode. Duplicating the hash into
-//! the records format would be a second copy free to drift from the first.
+//! New artifact records freeze source hashes and locations alongside text.
+//! Pre-1.2 artifacts resolve missing hashes from their pinned PostgreSQL chunk
+//! rows. The latest source catalog is never substituted for historical identity.
 
 use std::sync::Arc;
 
@@ -103,19 +102,33 @@ impl ServingPlane {
             ExecutionOutcome::Failed(reason) => return Err(unavailable(&reason)),
         };
 
-        // Provenance enrichment: current source content hashes from the
-        // control plane. A source the catalog no longer holds keeps its
-        // record-side path and an empty hash — the id still identifies it,
-        // which is the same degradation the PostgreSQL path chose.
+        // New artifacts carry immutable source hashes. Older artifacts resolve
+        // them only from the pinned index's chunk rows, never the latest catalog.
         let mut hits = execution.hits;
         let mut source_ids: Vec<String> = hits.iter().map(|h| h.source_id.clone()).collect();
         source_ids.sort();
         source_ids.dedup();
-        let provenance = pg.source_provenance(&source_ids).await?;
+        let missing: Vec<String> = hits
+            .iter()
+            .filter(|h| h.source_content_hash.is_empty())
+            .map(|h| h.source_id.clone())
+            .collect();
+        let provenance = if missing.is_empty() {
+            Default::default()
+        } else {
+            pg.pinned_source_hashes(
+                index_version_id,
+                (scope.0 == "collection").then_some(scope.1),
+                &missing,
+            )
+            .await?
+        };
         for hit in hits.iter_mut() {
-            match provenance.get(&hit.source_id) {
-                Some((_path, hash)) => hit.source_content_hash = hash.clone(),
-                None => hit.source_content_hash = String::new(),
+            if hit.source_content_hash.is_empty() {
+                hit.source_content_hash = provenance
+                    .get(&hit.source_id)
+                    .cloned()
+                    .ok_or_else(|| unavailable("pinned source provenance is unavailable"))?;
             }
         }
 

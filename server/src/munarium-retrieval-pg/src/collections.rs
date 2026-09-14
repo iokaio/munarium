@@ -199,11 +199,12 @@ pub fn candidate_tsquery(
 /// domain terms in the engine. Triggers are case-insensitive whole tokens;
 /// additions retain their configured spelling and are de-duplicated.
 pub fn expand_query(query: &str, rules: &[QueryExpansionRule]) -> String {
-    let query_tokens: HashSet<String> = query
+    let query_words: Vec<String> = query
         .split(|c: char| !c.is_alphanumeric())
         .filter(|token| !token.is_empty())
         .map(str::to_lowercase)
         .collect();
+    let query_tokens: HashSet<String> = query_words.iter().cloned().collect();
     let mut seen = query_tokens.clone();
     let mut additions = Vec::new();
 
@@ -211,8 +212,13 @@ pub fn expand_query(query: &str, rules: &[QueryExpansionRule]) -> String {
         let applies = rule
             .when_any
             .iter()
-            .map(|term| term.trim().to_lowercase())
-            .any(|term| query_tokens.contains(&term));
+            .map(|term| word_tokens(term))
+            .any(|words| {
+                !words.is_empty()
+                    && query_words
+                        .windows(words.len())
+                        .any(|window| window == words)
+            });
         if !applies {
             continue;
         }
@@ -916,6 +922,10 @@ impl PgRetrieval {
                 // continues — one bad document never fails the build.
                 let extracted = self.extract_source(&media_type, &bytes).await;
                 self.record_extraction(&mut *tx, &sid, &extracted).await?;
+                self.record_chunk_provenance(
+                    &mut tx, &index_id, &sid, &path, &extracted, max_chars,
+                )
+                .await?;
                 let text = extracted.text;
                 for (ordinal, chunk) in chunk_text(&text, max_chars).iter().enumerate() {
                     // chunk_id keys on source_id, not the hash: two sources

@@ -121,7 +121,7 @@ pub async fn capture(
         .map(|m| m.as_str().to_string())
         .unwrap_or_else(|| "(unmatched)".to_string());
     let started = Instant::now();
-    if !path.starts_with("/v1/") {
+    if !path.starts_with("/v1/") && !path.starts_with("/v1.2/") {
         let response = next.run(req).await;
         record_http_metrics(
             &state,

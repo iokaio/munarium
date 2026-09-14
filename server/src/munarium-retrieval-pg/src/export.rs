@@ -53,6 +53,7 @@ pub struct ExportedChunk {
     pub text_sha256: [u8; 32],
     /// `None` for a collection built without vectors, which is legitimate.
     pub embedding: Option<Vec<f32>>,
+    pub metadata: serde_json::Value,
 }
 
 /// What a completed export covered.
@@ -106,8 +107,9 @@ impl PgRetrieval {
             let rows = sqlx::query(
                 "SELECT c.chunk_id, c.source_id, c.source_hash, c.ordinal, c.text,
                         c.embedding,
-                        COALESCE(s.filename, c.source_id) AS source_path
+                        COALESCE(p.source_path, s.filename, c.source_id) AS source_path, p.metadata
                    FROM collection_chunks c
+                   LEFT JOIN chunk_provenance p ON p.tenant_id=c.tenant_id AND p.index_version_id=c.index_version_id AND p.chunk_id=c.chunk_id
                    LEFT JOIN sources s
                      ON s.tenant_id = c.tenant_id AND s.source_id = c.source_id
                   WHERE c.tenant_id = $1 AND c.collection_id = $2
@@ -152,6 +154,9 @@ impl PgRetrieval {
                     })?,
                     text,
                     embedding: embedding.map(|v| v.to_vec()),
+                    metadata: row
+                        .get::<Option<serde_json::Value>, _>("metadata")
+                        .unwrap_or(serde_json::Value::Null),
                 };
                 on_chunk(chunk)?;
                 stats.chunks += 1;
@@ -210,8 +215,9 @@ impl PgRetrieval {
             let rows = sqlx::query(
                 "SELECT c.chunk_id, c.source_id, c.source_hash, c.ordinal, c.text,
                         c.embedding,
-                        COALESCE(s.filename, c.source_id) AS source_path
+                        COALESCE(p.source_path, s.filename, c.source_id) AS source_path, p.metadata
                    FROM index_chunks c
+                   LEFT JOIN chunk_provenance p ON p.tenant_id=c.tenant_id AND p.index_version_id=c.index_version_id AND p.chunk_id=c.chunk_id
                    LEFT JOIN sources s
                      ON s.tenant_id = c.tenant_id AND s.source_id = c.source_id
                   WHERE c.tenant_id = $1 AND c.index_version_id = $2 AND c.chunk_id > $3
@@ -253,6 +259,9 @@ impl PgRetrieval {
                     })?,
                     text,
                     embedding: embedding.map(|v| v.to_vec()),
+                    metadata: row
+                        .get::<Option<serde_json::Value>, _>("metadata")
+                        .unwrap_or(serde_json::Value::Null),
                 })?;
                 stats.chunks += 1;
                 after = chunk_id;

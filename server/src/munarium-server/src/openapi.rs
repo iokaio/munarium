@@ -31,7 +31,7 @@ impl Modify for UidHeaderAddon {
             .schema(Some(ObjectBuilder::new().schema_type(Type::String)))
             .build();
         for (path, item) in openapi.paths.paths.iter_mut() {
-            if path.starts_with("/v1/") {
+            if path.starts_with("/v1/") || path.starts_with("/v1.2/") {
                 item.parameters
                     .get_or_insert_with(Vec::new)
                     .push(uid_param.clone());
@@ -85,6 +85,15 @@ impl Modify for SecurityAddon {
     ),
     modifiers(&SecurityAddon, &UidHeaderAddon),
     paths(
+        crate::answers_api::answer,
+        crate::search_v12::search,
+        crate::vocabulary_api::get_settings,
+        crate::vocabulary_api::put_settings,
+        crate::vocabulary_api::get,
+        crate::vocabulary_api::get_revision,
+        crate::vocabulary_api::put,
+        crate::vocabulary_api::patch,
+        crate::vocabulary_api::refresh,
         crate::rest::create_version,
         crate::rest::propose_claim,
         crate::rest::append_events,
@@ -196,6 +205,21 @@ impl Modify for SecurityAddon {
         crate::collections_api::get_collection,
     ),
     components(schemas(
+        crate::answers_api::AnswerSource,
+        crate::answers_api::AnswerRequest,
+        crate::answers_api::AnswerCitation,
+        crate::answers_api::AnswerContent,
+        crate::answers_api::AnswerResponse,
+        crate::answers_api::SourceReference,
+        crate::search_v12::VocabularySearchRequest,
+        crate::search_v12::VocabularySearchResponse,
+        crate::vocabulary_api::Sampling,
+        crate::vocabulary_api::VocabularySettings,
+        crate::vocabulary_api::Vocabulary,
+        crate::vocabulary_api::VocabularyRevision,
+        crate::vocabulary_api::VocabularyUpdate,
+        crate::vocabulary_api::VocabularyPatch,
+        crate::vocabulary_api::VocabularyRefresh,
         munarium_api_types::Problem,
         munarium_api_types::GateFindingDto,
         munarium_api_types::StoredFindingDto,

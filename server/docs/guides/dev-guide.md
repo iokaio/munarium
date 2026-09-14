@@ -14176,11 +14176,18 @@ problem slug from [errors.md](../api/errors.md). Regenerate the table after
 a route change; the chapter column is the script's prefix table, so a new
 route family needs one rule there.
 
+
 | Route | Methods | OpenAPI tag | Where this book teaches it |
 |---|---|---|---|
 | `/healthai` | GET | providers | §11 |
 | `/healthz` | GET | meta | §5, §11 |
 | `/readyz` | GET | meta | §5, §8A (datastore readiness), §11 |
+| `/v1.2/answers` | POST | answers | rest.md |
+| `/v1.2/collections/{id}/vocabulary` | GET · PUT · PATCH | vocabulary | rest.md |
+| `/v1.2/collections/{id}/vocabulary/refresh` | POST | vocabulary | rest.md |
+| `/v1.2/collections/{id}/vocabulary/revision` | GET | vocabulary | rest.md |
+| `/v1.2/search` | POST | retrieval | rest.md |
+| `/v1.2/vocabulary-settings` | GET · PUT | vocabulary | rest.md |
 | `/v1/access-tokens` | GET · POST | access-tokens | §20 |
 | `/v1/access-tokens/{jti}/revoke` | POST | access-tokens | §20 |
 | `/v1/authoring/drafts` | GET · POST | authoring | §21B |

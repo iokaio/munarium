@@ -31,6 +31,7 @@ use std::sync::Arc;
 mod collections;
 pub mod direct;
 pub mod export;
+pub mod provenance;
 pub mod required;
 pub use collections::{
     expand_query, merge_hits, merge_hits_weighted, number_query_digits, pairs_tsquery,
@@ -48,7 +49,7 @@ pub use munarium_core::retrieval::{
 // still defaults to it so tests and `docker compose up` need no object store.
 pub use munarium_store_pg::PgSourceStore;
 
-pub const CHUNKER_VERSION: &str = "para@1";
+pub const CHUNKER_VERSION: &str = "para@2";
 pub const LOCAL_EMBEDDER: &str = "local-hash@1";
 pub const EMBED_DIMS: usize = 256;
 
@@ -498,14 +499,26 @@ impl PgRetrieval {
         })
     }
 
-    /// Resolve `source_id -> filename` for a set of ids. Used when building a
-    /// provenance envelope, so an answer can name the documents behind it.
+    /// Bounded text sample using the same extraction pipeline as indexing.
+    pub async fn source_sample(
+        &self,
+        source_id: &str,
+        characters: usize,
+    ) -> Result<(String, String)> {
+        let info = self.source_info(source_id).await?;
+        let key = SourceKey::new(&self.tenant_id, &info.filename, &info.content_hash)?;
+        let bytes = self.source_store().get(&key).await?;
+        if hex::encode(sha2::Sha256::digest(&bytes)) != info.content_hash {
+            return Err(KernelError::Storage(
+                "sample source integrity check failed".into(),
+            ));
+        }
+        let extracted = self.extract_source(&info.media_type, &bytes).await;
+        Ok((info.content_hash, sample_text(&extracted.text, characters)))
+    }
+
     /// Source id → (current path, content hash), for provenance enrichment.
-    ///
-    /// The datastore serving path fills each hit's `source_content_hash` from
-    /// here rather than storing it in the artifact: PostgreSQL is truth for
-    /// SOURCES in every mode, and duplicating the hash into the records
-    /// format would be a second copy that could drift from the first.
+    /// These are current catalog values, never the provenance of a pinned index.
     pub async fn source_provenance(
         &self,
         source_ids: &[String],
@@ -572,11 +585,12 @@ impl PgRetrieval {
             // id and hash still identify it, so report those rather than fail.
             hit.source_path = paths.get(&hit.source_id).cloned().unwrap_or_default();
         }
-        let mut source_paths: Vec<String> = ids
-            .iter()
-            .map(|id| paths.get(id).cloned().unwrap_or_default())
-            .collect();
+        self.enrich_chunk_provenance(&index_version, hits).await?;
+        let mut source_paths: Vec<String> =
+            hits.iter().map(|hit| hit.source_path.clone()).collect();
         source_paths.retain(|p| !p.is_empty());
+        source_paths.sort();
+        source_paths.dedup();
         let mut hashes: Vec<String> = hits.iter().map(|h| h.source_content_hash.clone()).collect();
         hashes.sort();
         hashes.dedup();
@@ -799,6 +813,10 @@ impl PgRetrieval {
                 let bytes = self.sources.get(&key).await?;
                 let extracted = self.extract_source(&media_type, &bytes).await;
                 self.record_extraction(&mut *tx, &sid, &extracted).await?;
+                self.record_chunk_provenance(
+                    &mut tx, &index_id, &sid, &path, &extracted, max_chars,
+                )
+                .await?;
                 let text = extracted.text;
                 for (ordinal, chunk) in chunk_text(&text, max_chars).iter().enumerate() {
                     sqlx::query(
@@ -981,6 +999,23 @@ impl RetrievalBackend for PgRetrieval {
             active: row.get("active"),
         })
     }
+}
+
+/// Spread bounded samples across long files instead of sampling only headers.
+fn sample_text(text: &str, budget: usize) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= budget {
+        return text.to_string();
+    }
+    if budget < 9 {
+        return chars.into_iter().take(budget).collect();
+    }
+    let width = (budget - 6) / 3;
+    [0, (chars.len() - width) / 2, chars.len() - width]
+        .iter()
+        .map(|&start| chars[start..start + width].iter().collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n…\n")
 }
 
 #[cfg(test)]

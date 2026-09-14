@@ -17,6 +17,8 @@ use serde::{Deserialize, Serialize};
 
 /// Scope required for the session/turn data plane.
 pub const SCOPE_QUERY: &str = "query";
+/// Manage collection vocabularies without gaining ingest or provider control.
+pub const SCOPE_VOCABULARY: &str = "vocabulary";
 /// Scope required for the file-ingestion plane.
 pub const SCOPE_INGEST: &str = "ingest";
 /// Scope that lets a service principal FILE findings (`POST
@@ -148,6 +150,7 @@ impl AccessCtx {
             all_compartments: true,
             scopes: vec![
                 SCOPE_QUERY.to_string(),
+                SCOPE_VOCABULARY.to_string(),
                 SCOPE_INGEST.to_string(),
                 SCOPE_FINDINGS.to_string(),
                 SCOPE_EVIDENCE.to_string(),
@@ -205,9 +208,14 @@ pub fn issue(
         ));
     }
     for s in &scopes {
-        if s != SCOPE_QUERY && s != SCOPE_INGEST && s != SCOPE_FINDINGS && s != SCOPE_EVIDENCE {
+        if s != SCOPE_QUERY
+            && s != SCOPE_INGEST
+            && s != SCOPE_FINDINGS
+            && s != SCOPE_EVIDENCE
+            && s != SCOPE_VOCABULARY
+        {
             return Err(AccessError::Invalid(format!(
-                "unknown scope '{s}' (query|ingest|findings|evidence)"
+                "unknown scope '{s}' (query|ingest|findings|evidence|vocabulary)"
             )));
         }
     }

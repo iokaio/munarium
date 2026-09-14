@@ -1150,6 +1150,8 @@ async fn hybrid_search(
         }
         let params = munarium_core::retrieval::SearchParams {
             top_k: req.top_k.map(|k| k as usize).unwrap_or(10),
+            query_expansions: crate::vocabulary_api::rules(&state, &access.tenant_id, &info.id)
+                .await?,
             ..Default::default()
         };
         let result = retrieval
@@ -1317,6 +1319,26 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/v1/indexes/{shape_ref}/build", post(build_index))
         .route("/v1/indexes/{shape_ref}", get(get_index))
         .route("/v1/search", post(hybrid_search))
+        .route("/v1.2/answers", post(crate::answers_api::answer))
+        .route("/v1.2/search", post(crate::search_v12::search))
+        .route(
+            "/v1.2/collections/{id}/vocabulary/revision",
+            get(crate::vocabulary_api::get_revision),
+        )
+        .route(
+            "/v1.2/vocabulary-settings",
+            get(crate::vocabulary_api::get_settings).put(crate::vocabulary_api::put_settings),
+        )
+        .route(
+            "/v1.2/collections/{id}/vocabulary",
+            get(crate::vocabulary_api::get)
+                .put(crate::vocabulary_api::put)
+                .patch(crate::vocabulary_api::patch),
+        )
+        .route(
+            "/v1.2/collections/{id}/vocabulary/refresh",
+            post(crate::vocabulary_api::refresh),
+        )
         .route(
             "/v1/providers",
             post(crate::providers_api::apply_provider).get(crate::providers_api::list_providers),

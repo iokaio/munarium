@@ -96,6 +96,7 @@ impl ShardWriter {
             ordinal: chunk.ordinal,
             text: chunk.text,
             text_sha256: hex::encode(chunk.text_sha256),
+            metadata: chunk.metadata,
         });
         Ok(())
     }

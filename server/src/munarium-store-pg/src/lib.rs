@@ -992,17 +992,4 @@ fn severity_from_text(s: &str) -> munarium_core::types::Severity {
     }
 }
 
-// The migration-embedding macro below this crate (sqlx::migrate! in lib.rs)
-// tracks SOURCE files, not the migrations directory: adding a migration
-// without touching a .rs file leaves a cached build serving the OLD migrator
-// — locally (CLAUDE.md prescribes `cargo clean -p munarium-store-pg`) AND in
-// the Docker image build, whose cargo cache mount replayed a pre-0025 crate
-// on 2026-08-30 and shipped a server that could not see index_number_lexemes.
-// This trailing comment is that incident: touch this file when adding a
-// migration, so both builds recompile the migrator.
-// 2026-09-02: 0029_index_version_deactivation (the code-review branch's
-// number) was renamed to 0030 at merge because main already carried
-// 0029_token_budgets; this line is that rename's touch.
-// 2026-09-02, later the same day: 0031_max_tokens_budgets added (the per-call
-// output-token budgets replaceable through /v1/max-tokens); this line is its
-// touch.
+// build.rs tracks the migrations directory for the embedded sqlx migrator.

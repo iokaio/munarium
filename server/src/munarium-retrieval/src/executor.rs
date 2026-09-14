@@ -439,7 +439,14 @@ fn run_blocking(
             chunk_id: record.chunk_id.clone(),
             source_id: record.source_id.clone(),
             source_path: record.source_path.clone(),
-            source_content_hash: record.text_sha256.clone(),
+            source_content_hash: match payload {
+                TextPayload::Identity => record.text_sha256.clone(),
+                TextPayload::Served => record
+                    .metadata
+                    .get("source_content_hash")
+                    .cloned()
+                    .unwrap_or_default(),
+            },
             text: match payload {
                 TextPayload::Identity => String::new(),
                 TextPayload::Served => record.text.clone(),
@@ -449,7 +456,10 @@ fn run_blocking(
             vector_rank: f.vector_rank,
             lexical_score: f.lexical_score.map(f64::from),
             vector_distance: f.vector_score.map(f64::from),
-            metadata: None,
+            metadata: record
+                .metadata
+                .get("provenance")
+                .and_then(|raw| serde_json::from_str(raw).ok()),
         });
     }
 

@@ -602,7 +602,10 @@ async fn mirror_body(
                         text: c.text,
                         text_sha256: c.text_sha256,
                         embedding: c.embedding,
-                        metadata: Default::default(),
+                        metadata: std::collections::BTreeMap::from([
+                            ("source_content_hash".into(), c.source_hash),
+                            ("provenance".into(), c.metadata.to_string()),
+                        ]),
                     })
                     .map_err(|e| KernelError::Storage(format!("shard writer: {e}")))
             };
@@ -1365,7 +1368,7 @@ pub fn mirror_plan(has_vectors: bool) -> ArtifactBuildPlan {
             rescore_depth: None,
         }),
         records: RecordsFormat {
-            format: "munarium-records@1".into(),
+            format: "munarium-records@2".into(),
             compression: None,
         },
         range_map: None,
