@@ -17,10 +17,10 @@ Use **Server** for document search, grounded chat and a governed fact ledger. Ad
 immutable file exports. The separate [Munarium Demo](https://github.com/iokaio/munarium-demo)
 provides six working applications and bundled datasets for evaluation.
 
-**Source versions:** Server **1.2.0**, Server clients **1.1.0**, Matrix and Matrix
+**Source versions:** Server **1.2.1**, Server clients **1.1.0**, Matrix and Matrix
 clients **1.0.0**. Server 1.2 adds configurable collection vocabularies, checked
 narrative answers and the [complete API on REST/gRPC](clients/docs/guides/server-1.2.md).
-The published Server image is **1.2.0**. Client packages are currently
+The published Server image is **1.2.1**. Client packages are currently
 installed from source, not public package registries. See the
 [publication record](server/CONTAINER.md#versions-and-verification) and
 [client installation guide](clients/README.md#installation-and-publication).
@@ -52,16 +52,16 @@ contains **Munarium Server and the `/mmctl` client**. It supports `linux/amd64` 
 in Linux container mode. Matrix is deployed separately; see [Matrix setup](matrix/README.md).
 
 ```console
-docker pull iokaio/munarium:1.2.0
+docker pull iokaio/munarium:1.2.1
 ```
 
-`1.2.0` is the immutable release tag. `1.2` tracks the current 1.2 release, and `latest`
+`1.2.1` is the immutable release tag. `1.2` tracks the current 1.2 release, and `latest`
 tracks the current stable release. Pin the digest in the publication record below
 for reproducible deployments.
 
 The image includes license notices, SBOM and build provenance attestations.
 See the [publication and verification record](server/CONTAINER.md#versions-and-verification)
-for the 1.2.0 digest and public signing instructions. There is no
+for the 1.2.1 digest and public signing instructions. There is no
 trial key or time limit.
 
 ### Quick evaluation in memory
@@ -69,7 +69,7 @@ trial key or time limit.
 Run this single-line command in PowerShell or a Unix shell:
 
 ```console
-docker run --rm --name munarium-evaluation -p 127.0.0.1:8080:8080 -p 127.0.0.1:50051:50051 -e MUNARIUM_STORE=memory -e MUNARIUM_SOURCE_STORE=mem -e MUNARIUM_AUTH_MODE=static -e MUNARIUM_STATIC_TOKENS=evaluation-token:evaluation:rw iokaio/munarium:1.2.0
+docker run --rm --name munarium-evaluation -p 127.0.0.1:8080:8080 -p 127.0.0.1:50051:50051 -e MUNARIUM_STORE=memory -e MUNARIUM_SOURCE_STORE=mem -e MUNARIUM_AUTH_MODE=static -e MUNARIUM_STATIC_TOKENS=evaluation-token:evaluation:rw iokaio/munarium:1.2.1
 ```
 
 Open `http://localhost:8080/admin` for the dashboard or `http://localhost:8080/docs` for
@@ -127,7 +127,7 @@ services:
       retries: 20
 
   server:
-    image: iokaio/munarium:1.2.0
+    image: iokaio/munarium:1.2.1
     restart: unless-stopped
     depends_on:
       postgres:

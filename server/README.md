@@ -27,13 +27,13 @@ deterministically rebuilt under a pin; every retrieval answer carries a provenan
 
 ## About this repository
 
-The published Server version is **1.2.0**. It adds automatic, configurable
+The published Server version is **1.2.1**. It includes automatic, configurable
 [collection vocabularies and checked narrative answers](docs/guides/collection-vocabularies.md),
 pinned file locations, and a [complete REST/gRPC API and four SDKs](../clients/docs/guides/server-1.2.md).
 See [release changes](CHANGELOG.md) and [published artifacts](CONTAINER.md#versions-and-verification).
-The current source is the **unreleased 1.2.1 candidate**, adding Server-owned
-collection queries, publication governance and original-reference authorization.
-It is not available in the published 1.2.0 image.
+Version 1.2.1 adds Server-owned collection queries, publication governance and
+original-reference authorization. The application displays the model's explanation
+and returned references; Server selects authorized governing files and passages.
 The first public release was 1.0.0; the private research and operational history
 that preceded it is excluded from this repository.
 

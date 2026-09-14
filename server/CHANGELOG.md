@@ -3,7 +3,7 @@
 These are source release notes. See the [container publication record](CONTAINER.md#versions-and-verification)
 for registry availability, digests and public signing instructions.
 
-## Unreleased — 1.2.1
+## 1.2.1
 
 - Add collection-scoped query orchestration, retained publication governance,
   and original-file authorization over REST and native gRPC. Query callers send
@@ -32,8 +32,9 @@ for registry availability, digests and public signing instructions.
 - Align all four Server SDK target constants with 1.2.1 and check them against
   the compatibility record. Live conformance uses those checked constants.
 
-Release qualification and application integration remain pending. No 1.2.1
-container or release tag is published by these source changes.
+Published from merged commit `c638a8e56fff45cef358ff2f4a5b5ba57957ba59`.
+See the [container qualification record](CONTAINER.md#versions-and-verification)
+for exact image identities, verification and database-restore rollback requirements.
 
 ## 1.2.0
 

@@ -13,7 +13,7 @@ index administration, source metadata and the complete provider surface over
 either transport. New gRPC operations require Server 1.2; they are not emulated
 with HTTP network calls against an older Server.
 
-The **unreleased Server 1.2.1 candidate** extends this surface to 121 named
+**Server 1.2.1** extends this surface to 121 named
 operations. All four SDKs include `QueryCollections`, `GetCollectionGovernance`,
 `ReplaceCollectionGovernance` and `AuthorizePublication` (using each language's
 naming convention) over REST and gRPC. These operations require 1.2.1; a 1.2.0
