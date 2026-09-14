@@ -1223,6 +1223,7 @@ async fn version_info() -> Json<dto::VersionInfo> {
     })
 }
 
+#[utoipa::path(get, path = "/openapi.json", responses((status = 200, body = serde_json::Value)), tag = "meta")]
 async fn openapi_json() -> Json<serde_json::Value> {
     Json(serde_json::to_value(crate::openapi::doc()).expect("openapi serializes"))
 }

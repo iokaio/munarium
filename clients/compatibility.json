@@ -2,43 +2,43 @@
   "$comment": "The compatibility record for the Munarium client libraries. Generated and maintained by hand at release time. Update this file, never the historical notes in README.md, which are a dated changelog of what was true when they were written.",
   "policy": "Each Clients minor release supports the current Server minor and the one before it (N and N-1). A breaking MMP wire change bumps mmp_contract_major; Server serves both majors for one Server minor release so Clients can move without a flag day. Clients version independently of Server: a shared version number on a given release is a coincidence of that release, not a rule.",
   "mmp_contract_major": 1,
-  "updated": "2026-09-10",
-  "target_server": "1.1.1",
+  "updated": "2026-09-14",
+  "target_server": "1.2.0",
   "clients": {
     "rust": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "package": "munarium-client",
       "registry": "crates.io",
       "supported_server": [
-        "1.1",
-        "1.0"
+        "1.2",
+        "1.1"
       ]
     },
     "python": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "package": "munarium-client",
       "registry": "PyPI",
       "supported_server": [
-        "1.1",
-        "1.0"
+        "1.2",
+        "1.1"
       ]
     },
     "dotnet": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "package": "Ioka.Munarium.Client",
       "registry": "NuGet",
       "supported_server": [
-        "1.1",
-        "1.0"
+        "1.2",
+        "1.1"
       ]
     },
     "java": {
-      "version": "1.0.0",
+      "version": "1.1.0",
       "package": "io.ioka.munarium:munarium-client",
       "registry": "Maven Central",
       "supported_server": [
-        "1.1",
-        "1.0"
+        "1.2",
+        "1.1"
       ]
     },
     "matrix-python": {
@@ -69,5 +69,5 @@
       ]
     }
   },
-  "note": "Server clients target Server 1.1.1 and retain the 1.0 minor baseline. Client package versions remain 1.0.0: Server 1.1 adds Ollama through existing wire fields, and 1.1.1 fixes server-side session model routing without changing MMP major 1. Ollama requires Server 1.1; applying a session override to query expansion as well as completion requires 1.1.1. Entries carrying speaks_to: matrix remain independently compatible with Matrix 1.0 and are unchanged by this Server alignment. The Rust client path-depends on munarium-api-types and munarium-proto, which are server crates: both must reach crates.io before munarium-client can be published there."
+  "note": "Server client packages 1.1.0 add the complete named ServerApiClient over REST and gRPC for Server 1.2.0. Existing typed planes retain the 1.1 baseline; the complete gRPC service and collection vocabulary/answer APIs require Server 1.2. Matrix client versions and compatibility are independent and unchanged. The Rust client path-depends on Server wire crates, which must be published before the client can be published to crates.io."
 }

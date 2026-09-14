@@ -7,8 +7,10 @@ A citation is a reference to a pinned source, never a download URL or permission
 ## Versioned API
 
 All requests require bearer authorization and `X-Munarium-Uid`, including reads.
-Existing `/v1` routes remain available. These additions are REST-only in 1.2;
-there are no corresponding new gRPC methods or generated SDK convenience methods.
+Existing `/v1` routes remain available. Every operation below also has a named
+RPC on `mmp.v1.ServerApiService` and methods in all four Server SDKs. See the
+[complete API client guide](../../../clients/docs/guides/server-1.2.md) for
+the transport contract, method names and language examples.
 
 | Method and path | Authorization | Behavior |
 |---|---|---|

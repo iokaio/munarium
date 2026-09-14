@@ -1198,3 +1198,159 @@ no evidence rows appear here.
 | # | Field | Type | Notes |
 |---|---|---|---|
 | 1 | session_id | string |  |
+
+## mmp/v1/server_api.proto
+
+### service ServerApiService
+
+| RPC | Request | Response | Notes |
+|---|---|---|---|
+| Healthai | ServerApiRequest | ServerApiResponse | GET /healthai |
+| Healthz | ServerApiRequest | ServerApiResponse | GET /healthz |
+| OpenapiJson | ServerApiRequest | ServerApiResponse | GET /openapi.json |
+| Readyz | ServerApiRequest | ServerApiResponse | GET /readyz |
+| ComposeAnswer | ServerApiRequest | ServerApiResponse | POST /v1.2/answers |
+| GetCollectionVocabulary | ServerApiRequest | ServerApiResponse | GET /v1.2/collections/{id}/vocabulary |
+| UpdateCollectionVocabulary | ServerApiRequest | ServerApiResponse | PATCH /v1.2/collections/{id}/vocabulary |
+| ReplaceCollectionVocabulary | ServerApiRequest | ServerApiResponse | PUT /v1.2/collections/{id}/vocabulary |
+| RefreshCollectionVocabulary | ServerApiRequest | ServerApiResponse | POST /v1.2/collections/{id}/vocabulary/refresh |
+| GetVocabularyRevision | ServerApiRequest | ServerApiResponse | GET /v1.2/collections/{id}/vocabulary/revision |
+| SearchCollection | ServerApiRequest | ServerApiResponse | POST /v1.2/search |
+| GetVocabularySettings | ServerApiRequest | ServerApiResponse | GET /v1.2/vocabulary-settings |
+| ReplaceVocabularySettings | ServerApiRequest | ServerApiResponse | PUT /v1.2/vocabulary-settings |
+| ListTokens | ServerApiRequest | ServerApiResponse | GET /v1/access-tokens |
+| IssueAccessToken | ServerApiRequest | ServerApiResponse | POST /v1/access-tokens |
+| RevokeToken | ServerApiRequest | ServerApiResponse | POST /v1/access-tokens/{jti}/revoke |
+| ListDrafts | ServerApiRequest | ServerApiResponse | GET /v1/authoring/drafts |
+| CreateDraft | ServerApiRequest | ServerApiResponse | POST /v1/authoring/drafts |
+| DeleteDraft | ServerApiRequest | ServerApiResponse | DELETE /v1/authoring/drafts/{draft_id} |
+| GetDraft | ServerApiRequest | ServerApiResponse | GET /v1/authoring/drafts/{draft_id} |
+| UpdateAnswers | ServerApiRequest | ServerApiResponse | PUT /v1/authoring/drafts/{draft_id}/answers |
+| ApplyDraft | ServerApiRequest | ServerApiResponse | POST /v1/authoring/drafts/{draft_id}/apply |
+| AssistDraft | ServerApiRequest | ServerApiResponse | POST /v1/authoring/drafts/{draft_id}/assist |
+| ExportDraft | ServerApiRequest | ServerApiResponse | POST /v1/authoring/drafts/{draft_id}/export |
+| ValidateDraft | ServerApiRequest | ServerApiResponse | POST /v1/authoring/drafts/{draft_id}/validate |
+| ListPatterns | ServerApiRequest | ServerApiResponse | GET /v1/authoring/patterns |
+| GetPattern | ServerApiRequest | ServerApiResponse | GET /v1/authoring/patterns/{id} |
+| ApplyRules | ServerApiRequest | ServerApiResponse | POST /v1/chronology-rules |
+| GetRules | ServerApiRequest | ServerApiResponse | GET /v1/chronology-rules/{name} |
+| GetClaim | ServerApiRequest | ServerApiResponse | GET /v1/claims/{claim_id} |
+| ListCollections | ServerApiRequest | ServerApiResponse | GET /v1/collections |
+| CreateCollection | ServerApiRequest | ServerApiResponse | POST /v1/collections |
+| ActivateCollectionIndex | ServerApiRequest | ServerApiResponse | POST /v1/collections/{collection_id}/activate-index |
+| GetCollection | ServerApiRequest | ServerApiResponse | GET /v1/collections/{id} |
+| Seal | ServerApiRequest | ServerApiResponse | POST /v1/evidence |
+| Purge | ServerApiRequest | ServerApiResponse | DELETE /v1/evidence/{evidence_id} |
+| GetManifest | ServerApiRequest | ServerApiResponse | GET /v1/evidence/{evidence_id} |
+| GetAccesses | ServerApiRequest | ServerApiResponse | GET /v1/evidence/{evidence_id}/accesses |
+| PutBytes | ServerApiRequest | ServerApiResponse | PUT /v1/evidence/{evidence_id}/bytes |
+| Commit | ServerApiRequest | ServerApiResponse | POST /v1/evidence/{evidence_id}/commit |
+| LegalHold | ServerApiRequest | ServerApiResponse | POST /v1/evidence/{evidence_id}/legal-hold |
+| GetRows | ServerApiRequest | ServerApiResponse | GET /v1/evidence/{evidence_id}/rows |
+| Backfill | ServerApiRequest | ServerApiResponse | POST /v1/index-artifacts/backfill |
+| ArtifactStatus | ServerApiRequest | ServerApiResponse | GET /v1/index-artifacts/{index_version_id} |
+| BindArtifact | ServerApiRequest | ServerApiResponse | POST /v1/index-artifacts/{index_version_id}/bind |
+| PromoteArtifact | ServerApiRequest | ServerApiResponse | POST /v1/index-artifacts/{index_version_id}/promote |
+| RebuildArtifact | ServerApiRequest | ServerApiResponse | POST /v1/index-artifacts/{index_version_id}/rebuild |
+| VerifyArtifacts | ServerApiRequest | ServerApiResponse | POST /v1/index-artifacts/{index_version_id}/verify |
+| ListJobs | ServerApiRequest | ServerApiResponse | GET /v1/index-build-jobs |
+| EnqueueJob | ServerApiRequest | ServerApiResponse | POST /v1/index-build-jobs |
+| GetJob | ServerApiRequest | ServerApiResponse | GET /v1/index-build-jobs/{job_id} |
+| CancelJob | ServerApiRequest | ServerApiResponse | POST /v1/index-build-jobs/{job_id}/cancel |
+| GetIndex | ServerApiRequest | ServerApiResponse | GET /v1/indexes/{shape_ref} |
+| BuildIndex | ServerApiRequest | ServerApiResponse | POST /v1/indexes/{shape_ref}/build |
+| IngestFile | ServerApiRequest | ServerApiResponse | POST /v1/ingest |
+| IngestBatch | ServerApiRequest | ServerApiResponse | POST /v1/ingest/batch |
+| BulkOpen | ServerApiRequest | ServerApiResponse | POST /v1/ingest/bulk |
+| BulkStatus | ServerApiRequest | ServerApiResponse | GET /v1/ingest/bulk/{bulk_id} |
+| BulkChunk | ServerApiRequest | ServerApiResponse | POST /v1/ingest/bulk/{bulk_id}/chunk |
+| BulkComplete | ServerApiRequest | ServerApiResponse | POST /v1/ingest/bulk/{bulk_id}/complete |
+| GetMaxTokens | ServerApiRequest | ServerApiResponse | GET /v1/max-tokens |
+| ReplaceMaxTokens | ServerApiRequest | ServerApiResponse | POST /v1/max-tokens |
+| ListProviders | ServerApiRequest | ServerApiResponse | GET /v1/providers |
+| ApplyProvider | ServerApiRequest | ServerApiResponse | POST /v1/providers |
+| ProviderComplete | ServerApiRequest | ServerApiResponse | POST /v1/providers/{name}/complete |
+| ProviderEmbed | ServerApiRequest | ServerApiResponse | POST /v1/providers/{name}/embed |
+| ProviderHealth | ServerApiRequest | ServerApiResponse | GET /v1/providers/{name}/health |
+| Audit | ServerApiRequest | ServerApiResponse | GET /v1/reports/audit |
+| Budgets | ServerApiRequest | ServerApiResponse | GET /v1/reports/budgets |
+| Cost | ServerApiRequest | ServerApiResponse | GET /v1/reports/cost |
+| Endpoints | ServerApiRequest | ServerApiResponse | GET /v1/reports/endpoints |
+| EvidenceReport | ServerApiRequest | ServerApiResponse | GET /v1/reports/evidence |
+| MatrixReport | ServerApiRequest | ServerApiResponse | GET /v1/reports/matrix |
+| RunbookReport | ServerApiRequest | ServerApiResponse | GET /v1/reports/runbooks |
+| SessionsReport | ServerApiRequest | ServerApiResponse | GET /v1/reports/sessions |
+| Timeseries | ServerApiRequest | ServerApiResponse | GET /v1/reports/timeseries |
+| Usage | ServerApiRequest | ServerApiResponse | GET /v1/reports/usage |
+| RolloutSet | ServerApiRequest | ServerApiResponse | PUT /v1/retrieval-rollout |
+| RolloutGet | ServerApiRequest | ServerApiResponse | GET /v1/retrieval-rollout/{scope_kind}/{scope_id} |
+| ListRunbooks | ServerApiRequest | ServerApiResponse | GET /v1/runbooks |
+| ApplyRunbook | ServerApiRequest | ServerApiResponse | POST /v1/runbooks |
+| ValidateRunbook | ServerApiRequest | ServerApiResponse | POST /v1/runbooks/validate |
+| GetRunbookInfo | ServerApiRequest | ServerApiResponse | GET /v1/runbooks/{name} |
+| RemoveConfirm | ServerApiRequest | ServerApiResponse | POST /v1/runbooks/{name}/remove-confirm |
+| RemoveRequest | ServerApiRequest | ServerApiResponse | POST /v1/runbooks/{name}/remove-request |
+| RunRunbook | ServerApiRequest | ServerApiResponse | POST /v1/runbooks/{name}/runs |
+| CreateSession | ServerApiRequest | ServerApiResponse | POST /v1/runbooks/{name}/sessions |
+| GetRun | ServerApiRequest | ServerApiResponse | GET /v1/runs/{run_id} |
+| ApproveStep | ServerApiRequest | ServerApiResponse | POST /v1/runs/{run_id}/steps/{ordinal}/approve |
+| HybridSearch | ServerApiRequest | ServerApiResponse | POST /v1/search |
+| GetSession | ServerApiRequest | ServerApiResponse | GET /v1/sessions/{id} |
+| CloseSession | ServerApiRequest | ServerApiResponse | POST /v1/sessions/{id}/close |
+| Turn | ServerApiRequest | ServerApiResponse | POST /v1/sessions/{id}/turns |
+| TurnStream | ServerApiRequest | stream ServerApiResponse | POST /v1/sessions/{id}/turns/stream |
+| ApplyShape | ServerApiRequest | ServerApiResponse | POST /v1/shapes |
+| PutSource | ServerApiRequest | ServerApiResponse | PUT /v1/sources |
+| GetSource | ServerApiRequest | ServerApiResponse | GET /v1/sources/{source_id} |
+| CreateVersion | ServerApiRequest | ServerApiResponse | POST /v1/versions |
+| GetAnchors | ServerApiRequest | ServerApiResponse | GET /v1/versions/{version_id}/anchors |
+| LockAnchor | ServerApiRequest | ServerApiResponse | POST /v1/versions/{version_id}/anchors |
+| ProposeClaim | ServerApiRequest | ServerApiResponse | POST /v1/versions/{version_id}/claims |
+| GetContext | ServerApiRequest | ServerApiResponse | GET /v1/versions/{version_id}/context |
+| GetCounters | ServerApiRequest | ServerApiResponse | GET /v1/versions/{version_id}/counters |
+| RecordCounts | ServerApiRequest | ServerApiResponse | POST /v1/versions/{version_id}/counters |
+| GetDigests | ServerApiRequest | ServerApiResponse | GET /v1/versions/{version_id}/digests |
+| UpsertDigest | ServerApiRequest | ServerApiResponse | PUT /v1/versions/{version_id}/digests |
+| AppendEvents | ServerApiRequest | ServerApiResponse | POST /v1/versions/{version_id}/events |
+| GetFacts | ServerApiRequest | ServerApiResponse | GET /v1/versions/{version_id}/facts |
+| GetFindings | ServerApiRequest | ServerApiResponse | GET /v1/versions/{version_id}/findings |
+| RecordFindings | ServerApiRequest | ServerApiResponse | POST /v1/versions/{version_id}/findings |
+| GetHead | ServerApiRequest | ServerApiResponse | GET /v1/versions/{version_id}/head |
+| RecordIngest | ServerApiRequest | ServerApiResponse | POST /v1/versions/{version_id}/ingests |
+| GetLineage | ServerApiRequest | ServerApiResponse | GET /v1/versions/{version_id}/lineage |
+| GetPromises | ServerApiRequest | ServerApiResponse | GET /v1/versions/{version_id}/promises |
+| OpenPromise | ServerApiRequest | ServerApiResponse | POST /v1/versions/{version_id}/promises |
+| FulfillPromise | ServerApiRequest | ServerApiResponse | POST /v1/versions/{version_id}/promises/{key}/fulfill |
+| VersionInfo | ServerApiRequest | ServerApiResponse | GET /version |
+
+### message ServerApiRequest
+
+Path and query values are unescaped; the server encodes them as components.
+Authentication, uid and idempotency-key use normal gRPC metadata, never here.
+
+| # | Field | Type | Notes |
+|---|---|---|---|
+| 1 | path_parameters | repeated ServerApiRequest.PathParametersEntry |  |
+| 2 | query_parameters | repeated ServerApiParameter |  |
+| 3 | body | bytes |  |
+| 4 | content_type | string | Empty chooses the operation's declared request media type. |
+| 5 | source_headers | repeated ServerApiRequest.SourceHeadersEntry | Only x-filename, x-content-sha256 and x-shape-ref are accepted. |
+
+### message ServerApiParameter
+
+| # | Field | Type | Notes |
+|---|---|---|---|
+| 1 | name | string |  |
+| 2 | value | string |  |
+
+### message ServerApiResponse
+
+JSON is UTF-8 bytes rather than google.protobuf.Struct: uint64, omitted
+fields and explicit null must round-trip without precision/presence loss.
+Streaming RPCs emit body fragments incrementally, including SSE delimiters.
+
+| # | Field | Type | Notes |
+|---|---|---|---|
+| 1 | status | uint32 |  |
+| 2 | content_type | string |  |
+| 3 | body | bytes |  |

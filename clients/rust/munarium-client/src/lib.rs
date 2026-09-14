@@ -31,6 +31,8 @@
 
 pub mod error;
 pub mod planes;
+#[cfg(any(feature = "rest", feature = "grpc"))]
+pub mod server_api;
 
 #[cfg(feature = "grpc")]
 pub mod grpc;
@@ -58,7 +60,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// The server version this client tracks (lockstep with the repo workspace).
-pub const TARGET_SERVER_VERSION: &str = "1.0.0";
+pub const TARGET_SERVER_VERSION: &str = "1.2.0";
 
 /// Connection + behavior options, shared by both transports.
 #[derive(Debug, Clone)]

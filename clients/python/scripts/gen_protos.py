@@ -34,6 +34,7 @@ PROTOS = [
     "provider",
     "session",
     "admin",
+    "server_api",
 ]
 
 

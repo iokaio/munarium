@@ -5,6 +5,10 @@ for registry availability, digests and public signing instructions.
 
 ## 1.2.0
 
+- Add the complete `ServerApiService`: every documented REST operation has a
+  named native RPC, including streaming turns and formerly REST-only management
+  operations. All four Server SDKs expose the complete surface, generated from
+  the same contract and checked for drift. Both transports use the same handlers.
 - Add REST `/v1.2` APIs for collection vocabularies, configurable default-on sampled
   generation, explicit refresh, revision-checked editing and enable/disable controls.
   Apply vocabulary expansion in scoped search and session retrieval.

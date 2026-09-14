@@ -54,6 +54,24 @@
         ]
       }
     },
+    "/openapi.json": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "operationId": "openapi_json",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/readyz": {
       "get": {
         "tags": [

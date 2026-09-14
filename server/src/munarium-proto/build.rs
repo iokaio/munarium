@@ -27,6 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "provider",
         "admin",
         "session",
+        "server_api",
     ]
     .iter()
     .map(|f| proto_root.join("mmp/v1").join(format!("{f}.proto")))

@@ -1,0 +1,941 @@
+{
+  "server_version": "1.2.0",
+  "operations": [
+    {
+      "name": "healthai",
+      "rpc": "Healthai",
+      "method": "GET",
+      "path": "/healthai",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "healthz",
+      "rpc": "Healthz",
+      "method": "GET",
+      "path": "/healthz",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "openapi_json",
+      "rpc": "OpenapiJson",
+      "method": "GET",
+      "path": "/openapi.json",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "readyz",
+      "rpc": "Readyz",
+      "method": "GET",
+      "path": "/readyz",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "compose_answer",
+      "rpc": "ComposeAnswer",
+      "method": "POST",
+      "path": "/v1.2/answers",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "get_collection_vocabulary",
+      "rpc": "GetCollectionVocabulary",
+      "method": "GET",
+      "path": "/v1.2/collections/{id}/vocabulary",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "update_collection_vocabulary",
+      "rpc": "UpdateCollectionVocabulary",
+      "method": "PATCH",
+      "path": "/v1.2/collections/{id}/vocabulary",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "replace_collection_vocabulary",
+      "rpc": "ReplaceCollectionVocabulary",
+      "method": "PUT",
+      "path": "/v1.2/collections/{id}/vocabulary",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "refresh_collection_vocabulary",
+      "rpc": "RefreshCollectionVocabulary",
+      "method": "POST",
+      "path": "/v1.2/collections/{id}/vocabulary/refresh",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "get_vocabulary_revision",
+      "rpc": "GetVocabularyRevision",
+      "method": "GET",
+      "path": "/v1.2/collections/{id}/vocabulary/revision",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "search_collection",
+      "rpc": "SearchCollection",
+      "method": "POST",
+      "path": "/v1.2/search",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "get_vocabulary_settings",
+      "rpc": "GetVocabularySettings",
+      "method": "GET",
+      "path": "/v1.2/vocabulary-settings",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "replace_vocabulary_settings",
+      "rpc": "ReplaceVocabularySettings",
+      "method": "PUT",
+      "path": "/v1.2/vocabulary-settings",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "list_tokens",
+      "rpc": "ListTokens",
+      "method": "GET",
+      "path": "/v1/access-tokens",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "issue_access_token",
+      "rpc": "IssueAccessToken",
+      "method": "POST",
+      "path": "/v1/access-tokens",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "revoke_token",
+      "rpc": "RevokeToken",
+      "method": "POST",
+      "path": "/v1/access-tokens/{jti}/revoke",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "list_drafts",
+      "rpc": "ListDrafts",
+      "method": "GET",
+      "path": "/v1/authoring/drafts",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "create_draft",
+      "rpc": "CreateDraft",
+      "method": "POST",
+      "path": "/v1/authoring/drafts",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "delete_draft",
+      "rpc": "DeleteDraft",
+      "method": "DELETE",
+      "path": "/v1/authoring/drafts/{draft_id}",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "get_draft",
+      "rpc": "GetDraft",
+      "method": "GET",
+      "path": "/v1/authoring/drafts/{draft_id}",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "update_answers",
+      "rpc": "UpdateAnswers",
+      "method": "PUT",
+      "path": "/v1/authoring/drafts/{draft_id}/answers",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "apply_draft",
+      "rpc": "ApplyDraft",
+      "method": "POST",
+      "path": "/v1/authoring/drafts/{draft_id}/apply",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "assist_draft",
+      "rpc": "AssistDraft",
+      "method": "POST",
+      "path": "/v1/authoring/drafts/{draft_id}/assist",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "export_draft",
+      "rpc": "ExportDraft",
+      "method": "POST",
+      "path": "/v1/authoring/drafts/{draft_id}/export",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "validate_draft",
+      "rpc": "ValidateDraft",
+      "method": "POST",
+      "path": "/v1/authoring/drafts/{draft_id}/validate",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "list_patterns",
+      "rpc": "ListPatterns",
+      "method": "GET",
+      "path": "/v1/authoring/patterns",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "get_pattern",
+      "rpc": "GetPattern",
+      "method": "GET",
+      "path": "/v1/authoring/patterns/{id}",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "apply_rules",
+      "rpc": "ApplyRules",
+      "method": "POST",
+      "path": "/v1/chronology-rules",
+      "content_type": "text/yaml",
+      "streaming": false
+    },
+    {
+      "name": "get_rules",
+      "rpc": "GetRules",
+      "method": "GET",
+      "path": "/v1/chronology-rules/{name}",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "get_claim",
+      "rpc": "GetClaim",
+      "method": "GET",
+      "path": "/v1/claims/{claim_id}",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "list_collections",
+      "rpc": "ListCollections",
+      "method": "GET",
+      "path": "/v1/collections",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "create_collection",
+      "rpc": "CreateCollection",
+      "method": "POST",
+      "path": "/v1/collections",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "activate_collection_index",
+      "rpc": "ActivateCollectionIndex",
+      "method": "POST",
+      "path": "/v1/collections/{collection_id}/activate-index",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "get_collection",
+      "rpc": "GetCollection",
+      "method": "GET",
+      "path": "/v1/collections/{id}",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "seal",
+      "rpc": "Seal",
+      "method": "POST",
+      "path": "/v1/evidence",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "purge",
+      "rpc": "Purge",
+      "method": "DELETE",
+      "path": "/v1/evidence/{evidence_id}",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "get_manifest",
+      "rpc": "GetManifest",
+      "method": "GET",
+      "path": "/v1/evidence/{evidence_id}",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "get_accesses",
+      "rpc": "GetAccesses",
+      "method": "GET",
+      "path": "/v1/evidence/{evidence_id}/accesses",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "put_bytes",
+      "rpc": "PutBytes",
+      "method": "PUT",
+      "path": "/v1/evidence/{evidence_id}/bytes",
+      "content_type": "application/octet-stream",
+      "streaming": false
+    },
+    {
+      "name": "commit",
+      "rpc": "Commit",
+      "method": "POST",
+      "path": "/v1/evidence/{evidence_id}/commit",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "legal_hold",
+      "rpc": "LegalHold",
+      "method": "POST",
+      "path": "/v1/evidence/{evidence_id}/legal-hold",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "get_rows",
+      "rpc": "GetRows",
+      "method": "GET",
+      "path": "/v1/evidence/{evidence_id}/rows",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "backfill",
+      "rpc": "Backfill",
+      "method": "POST",
+      "path": "/v1/index-artifacts/backfill",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "artifact_status",
+      "rpc": "ArtifactStatus",
+      "method": "GET",
+      "path": "/v1/index-artifacts/{index_version_id}",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "bind_artifact",
+      "rpc": "BindArtifact",
+      "method": "POST",
+      "path": "/v1/index-artifacts/{index_version_id}/bind",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "promote_artifact",
+      "rpc": "PromoteArtifact",
+      "method": "POST",
+      "path": "/v1/index-artifacts/{index_version_id}/promote",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "rebuild_artifact",
+      "rpc": "RebuildArtifact",
+      "method": "POST",
+      "path": "/v1/index-artifacts/{index_version_id}/rebuild",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "verify_artifacts",
+      "rpc": "VerifyArtifacts",
+      "method": "POST",
+      "path": "/v1/index-artifacts/{index_version_id}/verify",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "list_jobs",
+      "rpc": "ListJobs",
+      "method": "GET",
+      "path": "/v1/index-build-jobs",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "enqueue_job",
+      "rpc": "EnqueueJob",
+      "method": "POST",
+      "path": "/v1/index-build-jobs",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "get_job",
+      "rpc": "GetJob",
+      "method": "GET",
+      "path": "/v1/index-build-jobs/{job_id}",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "cancel_job",
+      "rpc": "CancelJob",
+      "method": "POST",
+      "path": "/v1/index-build-jobs/{job_id}/cancel",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "get_index",
+      "rpc": "GetIndex",
+      "method": "GET",
+      "path": "/v1/indexes/{shape_ref}",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "build_index",
+      "rpc": "BuildIndex",
+      "method": "POST",
+      "path": "/v1/indexes/{shape_ref}/build",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "ingest_file",
+      "rpc": "IngestFile",
+      "method": "POST",
+      "path": "/v1/ingest",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "ingest_batch",
+      "rpc": "IngestBatch",
+      "method": "POST",
+      "path": "/v1/ingest/batch",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "bulk_open",
+      "rpc": "BulkOpen",
+      "method": "POST",
+      "path": "/v1/ingest/bulk",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "bulk_status",
+      "rpc": "BulkStatus",
+      "method": "GET",
+      "path": "/v1/ingest/bulk/{bulk_id}",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "bulk_chunk",
+      "rpc": "BulkChunk",
+      "method": "POST",
+      "path": "/v1/ingest/bulk/{bulk_id}/chunk",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "bulk_complete",
+      "rpc": "BulkComplete",
+      "method": "POST",
+      "path": "/v1/ingest/bulk/{bulk_id}/complete",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "get_max_tokens",
+      "rpc": "GetMaxTokens",
+      "method": "GET",
+      "path": "/v1/max-tokens",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "replace_max_tokens",
+      "rpc": "ReplaceMaxTokens",
+      "method": "POST",
+      "path": "/v1/max-tokens",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "list_providers",
+      "rpc": "ListProviders",
+      "method": "GET",
+      "path": "/v1/providers",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "apply_provider",
+      "rpc": "ApplyProvider",
+      "method": "POST",
+      "path": "/v1/providers",
+      "content_type": "text/yaml",
+      "streaming": false
+    },
+    {
+      "name": "provider_complete",
+      "rpc": "ProviderComplete",
+      "method": "POST",
+      "path": "/v1/providers/{name}/complete",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "provider_embed",
+      "rpc": "ProviderEmbed",
+      "method": "POST",
+      "path": "/v1/providers/{name}/embed",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "provider_health",
+      "rpc": "ProviderHealth",
+      "method": "GET",
+      "path": "/v1/providers/{name}/health",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "audit",
+      "rpc": "Audit",
+      "method": "GET",
+      "path": "/v1/reports/audit",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "budgets",
+      "rpc": "Budgets",
+      "method": "GET",
+      "path": "/v1/reports/budgets",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "cost",
+      "rpc": "Cost",
+      "method": "GET",
+      "path": "/v1/reports/cost",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "endpoints",
+      "rpc": "Endpoints",
+      "method": "GET",
+      "path": "/v1/reports/endpoints",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "evidence_report",
+      "rpc": "EvidenceReport",
+      "method": "GET",
+      "path": "/v1/reports/evidence",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "matrix_report",
+      "rpc": "MatrixReport",
+      "method": "GET",
+      "path": "/v1/reports/matrix",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "runbook_report",
+      "rpc": "RunbookReport",
+      "method": "GET",
+      "path": "/v1/reports/runbooks",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "sessions_report",
+      "rpc": "SessionsReport",
+      "method": "GET",
+      "path": "/v1/reports/sessions",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "timeseries",
+      "rpc": "Timeseries",
+      "method": "GET",
+      "path": "/v1/reports/timeseries",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "usage",
+      "rpc": "Usage",
+      "method": "GET",
+      "path": "/v1/reports/usage",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "rollout_set",
+      "rpc": "RolloutSet",
+      "method": "PUT",
+      "path": "/v1/retrieval-rollout",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "rollout_get",
+      "rpc": "RolloutGet",
+      "method": "GET",
+      "path": "/v1/retrieval-rollout/{scope_kind}/{scope_id}",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "list_runbooks",
+      "rpc": "ListRunbooks",
+      "method": "GET",
+      "path": "/v1/runbooks",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "apply_runbook",
+      "rpc": "ApplyRunbook",
+      "method": "POST",
+      "path": "/v1/runbooks",
+      "content_type": "text/yaml",
+      "streaming": false
+    },
+    {
+      "name": "validate_runbook",
+      "rpc": "ValidateRunbook",
+      "method": "POST",
+      "path": "/v1/runbooks/validate",
+      "content_type": "text/yaml",
+      "streaming": false
+    },
+    {
+      "name": "get_runbook_info",
+      "rpc": "GetRunbookInfo",
+      "method": "GET",
+      "path": "/v1/runbooks/{name}",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "remove_confirm",
+      "rpc": "RemoveConfirm",
+      "method": "POST",
+      "path": "/v1/runbooks/{name}/remove-confirm",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "remove_request",
+      "rpc": "RemoveRequest",
+      "method": "POST",
+      "path": "/v1/runbooks/{name}/remove-request",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "run_runbook",
+      "rpc": "RunRunbook",
+      "method": "POST",
+      "path": "/v1/runbooks/{name}/runs",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "create_session",
+      "rpc": "CreateSession",
+      "method": "POST",
+      "path": "/v1/runbooks/{name}/sessions",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "get_run",
+      "rpc": "GetRun",
+      "method": "GET",
+      "path": "/v1/runs/{run_id}",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "approve_step",
+      "rpc": "ApproveStep",
+      "method": "POST",
+      "path": "/v1/runs/{run_id}/steps/{ordinal}/approve",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "hybrid_search",
+      "rpc": "HybridSearch",
+      "method": "POST",
+      "path": "/v1/search",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "get_session",
+      "rpc": "GetSession",
+      "method": "GET",
+      "path": "/v1/sessions/{id}",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "close_session",
+      "rpc": "CloseSession",
+      "method": "POST",
+      "path": "/v1/sessions/{id}/close",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "turn",
+      "rpc": "Turn",
+      "method": "POST",
+      "path": "/v1/sessions/{id}/turns",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "turn_stream",
+      "rpc": "TurnStream",
+      "method": "POST",
+      "path": "/v1/sessions/{id}/turns/stream",
+      "content_type": "application/json",
+      "streaming": true
+    },
+    {
+      "name": "apply_shape",
+      "rpc": "ApplyShape",
+      "method": "POST",
+      "path": "/v1/shapes",
+      "content_type": "text/yaml",
+      "streaming": false
+    },
+    {
+      "name": "put_source",
+      "rpc": "PutSource",
+      "method": "PUT",
+      "path": "/v1/sources",
+      "content_type": "application/octet-stream",
+      "streaming": false
+    },
+    {
+      "name": "get_source",
+      "rpc": "GetSource",
+      "method": "GET",
+      "path": "/v1/sources/{source_id}",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "create_version",
+      "rpc": "CreateVersion",
+      "method": "POST",
+      "path": "/v1/versions",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "get_anchors",
+      "rpc": "GetAnchors",
+      "method": "GET",
+      "path": "/v1/versions/{version_id}/anchors",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "lock_anchor",
+      "rpc": "LockAnchor",
+      "method": "POST",
+      "path": "/v1/versions/{version_id}/anchors",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "propose_claim",
+      "rpc": "ProposeClaim",
+      "method": "POST",
+      "path": "/v1/versions/{version_id}/claims",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "get_context",
+      "rpc": "GetContext",
+      "method": "GET",
+      "path": "/v1/versions/{version_id}/context",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "get_counters",
+      "rpc": "GetCounters",
+      "method": "GET",
+      "path": "/v1/versions/{version_id}/counters",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "record_counts",
+      "rpc": "RecordCounts",
+      "method": "POST",
+      "path": "/v1/versions/{version_id}/counters",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "get_digests",
+      "rpc": "GetDigests",
+      "method": "GET",
+      "path": "/v1/versions/{version_id}/digests",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "upsert_digest",
+      "rpc": "UpsertDigest",
+      "method": "PUT",
+      "path": "/v1/versions/{version_id}/digests",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "append_events",
+      "rpc": "AppendEvents",
+      "method": "POST",
+      "path": "/v1/versions/{version_id}/events",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "get_facts",
+      "rpc": "GetFacts",
+      "method": "GET",
+      "path": "/v1/versions/{version_id}/facts",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "get_findings",
+      "rpc": "GetFindings",
+      "method": "GET",
+      "path": "/v1/versions/{version_id}/findings",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "record_findings",
+      "rpc": "RecordFindings",
+      "method": "POST",
+      "path": "/v1/versions/{version_id}/findings",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "get_head",
+      "rpc": "GetHead",
+      "method": "GET",
+      "path": "/v1/versions/{version_id}/head",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "record_ingest",
+      "rpc": "RecordIngest",
+      "method": "POST",
+      "path": "/v1/versions/{version_id}/ingests",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "get_lineage",
+      "rpc": "GetLineage",
+      "method": "GET",
+      "path": "/v1/versions/{version_id}/lineage",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "get_promises",
+      "rpc": "GetPromises",
+      "method": "GET",
+      "path": "/v1/versions/{version_id}/promises",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "open_promise",
+      "rpc": "OpenPromise",
+      "method": "POST",
+      "path": "/v1/versions/{version_id}/promises",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "fulfill_promise",
+      "rpc": "FulfillPromise",
+      "method": "POST",
+      "path": "/v1/versions/{version_id}/promises/{key}/fulfill",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "version_info",
+      "rpc": "VersionInfo",
+      "method": "GET",
+      "path": "/version",
+      "content_type": "application/json",
+      "streaming": false
+    }
+  ]
+}

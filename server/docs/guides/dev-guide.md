@@ -14181,6 +14181,7 @@ route family needs one rule there.
 |---|---|---|---|
 | `/healthai` | GET | providers | §11 |
 | `/healthz` | GET | meta | §5, §11 |
+| `/openapi.json` | GET | meta | rest.md |
 | `/readyz` | GET | meta | §5, §8A (datastore readiness), §11 |
 | `/v1.2/answers` | POST | answers | rest.md |
 | `/v1.2/collections/{id}/vocabulary` | GET · PUT · PATCH | vocabulary | rest.md |

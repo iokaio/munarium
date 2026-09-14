@@ -29,6 +29,7 @@ mod evidence_hierarchy;
 mod evidence_providers;
 mod evidence_routes;
 mod grpc;
+mod grpc_api;
 mod grpc_data;
 mod grpc_platform;
 mod ingest_api;
@@ -192,6 +193,13 @@ async fn main() {
         let admin = pb::admin_service_server::AdminServiceServer::new(grpc_platform::AdminSvc {
             state: state.clone(),
         });
+        let api = pb::server_api_service_server::ServerApiServiceServer::new(
+            grpc_api::ServerApiSvc::new(state.clone()),
+        )
+        // Keep the full REST payload ceiling; protobuf framing and request
+        // parameters have a separate small allowance.
+        .max_decoding_message_size(rest::MAX_SOURCE_BYTES + 65536)
+        .max_encoding_message_size(rest::MAX_SOURCE_BYTES + 65536);
         // Bind INLINE, before the spawn and before "listening" is logged —
         // the same fail-loudly shape as the REST plane. Until 2026-08-17 the
         // bind happened inside the spawned task after the log line, so an
@@ -218,6 +226,7 @@ async fn main() {
                 .add_service(provider)
                 .add_service(session)
                 .add_service(admin)
+                .add_service(api)
                 .serve_with_incoming_shutdown(
                     tokio_stream::wrappers::TcpListenerStream::new(listener),
                     shutdown_signal(),

@@ -177,7 +177,7 @@ public final class GrpcTransport implements io.ioka.munarium.client.Transport {
         return s;
     }
 
-    static MunariumException decode(StatusRuntimeException e) {
+    public static MunariumException decode(StatusRuntimeException e) {
         com.google.rpc.Status status = StatusProto.fromThrowable(e);
         String detail = e.getStatus().getDescription() == null ? "" : e.getStatus().getDescription();
         if (status != null) {

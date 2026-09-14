@@ -534,7 +534,10 @@ where
         let path = req.uri().path().to_string();
 
         // Only mmp services carry the uid contract; health/reflection pass.
-        if !path.starts_with("/mmp.v1.") {
+        // The complete API service dispatches through capture in-process. It
+        // must not double-charge permits or write a second interaction record.
+        // Its fixed handlers still enforce uid, authentication and load shedding.
+        if !path.starts_with("/mmp.v1.") || path.starts_with("/mmp.v1.ServerApiService/") {
             return Box::pin(async move { inner.call(req).await });
         }
 

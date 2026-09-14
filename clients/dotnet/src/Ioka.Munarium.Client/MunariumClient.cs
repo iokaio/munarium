@@ -66,7 +66,7 @@ public sealed class MunariumClient : IAsyncDisposable
 {
     /// <summary>The server version this client tracks (lockstep with the
     /// repo workspace).</summary>
-    public const string TargetServerVersion = "1.0.0";
+    public const string TargetServerVersion = "1.2.0";
 
     public ICommandsPlane Commands => _transport;
     public IQueryPlane Query => _transport;
