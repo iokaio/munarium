@@ -29,7 +29,7 @@ Both serve the identical services — the conformance suite diffs their answers.
 ### 1. Direct TCP port (50051)
 
 A dedicated plaintext tonic listener for direct client connections. **Server
-1.1.1 does not configure TLS on this listener**: `MUNARIUM_GRPC_TLS_CERT` and
+1.2.0 does not configure TLS on this listener**: `MUNARIUM_GRPC_TLS_CERT` and
 `MUNARIUM_GRPC_TLS_KEY` are not implemented and setting them does not enable
 encryption. Use a TLS-terminating proxy with HTTP/2 for remote access, or keep
 the plaintext port on a trusted private network. Disable the listener entirely
@@ -105,10 +105,13 @@ twins, every one calling the SAME op function as its REST handler:
   bytes ride native (no base64 on this plane); per-item outcomes.
 - `RetrievalService` — CreateCollection / ListCollections / GetCollection.
 
-**Still REST-only by design:** reports + `/admin` dashboards (management
-read surfaces), index builds, `/healthai`, and the `/v1/search`
-multi-collection filter (the session plane is the access-checked search
-path on gRPC). Verified live 2026-08-18 via grpcurl against the pg store:
+**Server 1.2 complete API:** `ServerApiService` adds named RPCs for reports,
+index builds, `/healthai`, multi-collection search and all other documented
+REST operations. HTML `/admin` pages, Swagger UI and Prometheus output retain
+their browser/tool-specific representations. The declared tenant-lifecycle
+placeholders have no implemented REST counterpart and remain unimplemented.
+
+Historical platform verification on 2026-08-18 used grpcurl against the pg store:
 shape→collection→runbook→ingest→session→turn→close end-to-end, with the
 close→turn refusal and UNIMPLEMENTED tenant RPCs captured.
 

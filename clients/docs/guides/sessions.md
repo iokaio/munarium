@@ -1,5 +1,9 @@
 # Sessions: multiturn retrieval, streaming turns, and the transcript
 
+This guide describes the existing typed client interfaces. For Server 1.2's
+complete REST/gRPC surface, including methods described below as unsupported
+in the older gRPC interfaces, use [ServerApiClient](server-1.2.md).
+
 A **session** pins a runbook version and takes retrieval turns over the
 collections that runbook grants — filtered by the caller's access
 level/compartments, so the create response is a least-privilege echo of what
@@ -14,7 +18,9 @@ Two postures to hold before the first call:
   auto-retried, and **deadline-exempt** — a client-side abort cannot stop
   the server's paid completion, so the clients don't pretend a timeout
   un-spends it. Only your own cancellation bounds a turn.
-- **The streaming turn is REST-only.** SessionService has no streaming RPC;
+- **The historical typed session plane streams over REST only.**
+  `ServerApiClient` also streams over gRPC using Server 1.2's
+  `ServerApiService/TurnStream`. `SessionService` has no streaming RPC;
   the gRPC clients raise the typed `Unsupported` error — at the moment the
   REST twin would surface a pre-stream refusal, not synchronously from the
   call: Python's sync `turn_stream` raises when called and

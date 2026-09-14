@@ -808,7 +808,7 @@ These are the existing Datastore references and the adjacent deployment guides:
 | [Developer guide §4](dev-guide.md#4-workspace-tour-the-crates-and-their-boundaries) | Crate map and retrieval coordinator; see the Datastore discussion in that chapter |
 | [Developer guide §10](dev-guide.md#10-ci-and-the-path-to-production) | CI boundaries, Docker mounts and deployment considerations |
 | [Operator CLI](../ops/mmctl.md) | Exact `mmctl datastore` commands, arguments and generation handling |
-| [REST reference](../api/rest.md) | Datastore-plane route table, auth roles, DTO fields and REST-only transport |
+| [REST reference](../api/rest.md) | Datastore-plane route table, auth roles, DTO fields and ServerApiService transport |
 | [OpenAPI reference](../api/openapi.json) | Generated request/response schemas for artifacts, jobs, selectors and activation |
 | [Error reference](../api/errors.md) | `datastore-unavailable` and other request/refusal contracts |
 | [Deployment runbook](../ops/deployment-runbook.md) | Image rollout and Datastore-to-PostgreSQL rollback |

@@ -78,9 +78,11 @@ may require newly declared configuration.
 
 ## The API
 
-Two routes, REST-only (no gRPC twin — like the evidence read plane and the
-reports). Both live in `max_tokens_api.rs`; the OpenAPI document carries
-their schemas (`MaxTokensBudgets`, `MaxTokensResponse`).
+Both routes live in `max_tokens_api.rs`; the OpenAPI document carries their
+schemas (`MaxTokensBudgets`, `MaxTokensResponse`). Server 1.2 also exposes
+them through the named `ServerApiService` RPCs and every language's
+[`ServerApiClient`](../../clients/docs/guides/server-1.2.md). The historical
+typed provider planes retain their REST-only budget methods.
 
 ### `GET /v1/max-tokens`
 

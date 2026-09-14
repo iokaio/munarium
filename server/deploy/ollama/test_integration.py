@@ -30,6 +30,7 @@ def main() -> None:
     parser.add_argument("--http", default="http://127.0.0.1:28080")
     parser.add_argument("--grpc", default="127.0.0.1:25051")
     parser.add_argument("--provider-endpoint", default="http://ollama:11434")
+    parser.add_argument("--expected-version", default="1.1.1")
     parser.add_argument(
         "--output", type=Path, default=ROOT / "server/scratch/ollama/integration.json"
     )
@@ -47,7 +48,11 @@ def main() -> None:
         ("authorization", "Bearer ollama-evaluation-token"),
         ("munarium-uid", "evaluator"),
     )
-    results: dict = {"started": time.time(), "checks": []}
+    results: dict = {
+        "started": time.time(),
+        "checks": [],
+        "expectedVersion": args.expected_version,
+    }
 
     def http(path, body=None, *, yaml=False, expected=200, other=False):
         hs = dict(headers)
@@ -76,7 +81,7 @@ def main() -> None:
         print(f"PASS {name}", flush=True)
 
     try:
-        assert http("/version")["version"] == "1.1.1"
+        assert http("/version")["version"] == args.expected_version
         http("/readyz")
         if args.verify_persisted:
             prior = json.loads(args.verify_persisted.read_text())

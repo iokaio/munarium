@@ -42,9 +42,11 @@ non-streaming call would have returned. Two invariants hold regardless of langua
 ends with **exactly one terminal event** (a successful result or a typed error, never neither),
 and progress events are forward-compatible — a client build may see a stage name it doesn't
 recognize from a newer server and should treat it as informational rather than fail on it.
-Streaming is available over the HTTP transport; it is not part of the gRPC surface, and a
-gRPC client that asks for it receives a typed "not supported here" refusal rather than a
-confusing low-level error.
+Streaming is available over HTTP and, starting with Server 1.2, through
+`ServerApiService/TurnStream` and the complete
+[`ServerApiClient`](../guides/server-1.2.md). The latter returns incremental SSE
+body fragments; parse across fragment boundaries. Historical typed session planes
+still return a typed unsupported error for streaming over their gRPC transport.
 
 ## Verification, when the runbook asks for it
 
