@@ -3,6 +3,20 @@
 These are source release notes. See the [container publication record](CONTAINER.md#versions-and-verification)
 for registry availability, digests and public signing instructions.
 
+## Unreleased — 1.2.1
+
+- Give the answer model request-local passage IDs and map checked citations back
+  to the caller's original IDs. Keep source paths, hashes and opaque caller IDs
+  out of the model's citation namespace. Unknown IDs and altered quotes fail closed.
+- Clarify generic answer instructions for keyword topics and partially supported
+  requests without adding domain-specific aliases or inferred facts.
+- Extend REST/gRPC regressions for forged provenance, access levels, collection
+  scopes, user/tenant isolation, expired tokens and invalid model citations.
+- Derive the generated client API inventory's version from OpenAPI.
+
+Release qualification and application integration remain pending. No 1.2.1
+container or release tag is published by these source changes.
+
 ## 1.2.0
 
 - Add the complete `ServerApiService`: every documented REST operation has a

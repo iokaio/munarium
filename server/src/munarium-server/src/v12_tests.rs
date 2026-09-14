@@ -430,7 +430,7 @@ async fn vocabulary_scenario(grpc: bool) {
     assert_eq!(retained["status"], "generation-failed");
     let answer_body = json!({"question":"Who approves a purchase order?","expected_provider":"ollama","expected_model":"fixture-model",
         "sources":[{"id":"c1","collection":collection.id,"index_version":index.id,"source_id":source,"source_path":"manuals/ordering.txt","source_content_hash":hash,"text":text}]});
-    *output.lock().unwrap() = json!({"status":"supported","answer":"A supervisor must approve the purchase order before ordering.","citations":[{"id":"c1","quote":text}]}).to_string();
+    *output.lock().unwrap() = json!({"status":"supported","answer":"A supervisor must approve the purchase order before ordering.","citations":[{"id":"p1","quote":text}]}).to_string();
     let count = calls.lock().unwrap().len();
     let mut bad = answer_body.clone();
     bad["expected_provider"] = json!("openai");
@@ -441,20 +441,112 @@ async fn vocabulary_scenario(grpc: bool) {
     assert_eq!(calls.lock().unwrap().len(), count);
     let (status, answer) = call(&app, "POST", "/v1.2/answers", &query, answer_body.clone()).await;
     assert_eq!(status, StatusCode::OK, "{answer}");
+    assert_eq!(answer["content"]["citations"][0]["id"], "c1");
+    assert_eq!(answer["references"][0]["id"], "c1");
+    {
+        let requests = calls.lock().unwrap();
+        let prompt: Value = serde_json::from_str(
+            requests.last().unwrap()["messages"][1]["content"]
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(prompt["passages"], json!([{"id":"p1","text":text}]));
+        assert!(prompt.get("sources").is_none());
+    }
     assert_eq!(answer["references"][0]["source_id"], source);
     assert_eq!(
         answer["references"][0]["metadata"]["location"]["utf8_start"],
         0
     );
     assert!(answer["references"][0].get("url").is_none());
-    let mut corrupt = answer_body;
-    corrupt["sources"][0]["source_content_hash"] = json!("wrong");
+    // Every provenance component is validated before model submission, on
+    // both transports. A plausible quote cannot repair a forged source pin.
+    for field in [
+        "source_content_hash",
+        "source_id",
+        "source_path",
+        "index_version",
+        "text",
+        "collection",
+    ] {
+        let mut corrupt = answer_body.clone();
+        corrupt["sources"][0][field] = json!("not-the-published-source");
+        let count = calls.lock().unwrap().len();
+        let (status, detail) = call(&app, "POST", "/v1.2/answers", &query, corrupt).await;
+        assert!(status.is_client_error(), "{field}: {status} {detail}");
+        assert_eq!(
+            calls.lock().unwrap().len(),
+            count,
+            "{field} reached the model"
+        );
+    }
+    // Collection membership and access level must both be sufficient; a high
+    // level alone, a different uid or a different tenant cannot widen scope.
+    for (uid, scoped_tenant, level, compartments) in [
+        ("fixture-user", tenant.as_str(), 0, vec!["manuals".into()]),
+        ("fixture-user", tenant.as_str(), 99, vec!["private".into()]),
+        ("another-user", tenant.as_str(), 1, vec!["manuals".into()]),
+        ("fixture-user", "another-tenant", 99, vec!["manuals".into()]),
+    ] {
+        let (limited, _) = munarium_access::issue(
+            &[47; 32],
+            uid,
+            scoped_tenant,
+            level,
+            compartments,
+            vec!["query".into()],
+            None,
+            600,
+            "limited-answer".into(),
+        )
+        .unwrap();
+        let count = calls.lock().unwrap().len();
+        let (status, detail) =
+            call(&app, "POST", "/v1.2/answers", &limited, answer_body.clone()).await;
+        assert!(status.is_client_error(), "scope: {status} {detail}");
+        assert_eq!(
+            calls.lock().unwrap().len(),
+            count,
+            "unauthorized scope reached the model"
+        );
+    }
+    let mut expired = munarium_access::verify(&[47; 32], &query).unwrap();
+    expired.exp = expired.iat - 120;
+    let expired = munarium_access::mint(&[47; 32], &expired).unwrap();
     let count = calls.lock().unwrap().len();
-    assert!(call(&app, "POST", "/v1.2/answers", &query, corrupt)
-        .await
-        .0
-        .is_client_error());
+    assert_eq!(
+        call(&app, "POST", "/v1.2/answers", &expired, answer_body.clone())
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
     assert_eq!(calls.lock().unwrap().len(), count);
+    // Do not rescue malformed or fabricated model citations by guessing a
+    // source. Unsupported assertions never turn into a successful answer.
+    for invalid in [
+        json!({"status":"supported","answer":"Approval is automatic.","citations":[{"id":"p1","quote":"Approval is automatic."}]}),
+        json!({"status":"supported","answer":"Approval is required.","citations":[{"id":"c1","quote":text}]}),
+        json!({"status":"supported","answer":"Approval is required.","citations":[]}),
+        json!({"status":"insufficient","answer":"An unsupported assertion.","citations":[]}),
+        json!({"status":"review","answer":"Choose this rule.","citations":[]}),
+    ] {
+        *output.lock().unwrap() = invalid.to_string();
+        let (status, detail) =
+            call(&app, "POST", "/v1.2/answers", &query, answer_body.clone()).await;
+        assert!(
+            status.is_server_error(),
+            "invalid model answer: {status} {detail}"
+        );
+    }
+    for status in ["insufficient", "review"] {
+        *output.lock().unwrap() = json!({"status":status,"answer":"","citations":[]}).to_string();
+        let (code, response) =
+            call(&app, "POST", "/v1.2/answers", &query, answer_body.clone()).await;
+        assert_eq!(code, StatusCode::OK, "{response}");
+        assert_eq!(response["content"]["status"], status);
+        assert_eq!(response["references"], json!([]));
+    }
     // The default-on ingest worker creates a vocabulary for a newly bound
     // collection, while retaining an explicitly edited vocabulary.
     call(
