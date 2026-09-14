@@ -27,8 +27,9 @@ deterministically rebuilt under a pin; every retrieval answer carries a provenan
 
 ## About this repository
 
-The current Server source version is **1.1.1**. It fixes model overrides so the
-selected provider/tier applies to query expansion as well as answer generation.
+The current Server source version is **1.2.0**. It adds automatic, configurable
+[collection vocabularies and checked narrative answers](docs/guides/collection-vocabularies.md),
+pinned file locations, and a [complete REST/gRPC API and four SDKs](../clients/docs/guides/server-1.2.md).
 See [release changes](CHANGELOG.md) and [published artifacts](CONTAINER.md#versions-and-verification).
 The first public release was 1.0.0; the private research and operational history
 that preceded it is excluded from this repository.
@@ -55,7 +56,7 @@ release's published limitations.
 | **Runbook v2: retrieval applications** | `spec.collections` (per-collection access levels + declarative source bindings), `retrieval:` knobs, `models:` per-task defaults + `allowOverrides` policy, optional `completion:`, per-collection executor steps with per-collection approval gates, `GET /v1/runbooks(+/{name})`, `POST /v1/runbooks/validate` (deterministic findings + AI suggestions via BYOK), v1 pipelines untouched | Complete — end-to-end on postgres |
 | **Sessions + turns** | multiturn data plane: session pins name@version + snapshots token level/compartments; turns = access-filtered multi-collection retrieval (per-collection ProvenanceEnvelopes) + optional RAG completion through the shared model resolver (`model_override` policy-gated); JWT `query` scope + uid; `POST /v1/sessions/{id}/turns/stream` for the same turn as SSE phase-progress events | Complete |
 | **Ingestion + lifecycle** | `POST /v1/ingest(+/batch)` (`ingest` scope; explicit or matcher auto-bind; clearance-checked writes), double-pass soft removal (`remove-request` → `remove-confirm`, 15-min TTL, 410 afterwards, data retained), DBA-only physical deletion runbook | Complete |
-| **Reporting + hardening** | `GET /v1/reports/usage\|audit\|cost` (mgmt), token issuance audit + revoke (deny-list enforced when `MUNARIUM_TOKEN_REVOCATION_CHECK=true`), idempotency table-backed in pg mode (restart/replica-safe) | REST complete; gRPC parity for the platform surface is a tracked follow-up |
+| **Reporting + hardening** | `GET /v1/reports/usage\|audit\|cost` (mgmt), token issuance audit + revoke (deny-list enforced when `MUNARIUM_TOKEN_REVOCATION_CHECK=true`), idempotency table-backed in pg mode (restart/replica-safe) | Complete on REST and the native `ServerApiService` gRPC surface |
 | **Storage + extraction** | multi-cloud source stores: `SourceStore` seam + `munarium-store-objects` over `object_store` 0.14 (Azure Blob / S3(-compatible) / GCS / local file), local DOCX/PDF extraction (`munarium-extract`, optional `ocr` feature), Azure Document Intelligence escalation (`munarium-docintel-az`, off by default), MinIO `--profile s3` smoke target | Complete |
 
 ## Quickstart (dev profile)

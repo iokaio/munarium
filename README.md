@@ -17,8 +17,10 @@ Use **Server** for document search, grounded chat and a governed fact ledger. Ad
 immutable file exports. The separate [Munarium Demo](https://github.com/iokaio/munarium-demo)
 provides six working applications and bundled datasets for evaluation.
 
-**Versions checked on 2026-09-10:** the published Server image is **1.1.1**;
-Matrix and client source packages are **1.0.0**. Client packages are currently
+**Source versions:** Server **1.2.0**, Server clients **1.1.0**, Matrix and Matrix
+clients **1.0.0**. Server 1.2 adds configurable collection vocabularies, checked
+narrative answers and the [complete API on REST/gRPC](clients/docs/guides/server-1.2.md).
+The last recorded published Server image is **1.1.1**. Client packages are currently
 installed from source, not public package registries. See the
 [publication record](server/CONTAINER.md#versions-and-verification) and
 [client installation guide](clients/README.md#installation-and-publication).
