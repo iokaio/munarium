@@ -29,7 +29,7 @@ optional completion asks a configured model to turn that evidence into an answer
 ## 2. Start a persistent local Server
 
 You need PowerShell 7.3 or later and Docker Desktop running Linux containers.
-The public `iokaio/munarium:1.1.1` image supports AMD64 and ARM64 and includes
+The public `iokaio/munarium:1.2.0` image supports AMD64 and ARM64 and includes
 the Server and `/mmctl` CLI. Matrix and your application UI are separate
 deployments. No source checkout or Rust toolchain is required.
 
@@ -70,7 +70,7 @@ services:
       timeout: 3s
       retries: 20
   server:
-    image: iokaio/munarium:1.1.1
+    image: iokaio/munarium:1.2.0
     depends_on:
       postgres:
         condition: service_healthy

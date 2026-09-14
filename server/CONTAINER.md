@@ -14,7 +14,7 @@ docker run --rm --name munarium-evaluation `
   -p 127.0.0.1:8080:8080 -p 127.0.0.1:50051:50051 `
   -e MUNARIUM_STORE=memory -e MUNARIUM_AUTH_MODE=static `
   -e MUNARIUM_STATIC_TOKENS=evaluation-token:evaluation:rw `
-  iokaio/munarium:1.1.1
+  iokaio/munarium:1.2.0
 ```
 
 Open `http://127.0.0.1:8080/admin` or `/docs`. Check `/healthz`, `/readyz`,
@@ -74,33 +74,50 @@ The bundled client lists its commands with `docker exec <container> /mmctl`
 
 ## Versions and verification
 
-`1.1.1` identifies one release. `1.1` and `latest` may advance; use a verified
-digest for deployments. Candidate tags such as `1.1.1-rc.1` are evaluation
-builds and are not stable releases. Published source revisions are recorded in
-OCI labels, alongside SBOM and build provenance attestations.
+`1.2.0` identifies one release. `1.2` and `latest` may advance; use a verified
+digest for deployments. Candidate tags such as `1.2.0-rc.1` are evaluation
+builds. Prior numeric release tags remain unchanged.
 
-Publication check on **2026-09-10**:
+Published and verified on **2026-09-14**:
 
-| Artifact | Public status |
+| Artifact | Identity |
 |---|---|
-| Server `1.1.1` | Available on [Docker Hub](https://hub.docker.com/r/iokaio/munarium/tags); `1.1` and `latest` resolved to the same index at the time of the check |
-| OCI index digest | `sha256:e19bbe4c8cb0851771d04b509be64769bb07b46c8b490b80dceabb72faa4c64f` |
-| Source revision | [`91c34b1b2a416cfa5e504b5bfe945be89f6ace89`](https://github.com/iokaio/munarium/commit/91c34b1b2a416cfa5e504b5bfe945be89f6ace89) |
-| GitHub release/tag `v1.1.1` | Not published at the time of the check; [GitHub releases](https://github.com/iokaio/munarium/releases) ended at `v1.1.0` |
+| Server | `1.2.0`, `1.2`, `latest` on [Docker Hub](https://hub.docker.com/r/iokaio/munarium/tags) |
+| OCI index | `sha256:b1ef684bdb4d432dcb3cf750d5cd51938821232f2850496557f3fa95bc213d51` |
+| AMD64 manifest | `sha256:4d09f9414cf8320947797cfca1b9745f647247e7c03b1f67e963e5a38e839493` |
+| ARM64 manifest | `sha256:7814f404755886781b182f0105087f1c9f35c936a212ba000d70a82dd2a936cf` |
+| Image source | [`d9face75f0766d93ce195f230f77d41f2ef7eec4`](https://github.com/iokaio/munarium/commit/d9face75f0766d93ce195f230f77d41f2ef7eec4) |
+| Version-aware acceptance harness | [`2aee87b1c643063513c98a25c4e95476ffa8a152`](https://github.com/iokaio/munarium/commit/2aee87b1c643063513c98a25c4e95476ffa8a152) |
 
-Pin the published index to select these exact image bytes:
+Both architectures passed runtime, authentication, PostgreSQL write/read,
+CLI and restart checks, plus real Ollama REST/gRPC completion, embeddings,
+retrieval and persistence tests. These tests passed again on exact manifests
+pulled from the public registry. AMD64 ran natively; ARM64 ran under emulation,
+not on physical ARM64 hardware. Image audits, both-platform security scans and
+all 11 main-branch source CI checks passed. The original model test first
+refused the version because it hardcoded 1.1.1; the recorded newer harness
+accepts an explicit expected version. The image was not rebuilt for that fix.
+
+A synthetic database rehearsal passed 1.1.1 → 1.2.0, then restored its pre-upgrade
+backup and successfully restarted 1.1.1 with the original data/configuration.
+**Rollback requires that database restore**; an older binary cannot open the
+new migrations. See [upgrade and vocabulary controls](docs/guides/collection-vocabularies.md).
+Automatic vocabulary generation is enabled by default and may use configured
+paid providers for existing eligible collections after upgrade.
+
+Pin and verify the published image:
 
 ```console
-docker pull iokaio/munarium@sha256:e19bbe4c8cb0851771d04b509be64769bb07b46c8b490b80dceabb72faa4c64f
+docker pull iokaio/munarium@sha256:b1ef684bdb4d432dcb3cf750d5cd51938821232f2850496557f3fa95bc213d51
+cosign verify --certificate-identity https://github.com/iokaio/munarium-int/.github/workflows/server-release.yml@refs/heads/release/server-1.2 --certificate-oidc-issuer https://token.actions.githubusercontent.com docker.io/iokaio/munarium@sha256:b1ef684bdb4d432dcb3cf750d5cd51938821232f2850496557f3fa95bc213d51
 ```
 
-The [source changelog](CHANGELOG.md#111) describes the 1.1.1 routing fix.
-Public [1.1.0 release notes](https://github.com/iokaio/munarium/releases/tag/v1.1.0)
-include a Cosign digest and signing identity for **1.1.0 only**. They do not
-verify 1.1.1. The 1.1.1 publication's public signing instructions remain a
-documentation gap; a registry digest identifies bytes but does not authenticate
-their publisher. The publication check above queried registry metadata and did
-not repeat image execution or signature verification.
+The signature was independently verified, including its transparency-log claim,
+and anonymous registry retrieval matched the exact certified index bytes.
+The signing identity above is the identity in the public certificate; it does
+not require access to the operator repository. SBOM and build provenance
+attestations accompany the OCI index. Client packages remain source-installed;
+this container publication does not publish packages to language registries.
 
 The image includes `LICENSE`, `NOTICE`, and dependency notices under
 `/usr/share/licenses/munarium/`. Third-party components retain their own
