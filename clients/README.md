@@ -77,6 +77,11 @@ original six — `commands`, `query`, `ingest`, `retrieval`, `runbooks`,
 `providers` — grew with the server's platform surface, and four planes
 joined them:
 
+This section describes the existing typed `MunariumClient` facade. Operations
+marked REST-only here are available over gRPC through the complete
+`ServerApiClient` in Server 1.2; its JSON payloads also preserve values that
+older protobuf messages could not distinguish from absence.
+
 - **`sessions`** — multiturn retrieval sessions over a runbook's
   access-permitted collections, including the SSE streaming turn.
 - **`tokens`** — mint/audit/revoke the short-lived end-user capability JWTs
@@ -101,10 +106,10 @@ Guide: [docs/guides/providers.md](docs/guides/providers.md); server reference:
 rows. REST-only in v1; the gRPC transports raise the typed `Unsupported`
 error rather than pretending.
 
-**Sealing is deliberately absent from all four.** An artifact's manifest is a
-statement about work the *sealer* did, and an SDK offering `seal_evidence`
-would invite an application to assert provenance it cannot vouch for. What an
-application legitimately needs is the other direction: an answer cites
+**Sealing requires actual provenance.** The existing typed evidence facade is
+read-only. The complete `ServerApiClient` exposes the Server's authenticated
+sealing operation on both transports; callers must supply manifests for work
+they actually performed. For readers, an answer cites
 `[evidence/<id>#<row>]`, and the application resolves that citation to show a
 reader what the number was computed from. Access is checked per artifact
 against the **session's** clearance, not the sealer's — expect
@@ -248,21 +253,15 @@ Per-plane usage guides with snippets in all four languages live under
 - [authoring.md](docs/guides/authoring.md) — guided runbook authoring, from
   pattern to hosted
 
-## Known transport gaps (honest, typed, documented)
+## Existing typed-facade transport limitations
 
-The REST contract is 93 paths, and all four libraries carry 79 of them.
-**Not yet wrapped, and tracked here so the number is
-honest:** the datastore plane's fourteen operator routes (`/v1/index-artifacts/*`,
-`/v1/index-build-jobs/*`, `/v1/retrieval-rollout*`,
-`/v1/collections/{id}/activate-index` — `mmctl datastore` drives them) and
-`GET /v1/reports/budgets`. gRPC serves a
-genuine twin for most of it — SessionService (create/turn/get/close),
-AdminService's token trio (mint/list/revoke), collections, the runbook v2
-surface (list/info/validate/remove), and `IngestFiles` (single + batch, same
-per-item outcome contract). What remains REST-only surfaces as a typed
-`Unsupported` error on gRPC, never a silent drop:
+All 117 documented Server operations are available through `ServerApiClient`
+on REST and gRPC, including Datastore administration, budget reports and
+streaming turns. The [generated catalog](server-api.json) is authoritative.
+The historical typed `MunariumClient` facade still raises `Unsupported` for
+the following gRPC calls; use the corresponding complete API client method:
 
-- **`sessions.turn_stream`** — the SSE streaming turn has no streaming RPC.
+- **`sessions.turn_stream`** — use `ServerApiService/TurnStream`.
 - **The four bulk-upload session routes** (open/chunk/status/complete) and
   **`ingest.get_source`**.
 - **`query.findings`** (QueryService has no findings RPC).
@@ -270,18 +269,17 @@ per-item outcome contract). What remains REST-only surfaces as a typed
 - **`providers.list`** (the free `GET /v1/providers` disclosure) and
   **`health_ai`** (the live nine-model cloud-default probe; named Ollama health uses the provider health operation on either transport).
 - **`providers.max_tokens` / `providers.replace_max_tokens`** (`GET`/`POST /v1/max-tokens`, the per-call output-token ceilings read and
-  replaced as a whole — an operator setting beside the provider configs; no
-  RPC exists).
+  replaced as a whole — an operator setting beside the provider configs).
 - **The entire reports plane** (all nine — AdminService.Usage is declared
   but UNIMPLEMENTED, so the clients don't pretend).
-- **The entire authoring plane** (no authoring RPCs exist).
-- **Index builds** (no BuildIndex RPC).
+- **The entire authoring plane**.
+- **Index builds**.
 - **`server_version()`** (`GET /version` is a REST meta route; use server
   reflection on gRPC).
 
 **proto3 zero sentinels**: explicitly-zero `as_of_seq`/`limit`/`top_k`/
 `fact_limit`/`budget_tokens`/`max_tokens`/counter `budget`/token `ttl_secs`
-and `confidence`/`temperature` of 0.0 cannot ride the gRPC wire and are
+and `confidence`/`temperature` of 0.0 cannot ride the older typed gRPC messages and are
 rejected with a typed invalid-input error (REST carries them faithfully).
 The same applies to an **explicit empty list** where REST and proto3
 disagree about what "empty" means: `collections: []` on an ingest file
