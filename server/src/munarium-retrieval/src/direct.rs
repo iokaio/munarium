@@ -129,7 +129,10 @@ pub async fn build_collection_direct(
                 text: c.text.clone(),
                 text_sha256: sha2::Sha256::digest(c.text.as_bytes()).into(),
                 embedding: Some(c.embedding.clone()),
-                metadata: Default::default(),
+                metadata: std::collections::BTreeMap::from([
+                    ("source_content_hash".into(), c.source_content_hash.clone()),
+                    ("provenance".into(), c.metadata.to_string()),
+                ]),
             }
         })
         .collect();

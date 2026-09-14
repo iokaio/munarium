@@ -671,6 +671,13 @@ impl Retrieval {
     pub async fn source_info(&self, source_id: &str) -> Result<SourceInfo> {
         self.pg.source_info(source_id).await
     }
+    pub async fn source_sample(
+        &self,
+        source_id: &str,
+        characters: usize,
+    ) -> Result<(String, String)> {
+        self.pg.source_sample(source_id, characters).await
+    }
 }
 
 #[cfg(test)]

@@ -7,7 +7,7 @@
       "name": "Apache-2.0",
       "identifier": "Apache-2.0"
     },
-    "version": "1.1.1"
+    "version": "1.2.0"
   },
   "paths": {
     "/healthai": {
@@ -85,6 +85,363 @@
         "security": [
           {}
         ]
+      }
+    },
+    "/v1.2/answers": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on every /v1 request (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "answers"
+        ],
+        "operationId": "answer",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnswerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnswerResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "query scope required"
+          },
+          "404": {
+            "description": "source scope unavailable"
+          }
+        }
+      }
+    },
+    "/v1.2/collections/{id}/vocabulary": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on every /v1 request (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "vocabulary"
+        ],
+        "operationId": "get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Vocabulary"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "vocabulary"
+        ],
+        "operationId": "put",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VocabularyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Vocabulary"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "vocabulary"
+        ],
+        "operationId": "patch",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VocabularyPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Vocabulary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1.2/collections/{id}/vocabulary/refresh": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on every /v1 request (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "vocabulary"
+        ],
+        "operationId": "refresh",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VocabularyRefresh"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Vocabulary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1.2/collections/{id}/vocabulary/revision": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on every /v1 request (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "vocabulary"
+        ],
+        "summary": "Query clients can invalidate answer caches without receiving vocabulary text\nor a management capability.",
+        "operationId": "get_revision",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VocabularyRevision"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1.2/search": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on every /v1 request (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "retrieval"
+        ],
+        "operationId": "search",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VocabularySearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VocabularySearchResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1.2/vocabulary-settings": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on every /v1 request (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "vocabulary"
+        ],
+        "operationId": "get_settings",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VocabularySettings"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "vocabulary"
+        ],
+        "operationId": "put_settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VocabularySettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VocabularySettings"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/access-tokens": {
@@ -5204,6 +5561,156 @@
           }
         }
       },
+      "AnswerCitation": {
+        "type": "object",
+        "required": [
+          "id",
+          "quote"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "quote": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AnswerContent": {
+        "type": "object",
+        "required": [
+          "status",
+          "answer",
+          "citations"
+        ],
+        "properties": {
+          "answer": {
+            "type": "string"
+          },
+          "citations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AnswerCitation"
+            }
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AnswerRequest": {
+        "type": "object",
+        "required": [
+          "question",
+          "sources"
+        ],
+        "properties": {
+          "expected_model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expected_provider": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional caller processing-policy pin; checked before sending any text."
+          },
+          "question": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AnswerSource"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "AnswerResponse": {
+        "type": "object",
+        "required": [
+          "api_version",
+          "content",
+          "references",
+          "provider",
+          "model",
+          "input_tokens",
+          "output_tokens"
+        ],
+        "properties": {
+          "api_version": {
+            "type": "string"
+          },
+          "content": {
+            "$ref": "#/components/schemas/AnswerContent"
+          },
+          "input_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "model": {
+            "type": "string"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "provider": {
+            "type": "string"
+          },
+          "references": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SourceReference"
+            },
+            "description": "Server-resolved references, keyed by the citation id. These are opaque\nprovenance tags, not download URLs. The ingesting application serves files."
+          }
+        }
+      },
+      "AnswerSource": {
+        "type": "object",
+        "required": [
+          "id",
+          "collection",
+          "index_version",
+          "source_id",
+          "source_path",
+          "source_content_hash",
+          "text"
+        ],
+        "properties": {
+          "collection": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "index_version": {
+            "type": "string"
+          },
+          "source_content_hash": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "source_path": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "AppendEventsRequest": {
         "type": "object",
         "required": [
@@ -9626,6 +10133,34 @@
           }
         }
       },
+      "Sampling": {
+        "type": "object",
+        "properties": {
+          "balance_document_types": {
+            "type": "boolean",
+            "default": true
+          },
+          "characters_per_document": {
+            "type": "integer",
+            "default": 4000,
+            "minimum": 0
+          },
+          "document_count": {
+            "type": "integer",
+            "default": 12,
+            "minimum": 0
+          },
+          "media_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Empty means all supported media types; otherwise an explicit allowlist.",
+            "default": []
+          }
+        },
+        "additionalProperties": false
+      },
       "SealEvidenceRequest": {
         "type": "object",
         "description": "`POST /v1/evidence` — seal an artifact.\n\nTwo forms in one route, distinguished by whether `bytes_base64` is present:\n\n- **inline** (bytes present, at or under the 1 MiB cap): manifest and bytes\n  arrive together and commit atomically in one round-trip. This is the\n  common case — a query result backing one answer — and keeping it to a\n  single call is why the mode-B seal path does not cost a turn two\n  round-trips.\n- **grant** (bytes absent): the server registers the manifest, assigns an\n  id, and returns a short-lived single-use grant to `PUT` the bytes. For\n  sync-run counts and observation batches, which are large.\n\nThe manifest is the vendored contract's `EvidenceManifest`\n(`contract/matrix/evidence-manifest.schema.json`), carried verbatim.",
@@ -10029,6 +10564,48 @@
           "storage_backend": {
             "type": "string",
             "description": "`az` | `pg` | `mem`."
+          }
+        }
+      },
+      "SourceReference": {
+        "type": "object",
+        "required": [
+          "id",
+          "collection_id",
+          "collection_name",
+          "index_version",
+          "source_id",
+          "source_path",
+          "source_content_hash",
+          "chunk_id"
+        ],
+        "properties": {
+          "chunk_id": {
+            "type": "string"
+          },
+          "collection_id": {
+            "type": "string"
+          },
+          "collection_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "index_version": {
+            "type": "string"
+          },
+          "metadata": {
+            "description": "Location within extracted text. Not necessarily a page in the original\nfile: DOCX blocks are paragraphs and caller-extracted text has no pages."
+          },
+          "source_content_hash": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "source_path": {
+            "type": "string"
           }
         }
       },
@@ -11095,6 +11672,281 @@
             "type": "string"
           }
         }
+      },
+      "Vocabulary": {
+        "type": "object",
+        "properties": {
+          "auto_generate": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "None inherits the server's default. This controls automatic generation,\nindependently of whether the existing vocabulary is used for queries.",
+            "default": null
+          },
+          "corpus_fingerprint": {
+            "type": "string",
+            "default": ""
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "default": []
+          },
+          "origin": {
+            "type": "string",
+            "default": "none"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64",
+            "default": 0
+          },
+          "sampled_sources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "sampling": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Sampling"
+              }
+            ],
+            "default": null
+          },
+          "status": {
+            "type": "string",
+            "default": "pending"
+          }
+        },
+        "additionalProperties": false
+      },
+      "VocabularyPatch": {
+        "type": "object",
+        "required": [
+          "revision"
+        ],
+        "properties": {
+          "auto_generate": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "groups": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "VocabularyRefresh": {
+        "type": "object",
+        "required": [
+          "revision"
+        ],
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "VocabularyRevision": {
+        "type": "object",
+        "required": [
+          "revision"
+        ],
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "VocabularySearchRequest": {
+        "type": "object",
+        "required": [
+          "query",
+          "collection"
+        ],
+        "properties": {
+          "collection": {
+            "type": "string"
+          },
+          "index_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "query": {
+            "type": "string"
+          },
+          "top_k": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "vocabulary_collection": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Defaults to the searched collection. A different vocabulary scope must\nindependently be authorized; it never widens the searched file scope."
+          }
+        },
+        "additionalProperties": false
+      },
+      "VocabularySearchResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SearchResponse"
+          },
+          {
+            "type": "object",
+            "required": [
+              "vocabulary_revision",
+              "expanded_query"
+            ],
+            "properties": {
+              "expanded_query": {
+                "type": "string"
+              },
+              "vocabulary_revision": {
+                "type": "integer",
+                "format": "int64"
+              }
+            }
+          }
+        ]
+      },
+      "VocabularySettings": {
+        "type": "object",
+        "properties": {
+          "auto_generate": {
+            "type": "boolean",
+            "default": true
+          },
+          "max_groups": {
+            "type": "integer",
+            "default": 40,
+            "minimum": 0
+          },
+          "provider": {
+            "type": "string",
+            "default": "default"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64",
+            "default": 0
+          },
+          "sampling": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Sampling"
+              }
+            ],
+            "default": {
+              "balance_document_types": true,
+              "characters_per_document": 4000,
+              "document_count": 12,
+              "media_types": []
+            }
+          },
+          "tier": {
+            "type": "string",
+            "default": "fast"
+          }
+        },
+        "additionalProperties": false
+      },
+      "VocabularyUpdate": {
+        "type": "object",
+        "required": [
+          "revision",
+          "enabled",
+          "groups"
+        ],
+        "properties": {
+          "auto_generate": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "sampling": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Sampling"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
       }
     },
     "securitySchemes": {

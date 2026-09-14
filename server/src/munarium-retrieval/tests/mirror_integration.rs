@@ -1036,8 +1036,38 @@ async fn a_selected_scope_serves_from_the_datastore_and_rolls_back_by_selector()
     for r in &reference.hits {
         if let Some(s) = served.hits.iter().find(|s| s.source_id == r.source_id) {
             assert_eq!(s.source_content_hash, r.source_content_hash);
+            assert_eq!(
+                s.metadata, r.metadata,
+                "locations survive the artifact round trip"
+            );
         }
     }
+
+    // Re-ingesting a logical path must not rewrite a historical citation's hash.
+    let original = served.hits.first().unwrap();
+    let (_, changed_hash, _) =
+        h.pg.put_source(
+            "",
+            "text/plain",
+            &original.source_path,
+            None,
+            b"A later source revision with unrelated wording.",
+        )
+        .await
+        .unwrap();
+    assert_ne!(changed_hash, original.source_content_hash);
+    let historical = retrieval
+        .search_collection_prepared(&h.collection_id, &prepared, Some(&h.version_id))
+        .await
+        .unwrap();
+    let pinned = historical
+        .hits
+        .iter()
+        .find(|hit| hit.chunk_id == original.chunk_id)
+        .unwrap();
+    assert_eq!(pinned.source_content_hash, original.source_content_hash);
+    assert_eq!(pinned.metadata, original.metadata);
+    assert_eq!(pinned.text, original.text);
 
     // Rollback is a selector change, nothing else.
     let entry = selector

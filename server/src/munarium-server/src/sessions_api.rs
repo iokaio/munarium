@@ -588,6 +588,13 @@ pub(crate) async fn retrieve_documents(
             format!("{} {}", req.query, extra.join(" "))
         }
     };
+    // Only permitted collections contribute vocabulary. Both the selection
+    // probe and deep search use this formulation, on either retrieval engine.
+    let mut vocabulary_rules = Vec::new();
+    for collection in &permitted {
+        vocabulary_rules.extend(crate::vocabulary_api::rules(state, tenant, &collection.id).await?);
+    }
+    let effective_query = munarium_retrieval::expand_query(&effective_query, &vocabulary_rules);
     let mut skipped = Vec::new();
     // Collection name → 1-based evidence rank from the selection probe; the
     // merge's optional collection-evidence leg reads it (empty = no leg).

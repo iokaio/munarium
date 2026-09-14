@@ -600,6 +600,7 @@ mod tests {
             ordinal: 0,
             text: text.into(),
             text_sha256: "0".repeat(64),
+            metadata: Default::default(),
         }
     }
 

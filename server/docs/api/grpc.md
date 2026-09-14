@@ -184,3 +184,9 @@ proto3 zero-sentinel rules, and surface the documented transport gaps as typed e
 - `ComposeContextRequest.as_of_date` and `HybridSearchRequest.filter_json` are declared but not
   yet implemented — the server rejects them explicitly (`INVALID_ARGUMENT`) instead of silently
   ignoring them.
+
+Server 1.2 vocabulary CRUD/settings/refresh, explicit vocabulary-scoped search and
+checked narrative answers under `/v1.2/` are REST-only. Existing gRPC session turns
+use the shared collection-vocabulary retrieval path. Existing hit metadata can carry
+new pinned locations without a protobuf change. See the
+[1.2 guide](../guides/collection-vocabularies.md).

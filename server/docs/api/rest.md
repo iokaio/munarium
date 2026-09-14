@@ -14,7 +14,7 @@ only to answer generation. Selecting a higher tier also applies it to expansion
 and can increase that step's cost and latency. Progress events report actual provider/model
 identities for each paid step.
 
-**Status: live.** Every `/v1` route (Command/Query, shapes, ingest, retrieval, providers,
+**Status: live.** Every `/v1` and `/v1.2` route (Command/Query, shapes, ingest, retrieval, providers,
 runbooks) plus the meta routes carries OpenAPI annotations, and the spec declares the
 `bearerAuth` security scheme. This document is the human guide; the machine
 truth is [openapi.json](openapi.json) (generated from the `munarium-api-types` structs by
@@ -22,7 +22,7 @@ truth is [openapi.json](openapi.json) (generated from the `munarium-api-types` s
 
 ## Base URL and versioning
 
-All routes are versioned under `/v1/`. The REST plane listens on **:8080** in-container and is
+Core routes remain under `/v1/`; Server 1.2 adds `/v1.2/` vocabulary, search and answer routes. The REST plane listens on **:8080** in-container and is
 served on **:443** through the gateway in deployed environments.
 
 ```
@@ -229,3 +229,19 @@ status when the source's bytes change).
 Wherever a request *supplies* a `content_hash` (ingest records, runbook
 `contentHashes` bindings), it must be a full 64-character hex sha-256 digest —
 anything else is `invalid-input`.
+
+## Server 1.2 vocabulary, search and answers
+
+| Method and path | Authorization | Behavior |
+|---|---|---|
+| `GET /v1.2/vocabulary-settings` | Static control-plane credential | Read tenant defaults and revision |
+| `PUT /v1.2/vocabulary-settings` | Static `rw` | Replace defaults using the last revision |
+| `GET /v1.2/collections/{id}/vocabulary` | `vocabulary` capability or static `rw` | Read terms, configuration, generation status and revision |
+| `PUT /v1.2/collections/{id}/vocabulary` | Same, with collection clearance | Replace terms and configuration |
+| `PATCH /v1.2/collections/{id}/vocabulary` | Same | Update enabled, auto_generate or groups |
+| `POST /v1.2/collections/{id}/vocabulary/refresh` | Same | Generate and activate a replacement from samples |
+| `GET /v1.2/collections/{id}/vocabulary/revision` | `query`, with collection clearance | Read revision only, for answer-cache invalidation |
+| `POST /v1.2/search` | `query` | Search an explicit collection and optional pinned index with its vocabulary |
+| `POST /v1.2/answers` | `query` for every supplied collection | Verify pinned passages, generate a narrative and return checked citations |
+
+See [collection vocabularies and file references](../guides/collection-vocabularies.md) for request schemas, defaults, authorization and upgrade requirements.

@@ -53,6 +53,7 @@ pub struct BuiltChunk {
     pub ordinal: u32,
     pub text: String,
     pub embedding: Vec<f32>,
+    pub metadata: serde_json::Value,
 }
 
 /// What one source's extraction produced, for the spec's own record.
@@ -143,6 +144,7 @@ impl PgRetrieval {
                 raw: extracted.clone(),
             });
 
+            let locations = crate::provenance::locations(&extracted, max_chars);
             for (ordinal, chunk) in chunk_text(&extracted.text, max_chars).iter().enumerate() {
                 chunks.push(BuiltChunk {
                     chunk_id: format!("{}#{ordinal}", s.source_id),
@@ -152,6 +154,7 @@ impl PgRetrieval {
                     ordinal: ordinal as u32,
                     text: chunk.clone(),
                     embedding: local_embed(chunk),
+                    metadata: locations[ordinal].clone(),
                 });
             }
         }
@@ -210,6 +213,20 @@ impl PgRetrieval {
         for outcome in &build.outcomes {
             self.record_extraction(&mut *tx, &outcome.source_id, &outcome.raw)
                 .await?;
+            let source = build
+                .sources
+                .iter()
+                .find(|s| s.source_id == outcome.source_id)
+                .expect("prepared source");
+            self.record_chunk_provenance(
+                &mut tx,
+                index_id,
+                &source.source_id,
+                &source.filename,
+                &outcome.raw,
+                build.max_chars,
+            )
+            .await?;
         }
 
         let mut batch = ChunkBatch::default();

@@ -83,6 +83,7 @@ fn analyzer() -> TantivyLexicalIndex {
         ordinal: 0,
         text: "probe".into(),
         text_sha256: "0".repeat(64),
+        metadata: Default::default(),
     }])
     .unwrap();
     TantivyLexicalIndex::open(&bytes).unwrap()

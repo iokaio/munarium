@@ -3,6 +3,24 @@
 These are source release notes. See the [container publication record](CONTAINER.md#versions-and-verification)
 for registry availability, digests and public signing instructions.
 
+## 1.2.0
+
+- Add REST `/v1.2` APIs for collection vocabularies, configurable default-on sampled
+  generation, explicit refresh, revision-checked editing and enable/disable controls.
+  Apply vocabulary expansion in scoped search and session retrieval.
+- Add checked narrative answers with server-resolved source references. Applications
+  retain and serve original files; source IDs and hashes are not download grants.
+- Carry pinned extraction locations through PostgreSQL and Datastore, distinguishing
+  PDF pages from DOCX paragraphs and declaring UTF-8 versus Unicode-scalar offsets.
+- Preserve the indexed source hash in Datastore after later source changes. Legacy
+  artifacts resolve hashes from their pinned chunk rows, never the current source.
+- Add migrations 0032/0033 and make Cargo rebuild its embedded migrator when the
+  migrations directory changes. Existing indexes remain immutable.
+
+See [configuration, API and upgrade details](docs/guides/collection-vocabularies.md).
+The new APIs are REST-only. Automatic generation is on by default, including after
+upgrade; configure it before loading credentials if existing collection policies
+need review. New location metadata requires a new index build.
 ## 1.1.1
 
 - Apply an allowed session-turn model override to both model-based query

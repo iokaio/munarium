@@ -11,6 +11,7 @@
 // per recorded dimension — both clippy defaults trade away the wrong thing here.
 #![allow(clippy::result_large_err, clippy::too_many_arguments)]
 
+mod answers_api;
 mod authoring_api;
 mod charts;
 mod chronology_api;
@@ -42,13 +43,17 @@ mod providers_api;
 mod reports_api;
 mod rest;
 mod runbooks_api;
+mod search_v12;
 mod service;
 mod sessions_api;
 mod shadow_plane;
 mod state;
 mod storage_api;
 mod tokens_api;
+#[cfg(test)]
+mod v12_tests;
 mod verification;
+mod vocabulary_api;
 
 use config::Config;
 use munarium_proto::mmp::v1 as pb;
@@ -111,6 +116,7 @@ async fn main() {
 
     let shutdown = shutdown_signal();
     let mut tasks: Vec<tokio::task::JoinHandle<()>> = Vec::new();
+    tokio::spawn(vocabulary_api::worker(state.clone()));
 
     // Drain visibility: the moment a shutdown signal fires, both planes'
     // /readyz flip to 503 "draining" so load balancers stop routing here
