@@ -43,6 +43,21 @@ README provides installation from that checkout: Python local installs, .NET
 project references, Rust path dependencies and Java Gradle composite builds.
 Server client builds need the sibling `server/` tree for wire types or protobufs.
 
+Official packages are published by
+[`.github/workflows/clientbuild.yml`](../.github/workflows/clientbuild.yml), a
+manually dispatched workflow and nothing else: no push, tag or schedule runs it.
+A maintainer picks one family (`server-clients`, `matrix-clients`, or the two
+server wire crates the Rust client depends on) and ticks the registries to publish
+to; a dispatch with none ticked is a rehearsal that builds every package, runs
+`check_license.py` over the built artifacts, and refuses a version that already
+exists on a selected registry. Every registry push, TestPyPI included, runs in
+the `release` environment (the Matrix Python package uses `release-matrix`, a
+twin, because PyPI allows one pending trusted publisher per environment), which
+accepts `main` only and waits on its required reviewer. Versions are read from the
+manifests, which `check_compatibility.py` keeps in step with `compatibility.json`,
+so a release is cut by bumping the manifests and this file, never by a workflow
+input.
+
 ## Compatibility
 
 **[`compatibility.json`](compatibility.json) is the authoritative compatibility record.**

@@ -1,0 +1,593 @@
+# Release build and registry publication for the client libraries.
+#
+# MANUAL TRIGGER ONLY. Nothing here runs on push, pull request, tag or
+# schedule. A maintainer dispatches it, picks one package family, and ticks
+# the registries to publish to. Every registry switch defaults to OFF, so a
+# dispatch with nothing ticked is a full rehearsal: it builds every package
+# in the family, runs the license and private-material gates over the built
+# artifacts, checks that the version is not already on the registries, and
+# uploads the packages as workflow artifacts for inspection. Publishing also
+# waits on the `release` environment, whose required reviewer is the second
+# human gate.
+#
+# The file name is load-bearing: the NuGet.org trusted-publishing policy for
+# `iokaio/munarium` names `clientbuild.yml`, and the PyPI and crates.io
+# trusted publishers are configured against the same path. Renaming this file
+# silently breaks OIDC publication to all three.
+#
+# Families and what each publishes (versions come from the manifests, checked
+# against clients/compatibility.json by check_compatibility.py):
+#
+#   server-clients  Ioka.Munarium.Client (NuGet), munarium-client (PyPI),
+#                   io.ioka.munarium:munarium-client (Maven Central),
+#                   munarium-client (crates.io)
+#   matrix-clients  Ioka.Munarium.Matrix.Client (NuGet), munarium-matrix (PyPI),
+#                   io.ioka.munarium:munarium-matrix-client (Maven Central)
+#   server-crates   munarium-proto then munarium-api-types (crates.io): the
+#                   server's two wire crates, which the Rust client depends on
+#                   and which must be on crates.io before it can be
+#
+# Credentials, none of which this file contains:
+#   NuGet      OIDC via NuGet/login; repository variable NUGET_USER holds the
+#              NuGet.org profile name that owns the trusted-publishing policy.
+#   PyPI       OIDC via pypa/gh-action-pypi-publish (a pending publisher per
+#              project name on pypi.org and test.pypi.org: munarium-client
+#              with environment `release`, munarium-matrix with
+#              `release-matrix`; see publish-pypi for why they differ).
+#   crates.io  secret CARGO_REGISTRY_TOKEN. crates.io trusted publishing can
+#              only be configured on a crate that already exists, so the first
+#              release of each crate uses a token; switch afterwards.
+#   Maven      secrets CENTRAL_USERNAME + CENTRAL_PASSWORD (a Central Portal
+#              user token) and GPG_PRIVATE_KEY + GPG_PASSPHRASE (the release
+#              signing key, ASCII-armored). The Portal has no OIDC option.
+#
+# A real publish is refused unless the run is on `main`; a build-only rehearsal
+# may run from any ref. Every publish job, the TestPyPI one included, runs in
+# the `release` environment, which is configured in the repository settings to
+# accept `main` only and to require a reviewer. A version that already exists
+# on a selected registry fails preflight before anything is built, because
+# none of the four registries allows a version to be replaced.
+name: clientbuild
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      family:
+        description: Package family to build (and publish, if any registry is ticked)
+        type: choice
+        required: true
+        options:
+          - server-clients
+          - matrix-clients
+          - server-crates
+      publish_nuget:
+        description: Publish the .NET package to NuGet.org
+        type: boolean
+        default: false
+      publish_pypi:
+        description: Publish the Python package (target chosen below)
+        type: boolean
+        default: false
+      pypi_target:
+        description: PyPI target. test.pypi.org is a rehearsal and never counts as a release.
+        type: choice
+        default: testpypi
+        options:
+          - testpypi
+          - pypi
+      publish_maven:
+        description: Upload the Java bundle to the Sonatype Central Portal
+        type: boolean
+        default: false
+      maven_publishing_type:
+        description: USER_MANAGED validates and waits for a click in the Portal; AUTOMATIC releases on validation.
+        type: choice
+        default: USER_MANAGED
+        options:
+          - USER_MANAGED
+          - AUTOMATIC
+      publish_crates:
+        description: Publish the Rust crate(s) to crates.io
+        type: boolean
+        default: false
+      create_tag:
+        description: After a successful real publish, tag the commit (clients-vX / matrix-clients-vX / server-crates-vX)
+        type: boolean
+        default: false
+
+# One release at a time. A second dispatch queues behind the first rather
+# than racing it for the same version.
+concurrency:
+  group: clientbuild
+  cancel-in-progress: false
+
+env:
+  # A run counts as a real publish when any registry other than TestPyPI is
+  # selected. Rehearsals never tag and may run from any ref.
+  REAL_PUBLISH: ${{ inputs.publish_nuget || inputs.publish_maven || inputs.publish_crates || (inputs.publish_pypi && inputs.pypi_target == 'pypi') }}
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # preflight: the cheap gates, the version plan, and the registry checks.
+  # Nothing is built here.
+  # ---------------------------------------------------------------------------
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      plan: ${{ steps.plan.outputs.plan }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: a real publish runs from main only
+        if: env.REAL_PUBLISH == 'true' && github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::publishing is allowed from refs/heads/main only (this run is on ${GITHUB_REF}); untick every registry to rehearse from a branch"
+          exit 1
+
+      - name: repository gates (compatibility, license, private material, whitespace)
+        run: |
+          python3 clients/check_compatibility.py
+          python3 check_license.py
+          python3 scripts/private_material_scan.py
+          git diff --check
+
+      - name: version plan
+        id: plan
+        env:
+          FAMILY: ${{ inputs.family }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os, re, sys
+          family = os.environ["FAMILY"]
+          compat = json.load(open("clients/compatibility.json", encoding="utf-8"))["clients"]
+
+          def one_version(keys):
+              versions = {compat[k]["version"] for k in keys}
+              if len(versions) != 1:
+                  sys.exit(f"::error::{family}: the manifests disagree on a version: {sorted(versions)}")
+              return versions.pop()
+
+          if family == "server-clients":
+              version = one_version(["rust", "python", "dotnet", "java"])
+              plan = {
+                  "family": family, "version": version, "tag": f"clients-v{version}",
+                  "dotnet": {"dir": "clients/dotnet", "project": "src/Ioka.Munarium.Client",
+                             "tests": "tests/Ioka.Munarium.Client.Tests", "id": compat["dotnet"]["package"]},
+                  "python": {"dir": "clients/python", "name": compat["python"]["package"]},
+                  "java": {"dir": "clients/java", "artifact": "munarium-client"},
+                  "rust": {"dir": "clients/rust", "crates": ["munarium-client"], "copy_protos": False},
+              }
+          elif family == "matrix-clients":
+              version = one_version(["matrix-python", "matrix-dotnet", "matrix-java"])
+              plan = {
+                  "family": family, "version": version, "tag": f"matrix-clients-v{version}",
+                  "dotnet": {"dir": "clients/matrix-dotnet", "project": "src/Ioka.Munarium.Matrix.Client",
+                             "tests": "tests/Ioka.Munarium.Matrix.Client.Tests", "id": compat["matrix-dotnet"]["package"]},
+                  "python": {"dir": "clients/matrix-python", "name": compat["matrix-python"]["package"]},
+                  "java": {"dir": "clients/matrix-java", "artifact": "munarium-matrix-client"},
+                  "rust": None,
+              }
+          elif family == "server-crates":
+              text = open("server/Cargo.toml", encoding="utf-8").read()
+              m = re.search(r'^\[workspace\.package\]\s*\nversion\s*=\s*"([^"]+)"', text, re.M)
+              if not m:
+                  sys.exit("::error::server/Cargo.toml: no [workspace.package] version")
+              version = m.group(1)
+              plan = {
+                  "family": family, "version": version, "tag": f"server-crates-v{version}",
+                  "dotnet": None, "python": None, "java": None,
+                  # Order matters: api-types depends on proto. cargo publish
+                  # blocks until each crate is visible in the index.
+                  "rust": {"dir": "server", "crates": ["munarium-proto", "munarium-api-types"], "copy_protos": True},
+              }
+          else:
+              sys.exit(f"::error::unknown family {family}")
+
+          print("plan=" + json.dumps(plan))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as s:
+              s.write(f"## {family} {version}\n\nref `{os.environ['GITHUB_REF']}` at `{os.environ['GITHUB_SHA']}`\n\n")
+          PY
+
+      - name: the version must not already exist on a selected registry
+        env:
+          PLAN: ${{ steps.plan.outputs.plan }}
+          PUBLISH_NUGET: ${{ inputs.publish_nuget }}
+          PUBLISH_PYPI: ${{ inputs.publish_pypi }}
+          PYPI_TARGET: ${{ inputs.pypi_target }}
+          PUBLISH_MAVEN: ${{ inputs.publish_maven }}
+          PUBLISH_CRATES: ${{ inputs.publish_crates }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys, urllib.request, urllib.error
+          plan = json.loads(os.environ["PLAN"])
+          v = plan["version"]
+          sel = lambda k: os.environ[k] == "true"
+
+          def status(url):
+              req = urllib.request.Request(url, headers={"User-Agent": "iokaio/munarium clientbuild (github actions)"})
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as r:
+                      return r.status, r.read()
+              except urllib.error.HTTPError as e:
+                  return e.code, b""
+
+          problems = []
+          if plan["dotnet"] and sel("PUBLISH_NUGET"):
+              code, body = status(f"https://api.nuget.org/v3-flatcontainer/{plan['dotnet']['id'].lower()}/index.json")
+              if code == 200 and v in json.loads(body).get("versions", []):
+                  problems.append(f"NuGet already has {plan['dotnet']['id']} {v}")
+          if plan["python"] and sel("PUBLISH_PYPI"):
+              host = "test.pypi.org" if os.environ["PYPI_TARGET"] == "testpypi" else "pypi.org"
+              code, _ = status(f"https://{host}/pypi/{plan['python']['name']}/{v}/json")
+              if code == 200:
+                  problems.append(f"{host} already has {plan['python']['name']} {v}")
+          if plan["java"] and sel("PUBLISH_MAVEN"):
+              code, _ = status(f"https://repo1.maven.org/maven2/io/ioka/munarium/{plan['java']['artifact']}/{v}/")
+              if code == 200:
+                  problems.append(f"Maven Central already has io.ioka.munarium:{plan['java']['artifact']} {v}")
+          if plan["rust"] and sel("PUBLISH_CRATES"):
+              for crate in plan["rust"]["crates"]:
+                  code, _ = status(f"https://crates.io/api/v1/crates/{crate}/{v}")
+                  if code == 200:
+                      problems.append(f"crates.io already has {crate} {v}")
+          for p in problems:
+              print(f"::error::{p}")
+          sys.exit(1 if problems else 0)
+          PY
+
+  # ---------------------------------------------------------------------------
+  # build jobs: one per ecosystem, no credentials, artifacts uploaded for
+  # inspection and for the publish jobs.
+  # ---------------------------------------------------------------------------
+  build-dotnet:
+    needs: preflight
+    if: fromJSON(needs.preflight.outputs.plan).dotnet != null
+    runs-on: ubuntu-latest
+    env:
+      PLAN: ${{ needs.preflight.outputs.plan }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+      - name: build and test
+        working-directory: ${{ fromJSON(needs.preflight.outputs.plan).dotnet.dir }}
+        run: |
+          dotnet build
+          dotnet test ${{ fromJSON(needs.preflight.outputs.plan).dotnet.tests }} --no-build -v q
+      - name: pack
+        working-directory: ${{ fromJSON(needs.preflight.outputs.plan).dotnet.dir }}
+        run: dotnet pack ${{ fromJSON(needs.preflight.outputs.plan).dotnet.project }} -p:PackageOutputPath="$RUNNER_TEMP/nupkg/"
+      - name: the package carries the license files and nothing of the server, at the planned version
+        run: |
+          ls -l "$RUNNER_TEMP/nupkg"
+          python3 clients/check_license.py --artifact "$RUNNER_TEMP"/nupkg/*.nupkg
+          v="$(echo "$PLAN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
+          ls "$RUNNER_TEMP"/nupkg/*."$v".nupkg > /dev/null
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nupkg
+          path: ${{ runner.temp }}/nupkg/*.nupkg
+          if-no-files-found: error
+
+  build-python:
+    needs: preflight
+    if: fromJSON(needs.preflight.outputs.plan).python != null
+    runs-on: ubuntu-latest
+    env:
+      PLAN: ${{ needs.preflight.outputs.plan }}
+      DIR: ${{ fromJSON(needs.preflight.outputs.plan).python.dir }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: install and test
+        working-directory: ${{ env.DIR }}
+        run: |
+          python -m pip install -U pip build
+          pip install -e ".[dev]"
+          python -m pytest tests -q
+      - name: build sdist and wheel
+        working-directory: ${{ env.DIR }}
+        run: python -m build --sdist --wheel --outdir "$RUNNER_TEMP/pydist"
+      - name: the distributions carry the license files and nothing of the server, at the planned version
+        working-directory: ${{ env.DIR }}
+        run: |
+          ls -l "$RUNNER_TEMP/pydist"
+          python ../check_license.py --artifact "$RUNNER_TEMP"/pydist/*
+          v="$(echo "$PLAN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
+          ls "$RUNNER_TEMP"/pydist/*-"$v"-*.whl "$RUNNER_TEMP"/pydist/*-"$v".tar.gz > /dev/null
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pydist
+          path: ${{ runner.temp }}/pydist/*
+          if-no-files-found: error
+
+  build-java:
+    needs: preflight
+    if: fromJSON(needs.preflight.outputs.plan).java != null
+    runs-on: ubuntu-latest
+    env:
+      PLAN: ${{ needs.preflight.outputs.plan }}
+      DIR: ${{ fromJSON(needs.preflight.outputs.plan).java.dir }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
+      - name: build, test, and stage the Maven publication
+        # `publishToMavenLocal` is what `maven-publish` offers without a
+        # remote repository declared: the POM, the main jar, and the -sources
+        # and -javadoc jars Central requires, laid out in Maven repository
+        # form under ~/.m2. The build files deliberately declare no
+        # repository and no signing; both happen in the publish job below.
+        working-directory: ${{ env.DIR }}
+        run: ./gradlew build publishToMavenLocal --no-daemon
+      - name: the jars carry the license files and nothing of the server, at the planned version
+        working-directory: ${{ env.DIR }}
+        run: |
+          v="$(echo "$PLAN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
+          a="$(echo "$PLAN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["java"]["artifact"])')"
+          src="$HOME/.m2/repository/io/ioka/munarium/$a/$v"
+          ls -l "$src"
+          python3 ../check_license.py --artifact "$src"/*.jar
+          mkdir -p "$RUNNER_TEMP/maven/io/ioka/munarium/$a/$v"
+          # Everything Gradle wrote for this version except the local
+          # metadata index, which is not part of a Central bundle.
+          find "$src" -maxdepth 1 -type f ! -name 'maven-metadata-local.xml' \
+            -exec cp {} "$RUNNER_TEMP/maven/io/ioka/munarium/$a/$v/" \;
+          ls -l "$RUNNER_TEMP/maven/io/ioka/munarium/$a/$v"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: maven
+          path: ${{ runner.temp }}/maven
+          if-no-files-found: error
+
+  build-rust:
+    needs: preflight
+    if: fromJSON(needs.preflight.outputs.plan).rust != null
+    runs-on: ubuntu-latest
+    env:
+      PLAN: ${{ needs.preflight.outputs.plan }}
+      DIR: ${{ fromJSON(needs.preflight.outputs.plan).rust.dir }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable, 2026-09-03
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: ${{ fromJSON(needs.preflight.outputs.plan).rust.dir }}
+      - name: copy the normative protos into the proto crate
+        # A .crate holds only what is under the crate directory, so the
+        # release copies server/proto in (git-ignored, never committed;
+        # build.rs prefers it when present). See munarium-proto/README.md.
+        if: fromJSON(needs.preflight.outputs.plan).rust.copy_protos
+        working-directory: server
+        run: cp -r proto src/munarium-proto/proto
+      - name: each crate packages with the license files and nothing outside itself
+        working-directory: ${{ env.DIR }}
+        # `cargo package --list` is the exact file set crates.io would receive.
+        # For the client this stays a --list (the wire crates it depends on
+        # must already be on crates.io for a full package to resolve); for the
+        # wire crates themselves the full package is built and verified.
+        run: |
+          for crate in $(echo "$PLAN" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)["rust"]["crates"]))'); do
+            cargo package -p "$crate" --list > "$RUNNER_TEMP/$crate.files"
+            python3 "$GITHUB_WORKSPACE/clients/check_license.py" --rust-list "$RUNNER_TEMP/$crate.files"
+          done
+      - name: unit tests
+        working-directory: ${{ env.DIR }}
+        run: |
+          for crate in $(echo "$PLAN" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)["rust"]["crates"]))'); do
+            cargo test -p "$crate"
+          done
+
+  # ---------------------------------------------------------------------------
+  # publish jobs: each gated by its input switch AND the `release` environment.
+  # ---------------------------------------------------------------------------
+  publish-nuget:
+    needs: [preflight, build-dotnet]
+    if: inputs.publish_nuget
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: NUGET_USER must be set
+        if: vars.NUGET_USER == ''
+        run: |
+          echo "::error::repository variable NUGET_USER (the NuGet.org profile name that owns the trusted-publishing policy) is not set"
+          exit 1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: nupkg
+          path: nupkg
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+      - name: exchange the OIDC token for a short-lived NuGet API key
+        id: login
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
+        with:
+          user: ${{ vars.NUGET_USER }}
+      - name: push
+        # No --skip-duplicate: preflight already proved the version is new,
+        # so a duplicate here is a real error, not something to hide.
+        run: |
+          for f in nupkg/*.nupkg; do
+            echo "pushing $f"
+            dotnet nuget push "$f" --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json
+            echo "- NuGet: \`$(basename "$f")\`" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+  publish-pypi:
+    needs: [preflight, build-python]
+    if: inputs.publish_pypi
+    runs-on: ubuntu-latest
+    # PyPI allows one PENDING trusted publisher per (owner, repo, workflow,
+    # environment) tuple across all not-yet-created project names, so the two
+    # Python packages cannot share an environment for their first release.
+    # `release-matrix` is configured identically to `release` (main only,
+    # required reviewer); the PyPI pending publisher for munarium-client names
+    # `release` and the one for munarium-matrix names `release-matrix`.
+    environment: ${{ inputs.family == 'matrix-clients' && 'release-matrix' || 'release' }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: pydist
+          path: dist
+      - name: publish (Trusted Publishing)
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: dist/
+          repository-url: ${{ inputs.pypi_target == 'testpypi' && 'https://test.pypi.org/legacy/' || 'https://upload.pypi.org/legacy/' }}
+          print-hash: true
+      - name: summary
+        run: |
+          echo "- ${{ inputs.pypi_target }}: $(ls dist | tr '\n' ' ')" >> "$GITHUB_STEP_SUMMARY"
+
+  publish-maven:
+    needs: [preflight, build-java]
+    if: inputs.publish_maven
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+    env:
+      PLAN: ${{ needs.preflight.outputs.plan }}
+    steps:
+      - name: the Central Portal credentials and signing key must be set
+        env:
+          HAVE: ${{ secrets.CENTRAL_USERNAME != '' && secrets.CENTRAL_PASSWORD != '' && secrets.GPG_PRIVATE_KEY != '' && secrets.GPG_PASSPHRASE != '' }}
+        run: |
+          if [ "$HAVE" != "true" ]; then
+            echo "::error::secrets CENTRAL_USERNAME, CENTRAL_PASSWORD, GPG_PRIVATE_KEY and GPG_PASSPHRASE must all be set"
+            exit 1
+          fi
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: maven
+          path: bundle
+      - name: sign and checksum every file Central requires
+        # Central wants, per artifact file: .asc (a detached armored PGP
+        # signature), .md5 and .sha1. The key is imported into a throwaway
+        # keyring on this runner and never written anywhere else.
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          export GNUPGHOME="$(mktemp -d)"
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          find bundle -type f \( -name '*.jar' -o -name '*.pom' -o -name '*.module' \) | while read -r f; do
+            gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --armor --detach-sign "$f"
+            md5sum "$f" | cut -d' ' -f1 > "$f.md5"
+            sha1sum "$f" | cut -d' ' -f1 > "$f.sha1"
+          done
+          rm -rf "$GNUPGHOME"
+          find bundle -type f | sort
+      - name: upload the bundle to the Central Portal and wait for validation
+        env:
+          CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
+          CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
+          PUBLISHING_TYPE: ${{ inputs.maven_publishing_type }}
+        run: |
+          v="$(echo "$PLAN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
+          a="$(echo "$PLAN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["java"]["artifact"])')"
+          (cd bundle && zip -qr ../bundle.zip io)
+          auth="$(printf '%s:%s' "$CENTRAL_USERNAME" "$CENTRAL_PASSWORD" | base64 -w0)"
+          id="$(curl --fail-with-body -sS -H "Authorization: Bearer $auth" \
+                -F "bundle=@bundle.zip" \
+                "https://central.sonatype.com/api/v1/publisher/upload?name=io.ioka.munarium%3A$a%3A$v&publishingType=$PUBLISHING_TYPE")"
+          echo "deployment $id"
+          for i in $(seq 1 60); do
+            sleep 10
+            body="$(curl --fail-with-body -sS -X POST -H "Authorization: Bearer $auth" "https://central.sonatype.com/api/v1/publisher/status?id=$id")"
+            state="$(printf '%s' "$body" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("deploymentState",""))')"
+            echo "state: $state"
+            case "$state" in
+              FAILED) printf '%s\n' "$body"; echo "::error::Central rejected the bundle"; exit 1 ;;
+              VALIDATED|PUBLISHING|PUBLISHED) break ;;
+            esac
+          done
+          case "$state" in
+            VALIDATED) echo "- Maven Central: io.ioka.munarium:$a:$v validated; deployment $id is waiting for Publish in the Portal" >> "$GITHUB_STEP_SUMMARY" ;;
+            PUBLISHING|PUBLISHED) echo "- Maven Central: io.ioka.munarium:$a:$v $state (deployment $id)" >> "$GITHUB_STEP_SUMMARY" ;;
+            *) echo "::error::deployment $id did not validate within 10 minutes (last state: $state)"; exit 1 ;;
+          esac
+
+  publish-crates:
+    needs: [preflight, build-rust]
+    if: inputs.publish_crates
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+    env:
+      PLAN: ${{ needs.preflight.outputs.plan }}
+      DIR: ${{ fromJSON(needs.preflight.outputs.plan).rust.dir }}
+    steps:
+      - name: CARGO_REGISTRY_TOKEN must be set
+        env:
+          HAVE: ${{ secrets.CARGO_REGISTRY_TOKEN != '' }}
+        run: |
+          if [ "$HAVE" != "true" ]; then echo "::error::secret CARGO_REGISTRY_TOKEN is not set"; exit 1; fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable, 2026-09-03
+        with:
+          toolchain: stable
+      - name: copy the normative protos into the proto crate
+        if: fromJSON(needs.preflight.outputs.plan).rust.copy_protos
+        working-directory: server
+        run: cp -r proto src/munarium-proto/proto
+      - name: publish, in dependency order
+        # cargo publish blocks until the crate is visible in the index, so the
+        # next crate in the list can resolve the one before it.
+        working-directory: ${{ env.DIR }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          for crate in $(echo "$PLAN" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)["rust"]["crates"]))'); do
+            echo "publishing $crate"
+            cargo publish -p "$crate"
+            echo "- crates.io: \`$crate\`" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+  # ---------------------------------------------------------------------------
+  # tag: only after a real publish with nothing failed. A TestPyPI-only run
+  # is a rehearsal and never tags.
+  # ---------------------------------------------------------------------------
+  tag:
+    needs: [preflight, publish-nuget, publish-pypi, publish-maven, publish-crates]
+    if: >-
+      !cancelled() && inputs.create_tag
+      && (inputs.publish_nuget || inputs.publish_maven || inputs.publish_crates || (inputs.publish_pypi && inputs.pypi_target == 'pypi'))
+      && needs.preflight.result == 'success'
+      && !contains(needs.*.result, 'failure')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      PLAN: ${{ needs.preflight.outputs.plan }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: create the release tag on the published commit
+        run: |
+          tag="$(echo "$PLAN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag"])')"
+          existing="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq .object.sha 2>/dev/null || true)"
+          if [ -n "$existing" ]; then
+            if [ "$existing" = "$GITHUB_SHA" ]; then echo "tag $tag already points at $GITHUB_SHA"; exit 0; fi
+            echo "::error::tag $tag already exists at $existing, not $GITHUB_SHA"; exit 1
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA" > /dev/null
+          echo "- tagged \`$tag\` at \`$GITHUB_SHA\`" >> "$GITHUB_STEP_SUMMARY"
