@@ -4,12 +4,34 @@ The Java client for **Munarium Matrix**, the structured-evidence plane. It
 speaks Matrix's REST API and it is deliberately small: Matrix's whole surface
 is *registering assets, running the three modes, and reading what happened*.
 
-Depend on it by path from your own Gradle build:
+## Install
 
-Published to Maven Central as `io.ioka.munarium:munarium-matrix-client`; the
-versions available are recorded in the
-[clients front door](../README.md#installation-and-publication). A registry
-dependency needs no `includeBuild`; the composite build below is for a checkout.
+Install [io.ioka.munarium:munarium-matrix-client from Maven Central](https://central.sonatype.com/artifact/io.ioka.munarium/munarium-matrix-client)
+in your application's Gradle build (Java 21+):
+
+```kotlin
+// build.gradle.kts
+repositories { mavenCentral() }
+dependencies { implementation("io.ioka.munarium:munarium-matrix-client:1.0.0") }
+```
+
+For Maven:
+
+```xml
+<dependency>
+  <groupId>io.ioka.munarium</groupId>
+  <artifactId>munarium-matrix-client</artifactId>
+  <version>1.0.0</version>
+</dependency>
+```
+
+Maven Central has **1.0.0** as of 2026-09-15; the checkout is **1.1.1** with no
+API changes. See the
+[clients front door](../README.md#installation-and-publication) for all packages.
+
+### Install from source
+
+Or use a composite build, adjusting the path for your checkout:
 
 ```kotlin
 // settings.gradle.kts

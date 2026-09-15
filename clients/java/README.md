@@ -9,7 +9,8 @@ problem-slug registry, and the head-conflict write loop built in.
 
 - **Coordinates**: `io.ioka.munarium:munarium-client`, Apache-2.0
   ([LICENSE](../LICENSE); the POM declares it, the jar carries LICENSE and
-  NOTICE under `META-INF`). Published to Maven Central; the versions available
+  NOTICE under `META-INF`). Published to
+  [Maven Central](https://central.sonatype.com/artifact/io.ioka.munarium/munarium-client); the versions available
   are recorded in the [clients front door](../README.md#installation-and-publication).
   Package `io.ioka.munarium.client`.
 - **Toolchain**: bytecode targets Java 21 (LTS) via `--release`; builds on
@@ -35,7 +36,30 @@ problem-slug registry, and the head-conflict write loop built in.
   pb-typed is in the public API, so it never lands on a consumer's compile
   classpath.
 
-## Install from source
+## Install
+
+Add the published package to your application's Gradle build (Java 21+):
+
+```kotlin
+// build.gradle.kts
+repositories { mavenCentral() }
+dependencies { implementation("io.ioka.munarium:munarium-client:1.1.0") }
+```
+
+For Maven:
+
+```xml
+<dependency>
+  <groupId>io.ioka.munarium</groupId>
+  <artifactId>munarium-client</artifactId>
+  <version>1.1.0</version>
+</dependency>
+```
+
+Maven Central has **1.1.0** as of 2026-09-15; the checkout is **1.1.1** with no
+API changes. The published jar includes the generated gRPC stubs.
+
+### Install from source
 
 Use a complete checkout so the build can read `server/proto`. Add it to your
 application's Gradle build, adjusting the path for your checkout:
@@ -44,7 +68,7 @@ application's Gradle build, adjusting the path for your checkout:
 // settings.gradle.kts
 includeBuild("path/to/munarium/clients/java")
 // build.gradle.kts
-dependencies { implementation("io.ioka.munarium:munarium-client:1.0.0") }
+dependencies { implementation("io.ioka.munarium:munarium-client:1.1.1") }
 ```
 
 ## Quickstart

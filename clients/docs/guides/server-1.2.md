@@ -18,7 +18,9 @@ operations. All four SDKs include `QueryCollections`, `GetCollectionGovernance`,
 `ReplaceCollectionGovernance` and `AuthorizePublication` (using each language's
 naming convention) over REST and gRPC. These operations require 1.2.1; a 1.2.0
 server does not supply them. The current SDK source targets Server **1.2.1**;
-client package versions remain **1.1.0**.
+client source package versions are **1.1.1**. All four clients are published;
+see [installation and publication](../../README.md#installation-and-publication)
+for registry links and available versions.
 
 A collection query supplies `question`, `collections` and optional `effective_on`.
 The capability carries the acting user's clearance and collection compartments.

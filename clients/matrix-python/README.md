@@ -4,16 +4,19 @@ The Python client for **Munarium Matrix**, the structured-evidence plane. It
 speaks Matrix's REST API and it is deliberately small: Matrix's whole surface
 is *registering assets, running the three modes, and reading what happened*.
 
-Install from the repository root with Python 3.10+:
+## Install
+
+Install [munarium-matrix from PyPI](https://pypi.org/project/munarium-matrix/)
+with Python 3.10+:
+
+```console
+python -m pip install munarium-matrix==1.1.1
+```
+
+Or install from the repository root:
 
 ```console
 python -m pip install ./clients/matrix-python
-```
-
-Or from PyPI, where the package is published as `munarium-matrix`:
-
-```console
-python -m pip install munarium-matrix
 ```
 
 Published versions are recorded in the

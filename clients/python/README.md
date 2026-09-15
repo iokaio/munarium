@@ -13,18 +13,19 @@ Python ≥ 3.11 · fully typed (`py.typed`, mypy --strict clean).
 
 ## Install
 
-From the repository root (Python 3.11+):
+Install [munarium-client from PyPI](https://pypi.org/project/munarium-client/)
+with Python 3.11+:
+
+```console
+python -m pip install munarium-client==1.1.1
+```
+
+Or install from the repository root of a complete checkout:
 
 ```console
 python -m pip install ./clients/python
 # For client development:
 python -m pip install -e "./clients/python[dev]"
-```
-
-Or from PyPI, where the package is published as `munarium-client`:
-
-```console
-python -m pip install munarium-client
 ```
 
 Published versions are recorded in the

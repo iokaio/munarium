@@ -12,8 +12,15 @@ ledger, and guides.
 
 ## Install
 
-Reference the project from a full checkout; adjust the path relative to your
-application's project file. Both projects require .NET 10.
+Install [Ioka.Munarium.Client from NuGet](https://www.nuget.org/packages/Ioka.Munarium.Client)
+in your .NET 10 application:
+
+```console
+dotnet add package Ioka.Munarium.Client --version 1.1.1
+```
+
+Or reference the project from a full checkout; adjust the path relative to your
+application's project file:
 
 ```xml
 <ItemGroup>
@@ -21,17 +28,12 @@ application's project file. Both projects require .NET 10.
 </ItemGroup>
 ```
 
-Or from NuGet, where the package is published as `Ioka.Munarium.Client`:
-
-```console
-dotnet add package Ioka.Munarium.Client
-```
-
 Published versions are recorded in the
 [clients front door](../README.md#installation-and-publication).
 
-The gRPC stubs compile at build time from the normative protos under
-`server/proto/mmp/v1/` (Grpc.Tools — zero drift, nothing committed).
+When building from source, the gRPC stubs compile from the normative protos
+under `server/proto/mmp/v1/` using Grpc.Tools. The NuGet package includes the
+compiled stubs.
 
 ## Use
 

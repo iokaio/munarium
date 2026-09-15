@@ -22,7 +22,7 @@ and is not supported is in [SUPPORT.md](../SUPPORT.md); conduct is the Contribut
 | Package | [`munarium-client`](rust/) (crate) | [`munarium-client`](python/) (import `munarium_client`) | [`Ioka.Munarium.Client`](dotnet/) (net10.0) | [`io.ioka.munarium:munarium-client`](java/) (Java 21 bytecode) |
 | Transports | REST + gRPC | REST + gRPC | REST + gRPC | REST + gRPC |
 | Sync/async | async (tokio) | sync **and** async | async | sync **and** async (async = virtual-thread offload) |
-| Models | `munarium-api-types`, the server's wire-type crate (a path dependency on `server/src`, and the only server crate in the graph besides `munarium-proto`) | pydantic v2 | System.Text.Json source-gen records | Jackson records |
+| Models | `munarium-api-types`, the server's wire-type crate (from crates.io for registry installs, or `server/src` for checkout builds; the only server crate in the graph besides `munarium-proto`) | pydantic v2 | System.Text.Json source-gen records | Jackson records |
 | gRPC stubs | `munarium-proto`, the server's generated proto crate | committed (`scripts/gen_protos.py` over `server/proto`) | Grpc.Tools at build time over `server/proto` | Gradle build-time codegen over `server/proto` |
 | Conformance | the 7 wire scenarios of [`server/conformance/SCENARIOS.md`](../server/conformance/SCENARIOS.md), client-native, + 15 plane smokes + 10 platform smokes | 7 ported scenarios × 4 variants (6 exercised, chronology skipped) + 11 platform tests | 7 ported scenarios × 2 transports (6 exercised, chronology skipped) + 10 platform scenarios | 7 ported scenarios × 2 transports + async round-trips + 10 platform smokes (1 documented skip) |
 
@@ -30,16 +30,29 @@ and is not supported is in [SUPPORT.md](../SUPPORT.md); conduct is the Contribut
 
 ## Installation and publication
 
-All seven client manifests declare **1.1.1**: the four Server clients and the
-three Matrix clients version together. The first public releases went out on
-**2026-09-15**: Server clients 1.1.0 and Matrix clients 1.0.0 to
-[PyPI](https://pypi.org/) (`munarium-client`, `munarium-matrix`),
-[NuGet](https://www.nuget.org/) (`Ioka.Munarium.Client`, `Ioka.Munarium.Matrix.Client`),
-[Maven Central](https://repo.maven.apache.org/maven2/io/ioka/munarium/)
-(`io.ioka.munarium:munarium-client`, `io.ioka.munarium:munarium-matrix-client`) and
-[crates.io](https://crates.io/) (`munarium-client`, with the Server wire crates
-`munarium-proto` and `munarium-api-types` at 1.2.1). `compatibility.json` records
-each package's registry; the registry itself is the proof of what is available.
+All seven client libraries are published. Their source manifests declare
+**1.1.1**: the four Server clients and the three Matrix clients version together.
+Registry versions verified on **2026-09-15** are listed below; follow each package
+link for its release history and subsequent updates.
+
+| Service | Language | Published package | Latest verified version | Installation guide |
+|---|---|---|---|---|
+| Server | Rust | [munarium-client on crates.io](https://crates.io/crates/munarium-client) | 1.1.1 | [Rust](rust/README.md#install) |
+| Server | Python | [munarium-client on PyPI](https://pypi.org/project/munarium-client/) | 1.1.1 | [Python](python/README.md#install) |
+| Server | .NET | [Ioka.Munarium.Client on NuGet](https://www.nuget.org/packages/Ioka.Munarium.Client) | 1.1.1 | [.NET](dotnet/README.md#install) |
+| Server | Java | [io.ioka.munarium:munarium-client on Maven Central](https://central.sonatype.com/artifact/io.ioka.munarium/munarium-client) | 1.1.0 | [Java](java/README.md#install) |
+| Matrix | Python | [munarium-matrix on PyPI](https://pypi.org/project/munarium-matrix/) | 1.1.1 | [Python](matrix-python/README.md#install) |
+| Matrix | .NET | [Ioka.Munarium.Matrix.Client on NuGet](https://www.nuget.org/packages/Ioka.Munarium.Matrix.Client) | 1.1.1 | [.NET](matrix-dotnet/README.md#install) |
+| Matrix | Java | [io.ioka.munarium:munarium-matrix-client on Maven Central](https://central.sonatype.com/artifact/io.ioka.munarium/munarium-matrix-client) | 1.0.0 | [Java](matrix-java/README.md#install) |
+
+The first public releases were Server clients **1.1.0** and Matrix clients
+**1.0.0**, also on 2026-09-15. The **1.1.1** release aligns package versions and
+adds the Rust package README, with no API changes. Maven Central still lists
+the initial versions above. The Rust client's wire dependencies are published as
+[munarium-proto 1.2.1](https://crates.io/crates/munarium-proto/1.2.1) and
+[munarium-api-types 1.2.1](https://crates.io/crates/munarium-api-types/1.2.1).
+[`compatibility.json`](compatibility.json) records source versions, registries
+and supported services; use the registry links above to check availability.
 
 Installing from a registry is the normal path. Each language README also shows
 installation from a complete checkout (Python local installs, .NET project

@@ -17,13 +17,17 @@ Use **Server** for document search, grounded chat and a governed fact ledger. Ad
 immutable file exports. The separate [Munarium Demo](https://github.com/iokaio/munarium-demo)
 provides six working applications and bundled datasets for evaluation.
 
-**Source versions:** Server **1.2.1**, Server clients **1.1.0**, Matrix and Matrix
-clients **1.0.0**. Server 1.2 adds configurable collection vocabularies, checked
+**Source versions:** Server **1.2.1**, Matrix **1.0.0**, and all seven client
+libraries **1.1.1**. Server 1.2 adds configurable collection vocabularies, checked
 narrative answers and the [complete API on REST/gRPC](clients/docs/guides/server-1.2.md).
-The published Server image is **1.2.1**. Client packages are currently
-installed from source, not public package registries. See the
+The published Server image is **1.2.1**. Client libraries are published on
+[NuGet](https://www.nuget.org/packages/Ioka.Munarium.Client),
+[Maven Central](https://central.sonatype.com/artifact/io.ioka.munarium/munarium-client),
+[PyPI](https://pypi.org/project/munarium-client/), and
+[crates.io](https://crates.io/crates/munarium-client). See the
 [publication record](server/CONTAINER.md#versions-and-verification) and
-[client installation guide](clients/README.md#installation-and-publication).
+[client installation guide](clients/README.md#installation-and-publication)
+for all seven package links and available versions.
 
 ## Guides
 
