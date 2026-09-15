@@ -30,8 +30,8 @@ and is not supported is in [SUPPORT.md](../SUPPORT.md); conduct is the Contribut
 
 ## Installation and publication
 
-The four Server client manifests declare **1.1.1**; the three Matrix client
-manifests declare **1.0.0**. The first public releases went out on
+All seven client manifests declare **1.1.1**: the four Server clients and the
+three Matrix clients version together. The first public releases went out on
 **2026-09-15**: Server clients 1.1.0 and Matrix clients 1.0.0 to
 [PyPI](https://pypi.org/) (`munarium-client`, `munarium-matrix`),
 [NuGet](https://www.nuget.org/) (`Ioka.Munarium.Client`, `Ioka.Munarium.Matrix.Client`),

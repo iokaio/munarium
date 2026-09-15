@@ -15,7 +15,7 @@ dependency needs no `includeBuild`; the composite build below is for a checkout.
 // settings.gradle.kts
 includeBuild("path/to/munarium/clients/matrix-java")
 // build.gradle.kts
-dependencies { implementation("io.ioka.munarium:munarium-matrix-client:1.0.0") }
+dependencies { implementation("io.ioka.munarium:munarium-matrix-client:1.1.1") }
 ```
 
 **One runtime dependency: Jackson databind.** REST rides `java.net.http`,
