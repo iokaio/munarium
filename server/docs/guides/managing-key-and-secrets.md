@@ -46,6 +46,7 @@ every model or account entitlement is available through each provider.
 | `anthropic` | `https://api.anthropic.com` | `MUNARIUM_SECRET_ANTHROPIC` | Messages/completion; no embeddings adapter |
 | `openai` | `https://api.openai.com/v1` | `MUNARIUM_SECRET_OPENAI` | Chat completions and embeddings |
 | `openrouter` | `https://openrouter.ai/api/v1` | `MUNARIUM_SECRET_OPENROUTER` | OpenAI-compatible adapter; model and endpoint capabilities still need verification |
+| `ollama` | Explicit base endpoint required | None required for a local endpoint | Native chat, embeddings and model health; configure model tiers; an optional credential reference supplies a bearer key for a proxy |
 
 Create the key in the provider account that should own the usage. Record its
 owner, environment, purpose, expiry if applicable and provider-side usage limits
@@ -62,6 +63,18 @@ and authentication. An endpoint override alone does not add Azure deployment
 URL rewriting, an `api-key` header or automatic Entra token refresh. Validate
 compatibility for the endpoint you actually deploy. Never put credentials in
 the endpoint URL.
+
+For native Ollama setup, use the [Ollama guide](ollama.md). Automatic `default`
+selection below remains limited to cloud families; name the Ollama configuration
+or explicitly select `provider: ollama`.
+
+Server 1.2.1 accepts `spec.openrouterProvider` only on OpenRouter configurations.
+It names one downstream slug for completion requests; Server disables fallback,
+requires parameter support and requests `data_collection: deny`. This routing
+request does not independently guarantee retention practices. Vocabulary and
+checked-answer protocols use provider-native structured output, so their selected
+models must support it. See [collection model policies](collection-vocabularies.md#collection-queries-and-publication-governance-121)
+for external-processing controls and per-clearance routes.
 
 The reserved provider selector `default` tries Anthropic, then OpenAI, then
 OpenRouter, choosing the first family with a resolvable credential. Applied

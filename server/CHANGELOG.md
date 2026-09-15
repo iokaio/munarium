@@ -5,6 +5,7 @@ for registry availability, digests and public signing instructions.
 
 ## 1.2.1
 
+- Update rustls to 0.23.45 and refresh dependency notices for the patched build.
 - Add collection-scoped query orchestration, retained publication governance,
   and original-file authorization over REST and native gRPC. Query callers send
   their question and collection scope; Server selects governing versions,

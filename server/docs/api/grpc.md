@@ -29,7 +29,7 @@ Both serve the identical services — the conformance suite diffs their answers.
 ### 1. Direct TCP port (50051)
 
 A dedicated plaintext tonic listener for direct client connections. **Server
-1.2.0 does not configure TLS on this listener**: `MUNARIUM_GRPC_TLS_CERT` and
+1.2.1 does not configure TLS on this listener**: `MUNARIUM_GRPC_TLS_CERT` and
 `MUNARIUM_GRPC_TLS_KEY` are not implemented and setting them does not enable
 encryption. Use a TLS-terminating proxy with HTTP/2 for remote access, or keep
 the plaintext port on a trusted private network. Disable the listener entirely

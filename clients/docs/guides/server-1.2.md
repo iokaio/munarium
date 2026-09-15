@@ -1,6 +1,6 @@
 # Complete Server API and collection vocabularies
 
-Server **1.2.0** and Server client packages **1.1.0** add a complete named API
+Server **1.2.0** and Server client packages **1.1.0** introduced a complete named API
 client in Rust, Python, .NET and Java. Every documented REST operation has a
 named RPC on `mmp.v1.ServerApiService` and a corresponding SDK method on
 `ServerApiClient`. Python also supplies `AsyncServerApiClient`; Java methods
@@ -17,7 +17,8 @@ with HTTP network calls against an older Server.
 operations. All four SDKs include `QueryCollections`, `GetCollectionGovernance`,
 `ReplaceCollectionGovernance` and `AuthorizePublication` (using each language's
 naming convention) over REST and gRPC. These operations require 1.2.1; a 1.2.0
-server does not supply them.
+server does not supply them. The current SDK source targets Server **1.2.1**;
+client package versions remain **1.1.0**.
 
 A collection query supplies `question`, `collections` and optional `effective_on`.
 The capability carries the acting user's clearance and collection compartments.
@@ -30,6 +31,10 @@ The `insufficient` and `review` statuses may also contain explanatory prose and
 verified references. Retain those explanations. References identify indexed
 sources, never download URLs. The ingesting application maps them to retained
 originals and rechecks access with `AuthorizePublication` before serving a file.
+References carry internal source collection/index identities, so retain the
+publisher's mapping to the parent collection and publication ID required by that
+call. The query response also carries `effective_on`, `governance_revisions` and
+`vocabulary_revisions`; revision maps use parent collection IDs.
 See the [governance and answer contract](../../../server/docs/guides/collection-vocabularies.md).
 
 ## Contract and representation

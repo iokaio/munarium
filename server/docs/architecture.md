@@ -6,7 +6,27 @@ The architecture of what ships in this repository: the Rust workspace under `ser
 
 ## 1. Purpose and Scope
 
-`munarium-server` is a cloud-native, containerized Rust implementation of the Munarium governed-memory service: an append-only fact ledger with supersession chains, governance enforced below the application layer, and reproducible retrieval with a provenance envelope on every answer. It is built to be deployed by an platform into its own Kubernetes environment and operated without Ioka in the loop, and it connects to **the operator's** LLM provider accounts, endpoints and credentials (bring-your-own-key). Anthropic, OpenAI and OpenRouter are the supported provider dialects; OpenAI-compatible endpoints (vLLM, Ollama-served, platform inference gateways) ride the OpenAI implementation with a base-URL override.
+`munarium-server` is a cloud-native, containerized Rust implementation of the Munarium governed-memory service: an append-only fact ledger with supersession chains, governance enforced below the application layer, and reproducible retrieval with a provenance envelope on every answer. It is built to be deployed by an platform into its own Kubernetes environment and operated without Ioka in the loop, and it connects to **the operator's** LLM provider accounts, endpoints and credentials (bring-your-own-key). Anthropic, OpenAI, OpenRouter and native Ollama are the supported provider dialects. OpenAI-compatible endpoints (vLLM and platform inference gateways) use the OpenAI implementation with a base-URL override. Native Ollama uses an explicit endpoint and configured model tiers; local endpoints may omit credentials.
+
+Server 1.2/1.2.1 adds a collection application path alongside runbook sessions:
+
+- `vocabulary_api` stores tenant defaults and per-collection revisions in PostgreSQL,
+  samples bound sources and expands collection queries. Generation uses database
+  leases and checks revisions and source hashes before publishing.
+- `governance_api` stores append-only publication snapshots and query policies.
+  `query_api` selects governing source/index pins, retrieves and ranks passages,
+  then delegates narrative composition to `answers_api`. Authorization and policy
+  revisions are checked again after completion.
+- `answers_api` validates pinned passages and exact citations, sends request-local
+  passage IDs to the model and constructs source references on the Server.
+  Applications retain original files and enforce access when opening a reference.
+- `ServerApiService` exposes every documented REST operation through named native
+  RPCs using the same handlers, with generated methods in all four Server SDKs.
+
+The [collection guide](guides/collection-vocabularies.md) documents policy defaults,
+model routing, authorization and migrations 0032–0034. The
+[complete API guide](../../clients/docs/guides/server-1.2.md) specifies transport
+payloads and the boundary with older typed services.
 
 Three artifacts make up a release:
 
@@ -36,7 +56,7 @@ The system is four layers plus one cross-cutting gateway. Each layer scales by a
                   ┌─────────────▼──┐    ┌───────▼──────────────┐
    Layer 2        │ sqlx pool per  │    │  Provider Gateway    │  BYOK egress to
                   │ replica        │    │  (Anthropic/OpenAI/  │  the operator's LLM
-                  └──────┬─────────┘    │   OpenRouter)        │  endpoints
+                  └──────┬─────────┘    │   OpenRouter/Ollama) │  endpoints
                          │              └──────────────────────┘
           ┌──────────────▼──────────────────────┐
    Layer 3│  PostgreSQL 16 + pgvector           │  a CloudNativePG cell (the chart)

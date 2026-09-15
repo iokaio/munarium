@@ -22,8 +22,10 @@ what that already-authenticated person is allowed to do.
 - an **access level** and a set of **compartments** — the clearance that determines which
   collections a session opened with this token can see (see
   [Runbooks and access](runbooks-and-access.md));
-- one or more **scopes** — `query` to open sessions and search, `ingest` to feed the ingest
-  plane — so a token minted for a read-only assistant can't also be used to write new sources;
+- one or more **scopes** — `query` for sessions, search, checked answers and publication
+  authorization; `ingest` for uploads; `vocabulary` for collection vocabulary management.
+  The service scopes `findings` and `evidence` grant their own operations. Each scope
+  is independent: a vocabulary editor cannot query or ingest without those grants;
 - an optional **runbook allowlist**, confining the token to specific named runbooks rather than
   everything its access level would otherwise reach;
 - a **time-to-live**, capped at a fixed ceiling regardless of what's requested, so a token that

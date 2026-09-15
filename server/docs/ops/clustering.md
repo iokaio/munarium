@@ -24,6 +24,8 @@ and `MUNARIUM_MAX_CONCURRENCY` on a bigger box.
 | Idempotency | `idempotency_keys` table; a replay via ANY instance returns the recorded response; pruned by the janitor (below) |
 | Shapes / provider configs / per-call token budgets | persisted tables + per-instance registry caches that re-read after `MUNARIUM_REGISTRY_TTL_SECS` (default 15s; see staleness contract below). The token budgets (`POST /v1/max-tokens`, 2026-09-02, one JSONB row per tenant) follow exactly the provider-config pattern: the instance that took the write answers it immediately, the others within the TTL |
 | Sessions, runbook runs/steps | plain tables |
+| Collection vocabularies (1.2) | tenant defaults, revisions and generation leases in PostgreSQL; workers use a five-minute lease and revision/source checks before publishing |
+| Publication governance (1.2.1) | append-only `collection_governance` snapshots; an advisory transaction lock serializes revision-checked writes; queries re-read governance and vocabulary revisions before returning |
 | Runbook execution | at most ONE instance executes a given run: `pg_try_advisory_lock(hashtext(tenant), hashtext(run_id))` held on a detached connection for the duration; the loser answers 409 `run-locked` |
 | Document bytes | whatever `MUNARIUM_SOURCE_STORE` names — `pg`, `az`, `s3`, `gcs` are shared; `file` only on a shared mount (the server warns); `mem` is refused in cluster mode |
 | Interaction audit | every instance writes its own rows, stamped with its `instance_id`; the reports API and `/admin` dashboards aggregate across all of them |

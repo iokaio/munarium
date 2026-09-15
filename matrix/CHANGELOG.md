@@ -1,5 +1,10 @@
 # Munarium Matrix — release notes
 
+## Unreleased
+
+- Update rustls to 0.23.45 and refresh third-party notices. The Matrix source
+  version remains 1.0.0; this dependency update does not change its API contract.
+
 ## 1.0.0
 
 The first public release.

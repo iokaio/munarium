@@ -46,7 +46,7 @@ caller may touch**:
 
 ## 3. The uid contract
 
-Every `/v1` (REST) and `mmp.v1` (gRPC) call must carry the end-user id the
+Every `/v1` or `/v1.2` (REST) and `mmp.v1` (gRPC) call must carry the end-user id the
 manager authenticated:
 
 - REST: `X-Munarium-Uid: <uid>` header
@@ -78,12 +78,16 @@ mints an HS256 JWT with claims:
 - `cmp` — need-to-know compartment tags; a collection's tags must be a subset
   of the token's. (Bell-LaPadula "simple security" with categories — one
   comparison, no policy language.)
-- `scopes` — `query` (sessions/turns), `ingest` (file upload),
+- `scopes` — `query` (sessions, search, checked answers and publication
+  authorization), `ingest` (file upload), `vocabulary` (read/edit/refresh a
+  collection vocabulary, subject to collection clearance),
   `findings` (file warn/info findings on a lineage via
   `POST /v1/versions/{id}/findings`), and/or `evidence` (seal and resolve artifacts on the structured-evidence plane). The last two
   are the scopes Munarium Matrix's service token holds; each grants nothing
   else, and an `ro` token never has either. A static `rw` token carries all
-  four.
+  five. A `vocabulary` token grants no query, ingest, provider configuration or
+  token-minting privilege; a `query` token can read the vocabulary revision for
+  cache invalidation but cannot read or edit the terms.
 
   **`evidence` does not widen what a token may read.** The scope says "this
   principal participates in the evidence plane"; the artifact's authorization
@@ -94,6 +98,16 @@ mints an HS256 JWT with claims:
   every later reader would trust.
 - `rb` — optional runbook-name allowlist.
 - `exp` — short TTL (default `MUNARIUM_TOKEN_TTL_SECS=3600`, hard cap 24 h).
+
+Server 1.2.1 publication snapshots are authored with a static `rw` credential,
+including reads of the governance API. A scoped query names parent collections;
+Server selects their governing publications and checks clearance and snapshot
+revisions again after completion. A publisher's explicit binding delegates access
+to internal source indexes through that parent, without granting direct access to
+the internal collections. The internal source cannot require a higher access level
+than the parent. Original-file authorization returns an identity, not bytes or a
+download grant; the application also enforces its own file permissions. See
+[collection governance](guides/collection-vocabularies.md#collection-queries-and-publication-governance-121).
 
 **The intended flow:** the manager authenticates a human, decides their
 level/compartments from its own directory/groups, exchanges its long-lived

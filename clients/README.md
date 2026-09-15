@@ -26,7 +26,7 @@ and is not supported is in [SUPPORT.md](../SUPPORT.md); conduct is the Contribut
 | gRPC stubs | `munarium-proto`, the server's generated proto crate | committed (`scripts/gen_protos.py` over `server/proto`) | Grpc.Tools at build time over `server/proto` | Gradle build-time codegen over `server/proto` |
 | Conformance | the 7 wire scenarios of [`server/conformance/SCENARIOS.md`](../server/conformance/SCENARIOS.md), client-native, + 15 plane smokes + 10 platform smokes | 7 ported scenarios × 4 variants (6 exercised, chronology skipped) + 11 platform tests | 7 ported scenarios × 2 transports (6 exercised, chronology skipped) + 10 platform scenarios | 7 ported scenarios × 2 transports + async round-trips + 10 platform smokes (1 documented skip) |
 
-**The contract the clients build from is the server's own**: the ten protos under [`server/proto/mmp/v1/`](../server/proto/mmp/v1/), the REST reference and problem-slug registry under [`server/docs/api/`](../server/docs/api/), and the two Rust wire crates under `server/src/`. A wire change on the server side reaches every client immediately, and `clients-ci` proves them against a server built from the same commit.
+**The contract the clients build from is the server's own**: the eleven protos under [`server/proto/mmp/v1/`](../server/proto/mmp/v1/), the REST reference and problem-slug registry under [`server/docs/api/`](../server/docs/api/), and the two Rust wire crates under `server/src/`. A wire change on the server side reaches every client immediately, and `clients-ci` proves them against a server built from the same commit.
 
 ## Installation and publication
 
@@ -71,7 +71,7 @@ clients remain on **Matrix 1.0**, independently of Server compatibility.
 | 1.2.0 (published) | Complete named API on both transports, collection vocabulary generation/management, checked narrative answers and pinned file locations |
 | 1.2.1 (published) | 121 named operations, including collection queries, publication governance and original-reference authorization; Server selects governed passages and explains the files, while the ingesting application serves originals |
 
-Without an override, each task retains its configured model. Nonempty overrides on retrieval-only turns are rejected. Higher tiers can now increase expansion cost as well as completion cost. Use the [Server 1.1.1 alignment guide](docs/guides/server-1.1.1.md) for setup, feature requirements, and validation. Supporting the 1.0 baseline does not backport Ollama or the 1.1.1 routing fix.
+Without an override, each task retains its configured model. Nonempty overrides on retrieval-only turns are rejected. Higher tiers can now increase expansion cost as well as completion cost. Use the [Server 1.2 guide](docs/guides/server-1.2.md) for current integration and the [Server 1.1.1 alignment guide](docs/guides/server-1.1.1.md) for historical qualification. Compatibility with Server 1.1 does not backport the complete API or the 1.2.1 governance operations.
 
 
 All four expose the same **ten planes** and encode the same invariants. The

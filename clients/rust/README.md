@@ -1,6 +1,6 @@
 # munarium-client (Rust)
 
-Targets **Munarium Server 1.2.0**. Client package **1.1.0** adds the complete `ServerApiClient` over REST and native gRPC, while the existing typed planes retain their Server 1.1 baseline. See the [Server 1.2 guide](../docs/guides/server-1.2.md) for vocabulary, answers, source references and every named API operation.
+Targets **Munarium Server 1.2.1**. Client package **1.1.0** provides the complete `ServerApiClient` over REST and native gRPC, while the existing typed planes retain their Server 1.1 baseline. See the [Server 1.2 guide](../docs/guides/server-1.2.md) for vocabulary, collection queries, publication governance, answers and source references. Transport limitations below apply to the older typed planes.
 
 Official Rust client for munarium-server: the full ten-plane surface
 (`commands`, `query`, `ingest`, `retrieval`, `runbooks`, `providers`,
