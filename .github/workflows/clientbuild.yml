@@ -1,11 +1,11 @@
 # Release build and registry publication for the client libraries.
 #
 # MANUAL TRIGGER ONLY. Nothing here runs on push, pull request, tag or
-# schedule. A maintainer dispatches it, picks one package family, and ticks
+# schedule. A maintainer dispatches it, picks a package family, and ticks
 # the registries to publish to. Every registry switch defaults to OFF, so a
 # dispatch with nothing ticked is a full rehearsal: it builds every package
 # in the family, runs the license and private-material gates over the built
-# artifacts, checks that the version is not already on the registries, and
+# artifacts, reports which versions are already on the registries, and
 # uploads the packages as workflow artifacts for inspection. Publishing also
 # waits on the `release` environment, whose required reviewer is the second
 # human gate.
@@ -18,19 +18,30 @@
 # Families and what each publishes (versions come from the manifests, checked
 # against clients/compatibility.json by check_compatibility.py):
 #
+#   server-crates   munarium-proto then munarium-api-types (crates.io): the
+#                   server's two wire crates, which the Rust client depends on
+#                   and which must be on crates.io before it can be
 #   server-clients  Ioka.Munarium.Client (NuGet), munarium-client (PyPI),
 #                   io.ioka.munarium:munarium-client (Maven Central),
 #                   munarium-client (crates.io)
 #   matrix-clients  Ioka.Munarium.Matrix.Client (NuGet), munarium-matrix (PyPI),
 #                   io.ioka.munarium:munarium-matrix-client (Maven Central)
-#   server-crates   munarium-proto then munarium-api-types (crates.io): the
-#                   server's two wire crates, which the Rust client depends on
-#                   and which must be on crates.io before it can be
+#   all             every package above, crates in dependency order
+#
+# Already-published versions are SKIPPED, not failed. Preflight asks each
+# registry whether the package's version exists; a package that is already
+# there is reported with a notice, built like the rest, and left out of the
+# publish jobs. So `all` with every registry ticked is idempotent: it publishes
+# whatever is missing and touches nothing that is present. Maven Central is
+# checked against the public repository, so a bundle that is validated but
+# not yet published in the Portal (USER_MANAGED) is not seen as published and
+# would be uploaded again as a second deployment; publish or drop the pending
+# one first.
 #
 # Credentials, none of which this file contains:
 #   NuGet      OIDC via NuGet/login; repository variable NUGET_USER holds the
 #              NuGet.org profile name that owns the trusted-publishing policy.
-#   PyPI       OIDC via pypa/gh-action-pypi-publish (a pending publisher per
+#   PyPI       OIDC via pypa/gh-action-pypi-publish (a trusted publisher per
 #              project name on pypi.org and test.pypi.org: munarium-client
 #              with environment `release`, munarium-matrix with
 #              `release-matrix`; see publish-pypi for why they differ).
@@ -46,10 +57,8 @@
 #
 # A real publish is refused unless the run is on `main`; a build-only rehearsal
 # may run from any ref. Every publish job, the TestPyPI one included, runs in
-# the `release` environment, which is configured in the repository settings to
-# accept `main` only and to require a reviewer. A version that already exists
-# on a selected registry fails preflight before anything is built, because
-# none of the four registries allows a version to be replaced.
+# the `release` environment (or its `release-matrix` twin), which is configured
+# in the repository settings to accept `main` only and to require a reviewer.
 name: clientbuild
 
 permissions:
@@ -62,16 +71,18 @@ on:
         description: Package family to build (and publish, if any registry is ticked)
         type: choice
         required: true
+        default: all
         options:
+          - all
+          - server-crates
           - server-clients
           - matrix-clients
-          - server-crates
       publish_nuget:
-        description: Publish the .NET package to NuGet.org
+        description: Publish the .NET package(s) to NuGet.org
         type: boolean
         default: false
       publish_pypi:
-        description: Publish the Python package (target chosen below)
+        description: Publish the Python package(s) (target chosen below)
         type: boolean
         default: false
       pypi_target:
@@ -82,7 +93,7 @@ on:
           - testpypi
           - pypi
       publish_maven:
-        description: Upload the Java bundle to the Sonatype Central Portal
+        description: Upload the Java bundle(s) to the Sonatype Central Portal
         type: boolean
         default: false
       maven_publishing_type:
@@ -93,11 +104,11 @@ on:
           - USER_MANAGED
           - AUTOMATIC
       publish_crates:
-        description: Publish the Rust crate(s) to crates.io
+        description: Publish the Rust crate(s) to crates.io, in dependency order
         type: boolean
         default: false
       create_tag:
-        description: After a successful real publish, tag the commit (clients-vX / matrix-clients-vX / server-crates-vX)
+        description: After a successful real publish, tag the commit for each family that published something (clients-vX / matrix-clients-vX / server-crates-vX)
         type: boolean
         default: false
 
@@ -114,8 +125,11 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # preflight: the cheap gates, the version plan, and the registry checks.
-  # Nothing is built here.
+  # preflight: the cheap gates, the package plan, and the registry state.
+  # Nothing is built here. The plan is one JSON document: a list of packages
+  # per ecosystem (each with its version, directory and family), the subset of
+  # each list that is not yet on its registry (`*_todo`), and the tags to
+  # create for families that will publish something.
   # ---------------------------------------------------------------------------
   preflight:
     runs-on: ubuntu-latest
@@ -137,14 +151,22 @@ jobs:
           python3 scripts/private_material_scan.py
           git diff --check
 
-      - name: version plan
+      - name: package plan and registry state
         id: plan
         env:
           FAMILY: ${{ inputs.family }}
+          PUBLISH_NUGET: ${{ inputs.publish_nuget }}
+          PUBLISH_PYPI: ${{ inputs.publish_pypi }}
+          PYPI_TARGET: ${{ inputs.pypi_target }}
+          PUBLISH_MAVEN: ${{ inputs.publish_maven }}
+          PUBLISH_CRATES: ${{ inputs.publish_crates }}
         run: |
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
-          import json, os, re, sys
+          import json, os, re, sys, urllib.error, urllib.request
+
           family = os.environ["FAMILY"]
+          sel = {k: os.environ[k] == "true" for k in ("PUBLISH_NUGET", "PUBLISH_PYPI", "PUBLISH_MAVEN", "PUBLISH_CRATES")}
+          pypi_host = "test.pypi.org" if os.environ["PYPI_TARGET"] == "testpypi" else "pypi.org"
           compat = json.load(open("clients/compatibility.json", encoding="utf-8"))["clients"]
 
           def one_version(keys):
@@ -153,70 +175,55 @@ jobs:
                   sys.exit(f"::error::{family}: the manifests disagree on a version: {sorted(versions)}")
               return versions.pop()
 
-          if family == "server-clients":
-              version = one_version(["rust", "python", "dotnet", "java"])
-              plan = {
-                  "family": family, "version": version, "tag": f"clients-v{version}",
-                  "dotnet": {"dir": "clients/dotnet", "project": "src/Ioka.Munarium.Client",
-                             "tests": "tests/Ioka.Munarium.Client.Tests", "id": compat["dotnet"]["package"]},
-                  "python": {"dir": "clients/python", "name": compat["python"]["package"]},
-                  "java": {"dir": "clients/java", "artifact": "munarium-client"},
-                  "rust": {"dir": "clients/rust", "crates": ["munarium-client"], "copy_protos": False, "package_flags": ""},
-              }
-          elif family == "matrix-clients":
-              version = one_version(["matrix-python", "matrix-dotnet", "matrix-java"])
-              plan = {
-                  "family": family, "version": version, "tag": f"matrix-clients-v{version}",
-                  "dotnet": {"dir": "clients/matrix-dotnet", "project": "src/Ioka.Munarium.Matrix.Client",
-                             "tests": "tests/Ioka.Munarium.Matrix.Client.Tests", "id": compat["matrix-dotnet"]["package"]},
-                  "python": {"dir": "clients/matrix-python", "name": compat["matrix-python"]["package"]},
-                  "java": {"dir": "clients/matrix-java", "artifact": "munarium-matrix-client"},
-                  "rust": None,
-              }
-          elif family == "server-crates":
+          def server_version():
               text = open("server/Cargo.toml", encoding="utf-8").read()
               m = re.search(r'^\[workspace\.package\]\s*\nversion\s*=\s*"([^"]+)"', text, re.M)
               if not m:
                   sys.exit("::error::server/Cargo.toml: no [workspace.package] version")
-              version = m.group(1)
-              plan = {
-                  "family": family, "version": version, "tag": f"server-crates-v{version}",
-                  "dotnet": None, "python": None, "java": None,
-                  # Order matters: api-types depends on proto. cargo publish
-                  # blocks until each crate is visible in the index.
-                  # `--allow-dirty` is for the proto copy alone: the copied
-                  # files are git-ignored but matched by munarium-proto's
-                  # `include`, and cargo reports included-but-uncommitted
-                  # files as dirty regardless of the ignore list. The client
-                  # family passes no flags, so a genuinely dirty tree there
-                  # still fails.
-                  "rust": {"dir": "server", "crates": ["munarium-proto", "munarium-api-types"],
-                           "copy_protos": True, "package_flags": "--allow-dirty"},
-              }
-          else:
+              return m.group(1)
+
+          families = {"all": ["server-crates", "server-clients", "matrix-clients"]}.get(family, [family])
+          if family not in ("all", "server-crates", "server-clients", "matrix-clients"):
               sys.exit(f"::error::unknown family {family}")
 
-          print("plan=" + json.dumps(plan))
-          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as s:
-              s.write(f"## {family} {version}\n\nref `{os.environ['GITHUB_REF']}` at `{os.environ['GITHUB_SHA']}`\n\n")
-          PY
+          dotnet, python, java, rust, tags = [], [], [], [], []
+          for fam in families:
+              if fam == "server-crates":
+                  v = server_version()
+                  # Order matters: api-types depends on proto, and the client
+                  # (below) on both. cargo publish blocks until each crate is
+                  # visible in the index. `--allow-dirty` is for the proto copy
+                  # alone: the copied files are git-ignored but matched by
+                  # munarium-proto's `include`, and cargo reports included-but-
+                  # uncommitted files as dirty regardless of the ignore list.
+                  for crate in ("munarium-proto", "munarium-api-types"):
+                      rust.append({"crate": crate, "dir": "server", "version": v, "family": fam,
+                                   "copy_protos": True, "package_flags": "--allow-dirty"})
+                  tags.append({"family": fam, "name": f"server-crates-v{v}"})
+              elif fam == "server-clients":
+                  v = one_version(["rust", "python", "dotnet", "java"])
+                  dotnet.append({"id": compat["dotnet"]["package"], "dir": "clients/dotnet", "version": v, "family": fam,
+                                 "project": "src/Ioka.Munarium.Client", "tests": "tests/Ioka.Munarium.Client.Tests"})
+                  python.append({"name": compat["python"]["package"], "dir": "clients/python", "version": v, "family": fam,
+                                 "environment": "release"})
+                  java.append({"artifact": "munarium-client", "dir": "clients/java", "version": v, "family": fam})
+                  rust.append({"crate": "munarium-client", "dir": "clients/rust", "version": v, "family": fam,
+                               "copy_protos": False, "package_flags": ""})
+                  tags.append({"family": fam, "name": f"clients-v{v}"})
+              elif fam == "matrix-clients":
+                  v = one_version(["matrix-python", "matrix-dotnet", "matrix-java"])
+                  dotnet.append({"id": compat["matrix-dotnet"]["package"], "dir": "clients/matrix-dotnet", "version": v, "family": fam,
+                                 "project": "src/Ioka.Munarium.Matrix.Client", "tests": "tests/Ioka.Munarium.Matrix.Client.Tests"})
+                  # PyPI allows one PENDING trusted publisher per (owner, repo,
+                  # workflow, environment) tuple, so the two Python packages
+                  # were registered against different environments.
+                  python.append({"name": compat["matrix-python"]["package"], "dir": "clients/matrix-python", "version": v, "family": fam,
+                                 "environment": "release-matrix"})
+                  java.append({"artifact": "munarium-matrix-client", "dir": "clients/matrix-java", "version": v, "family": fam})
+                  tags.append({"family": fam, "name": f"matrix-clients-v{v}"})
 
-      - name: the version must not already exist on a selected registry
-        env:
-          PLAN: ${{ steps.plan.outputs.plan }}
-          PUBLISH_NUGET: ${{ inputs.publish_nuget }}
-          PUBLISH_PYPI: ${{ inputs.publish_pypi }}
-          PYPI_TARGET: ${{ inputs.pypi_target }}
-          PUBLISH_MAVEN: ${{ inputs.publish_maven }}
-          PUBLISH_CRATES: ${{ inputs.publish_crates }}
-        run: |
-          python3 - <<'PY'
-          import json, os, sys, urllib.request, urllib.error
-          plan = json.loads(os.environ["PLAN"])
-          v = plan["version"]
-          sel = lambda k: os.environ[k] == "true"
-
-          def status(url):
+          # --- registry state: which of these versions already exist ----------
+          def fetch(url):
               req = urllib.request.Request(url, headers={"User-Agent": "iokaio/munarium clientbuild (github actions)"})
               try:
                   with urllib.request.urlopen(req, timeout=30) as r:
@@ -224,106 +231,147 @@ jobs:
               except urllib.error.HTTPError as e:
                   return e.code, b""
 
-          problems = []
-          if plan["dotnet"] and sel("PUBLISH_NUGET"):
-              code, body = status(f"https://api.nuget.org/v3-flatcontainer/{plan['dotnet']['id'].lower()}/index.json")
-              if code == 200 and v in json.loads(body).get("versions", []):
-                  problems.append(f"NuGet already has {plan['dotnet']['id']} {v}")
-          if plan["python"] and sel("PUBLISH_PYPI"):
-              host = "test.pypi.org" if os.environ["PYPI_TARGET"] == "testpypi" else "pypi.org"
-              code, _ = status(f"https://{host}/pypi/{plan['python']['name']}/{v}/json")
-              if code == 200:
-                  problems.append(f"{host} already has {plan['python']['name']} {v}")
-          if plan["java"] and sel("PUBLISH_MAVEN"):
-              code, _ = status(f"https://repo1.maven.org/maven2/io/ioka/munarium/{plan['java']['artifact']}/{v}/")
-              if code == 200:
-                  problems.append(f"Maven Central already has io.ioka.munarium:{plan['java']['artifact']} {v}")
-          if plan["rust"] and sel("PUBLISH_CRATES"):
-              for crate in plan["rust"]["crates"]:
-                  code, _ = status(f"https://crates.io/api/v1/crates/{crate}/{v}")
-                  if code == 200:
-                      problems.append(f"crates.io already has {crate} {v}")
-          for p in problems:
-              print(f"::error::{p}")
-          sys.exit(1 if problems else 0)
+          notices = []
+          for u in dotnet:
+              code, body = fetch(f"https://api.nuget.org/v3-flatcontainer/{u['id'].lower()}/index.json")
+              u["published"] = code == 200 and u["version"] in json.loads(body).get("versions", [])
+              u["registry"] = "NuGet"
+          for u in python:
+              code, _ = fetch(f"https://{pypi_host}/pypi/{u['name']}/{u['version']}/json")
+              u["published"] = code == 200
+              u["registry"] = pypi_host
+          for u in java:
+              code, _ = fetch(f"https://repo1.maven.org/maven2/io/ioka/munarium/{u['artifact']}/{u['version']}/")
+              u["published"] = code == 200
+              u["registry"] = "Maven Central"
+          for u in rust:
+              code, _ = fetch(f"https://crates.io/api/v1/crates/{u['crate']}/{u['version']}")
+              u["published"] = code == 200
+              u["registry"] = "crates.io"
+
+          def label(u):
+              return u.get("id") or u.get("name") or u.get("artifact") or u.get("crate")
+
+          todo = {
+              "nuget_todo": [u for u in dotnet if not u["published"]],
+              "pypi_todo": [u for u in python if not u["published"]],
+              "maven_todo": [u for u in java if not u["published"]],
+              "crates_todo": [u for u in rust if not u["published"]],
+          }
+
+          # Tags: only for families that will publish at least one package to a
+          # selected registry in this run. TestPyPI is a rehearsal and counts
+          # for nothing.
+          def family_has_work(fam):
+              checks = [
+                  (sel["PUBLISH_NUGET"], todo["nuget_todo"]),
+                  (sel["PUBLISH_PYPI"] and pypi_host == "pypi.org", todo["pypi_todo"]),
+                  (sel["PUBLISH_MAVEN"], todo["maven_todo"]),
+                  (sel["PUBLISH_CRATES"], todo["crates_todo"]),
+              ]
+              return any(on and any(u["family"] == fam for u in lst) for on, lst in checks)
+          tags = [t for t in tags if family_has_work(t["family"])]
+
+          plan = {"family": family, "families": families,
+                  "dotnet": dotnet, "python": python, "java": java, "rust": rust,
+                  **todo, "tags": tags}
+          print("plan=" + json.dumps(plan))
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as s:
+              s.write(f"## {family}\n\nref `{os.environ['GITHUB_REF']}` at `{os.environ['GITHUB_SHA']}`\n\n")
+              s.write("| package | version | registry | state |\n|---|---|---|---|\n")
+              for u in dotnet + python + java + rust:
+                  state = "already published, skipped" if u["published"] else "to publish (if its registry is ticked)"
+                  s.write(f"| `{label(u)}` | {u['version']} | {u['registry']} | {state} |\n")
+              if tags:
+                  s.write("\ntags on success: " + ", ".join(f"`{t['name']}`" for t in tags) + "\n")
+          for u in dotnet + python + java + rust:
+              if u["published"]:
+                  print(f"::notice::{u['registry']} already has {label(u)} {u['version']}; it will be built but not published", file=sys.stderr)
           PY
 
   # ---------------------------------------------------------------------------
-  # build jobs: one per ecosystem, no credentials, artifacts uploaded for
-  # inspection and for the publish jobs.
+  # build jobs: one matrix job per package, no credentials, artifacts uploaded
+  # for inspection and for the publish jobs. Every package in the family is
+  # built, published or not, so a rehearsal proves the whole set.
   # ---------------------------------------------------------------------------
   build-dotnet:
     needs: preflight
-    if: fromJSON(needs.preflight.outputs.plan).dotnet != null
+    if: fromJSON(needs.preflight.outputs.plan).dotnet[0] != null
     runs-on: ubuntu-latest
-    env:
-      PLAN: ${{ needs.preflight.outputs.plan }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.preflight.outputs.plan).dotnet }}
+    name: build-dotnet (${{ matrix.id }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: "10.0.x"
       - name: build and test
-        working-directory: ${{ fromJSON(needs.preflight.outputs.plan).dotnet.dir }}
+        working-directory: ${{ matrix.dir }}
         run: |
           dotnet build
-          dotnet test ${{ fromJSON(needs.preflight.outputs.plan).dotnet.tests }} --no-build -v q
+          dotnet test ${{ matrix.tests }} --no-build -v q
       - name: pack
-        working-directory: ${{ fromJSON(needs.preflight.outputs.plan).dotnet.dir }}
-        run: dotnet pack ${{ fromJSON(needs.preflight.outputs.plan).dotnet.project }} -p:PackageOutputPath="$RUNNER_TEMP/nupkg/"
+        working-directory: ${{ matrix.dir }}
+        run: dotnet pack ${{ matrix.project }} -p:PackageOutputPath="$RUNNER_TEMP/nupkg/"
       - name: the package carries the license files and nothing of the server, at the planned version
         run: |
           ls -l "$RUNNER_TEMP/nupkg"
           python3 clients/check_license.py --artifact "$RUNNER_TEMP"/nupkg/*.nupkg
-          v="$(echo "$PLAN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
-          ls "$RUNNER_TEMP"/nupkg/*."$v".nupkg > /dev/null
+          ls "$RUNNER_TEMP"/nupkg/*."${{ matrix.version }}".nupkg > /dev/null
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: nupkg
+          name: nupkg-${{ matrix.id }}
           path: ${{ runner.temp }}/nupkg/*.nupkg
           if-no-files-found: error
 
   build-python:
     needs: preflight
-    if: fromJSON(needs.preflight.outputs.plan).python != null
+    if: fromJSON(needs.preflight.outputs.plan).python[0] != null
     runs-on: ubuntu-latest
-    env:
-      PLAN: ${{ needs.preflight.outputs.plan }}
-      DIR: ${{ fromJSON(needs.preflight.outputs.plan).python.dir }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.preflight.outputs.plan).python }}
+    name: build-python (${{ matrix.name }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - name: install and test
-        working-directory: ${{ env.DIR }}
+        working-directory: ${{ matrix.dir }}
         run: |
           python -m pip install -U pip build
           pip install -e ".[dev]"
           python -m pytest tests -q
       - name: build sdist and wheel
-        working-directory: ${{ env.DIR }}
+        working-directory: ${{ matrix.dir }}
         run: python -m build --sdist --wheel --outdir "$RUNNER_TEMP/pydist"
       - name: the distributions carry the license files and nothing of the server, at the planned version
-        working-directory: ${{ env.DIR }}
+        working-directory: ${{ matrix.dir }}
         run: |
           ls -l "$RUNNER_TEMP/pydist"
           python ../check_license.py --artifact "$RUNNER_TEMP"/pydist/*
-          v="$(echo "$PLAN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
-          ls "$RUNNER_TEMP"/pydist/*-"$v"-*.whl "$RUNNER_TEMP"/pydist/*-"$v".tar.gz > /dev/null
+          ls "$RUNNER_TEMP"/pydist/*-"${{ matrix.version }}"-*.whl "$RUNNER_TEMP"/pydist/*-"${{ matrix.version }}".tar.gz > /dev/null
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: pydist
+          name: pydist-${{ matrix.name }}
           path: ${{ runner.temp }}/pydist/*
           if-no-files-found: error
 
   build-java:
     needs: preflight
-    if: fromJSON(needs.preflight.outputs.plan).java != null
+    if: fromJSON(needs.preflight.outputs.plan).java[0] != null
     runs-on: ubuntu-latest
-    env:
-      PLAN: ${{ needs.preflight.outputs.plan }}
-      DIR: ${{ fromJSON(needs.preflight.outputs.plan).java.dir }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.preflight.outputs.plan).java }}
+    name: build-java (${{ matrix.artifact }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
@@ -337,35 +385,34 @@ jobs:
         # and -javadoc jars Central requires, laid out in Maven repository
         # form under ~/.m2. The build files deliberately declare no
         # repository and no signing; both happen in the publish job below.
-        working-directory: ${{ env.DIR }}
+        working-directory: ${{ matrix.dir }}
         run: ./gradlew build publishToMavenLocal --no-daemon
       - name: the jars carry the license files and nothing of the server, at the planned version
-        working-directory: ${{ env.DIR }}
+        working-directory: ${{ matrix.dir }}
         run: |
-          v="$(echo "$PLAN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
-          a="$(echo "$PLAN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["java"]["artifact"])')"
-          src="$HOME/.m2/repository/io/ioka/munarium/$a/$v"
+          src="$HOME/.m2/repository/io/ioka/munarium/${{ matrix.artifact }}/${{ matrix.version }}"
           ls -l "$src"
           python3 ../check_license.py --artifact "$src"/*.jar
-          mkdir -p "$RUNNER_TEMP/maven/io/ioka/munarium/$a/$v"
+          dest="$RUNNER_TEMP/maven/io/ioka/munarium/${{ matrix.artifact }}/${{ matrix.version }}"
+          mkdir -p "$dest"
           # Everything Gradle wrote for this version except the local
           # metadata index, which is not part of a Central bundle.
-          find "$src" -maxdepth 1 -type f ! -name 'maven-metadata-local.xml' \
-            -exec cp {} "$RUNNER_TEMP/maven/io/ioka/munarium/$a/$v/" \;
-          ls -l "$RUNNER_TEMP/maven/io/ioka/munarium/$a/$v"
+          find "$src" -maxdepth 1 -type f ! -name 'maven-metadata-local.xml' -exec cp {} "$dest/" \;
+          ls -l "$dest"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: maven
+          name: maven-${{ matrix.artifact }}
           path: ${{ runner.temp }}/maven
           if-no-files-found: error
 
   build-rust:
+    # One job, not a matrix: the crates share toolchain setup and are
+    # checked in the same dependency order the publish job uses.
     needs: preflight
-    if: fromJSON(needs.preflight.outputs.plan).rust != null
+    if: fromJSON(needs.preflight.outputs.plan).rust[0] != null
     runs-on: ubuntu-latest
     env:
       PLAN: ${{ needs.preflight.outputs.plan }}
-      DIR: ${{ fromJSON(needs.preflight.outputs.plan).rust.dir }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable, 2026-09-03
@@ -373,44 +420,47 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          workspaces: ${{ fromJSON(needs.preflight.outputs.plan).rust.dir }}
-      - name: copy the normative protos into the proto crate
-        # A .crate holds only what is under the crate directory, so the
-        # release copies server/proto in (git-ignored, never committed;
-        # build.rs prefers it when present). See munarium-proto/README.md.
-        if: fromJSON(needs.preflight.outputs.plan).rust.copy_protos
-        working-directory: server
-        run: cp -r proto src/munarium-proto/proto
-      - name: each crate packages with the license files and nothing outside itself
-        working-directory: ${{ env.DIR }}
+          workspaces: |
+            server
+            clients/rust
+      - name: each crate packages with the license files and nothing outside itself, and passes its tests
         # `cargo package --list` is the exact file set crates.io would receive.
-        # For the client this stays a --list (the wire crates it depends on
-        # must already be on crates.io for a full package to resolve); for the
-        # wire crates themselves the full package is built and verified.
+        # The proto copy (see the plan) is made once, before the first crate
+        # that needs it; a .crate holds only what is under the crate
+        # directory, so the release copies server/proto in (git-ignored, never
+        # committed; build.rs prefers it when present).
         run: |
-          flags="$(echo "$PLAN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["rust"]["package_flags"])')"
-          for crate in $(echo "$PLAN" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)["rust"]["crates"]))'); do
-            cargo package -p "$crate" --list $flags > "$RUNNER_TEMP/$crate.files"
-            python3 "$GITHUB_WORKSPACE/clients/check_license.py" --rust-list "$RUNNER_TEMP/$crate.files"
-          done
-      - name: unit tests
-        working-directory: ${{ env.DIR }}
-        run: |
-          for crate in $(echo "$PLAN" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)["rust"]["crates"]))'); do
-            cargo test -p "$crate"
+          echo "$PLAN" | python3 -c 'import json,sys; [print(u["dir"], u["crate"], int(u["copy_protos"]), u["package_flags"]) for u in json.load(sys.stdin)["rust"]]' \
+          | while read -r dir crate copy flags; do
+            echo "::group::$crate ($dir)"
+            if [ "$copy" = 1 ] && [ ! -d "$GITHUB_WORKSPACE/server/src/munarium-proto/proto" ]; then
+              cp -r "$GITHUB_WORKSPACE/server/proto" "$GITHUB_WORKSPACE/server/src/munarium-proto/proto"
+            fi
+            ( cd "$GITHUB_WORKSPACE/$dir"
+              cargo package -p "$crate" --list $flags > "$RUNNER_TEMP/$crate.files"
+              python3 "$GITHUB_WORKSPACE/clients/check_license.py" --rust-list "$RUNNER_TEMP/$crate.files"
+              cargo test -p "$crate" )
+            echo "::endgroup::"
           done
 
   # ---------------------------------------------------------------------------
-  # publish jobs: each gated by its input switch AND the `release` environment.
+  # publish jobs: each gated by its input switch AND the `release` environment,
+  # and each running only for packages preflight found missing from the
+  # registry. A job whose to-do list is empty is skipped outright.
   # ---------------------------------------------------------------------------
   publish-nuget:
     needs: [preflight, build-dotnet]
-    if: inputs.publish_nuget
+    if: inputs.publish_nuget && fromJSON(needs.preflight.outputs.plan).nuget_todo[0] != null
     runs-on: ubuntu-latest
     environment: release
     permissions:
       contents: read
       id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.preflight.outputs.plan).nuget_todo }}
+    name: publish-nuget (${{ matrix.id }})
     steps:
       - name: NUGET_USER must be set
         if: vars.NUGET_USER == ''
@@ -419,7 +469,7 @@ jobs:
           exit 1
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: nupkg
+          name: nupkg-${{ matrix.id }}
           path: nupkg
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
@@ -441,22 +491,27 @@ jobs:
 
   publish-pypi:
     needs: [preflight, build-python]
-    if: inputs.publish_pypi
+    if: inputs.publish_pypi && fromJSON(needs.preflight.outputs.plan).pypi_todo[0] != null
     runs-on: ubuntu-latest
     # PyPI allows one PENDING trusted publisher per (owner, repo, workflow,
     # environment) tuple across all not-yet-created project names, so the two
-    # Python packages cannot share an environment for their first release.
-    # `release-matrix` is configured identically to `release` (main only,
-    # required reviewer); the PyPI pending publisher for munarium-client names
-    # `release` and the one for munarium-matrix names `release-matrix`.
-    environment: ${{ inputs.family == 'matrix-clients' && 'release-matrix' || 'release' }}
+    # Python packages were registered against different environments:
+    # `release` for munarium-client, `release-matrix` for munarium-matrix.
+    # The plan carries each package's environment; the two are configured
+    # identically (main only, required reviewer).
+    environment: ${{ matrix.environment }}
     permissions:
       contents: read
       id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.preflight.outputs.plan).pypi_todo }}
+    name: publish-pypi (${{ matrix.name }})
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: pydist
+          name: pydist-${{ matrix.name }}
           path: dist
       - name: publish (Trusted Publishing)
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
@@ -470,13 +525,16 @@ jobs:
 
   publish-maven:
     needs: [preflight, build-java]
-    if: inputs.publish_maven
+    if: inputs.publish_maven && fromJSON(needs.preflight.outputs.plan).maven_todo[0] != null
     runs-on: ubuntu-latest
     environment: release
     permissions:
       contents: read
-    env:
-      PLAN: ${{ needs.preflight.outputs.plan }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.preflight.outputs.plan).maven_todo }}
+    name: publish-maven (${{ matrix.artifact }})
     steps:
       - name: the Central Portal credentials and signing key must be set
         env:
@@ -488,7 +546,7 @@ jobs:
           fi
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: maven
+          name: maven-${{ matrix.artifact }}
           path: bundle
       - name: sign and checksum every file Central requires
         # Central wants, per artifact file: .asc (a detached armored PGP
@@ -512,14 +570,14 @@ jobs:
           CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
           CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
           PUBLISHING_TYPE: ${{ inputs.maven_publishing_type }}
+          ARTIFACT: ${{ matrix.artifact }}
+          VERSION: ${{ matrix.version }}
         run: |
-          v="$(echo "$PLAN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
-          a="$(echo "$PLAN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["java"]["artifact"])')"
           (cd bundle && zip -qr ../bundle.zip io)
           auth="$(printf '%s:%s' "$CENTRAL_USERNAME" "$CENTRAL_PASSWORD" | base64 -w0)"
           id="$(curl --fail-with-body -sS -H "Authorization: Bearer $auth" \
                 -F "bundle=@bundle.zip" \
-                "https://central.sonatype.com/api/v1/publisher/upload?name=io.ioka.munarium%3A$a%3A$v&publishingType=$PUBLISHING_TYPE")"
+                "https://central.sonatype.com/api/v1/publisher/upload?name=io.ioka.munarium%3A$ARTIFACT%3A$VERSION&publishingType=$PUBLISHING_TYPE")"
           echo "deployment $id"
           for i in $(seq 1 60); do
             sleep 10
@@ -532,14 +590,19 @@ jobs:
             esac
           done
           case "$state" in
-            VALIDATED) echo "- Maven Central: io.ioka.munarium:$a:$v validated; deployment $id is waiting for Publish in the Portal" >> "$GITHUB_STEP_SUMMARY" ;;
-            PUBLISHING|PUBLISHED) echo "- Maven Central: io.ioka.munarium:$a:$v $state (deployment $id)" >> "$GITHUB_STEP_SUMMARY" ;;
+            VALIDATED) echo "- Maven Central: io.ioka.munarium:$ARTIFACT:$VERSION validated; deployment $id is waiting for Publish in the Portal" >> "$GITHUB_STEP_SUMMARY" ;;
+            PUBLISHING|PUBLISHED) echo "- Maven Central: io.ioka.munarium:$ARTIFACT:$VERSION $state (deployment $id)" >> "$GITHUB_STEP_SUMMARY" ;;
             *) echo "::error::deployment $id did not validate within 10 minutes (last state: $state)"; exit 1 ;;
           esac
 
   publish-crates:
+    # One job, not a matrix: the crates publish in dependency order, and
+    # cargo publish blocks until each is visible in the index so the next can
+    # resolve it. Already-published crates are not in the to-do list, so a
+    # client whose wire crates went out in an earlier run resolves them from
+    # the registry.
     needs: [preflight, build-rust]
-    if: inputs.publish_crates
+    if: inputs.publish_crates && fromJSON(needs.preflight.outputs.plan).crates_todo[0] != null
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -547,16 +610,11 @@ jobs:
       id-token: write
     env:
       PLAN: ${{ needs.preflight.outputs.plan }}
-      DIR: ${{ fromJSON(needs.preflight.outputs.plan).rust.dir }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable, 2026-09-03
         with:
           toolchain: stable
-      - name: copy the normative protos into the proto crate
-        if: fromJSON(needs.preflight.outputs.plan).rust.copy_protos
-        working-directory: server
-        run: cp -r proto src/munarium-proto/proto
       - name: exchange the OIDC token for a short-lived crates.io token
         # The token is scoped to the crates whose trusted publisher matches
         # this repository, workflow and environment, and the action revokes
@@ -565,22 +623,23 @@ jobs:
         id: auth
         uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
       - name: publish, in dependency order
-        # cargo publish blocks until the crate is visible in the index, so the
-        # next crate in the list can resolve the one before it.
-        working-directory: ${{ env.DIR }}
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: |
-          flags="$(echo "$PLAN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["rust"]["package_flags"])')"
-          for crate in $(echo "$PLAN" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)["rust"]["crates"]))'); do
-            echo "publishing $crate"
-            cargo publish -p "$crate" $flags
+          echo "$PLAN" | python3 -c 'import json,sys; [print(u["dir"], u["crate"], int(u["copy_protos"]), u["package_flags"]) for u in json.load(sys.stdin)["crates_todo"]]' \
+          | while read -r dir crate copy flags; do
+            echo "publishing $crate from $dir"
+            if [ "$copy" = 1 ] && [ ! -d "$GITHUB_WORKSPACE/server/src/munarium-proto/proto" ]; then
+              cp -r "$GITHUB_WORKSPACE/server/proto" "$GITHUB_WORKSPACE/server/src/munarium-proto/proto"
+            fi
+            ( cd "$GITHUB_WORKSPACE/$dir" && cargo publish -p "$crate" $flags )
             echo "- crates.io: \`$crate\`" >> "$GITHUB_STEP_SUMMARY"
           done
 
   # ---------------------------------------------------------------------------
-  # tag: only after a real publish with nothing failed. A TestPyPI-only run
-  # is a rehearsal and never tags.
+  # tag: only after a real publish with nothing failed, and only for families
+  # that published at least one package in this run (preflight computed the
+  # list). A TestPyPI-only run is a rehearsal and never tags.
   # ---------------------------------------------------------------------------
   tag:
     needs: [preflight, publish-nuget, publish-pypi, publish-maven, publish-crates]
@@ -589,6 +648,7 @@ jobs:
       && (inputs.publish_nuget || inputs.publish_maven || inputs.publish_crates || (inputs.publish_pypi && inputs.pypi_target == 'pypi'))
       && needs.preflight.result == 'success'
       && !contains(needs.*.result, 'failure')
+      && fromJSON(needs.preflight.outputs.plan).tags[0] != null
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -596,15 +656,21 @@ jobs:
       PLAN: ${{ needs.preflight.outputs.plan }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: create the release tag on the published commit
+      - name: create the release tag(s) on the published commit
         run: |
-          tag="$(echo "$PLAN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag"])')"
-          # Key on the exit status, not on the output: on a 404 gh prints the
-          # error body to stdout, so an "empty means absent" test read a
-          # missing tag as an existing one (2026-09-15, the first crates run).
-          if existing="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq .object.sha 2>/dev/null)"; then
-            if [ "$existing" = "$GITHUB_SHA" ]; then echo "tag $tag already points at $GITHUB_SHA"; exit 0; fi
-            echo "::error::tag $tag already exists at $existing, not $GITHUB_SHA"; exit 1
-          fi
-          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA" > /dev/null
-          echo "- tagged \`$tag\` at \`$GITHUB_SHA\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "$PLAN" | python3 -c 'import json,sys; [print(t["name"]) for t in json.load(sys.stdin)["tags"]]' \
+          | while read -r tag; do
+            # Key on the exit status, not on the output: on a 404 gh prints the
+            # error body to stdout, so an "empty means absent" test read a
+            # missing tag as an existing one (2026-09-15, the first crates run).
+            if existing="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq .object.sha 2>/dev/null)"; then
+              if [ "$existing" = "$GITHUB_SHA" ]; then
+                echo "tag $tag already points at $GITHUB_SHA"
+              else
+                echo "::warning::tag $tag already exists at $existing (this run published from $GITHUB_SHA); left as is"
+              fi
+              continue
+            fi
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA" > /dev/null
+            echo "- tagged \`$tag\` at \`$GITHUB_SHA\`" >> "$GITHUB_STEP_SUMMARY"
+          done

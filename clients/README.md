@@ -50,11 +50,14 @@ sibling `server/` tree for wire types or protobufs.
 Official packages are published by
 [`.github/workflows/clientbuild.yml`](../.github/workflows/clientbuild.yml), a
 manually dispatched workflow and nothing else: no push, tag or schedule runs it.
-A maintainer picks one family (`server-clients`, `matrix-clients`, or the two
-server wire crates the Rust client depends on) and ticks the registries to publish
-to; a dispatch with none ticked is a rehearsal that builds every package, runs
-`check_license.py` over the built artifacts, and refuses a version that already
-exists on a selected registry. Every registry push, TestPyPI included, runs in
+A maintainer picks a family (`all`, the default; or `server-clients`,
+`matrix-clients`, or `server-crates`, the two server wire crates the Rust client
+depends on) and ticks the registries to publish to; a dispatch with none ticked
+is a rehearsal that builds every package and runs `check_license.py` over the
+built artifacts. Preflight asks each registry whether the package's version is
+already there: a package that is gets built and skipped, never re-published, so
+`all` with every registry ticked publishes whatever is missing and is safe to
+re-run. Crates go out in dependency order. Every registry push, TestPyPI included, runs in
 the `release` environment (the Matrix Python package uses `release-matrix`, a
 twin, because PyPI allows one pending trusted publisher per environment), which
 accepts `main` only and waits on its required reviewer. Versions are read from the
