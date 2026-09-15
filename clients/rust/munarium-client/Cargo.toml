@@ -5,6 +5,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+# The workspace README, one level up: cargo copies it into the .crate as
+# README.md so crates.io renders it. Without this field the crate page shows
+# "appears to have no README.md" (as 1.1.0 does), because cargo only
+# auto-detects a README in the crate's own directory.
+readme = "../README.md"
 description = "Official Rust client for munarium-server: one plane interface, two transports (REST + gRPC), typed errors keyed on the problem-slug registry, and the head-conflict write loop built in."
 
 [features]
