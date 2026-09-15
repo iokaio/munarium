@@ -12,11 +12,11 @@ are absolute because it is also the crate's README on crates.io.)
 
 ## Install
 
-From crates.io:
+Install [munarium-client from crates.io](https://crates.io/crates/munarium-client):
 
 ```toml
 [dependencies]
-munarium-client = "1.1"
+munarium-client = "1.1.1"
 ```
 
 Or from a full checkout, with a path relative to your application's `Cargo.toml`:
@@ -26,8 +26,10 @@ Or from a full checkout, with a path relative to your application's `Cargo.toml`
 munarium-client = { path = "path/to/munarium/clients/rust/munarium-client" }
 ```
 
-The registry release resolves `munarium-api-types` and `munarium-proto` from
-crates.io; a checkout's `server/` tree supplies them by path. Which versions
+The registry release resolves
+[`munarium-api-types`](https://crates.io/crates/munarium-api-types) and
+[`munarium-proto`](https://crates.io/crates/munarium-proto) from crates.io;
+a checkout's `server/` tree supplies them by path. Which versions
 are published is recorded in the
 [clients front door](https://github.com/iokaio/munarium/blob/main/clients/README.md#installation-and-publication).
 

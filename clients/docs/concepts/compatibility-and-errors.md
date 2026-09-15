@@ -6,7 +6,15 @@ authoritative, machine-readable answer, and this page is the short prose explana
 
 ## Compatibility
 
-The current Server target is **1.1.1**, with supported minor versions **1.1 and 1.0**. Client packages remain **1.0.0**; Matrix clients retain Matrix **1.0** independently. Ollama requires Server 1.1, and applying a session override to query expansion as well as completion requires Server 1.1.1. See the [alignment guide](../guides/server-1.1.1.md) for behavior differences and validation.
+The current Server target is **1.2.1**, with supported minor versions **1.2 and
+1.1**. All seven client source packages are **1.1.1**; Matrix clients support
+Matrix **1.0** independently. See [installation and publication](../../README.md#installation-and-publication)
+for available registry versions and package links. The complete `ServerApiClient`
+requires Server 1.2, and its collection-query and publication-governance operations
+require 1.2.1; see the [Server 1.2 guide](../guides/server-1.2.md). The existing typed
+planes retain their Server 1.1 baseline. Ollama requires Server 1.1, and applying a
+session override to query expansion as well as completion requires Server 1.1.1.
+The [1.1.1 alignment guide](../guides/server-1.1.1.md) records that older release.
 
 **[`compatibility.json`](../../compatibility.json)**, at the root of this tree, is the
 authoritative record of which server versions each client supports. The policy it encodes: a
