@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "munarium-matrix"
-version = "1.0.0"
+version = "1.1.1"
 description = "Python client for Munarium Matrix, the structured-evidence plane"
 readme = "README.md"
 requires-python = ">=3.10"

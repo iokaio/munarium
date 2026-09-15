@@ -1,6 +1,6 @@
 # Ioka.Munarium.Client (.NET)
 
-Targets **Munarium Server 1.2.1**. Client package **1.1.0** provides the complete `ServerApiClient` over REST and native gRPC, while the existing typed planes retain their Server 1.1 baseline. See the [Server 1.2 guide](../docs/guides/server-1.2.md) for vocabulary, collection queries, publication governance, answers and source references. Transport limitations below apply to the older typed planes.
+Targets **Munarium Server 1.2.1**. Client package **1.1.1** provides the complete `ServerApiClient` over REST and native gRPC, while the existing typed planes retain their Server 1.1 baseline. See the [Server 1.2 guide](../docs/guides/server-1.2.md) for vocabulary, collection queries, publication governance, answers and source references. Transport limitations below apply to the older typed planes.
 
 Official .NET client for munarium-server: the full ten-plane surface
 (`Commands`, `Query`, `Ingest`, `Retrieval`, `Runbooks`, `Providers`,
@@ -21,8 +21,14 @@ application's project file. Both projects require .NET 10.
 </ItemGroup>
 ```
 
-The source version is 1.0.0; a NuGet release was not available at the
-[publication check](../README.md#installation-and-publication).
+Or from NuGet, where the package is published as `Ioka.Munarium.Client`:
+
+```console
+dotnet add package Ioka.Munarium.Client
+```
+
+Published versions are recorded in the
+[clients front door](../README.md#installation-and-publication).
 
 The gRPC stubs compile at build time from the normative protos under
 `server/proto/mmp/v1/` (Grpc.Tools — zero drift, nothing committed).

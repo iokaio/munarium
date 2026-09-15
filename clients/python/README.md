@@ -1,6 +1,6 @@
 # munarium-client (Python)
 
-Targets **Munarium Server 1.2.1**. Client package **1.1.0** provides the complete `ServerApiClient` over REST and native gRPC, while the existing typed planes retain their Server 1.1 baseline. See the [Server 1.2 guide](../docs/guides/server-1.2.md) for vocabulary, collection queries, publication governance, answers and source references. Transport limitations below apply to the older typed planes.
+Targets **Munarium Server 1.2.1**. Client package **1.1.1** provides the complete `ServerApiClient` over REST and native gRPC, while the existing typed planes retain their Server 1.1 baseline. See the [Server 1.2 guide](../docs/guides/server-1.2.md) for vocabulary, collection queries, publication governance, answers and source references. Transport limitations below apply to the older typed planes.
 
 Official Python client for munarium-server: the full ten-plane surface
 (`commands`, `query`, `ingest`, `retrieval`, `runbooks`, `providers`,
@@ -21,8 +21,14 @@ python -m pip install ./clients/python
 python -m pip install -e "./clients/python[dev]"
 ```
 
-The source version is 1.0.0; a PyPI release was not available at the
-[publication check](../README.md#installation-and-publication).
+Or from PyPI, where the package is published as `munarium-client`:
+
+```console
+python -m pip install munarium-client
+```
+
+Published versions are recorded in the
+[clients front door](../README.md#installation-and-publication).
 
 ## Use
 

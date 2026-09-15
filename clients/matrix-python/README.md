@@ -10,8 +10,14 @@ Install from the repository root with Python 3.10+:
 python -m pip install ./clients/matrix-python
 ```
 
-The source version is 1.0.0; a PyPI release was not available at the
-[publication check](../README.md#installation-and-publication).
+Or from PyPI, where the package is published as `munarium-matrix`:
+
+```console
+python -m pip install munarium-matrix
+```
+
+Published versions are recorded in the
+[clients front door](../README.md#installation-and-publication).
 
 One runtime dependency, `httpx` — the same choice the server's Python client
 made, for the same reasons: one library for sync and async, a timeout that is

@@ -1,7 +1,7 @@
 # Using the clients with Server 1.1.1
 
 This is the historical 1.0.0-client alignment and qualification record. The
-current checkout contains Server clients 1.1.0 targeting Server 1.2.1; see the
+current checkout contains Server clients 1.1.1 targeting Server 1.2.1; see the
 [current compatibility guide](../../README.md#compatibility) and
 [complete REST/gRPC API](server-1.2.md). Transport gaps and package requirements
 below describe the older release and its typed interfaces.

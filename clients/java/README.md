@@ -1,6 +1,6 @@
 # munarium-client (Java)
 
-Targets **Munarium Server 1.2.1**. Client package **1.1.0** provides the complete `ServerApiClient` over REST and native gRPC, while the existing typed planes retain their Server 1.1 baseline. See the [Server 1.2 guide](../docs/guides/server-1.2.md) for vocabulary, collection queries, publication governance, answers and source references. Transport limitations below apply to the older typed planes.
+Targets **Munarium Server 1.2.1**. Client package **1.1.1** provides the complete `ServerApiClient` over REST and native gRPC, while the existing typed planes retain their Server 1.1 baseline. See the [Server 1.2 guide](../docs/guides/server-1.2.md) for vocabulary, collection queries, publication governance, answers and source references. Transport limitations below apply to the older typed planes.
 
 Official Java client for [munarium-server](../../server/): the ten-plane
 surface on both transports (REST via `java.net.http`, gRPC via
@@ -9,8 +9,8 @@ problem-slug registry, and the head-conflict write loop built in.
 
 - **Coordinates**: `io.ioka.munarium:munarium-client`, Apache-2.0
   ([LICENSE](../LICENSE); the POM declares it, the jar carries LICENSE and
-  NOTICE under `META-INF`). Maven Central publication was not available at the
-  [publication check](../README.md#installation-and-publication).
+  NOTICE under `META-INF`). Published to Maven Central; the versions available
+  are recorded in the [clients front door](../README.md#installation-and-publication).
   Package `io.ioka.munarium.client`.
 - **Toolchain**: bytecode targets Java 21 (LTS) via `--release`; builds on
   any newer JDK. Only the JDK is needed — the committed

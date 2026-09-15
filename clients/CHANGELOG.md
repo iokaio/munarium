@@ -1,5 +1,17 @@
 # Munarium clients — release notes
 
+## 1.1.1 — first registry releases, crate README
+
+- First public releases on 2026-09-15: Server clients 1.1.0 and Matrix clients
+  1.0.0 to PyPI, NuGet, Maven Central and crates.io, with the Server wire crates
+  `munarium-proto` and `munarium-api-types` 1.2.1 on crates.io.
+- Ship the Rust README inside the `munarium-client` crate (1.1.0 on crates.io
+  renders none) and make its links absolute so they resolve on crates.io.
+- All seven client packages move to 1.1.1 together, the three Matrix clients
+  included, so one number names one release across the registries; no API
+  change in any of them. Supported Server minors remain 1.2 and 1.1; Matrix
+  compatibility remains 1.0.
+
 ## 1.1.0 source update — Server 1.2.1 alignment
 
 - Target Server 1.2.1 in all four SDK constants and the compatibility record;

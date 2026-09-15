@@ -1,26 +1,35 @@
 # munarium-client (Rust)
 
-Targets **Munarium Server 1.2.1**. Client package **1.1.0** provides the complete `ServerApiClient` over REST and native gRPC, while the existing typed planes retain their Server 1.1 baseline. See the [Server 1.2 guide](../docs/guides/server-1.2.md) for vocabulary, collection queries, publication governance, answers and source references. Transport limitations below apply to the older typed planes.
+Targets **Munarium Server 1.2.1**. Client package **1.1.1** provides the complete `ServerApiClient` over REST and native gRPC, while the existing typed planes retain their Server 1.1 baseline. See the [Server 1.2 guide](https://github.com/iokaio/munarium/blob/main/clients/docs/guides/server-1.2.md) for vocabulary, collection queries, publication governance, answers and source references. Transport limitations below apply to the older typed planes.
 
 Official Rust client for munarium-server: the full ten-plane surface
 (`commands`, `query`, `ingest`, `retrieval`, `runbooks`, `providers`,
 `sessions`, `tokens`, `reports`, `authoring`) on both transports. Async
 (tokio), typed errors, the head-conflict write loop built in. See the
-[clients front door](../README.md) for the invariants, the transport-gap
-ledger, and guides.
+[clients front door](https://github.com/iokaio/munarium/blob/main/clients/README.md)
+for the invariants, the transport-gap ledger, and guides. (Links in this file
+are absolute because it is also the crate's README on crates.io.)
 
 ## Install
 
-Use a full checkout and a path relative to your application's `Cargo.toml`:
+From crates.io:
+
+```toml
+[dependencies]
+munarium-client = "1.1"
+```
+
+Or from a full checkout, with a path relative to your application's `Cargo.toml`:
 
 ```toml
 [dependencies]
 munarium-client = { path = "path/to/munarium/clients/rust/munarium-client" }
 ```
 
-The source version is 1.0.0; a crates.io release was not available at the
-[publication check](../README.md#installation-and-publication). The checkout's
-`server/` tree supplies the `munarium-api-types` and `munarium-proto` dependencies.
+The registry release resolves `munarium-api-types` and `munarium-proto` from
+crates.io; a checkout's `server/` tree supplies them by path. Which versions
+are published is recorded in the
+[clients front door](https://github.com/iokaio/munarium/blob/main/clients/README.md#installation-and-publication).
 
 Feature flags: `rest` (reqwest + rustls) and `grpc` (tonic) — both on by
 default; disable one to drop its dependency tree.

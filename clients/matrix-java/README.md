@@ -6,14 +6,16 @@ is *registering assets, running the three modes, and reading what happened*.
 
 Depend on it by path from your own Gradle build:
 
-The source version is 1.0.0; a Maven Central release was not available at the
-[publication check](../README.md#installation-and-publication).
+Published to Maven Central as `io.ioka.munarium:munarium-matrix-client`; the
+versions available are recorded in the
+[clients front door](../README.md#installation-and-publication). A registry
+dependency needs no `includeBuild`; the composite build below is for a checkout.
 
 ```kotlin
 // settings.gradle.kts
 includeBuild("path/to/munarium/clients/matrix-java")
 // build.gradle.kts
-dependencies { implementation("io.ioka.munarium:munarium-matrix-client:1.0.0") }
+dependencies { implementation("io.ioka.munarium:munarium-matrix-client:1.1.1") }
 ```
 
 **One runtime dependency: Jackson databind.** REST rides `java.net.http`,
