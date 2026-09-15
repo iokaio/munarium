@@ -593,8 +593,10 @@ jobs:
       - name: create the release tag on the published commit
         run: |
           tag="$(echo "$PLAN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag"])')"
-          existing="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq .object.sha 2>/dev/null || true)"
-          if [ -n "$existing" ]; then
+          # Key on the exit status, not on the output: on a 404 gh prints the
+          # error body to stdout, so an "empty means absent" test read a
+          # missing tag as an existing one (2026-09-15, the first crates run).
+          if existing="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq .object.sha 2>/dev/null)"; then
             if [ "$existing" = "$GITHUB_SHA" ]; then echo "tag $tag already points at $GITHUB_SHA"; exit 0; fi
             echo "::error::tag $tag already exists at $existing, not $GITHUB_SHA"; exit 1
           fi
