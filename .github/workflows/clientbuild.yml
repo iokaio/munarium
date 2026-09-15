@@ -158,7 +158,7 @@ jobs:
                              "tests": "tests/Ioka.Munarium.Client.Tests", "id": compat["dotnet"]["package"]},
                   "python": {"dir": "clients/python", "name": compat["python"]["package"]},
                   "java": {"dir": "clients/java", "artifact": "munarium-client"},
-                  "rust": {"dir": "clients/rust", "crates": ["munarium-client"], "copy_protos": False},
+                  "rust": {"dir": "clients/rust", "crates": ["munarium-client"], "copy_protos": False, "package_flags": ""},
               }
           elif family == "matrix-clients":
               version = one_version(["matrix-python", "matrix-dotnet", "matrix-java"])
@@ -181,7 +181,14 @@ jobs:
                   "dotnet": None, "python": None, "java": None,
                   # Order matters: api-types depends on proto. cargo publish
                   # blocks until each crate is visible in the index.
-                  "rust": {"dir": "server", "crates": ["munarium-proto", "munarium-api-types"], "copy_protos": True},
+                  # `--allow-dirty` is for the proto copy alone: the copied
+                  # files are git-ignored but matched by munarium-proto's
+                  # `include`, and cargo reports included-but-uncommitted
+                  # files as dirty regardless of the ignore list. The client
+                  # family passes no flags, so a genuinely dirty tree there
+                  # still fails.
+                  "rust": {"dir": "server", "crates": ["munarium-proto", "munarium-api-types"],
+                           "copy_protos": True, "package_flags": "--allow-dirty"},
               }
           else:
               sys.exit(f"::error::unknown family {family}")
@@ -378,8 +385,9 @@ jobs:
         # must already be on crates.io for a full package to resolve); for the
         # wire crates themselves the full package is built and verified.
         run: |
+          flags="$(echo "$PLAN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["rust"]["package_flags"])')"
           for crate in $(echo "$PLAN" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)["rust"]["crates"]))'); do
-            cargo package -p "$crate" --list > "$RUNNER_TEMP/$crate.files"
+            cargo package -p "$crate" --list $flags > "$RUNNER_TEMP/$crate.files"
             python3 "$GITHUB_WORKSPACE/clients/check_license.py" --rust-list "$RUNNER_TEMP/$crate.files"
           done
       - name: unit tests
@@ -557,9 +565,10 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
+          flags="$(echo "$PLAN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["rust"]["package_flags"])')"
           for crate in $(echo "$PLAN" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)["rust"]["crates"]))'); do
             echo "publishing $crate"
-            cargo publish -p "$crate"
+            cargo publish -p "$crate" $flags
             echo "- crates.io: \`$crate\`" >> "$GITHUB_STEP_SUMMARY"
           done
 

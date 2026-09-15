@@ -4,6 +4,7 @@ name = "munarium-client"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Official Rust client for munarium-server: one plane interface, two transports (REST + gRPC), typed errors keyed on the problem-slug registry, and the head-conflict write loop built in."
 
 [features]
