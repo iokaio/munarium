@@ -116,8 +116,9 @@ The signature was independently verified, including its transparency-log claim,
 and anonymous registry retrieval matched the exact certified index bytes.
 The signing identity above is the identity in the public certificate; it does
 not require access to the operator repository. SBOM and build provenance
-attestations accompany the OCI index. Client packages remain source-installed;
-this container publication does not publish packages to language registries.
+attestations accompany the OCI index. Client libraries are published separately
+on NuGet, Maven Central, PyPI and crates.io; see the
+[client package links and installation guide](../clients/README.md#installation-and-publication).
 
 The previous [1.2.0 release](https://github.com/iokaio/munarium/releases/tag/v1.2.0)
 remains at index `sha256:b1ef684bdb4d432dcb3cf750d5cd51938821232f2850496557f3fa95bc213d51`.
