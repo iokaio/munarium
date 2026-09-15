@@ -51,8 +51,9 @@ server wire crates the Rust client depends on) and ticks the registries to publi
 to; a dispatch with none ticked is a rehearsal that builds every package, runs
 `check_license.py` over the built artifacts, and refuses a version that already
 exists on a selected registry. Every registry push, TestPyPI included, runs in
-the `release` environment, which accepts `main` only and waits on its required
-reviewer. Versions are read from the
+the `release` environment (the Matrix Python package uses `release-matrix`, a
+twin, because PyPI allows one pending trusted publisher per environment), which
+accepts `main` only and waits on its required reviewer. Versions are read from the
 manifests, which `check_compatibility.py` keeps in step with `compatibility.json`,
 so a release is cut by bumping the manifests and this file, never by a workflow
 input.

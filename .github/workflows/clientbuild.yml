@@ -31,7 +31,9 @@
 #   NuGet      OIDC via NuGet/login; repository variable NUGET_USER holds the
 #              NuGet.org profile name that owns the trusted-publishing policy.
 #   PyPI       OIDC via pypa/gh-action-pypi-publish (a pending publisher per
-#              project name on pypi.org and test.pypi.org).
+#              project name on pypi.org and test.pypi.org: munarium-client
+#              with environment `release`, munarium-matrix with
+#              `release-matrix`; see publish-pypi for why they differ).
 #   crates.io  secret CARGO_REGISTRY_TOKEN. crates.io trusted publishing can
 #              only be configured on a crate that already exists, so the first
 #              release of each crate uses a token; switch afterwards.
@@ -430,7 +432,13 @@ jobs:
     needs: [preflight, build-python]
     if: inputs.publish_pypi
     runs-on: ubuntu-latest
-    environment: release
+    # PyPI allows one PENDING trusted publisher per (owner, repo, workflow,
+    # environment) tuple across all not-yet-created project names, so the two
+    # Python packages cannot share an environment for their first release.
+    # `release-matrix` is configured identically to `release` (main only,
+    # required reviewer); the PyPI pending publisher for munarium-client names
+    # `release` and the one for munarium-matrix names `release-matrix`.
+    environment: ${{ inputs.family == 'matrix-clients' && 'release-matrix' || 'release' }}
     permissions:
       contents: read
       id-token: write
