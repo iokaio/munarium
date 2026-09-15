@@ -30,18 +30,22 @@ and is not supported is in [SUPPORT.md](../SUPPORT.md); conduct is the Contribut
 
 ## Installation and publication
 
-The four Server client manifests declare **1.1.0**; the three Matrix client
-manifests declare **1.0.0**. On **2026-09-10**, their package
-names had no public releases in [PyPI](https://pypi.org/),
-[NuGet](https://www.nuget.org/), [crates.io](https://crates.io/) or
-[Maven Central](https://repo.maven.apache.org/maven2/io/ioka/munarium/).
-The registry names in `compatibility.json` describe intended publication
-destinations; they are not proof that packages are available there.
+The four Server client manifests declare **1.1.1**; the three Matrix client
+manifests declare **1.0.0**. The first public releases went out on
+**2026-09-15**: Server clients 1.1.0 and Matrix clients 1.0.0 to
+[PyPI](https://pypi.org/) (`munarium-client`, `munarium-matrix`),
+[NuGet](https://www.nuget.org/) (`Ioka.Munarium.Client`, `Ioka.Munarium.Matrix.Client`),
+[Maven Central](https://repo.maven.apache.org/maven2/io/ioka/munarium/)
+(`io.ioka.munarium:munarium-client`, `io.ioka.munarium:munarium-matrix-client`) and
+[crates.io](https://crates.io/) (`munarium-client`, with the Server wire crates
+`munarium-proto` and `munarium-api-types` at 1.2.1). `compatibility.json` records
+each package's registry; the registry itself is the proof of what is available.
 
-Use a complete checkout, recording its commit for reproducibility. Each language
-README provides installation from that checkout: Python local installs, .NET
-project references, Rust path dependencies and Java Gradle composite builds.
-Server client builds need the sibling `server/` tree for wire types or protobufs.
+Installing from a registry is the normal path. Each language README also shows
+installation from a complete checkout (Python local installs, .NET project
+references, Rust path dependencies and Java Gradle composite builds); record the
+commit for reproducibility. Server client builds from a checkout need the
+sibling `server/` tree for wire types or protobufs.
 
 Official packages are published by
 [`.github/workflows/clientbuild.yml`](../.github/workflows/clientbuild.yml), a
@@ -69,7 +73,7 @@ first one, `1.0.0` on both sides) is a coincidence of that release, not a rule g
 `clients/check_compatibility.py` fails CI if `compatibility.json`'s recorded version for a
 language ever drifts from what that language's own manifest declares.
 
-The four Server client packages are **1.1.0**, targeting **Server 1.2.1**, with
+The four Server client packages are **1.1.1**, targeting **Server 1.2.1**, with
 supported Server minors **1.2 and 1.1** recorded in `compatibility.json`.
 `ServerApiClient` provides every documented operation over REST and native gRPC,
 including vocabulary, answers, source references and streaming turns. Read the

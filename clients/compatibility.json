@@ -2,11 +2,11 @@
   "$comment": "The compatibility record for the Munarium client libraries. Generated and maintained by hand at release time. Update this file, never the historical notes in README.md, which are a dated changelog of what was true when they were written.",
   "policy": "Each Clients minor release supports the current Server minor and the one before it (N and N-1). A breaking MMP wire change bumps mmp_contract_major; Server serves both majors for one Server minor release so Clients can move without a flag day. Clients version independently of Server: a shared version number on a given release is a coincidence of that release, not a rule.",
   "mmp_contract_major": 1,
-  "updated": "2026-09-14",
+  "updated": "2026-09-15",
   "target_server": "1.2.1",
   "clients": {
     "rust": {
-      "version": "1.1.0",
+      "version": "1.1.1",
       "package": "munarium-client",
       "registry": "crates.io",
       "supported_server": [
@@ -15,7 +15,7 @@
       ]
     },
     "python": {
-      "version": "1.1.0",
+      "version": "1.1.1",
       "package": "munarium-client",
       "registry": "PyPI",
       "supported_server": [
@@ -24,7 +24,7 @@
       ]
     },
     "dotnet": {
-      "version": "1.1.0",
+      "version": "1.1.1",
       "package": "Ioka.Munarium.Client",
       "registry": "NuGet",
       "supported_server": [
@@ -33,7 +33,7 @@
       ]
     },
     "java": {
-      "version": "1.1.0",
+      "version": "1.1.1",
       "package": "io.ioka.munarium:munarium-client",
       "registry": "Maven Central",
       "supported_server": [
@@ -69,5 +69,5 @@
       ]
     }
   },
-  "note": "Server client packages 1.1.0 add the complete named ServerApiClient over REST and gRPC for Server 1.2.0. Existing typed planes retain the 1.1 baseline; the complete gRPC service and collection vocabulary/answer APIs require Server 1.2. Matrix client versions and compatibility are independent and unchanged. The Rust client path-depends on Server wire crates, which must be published before the client can be published to crates.io."
+  "note": "Server client packages 1.1.0 add the complete named ServerApiClient over REST and gRPC for Server 1.2.0. Existing typed planes retain the 1.1 baseline; the complete gRPC service and collection vocabulary/answer APIs require Server 1.2. Matrix client versions and compatibility are independent and unchanged. The Rust client depends on the Server wire crates munarium-proto and munarium-api-types, published to crates.io at 1.2.1 on 2026-09-15."
 }

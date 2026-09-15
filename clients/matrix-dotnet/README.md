@@ -23,8 +23,14 @@ its project file:
 </ItemGroup>
 ```
 
-The source version is 1.0.0; a NuGet release was not available at the
-[publication check](../README.md#installation-and-publication).
+Or from NuGet, where the package is published as `Ioka.Munarium.Matrix.Client`:
+
+```console
+dotnet add package Ioka.Munarium.Matrix.Client
+```
+
+Published versions are recorded in the
+[clients front door](../README.md#installation-and-publication).
 
 ## Use
 

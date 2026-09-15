@@ -8,7 +8,7 @@
     <!-- xmldoc ships for documented members; per-member coverage is not enforced -->
     <NoWarn>$(NoWarn);CS1591</NoWarn>
     <LangVersion>latest</LangVersion>
-    <Version>1.1.0</Version>
+    <Version>1.1.1</Version>
     <Authors>Ioka LLC</Authors>
     <Company>Ioka LLC</Company>
     <Copyright>Copyright (c) 2026 Ioka LLC</Copyright>
