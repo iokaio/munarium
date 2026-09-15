@@ -14,12 +14,19 @@ the guide:
   read your corpus).
 - **Capability JWTs** authenticate *end users*, minted by your API manager
   through the `tokens` plane. Short-lived (TTL clamped to a 24 h ceiling),
-  scoped (`query` and/or `ingest`), bounded by an access level +
+  scoped (`query`, `ingest`, `vocabulary`, `findings`, `evidence`), bounded by an access level +
   need-to-know compartments, and optionally pinned to a runbook allowlist.
 
 The `tokens` plane rides both transports (the gRPC twin is AdminService's
 served trio); the `reports` plane is REST-only — the gRPC clients raise the
 typed `Unsupported` error on every method.
+
+On Server 1.2, `vocabulary` permits collection vocabulary reads, edits and refresh
+within the token's clearance. It does not grant query or ingest access. `query`
+permits checked answers and publication authorization, as well as search and
+sessions; it can read vocabulary revisions but not terms. Publication governance
+reads and writes require static `rw` credentials. See the
+[collection API guide](../../../server/docs/guides/collection-vocabularies.md).
 
 ## Minting a capability JWT (mgmt role)
 

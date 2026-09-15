@@ -14,6 +14,8 @@ measured.
 - **In the database, restored together**: the ledger and every projection
   (claims, anchors, promises, counters, digests), shapes, provider
   configs, chronology rules, collections + chunk partitions + indexes,
+  pinned chunk provenance, vocabulary defaults/terms/revisions, retained
+  collection-governance snapshots,
   runbook definitions and runs/steps, sessions/turns, access-token audit,
   idempotency keys, interactions, gate findings, and — with
   `MUNARIUM_SOURCE_STORE=pg` — the document bytes themselves.
@@ -73,6 +75,13 @@ measured.
    original.
 
 ## After a restore
+
+For Server 1.2 upgrades, preserve the pre-upgrade database as well as source and
+artifact storage. Migrations 0032/0033 add provenance and vocabularies; 0034 adds
+governance in 1.2.1. An older Server's migrator rejects unknown migrations, so
+rolling back the image alone is insufficient, including from 1.2.1 to 1.2.0.
+Restore the matching database backup before starting the older image; do not
+delete migration-history rows. See the [verified rollback record](../../CONTAINER.md#versions-and-verification).
 
 Sessions opened after the restore point are gone (`session-not-open` to
 their clients); capability tokens issued after it are unknown and fail

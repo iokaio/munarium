@@ -128,7 +128,7 @@ and `http://localhost:18080/docs` for the API documentation. Direct gRPC is
 available on port 15051; this walkthrough uses REST. If a host port is busy,
 change the left-hand port in Compose and update `$base` accordingly.
 
-`1.1.1` is immutable; `1.1` and `latest` can advance. For deployments you need
+`1.2.1` is immutable; `1.2` and `latest` can advance. For deployments you need
 to reproduce exactly, pin the verified image digest from the
 [publication record](../../CONTAINER.md#versions-and-verification).
 The [deployment walkthrough](dev-guide.md#deploy-the-published-docker-hub-image)

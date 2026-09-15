@@ -10,7 +10,8 @@ Choose a starting point for your role:
 - **Operating a service:** [container setup](../CONTAINER.md),
   [deployment](ops/deployment-runbook.md) and [backup/restore](ops/backup-restore.md).
 
-Installation guides target Server 1.2.0. Dated examples and measurements in the
+Current installation guides target Server 1.2.1. The isolated Ollama evaluation
+retains its pinned 1.1.1 stack. Dated examples and measurements in the
 developer guide retain their original context; consult the current configuration
 and API references when applying them to a new deployment.
 
@@ -36,7 +37,7 @@ and API references when applying them to a new deployment.
 
 | Document | What it is |
 |---|---|
-| [guides/collection-vocabularies.md](guides/collection-vocabularies.md) | Versioned vocabulary generation, configuration, scoped search, narrative answers and original-file reference mapping |
+| [guides/collection-vocabularies.md](guides/collection-vocabularies.md) | Versioned vocabulary generation, scoped search, collection queries, publication governance, checked answers, original-file authorization and upgrade/rollback |
 | [guides/getting-started.md](guides/getting-started.md) | From the published Docker image to a persistent corpus application: authenticated writes, shapes, runbooks, ingestion, index approval and evidence retrieval, with optional model completion |
 | [guides/managing-key-and-secrets.md](guides/managing-key-and-secrets.md) | Supported AI providers, environment and Docker file secrets, provider verification, rotation and revocation, PostgreSQL passwords, API tokens and capability signing keys |
 | [guides/datastore.md](guides/datastore.md) | Complete Datastore configuration, Docker storage setup, artifact builds and verification, promotion, serving rollout, fleet gates, testing, rollback and links to the existing references |

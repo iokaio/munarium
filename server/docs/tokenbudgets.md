@@ -21,7 +21,7 @@ a per-call ceiling — and are documented with the provider configs.
 |---|---|---|---|
 | `turn_completion` | a session turn's answer (`POST /v1/sessions/{id}/turns`, `…/turns/stream`); the truncation-aware retry pays one re-ask at **4×** this | 2,048 | `completion.maxTokens` |
 | `query_expansion` | the `modelQueryExpansion` variant-generation call before retrieval | 256 | `retrieval.modelQueryExpansion.maxTokens` |
-| `complete_default` | `POST /v1/providers/{name}/complete` when the request omits `max_tokens` | 1,024 | — (the request's own `max_tokens`) |
+| `complete_default` | Provider completion without `max_tokens`; vocabulary generation; `/v1.2/answers`; `/v1.2/query` without a collection output budget | 1,024 | Provider request `max_tokens`, or collection query policy as described below |
 | `healthai_probe` | each of the nine `/healthai` probe completions | 512 | — |
 | `hierarchy_classifier` | the evidence hierarchy's one-word question classifier | 32 | — |
 | `hierarchy_intent` | the evidence hierarchy's semantic-intent task (names only, never SQL) | 480 | — |
@@ -51,6 +51,15 @@ At the moment of a call, the first of these that applies wins:
 `GET /v1/max-tokens` reports which of 2 and 3/4 is in effect as `source`
 (`tenant` or `environment`); it does not know about runbooks, which are
 resolved per call.
+
+Server 1.2.1 collection queries use the exact-clearance entry in
+`query.model_routes` when present, otherwise `query.max_output_tokens`, otherwise
+`complete_default`. Multiple selected collections combine their explicit output
+budgets using the smallest value. These query policy values accept 1–100,000
+tokens and are independent of session runbook budgets. Vocabulary generation
+always uses `complete_default`, including when the collection defines query model
+routes. See [collection policy](guides/collection-vocabularies.md#collection-queries-and-publication-governance-121)
+for routing and context limits.
 
 ## Environment variables (the container)
 

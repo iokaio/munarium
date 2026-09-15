@@ -13,6 +13,12 @@ references: [../api/rest.md](../api/rest.md) (routes),
 [../ops/index-deletion-runbook.md](../ops/index-deletion-runbook.md) (the
 only way index data is ever physically deleted).
 
+For Server 1.2/1.2.1, also see [collection vocabularies and governed queries](collection-vocabularies.md):
+collection-scoped answers select publication versions on the Server, and the
+`vocabulary` capability permits term management independently of query/ingest.
+Every programmatic operation has a named REST/gRPC method in the
+[complete Server API client](../../../clients/docs/guides/server-1.2.md).
+
 ---
 
 ## 1. The five ideas in two minutes
@@ -24,7 +30,7 @@ only way index data is ever physically deleted).
 2. **Capability tokens** — the API manager exchanges its `mgmt` credential
    for a short-lived JWT carrying an **access level** (integer, higher sees
    more), optional **compartments** (need-to-know tags), and **scopes**
-   (`query` and/or `ingest`). munarium-server verifies these locally; nothing
+   (`query`, `ingest`, `vocabulary`, `findings`, `evidence`). munarium-server verifies these locally; nothing
    else about identity lives here.
 3. **Collections** — indexes are separate, compartmentalized data
    collections. Each carries an `access_level` + `compartments` requirement;
@@ -247,8 +253,10 @@ curl -X POST localhost:8080/v1/access-tokens "${H_MGMT[@]}" -H "Content-Type: ap
 }'
 ```
 
-- `scopes`: `query` = sessions/turns; `ingest` = file upload. A token may
-  carry both.
+- `scopes`: `query` = sessions/search/checked answers/publication authorization;
+  `ingest` = file upload; `vocabulary` = collection vocabulary management.
+  `findings` and `evidence` are independent service scopes. A token may combine
+  scopes, subject to its collection clearance.
 - `runbook_refs` (optional): restricts the token to named runbooks (by NAME,
   so one token spans versions).
 - The token is never stored server-side; the issuance is audited in

@@ -12,7 +12,14 @@ built-in tiers and are not selected by automatic cloud-provider priority. See th
 [Server Ollama guide](../../../server/docs/guides/ollama.md) for a complete example,
 health semantics, embedding dimensions, and the existing index-builder limitation.
 
-Target **Server 1.1.1** when an application selects session models: its allowed override applies to both query expansion and completion. See the [client alignment guide](server-1.1.1.md) for the feature/version matrix, credential-free configuration, and repeatable qualification tests.
+Session model selection requires **Server 1.1.1 or later**: its allowed override applies to both query expansion and completion. See the [client alignment guide](server-1.1.1.md) for the historical feature/version matrix, credential-free configuration, and repeatable qualification tests.
+
+Server 1.2.1 also accepts `spec.openrouterProvider` on an OpenRouter configuration
+to request one downstream provider, disable fallback, require parameter support
+and request no data collection for completion calls. Omit it to keep normal
+routing. Server's answer and vocabulary protocols request native structured
+output; the ordinary `complete` methods retain their existing response format.
+See [provider routing and checked answers](../../../server/docs/guides/collection-vocabularies.md#collection-queries-and-publication-governance-121).
 
 The server resolves configured credentials at call time (`credentialRef: {env: ...}` or `{file: ...}`); keys never appear in messages, the ledger, or configuration responses. Cloud providers require credentials. Local Ollama may omit `credentialRef`, but an explicitly configured missing or empty secret still fails closed. Munarium API authentication remains required regardless of provider credentials.
 

@@ -1,5 +1,15 @@
 # Munarium clients — release notes
 
+## 1.1.0 source update — Server 1.2.1 alignment
+
+- Target Server 1.2.1 in all four SDK constants and the compatibility record;
+  package versions remain 1.1.0, with supported Server minors 1.2 and 1.1.
+- Extend `ServerApiClient` to 121 named REST/gRPC operations, including
+  collection queries, governance reads/replacement and publication authorization.
+- Derive the generated API inventory version from OpenAPI and check SDK target
+  constants against the compatibility record.
+- Update Rust dependencies and notices for the patched rustls 0.23.45.
+
 ## 1.1.0 — Server 1.2 complete API
 
 - Add `ServerApiClient` in Rust, Python, .NET and Java with a named method for

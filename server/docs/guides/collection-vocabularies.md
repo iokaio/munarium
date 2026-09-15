@@ -1,4 +1,4 @@
-# Collection vocabularies and file references (Server 1.2)
+# Collection vocabularies, governed queries and file references (Server 1.2)
 
 Server owns vocabulary generation, storage and query expansion. The application
 owns user authentication, file permissions, original-file retention and its viewer.
@@ -6,7 +6,10 @@ A citation is a reference to a pinned source, never a download URL or permission
 
 ## Versioned API
 
-All requests require bearer authorization and `X-Munarium-Uid`, including reads.
+These APIs require PostgreSQL. All requests require bearer authorization and an
+acting uid, including reads. Send `X-Munarium-Uid` with static credentials; a
+capability token supplies its subject when the header is absent, and any supplied
+uid must match that subject.
 Existing `/v1` routes remain available. Every operation below also has a named
 RPC on `mmp.v1.ServerApiService` and methods in all four Server SDKs. See the
 [complete API client guide](../../../clients/docs/guides/server-1.2.md) for
@@ -23,6 +26,10 @@ the transport contract, method names and language examples.
 | `GET /v1.2/collections/{id}/vocabulary/revision` | `query`, with collection clearance | Read revision only, for answer-cache invalidation |
 | `POST /v1.2/search` | `query` | Search an explicit collection and optional pinned index with its vocabulary |
 | `POST /v1.2/answers` | `query` for every supplied collection | Verify pinned passages, generate a narrative and return checked citations |
+| `POST /v1.2/query` (1.2.1) | `query`, with clearance for each parent collection | Select governing publications, retrieve passages and compose a checked answer |
+| `GET /v1.2/collections/{id}/governance` (1.2.1) | Static `rw` | Read the latest publication snapshot and query policy |
+| `PUT /v1.2/collections/{id}/governance` (1.2.1) | Static `rw` | Replace the snapshot using its current revision |
+| `GET /v1.2/collections/{id}/publications/{publication_id}` (1.2.1) | `query`, with parent collection and historical clearance as applicable | Authorize a governing original without returning its bytes |
 
 Collection identifiers accept IDs or names. A `vocabulary` capability grants no
 query, ingest, provider configuration or token-minting privilege. A query capability
@@ -151,20 +158,36 @@ constructs references from verified hits and includes only cited IDs. It checks 
 capability and collection clearance again after completion. Exact-quote validation
 checks provenance; it does not prove every narrative claim is semantically correct.
 
+For answer generation, the model receives the question and passage text with
+request-local IDs (`p1`, `p2`, ...). Caller citation IDs, source paths and hashes
+are kept out of that citation namespace. Server maps checked model citations
+back to the original IDs and rejects unknown IDs or altered quotations.
+
 Display `content.answer` once. Group supporting citations below it by the immutable
 source version, retaining distinct passages and separately identified amendments.
 Do not turn each retrieved chunk into a competing answer.
 
-## Mapping references to original files
-
-### Collection queries (1.2.1)
+## Collection queries and publication governance (1.2.1)
 
 `POST /v1.2/query` accepts `question`, `collections`, and optional `effective_on`
 in ISO calendar-date form. Send keyword topics unchanged. The query capability
 supplies the user's clearance and compartments. The request does not accept
 passages, file allowlists, index pins, model overrides, or prompts. Server applies
 the collection vocabulary, chooses governing publications, retrieves and ranks
-their passages, and returns the same checked narrative/reference envelope.
+their passages, and returns the same checked narrative/reference envelope, plus
+`effective_on`, `governance_revisions` and `vocabulary_revisions`. Revision maps
+are keyed by parent collection ID.
+
+The question must be nonempty and at most 8,000 UTF-8 bytes; supply 1–32 collection
+identifiers. Duplicate IDs/names resolving to the same collection are deduplicated.
+The date defaults to today in UTC; future dates are rejected. Earlier dates require
+the configured historical clearance as well as collection access.
+
+Without a stored governance snapshot, a query searches the collection's own active
+index using the default query policy. Once a snapshot is saved, its publications
+define the scope: an empty publication list supplies no files. `GET` returns revision
+0 and default values before the first write; PUT is a complete replacement, so retain
+all publication records and policy fields you intend to keep.
 
 A publisher with a static `rw` credential manages publication snapshots through
 `GET` and `PUT /v1.2/collections/{id}/governance`. A snapshot contains a revision,
@@ -185,6 +208,11 @@ must be retained as withdrawal tombstones. Migration 0034 stores append-only
 snapshots. Rebuilding an index may update its pin while preserving source identity
 and bytes. Existing indexes do not need rebuilding merely to register governance.
 
+Relations use `from_document`, `to_document`, `kind`, `effective_from` and optional
+`effective_until`. Kinds are `supersedes`, `conflicts`, `requires`, `amends`,
+`applies-to` and `exception-to`; endpoints name document families. Effective start
+dates are inclusive and end dates are exclusive, for both publications and relations.
+
 Server chooses the latest eligible publication in each document family before
 checking expiry or withdrawal. It never revives an older version to fill a gap.
 Ambiguous versions, unresolved supersession chains, conflicts, and missing
@@ -196,12 +224,19 @@ Clearance and snapshot revisions are checked again after model completion. A
 concurrent policy change rejects the in-flight result.
 
 Query policy defaults are: enabled, historical clearance level 2, 24 passages,
-60,000 serialized context characters, retrieval concurrency 20, and 12 candidates
+60,000 for `max_context_characters`, retrieval concurrency 20, and 12 candidates
 per internal index. These bound each answer's work, not the number of documents
 in a collection. Provider and tier inherit the Server vocabulary model settings;
 the publisher can configure them per collection. External processing is disabled
 unless explicitly allowed. Multiple selected collections must agree on model
-routing; restrictive processing and context/concurrency settings apply together.
+routing; restrictive processing and passage/context/output/concurrency settings
+apply together. `candidates_per_index` remains local to each collection.
+
+Despite its name, `max_context_characters` currently counts UTF-8 bytes in each
+JSON-serialized passage string, including quotes and escapes; it is not a token
+limit or the size of the entire model request. Its allowed range is 2,000–100,000.
+Other ranges are 1–32 passages, 1–64 concurrent retrievals, 1–100 candidates per
+index and 1–100,000 output tokens when specified.
 
 `query.model_routes` optionally overrides provider, tier, context budget, output
 token budget and enabled state for an exact `access_level`. A higher clearance
@@ -209,7 +244,11 @@ does not inherit a lower clearance's route. Duplicate levels are rejected.
 `query.max_output_tokens` defaults to the tenant completion budget when omitted.
 Automatic and manual vocabulary generation use the collection's base provider
 and tier, with the same external-processing policy. A governance revision change
-during generation discards the result.
+during generation discards the result. The generation output budget remains
+`complete_default`; query model routes and query output budgets do not override it.
+For a collection without a stored governance snapshot, vocabulary generation
+continues to use tenant settings without a collection external-processing check.
+On a stored snapshot, `query.enabled:false` also prevents vocabulary generation.
 
 Collection queries rank comparable scores together. Datastore BM25 scores from
 different indexes have separate statistical domains; equally ranked hits from
@@ -254,6 +293,16 @@ methods in each of the four Server SDKs.
 These operations require the published 1.2.1 image; 1.2.0 does not provide them.
 Validate the consumer integration and preserve a pre-upgrade database backup
 before switching an existing application to these operations.
+
+## Mapping references to original files
+
+Collection-query references identify the internal source collection and index;
+they do not contain the parent collection or publication ID. Keep the publisher's
+mapping from that source identity to the parent collection and publication ID so
+the application can call `AuthorizePublication` when opening a saved reference.
+That call returns only a publication selected by current governance for the
+requested date; ambiguous governance, withdrawal or supersession can make it
+unavailable. Historical requests require additional clearance.
 
 Keep the ingest response's `source_id`, `filename` and `sha256` against the application's
 immutable file record. Source identity is `src-` followed by the first 16 hex characters
@@ -303,12 +352,15 @@ readable. Retain PostgreSQL chunk rows while serving pre-1.2 artifacts.
 
 Back up PostgreSQL and source/artifact stores. Upgrade with automatic generation
 disabled first if existing collections need sampling-policy review. Additive migrations
-0032 and 0033 create chunk provenance and vocabulary tables; they do not rewrite originals
-or old indexes. Configure the provider, migrate existing application vocabularies through
+0032 and 0033 create chunk provenance and vocabulary tables; 0034 adds retained
+collection-governance snapshots in 1.2.1. They do not rewrite originals or old
+indexes. Configure the provider, migrate existing application vocabularies through
 the API and verify scope/identity mapping before enabling new clients and automatic work.
 
 Server 1.1 clients keep their `/v1` contracts. A 1.2 application must not be pointed at a
 1.1 server because its versioned answer/vocabulary routes do not exist there. Roll back
 application and server together using the recorded database backup when necessary;
 do not remove migration rows or downgrade a database in place. The older sqlx migrator
-rejects a database containing migrations it does not recognize.
+rejects a database containing migrations it does not recognize. This also applies
+to rollback from 1.2.1 to 1.2.0: restore the pre-0034 database backup, then start
+the older image. See the [publication and rollback record](../../CONTAINER.md#versions-and-verification).
