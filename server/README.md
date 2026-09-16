@@ -124,8 +124,13 @@ the optional OCR escalation is
 the security rationale is [docs/security-posture.md](docs/security-posture.md).
 
 **Client libraries:** official Rust / Python / .NET / Java clients (both transports,
-conformance-proven against this server) live under
-[clients/](../clients/).
+conformance-proven against this server) are published on
+[crates.io](https://crates.io/crates/munarium-client),
+[PyPI](https://pypi.org/project/munarium-client/),
+[NuGet](https://www.nuget.org/packages/Ioka.Munarium.Client), and
+[Maven Central](https://central.sonatype.com/artifact/io.ioka.munarium/munarium-client).
+See [clients/](../clients/README.md#installation-and-publication) for installation
+instructions and available versions.
 
 ## Configuration (env vars)
 
