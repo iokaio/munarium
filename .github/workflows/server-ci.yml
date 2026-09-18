@@ -1,5 +1,13 @@
-# Full Server validation, run manually after local gates when hosted coverage
-# is needed. Automatic repository hygiene runs separately. See CONTRIBUTING.md.
+# CI for the Rust munarium-server tree. Path-scoped to server/** so a change to
+# matrix/ or clients/ does not rebuild it. Jobs: lint-test (fmt, clippy, workspace
+# tests with pg, conformance in-process/pg/black-box/platform, doc drift,
+# boundary + migration checks), cargo-deny, and terraform (the shipped example
+# module must parse and validate).
+#
+# One sibling contract tree is in the path filter: matrix/contract/**, because
+# server/contract/matrix/ is a byte-for-byte copy of it and a contract-only edit
+# must trigger the server half or the two copies drift silently.
+#
 # Releases (signed images and tags) are cut outside this repository.
 name: server-ci
 
@@ -10,15 +18,22 @@ permissions:
   contents: read
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "server/**"
+      - "matrix/contract/**"
+      - ".github/workflows/server-ci.yml"
+  pull_request:
+    paths:
+      - "server/**"
+      - "matrix/contract/**"
+      - ".github/workflows/server-ci.yml"
   workflow_dispatch: {}
 
 defaults:
   run:
     working-directory: server
-
-concurrency:
-  group: server-ci-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   lint-test:

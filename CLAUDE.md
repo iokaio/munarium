@@ -23,35 +23,18 @@ do not substitute remembered behavior or assumptions about another checkout.
 - `docs/`: guides spanning components, including the runnable corpus example.
 - `scripts/`: repository hygiene and documentation checks.
 
-## Local validation before CI
+## Local tests before pull requests
 
-Run the affected builds, formatting, lint, unit tests, and relevant integration
-checks locally before pushing. Use the command table below and
-[CONTRIBUTING.md](CONTRIBUTING.md). Iterate with the smallest relevant test,
-then run the affected component gates once before requesting review. Reuse local
-build caches; do not push speculative fixes just to discover compiler errors in CI.
+Before opening a PR, run focused local formatting, lint, builds, and tests relevant
+to the change when the required tools are available. Catching straightforward
+failures locally makes review faster and avoids repeated CI runs. Reuse local
+build caches and batch related fixes before pushing.
 
-Automatic CI runs DCO and repository hygiene, including client compatibility,
-documentation, workflow syntax, licensing, and private-material checks. The full
-`server-ci`, `matrix-ci`, `clients-ci`, and `matrix-server-contract` workflows are
-manual (`workflow_dispatch`), on standard `ubuntu-latest` runners. Request a
-specific full workflow from Actions > Run workflow for the reviewed branch only
-when Linux reproduction, cross-component validation, or release confidence needs
-it. Do not dispatch all four after each edit. `clientbuild` remains a separate
-maintainer-controlled release workflow; never use publishing to validate a PR.
-
-For Server changes run `pwsh ./gates.ps1` from `server/`; for Matrix changes run
-`pwsh ./test.ps1 -Gates` from `matrix/`, adding the documented PostgreSQL and
-black-box tiers when behavior crosses service boundaries. Run the affected client
-language gates for SDK changes. Keep disposable database isolation and provider
-cost limits from the operational rules below. Documentation/workflow-only edits
-need their relevant checks, not full application rebuilds.
-
-Every PR must list the commands run, their results, and any skipped checks with
-reasons. If a required local dependency is unavailable, report that limitation
-and arrange the specific manual check before merging. Green lightweight CI alone
-does not establish full build or integration coverage. Keep these instructions
-and `CLAUDE.md` byte-for-byte identical and tracked.
+Use the validation commands below to choose useful checks. Record what ran, the
+results, and any unavailable checks in the PR. Do not claim skipped tests passed.
+Automatic CI retains its configured build and test suites; local checks supplement
+that coverage. Recreating every hosted integration environment or manually
+dispatching routine CI is not required. Keep AGENTS.md and CLAUDE.md aligned.
 
 ## Establish the task and protect existing work
 
