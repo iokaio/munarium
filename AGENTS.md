@@ -226,6 +226,38 @@ semantic correctness, and a local run is not evidence that remote CI passed.
   text. Report the commit and PR link, what changed, what was tested, and any remaining
   work. Distinguish local changes, committed changes, and published changes precisely.
 
+## PR freshness and merge method
+
+- Start new work from freshly fetched `origin/main`. Before opening or merging a
+  PR, refresh the base, review its current diff, and check for overlapping open or
+  already merged PRs. Do not reuse a merged branch for follow-up work.
+- If `main` has advanced, check whether the PR is still needed and whether it would
+  undo newer behavior. Resolve conflicts by preserving current functionality and
+  applying only the remaining intended change; never choose an entire side just
+  to make Git accept the merge. Report superseded work instead of merging it blindly.
+- Passing CI and mergeability are separate checks. Before an authorized merge,
+  confirm the exact PR head, current base, required checks, review requirements,
+  resolved conversations, and a conflict-free merge. Pending or unknown status is
+  not success. After conflict resolution or another code change, validate the new
+  head; older green checks do not cover it.
+- Inspect both repository merge settings and the target branch's protection and
+  rulesets before choosing a merge command. Repository-wide
+  `allow_merge_commit` does not override a branch's linear-history requirement.
+- Follow CONTRIBUTING.md's squash-merge default: use `gh pr merge --squash`, not
+  `--merge`. Use rebase merging only when the maintainer selects it and current
+  rules permit it.
+- Preserve contributor attribution and valid DCO sign-offs through the selected
+  merge method. For squash merges, prepare and inspect the final commit message
+  with the authorized contributor's sign-off; do not assume GitHub retains it.
+  Never invent a sign-off or add an agent attribution.
+- Bind an authorized CLI merge to the reviewed commit with
+  `--match-head-commit <reviewed-sha>`. If GitHub rejects the method, inspect the
+  applicable rules and use a permitted method; never bypass checks or change
+  repository protections to force the merge.
+- Verify GitHub reports the PR as merged. When updating the workspace afterward,
+  fast-forward the local `main`, preserve unrelated work, and report any PR left
+  open with its reason.
+
 ## Completion
 
 Before handing back the task, inspect the final diff and working-tree status, verify
