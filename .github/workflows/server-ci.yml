@@ -37,7 +37,7 @@ defaults:
 
 jobs:
   lint-test:
-    runs-on: ubuntu-8core
+    runs-on: ubuntu-latest
     services:
       postgres:
         image: pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
@@ -283,7 +283,7 @@ jobs:
           fi
 
   cargo-deny:
-    runs-on: ubuntu-8core
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
@@ -298,7 +298,7 @@ jobs:
   # every input declared, every reference resolvable. `validate` is offline
   # with -backend=false: no credentials, no state, no deploy.
   terraform:
-    runs-on: ubuntu-8core
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
