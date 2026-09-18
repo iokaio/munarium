@@ -4,6 +4,11 @@
 
 ## Checks
 
+List the local commands run and their results, plus any skipped checks and reasons.
+Run affected component gates before pushing; full build workflows are manual.
+Link any manual CI run used to cover a local limitation. Green automatic hygiene
+checks alone do not establish full build or integration coverage.
+
 - [ ] Every commit is signed off (`git commit -s`; the DCO, see CONTRIBUTING.md).
 - [ ] The gates for the components this change touches pass locally: `server/gates.ps1`,
       `matrix/test.ps1` (with `boundaries.py` and `doclint.py`), the client gates for the

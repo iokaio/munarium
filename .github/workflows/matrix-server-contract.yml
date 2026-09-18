@@ -1,11 +1,7 @@
 # Does Matrix still agree with the REAL munarium-server?
 #
-# Its own workflow, and the reason is the path filter. `matrix-ci.yml` runs on
-# `matrix/**`; a change to the SERVER's wire shape would not trigger it, and
-# divergence comes from both sides — the last one found was the server wrapping
-# a manifest the contract says it returns bare. GitHub path filters are
-# per-workflow, not per-job, so the only way to watch both trees is a workflow
-# that lists both.
+# Run manually after local integration checks when hosted validation of a
+# Server or Matrix wire change is needed. Build both peers from the selected ref.
 #
 # WHAT THIS EXISTS TO CATCH
 #
@@ -19,7 +15,7 @@
 #   * `GET /v1/evidence/{id}` wrapped a manifest the contract returns bare
 #
 # A test double is always a CLAIM about a peer. This is where the claim gets
-# checked — on every push, for $0, against the real binary rather than a
+# checked on demand against the real binary rather than a
 # cloud deployment, so a wrong body shape is learned before it merges.
 #
 # Ground rule 1 is untouched. That rule is about CRATE dependencies, and the
@@ -32,16 +28,6 @@ permissions:
   contents: read
 
 on:
-  push:
-    paths:
-      - 'matrix/**'
-      - 'server/**'
-      - '.github/workflows/matrix-server-contract.yml'
-  pull_request:
-    paths:
-      - 'matrix/**'
-      - 'server/**'
-      - '.github/workflows/matrix-server-contract.yml'
   workflow_dispatch: {}
 
 concurrency:
@@ -51,9 +37,7 @@ concurrency:
 jobs:
   live-server:
     name: against a REAL munarium-server (compose tier)
-    runs-on:
-      group: ubuntu8core
-      labels: ubuntu-8core
+    runs-on: ubuntu-latest
     # A separate job so it runs in PARALLEL with `test` rather than adding its
     # server build to that job's wall clock.
     #
@@ -62,9 +46,7 @@ jobs:
     # available, always free, and always tests the commit rather than the last
     # release, so it is the only path and this job needs no registry credential.
     #
-    # This workflow stays a separate file: GitHub path filters are per-workflow,
-    # not per-job, so watching BOTH matrix/** and server/** takes a workflow
-    # that lists both.
+    # Dispatch this separately when a change needs real peer validation.
     permissions:
       contents: read
     services:

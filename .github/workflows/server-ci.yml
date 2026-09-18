@@ -1,13 +1,5 @@
-# CI for the Rust munarium-server tree. Path-scoped to server/** so a change to
-# matrix/ or clients/ does not rebuild it. Jobs: lint-test (fmt, clippy, workspace
-# tests with pg, conformance in-process/pg/black-box/platform, doc drift,
-# boundary + migration checks), cargo-deny, and terraform (the shipped example
-# module must parse and validate).
-#
-# One sibling contract tree is in the path filter: matrix/contract/**, because
-# server/contract/matrix/ is a byte-for-byte copy of it and a contract-only edit
-# must trigger the server half or the two copies drift silently.
-#
+# Full Server validation, run manually after local gates when hosted coverage
+# is needed. Automatic repository hygiene runs separately. See CONTRIBUTING.md.
 # Releases (signed images and tags) are cut outside this repository.
 name: server-ci
 
@@ -18,26 +10,19 @@ permissions:
   contents: read
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "server/**"
-      - "matrix/contract/**"
-      - ".github/workflows/server-ci.yml"
-  pull_request:
-    paths:
-      - "server/**"
-      - "matrix/contract/**"
-      - ".github/workflows/server-ci.yml"
   workflow_dispatch: {}
 
 defaults:
   run:
     working-directory: server
 
+concurrency:
+  group: server-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint-test:
-    runs-on: ubuntu-8core
+    runs-on: ubuntu-latest
     services:
       postgres:
         image: pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
@@ -283,7 +268,7 @@ jobs:
           fi
 
   cargo-deny:
-    runs-on: ubuntu-8core
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
@@ -298,7 +283,7 @@ jobs:
   # every input declared, every reference resolvable. `validate` is offline
   # with -backend=false: no credentials, no state, no deploy.
   terraform:
-    runs-on: ubuntu-8core
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2

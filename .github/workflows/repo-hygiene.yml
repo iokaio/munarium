@@ -1,11 +1,5 @@
-# Repository-wide gates.
-#
-# Every other workflow in this directory is `paths:`-filtered to one component,
-# which is right for a build and wrong for a rule about the whole tree. The
-# consequence was that the root `check_license.py` -- the one gate that walks
-# every file -- was never run by CI at all. This workflow has no paths filter
-# for exactly that reason: a rule about what the repository may contain has to
-# run whatever changed.
+# Automatic repository gates for every PR and main push. Full component
+# builds run locally first and are available as manual workflows.
 name: repo hygiene
 
 on:
@@ -23,13 +17,16 @@ concurrency:
 jobs:
   hygiene:
     name: private material, licences and notices
-    runs-on: ubuntu-8core
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+
+      - name: client compatibility
+        run: python3 clients/check_compatibility.py
 
       # README.md says the private research behind Munarium is deliberately not
       # carried here. This is what holds that sentence true.
@@ -68,3 +65,13 @@ jobs:
           if [ "$(git rev-list --count HEAD 2>/dev/null || echo 0)" -gt 0 ]; then
             ./gitleaks git . --config .gitleaks.toml --no-banner --redact --exit-code 1
           fi
+
+      - name: install and run actionlint
+        run: |
+          version=1.7.12
+          archive="actionlint_${version}_linux_amd64.tar.gz"
+          curl -sSfL "https://github.com/rhysd/actionlint/releases/download/v${version}/${archive}" -o "/tmp/${archive}"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  /tmp/${archive}" | sha256sum -c -
+          tar -xzf "/tmp/${archive}" -C /tmp actionlint
+          # Validate workflow syntax; shell scripts keep their component gates.
+          /tmp/actionlint -shellcheck=
