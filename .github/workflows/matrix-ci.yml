@@ -1,4 +1,4 @@
-# Full Matrix validation — offline and compose tiers, manually dispatched.
+# Munarium Matrix CI — offline and compose tiers, $0, on every push.
 #
 # Every tier here is free: offline and compose. Live tiers against cloud
 # sources are not part of this repository.
@@ -11,7 +11,17 @@ permissions:
   contents: read
 
 on:
-  workflow_dispatch: {}
+  push:
+    paths:
+      - 'matrix/**'
+      - 'server/contract/matrix/**'
+      - '.github/workflows/matrix-ci.yml'
+  pull_request:
+    paths:
+      - 'matrix/**'
+      - 'server/contract/matrix/**'
+      - '.github/workflows/matrix-ci.yml'
+  workflow_dispatch:
 
 defaults:
   run:

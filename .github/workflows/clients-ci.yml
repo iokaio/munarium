@@ -1,5 +1,8 @@
-# Full client builds and live conformance, run manually after local language
-# gates. Automatic repository hygiene retains the client compatibility check.
+# CI for the client libraries under clients/**. Also triggered by contract
+# changes (protos, openapi.json, api-types, conformance scenarios) — a contract
+# change must re-prove every client. Contract drift guards (openapi,
+# grpc-reference) live in server-ci.yml; this workflow owns the Python
+# generated-proto drift check.
 name: clients-ci
 
 # The default token is read-only. Any job that needs more (packages: write for
@@ -9,11 +12,27 @@ permissions:
   contents: read
 
 on:
-  workflow_dispatch: {}
-
-concurrency:
-  group: clients-ci-${{ github.ref }}
-  cancel-in-progress: true
+  push:
+    branches: [main]
+    paths:
+      - "clients/**"
+      # The clients read the server tree directly: Rust path-depends on its
+      # wire crates, and Python,.NET and Java compile its protos. A server-side
+      # wire change therefore reaches them immediately, so this filter watches
+      # the whole tree. The conformance job builds the server from source on
+      # every run.
+      - "server/**"
+      - ".github/workflows/clients-ci.yml"
+  pull_request:
+    paths:
+      - "clients/**"
+      # The clients read the server tree directly: Rust path-depends on its
+      # wire crates, and Python,.NET and Java compile its protos. A server-side
+      # wire change therefore reaches them immediately, so this filter watches
+      # the whole tree. The conformance job builds the server from source on
+      # every run.
+      - "server/**"
+      - ".github/workflows/clients-ci.yml"
 
 jobs:
   compatibility:
