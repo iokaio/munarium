@@ -34,10 +34,34 @@ You must have the right to submit every file in the pull request.
 2. Run the gates for the component you touched, below. Every new source file carries
    `SPDX-License-Identifier: Apache-2.0` on its first line — the second, after a shebang or an XML
    declaration — and `check_license.py` at the repository root names any file that does not.
-3. Open a pull request against `main`. CI runs the offline suites with no private credential, and
-   builds a server from your branch for the live tiers. Nothing in a pull request can reach a
-   registry or a deployment.
+3. Open a pull request against `main` with the local commands run, their results, and reasons for
+   any skipped checks. Automatic CI runs DCO and repository hygiene. Full builds and integration
+   suites run locally first; a maintainer can dispatch the affected workflow for hosted validation.
+   Nothing in a pull request can reach a registry or a deployment.
 4. A code owner reviews; Ioka squash-merges.
+
+## Local validation and hosted CI
+
+Read the tracked [AGENTS.md](AGENTS.md) and [CLAUDE.md](CLAUDE.md) contributor
+instructions; keep them identical when editing either. Run the affected component
+gates below before pushing. Fix compile, formatting, and test failures locally,
+reuse build caches, and batch related fixes before requesting another review.
+Documentation/workflow-only changes need the relevant documentation, hygiene,
+and workflow checks rather than full product rebuilds.
+
+Automatic CI runs license, private-material, secret, documentation, workflow syntax,
+client compatibility, and documentation-tool regression checks. Full `server-ci`,
+`matrix-ci`, `clients-ci`, and `matrix-server-contract` suites are manual. A maintainer
+can select the relevant workflow and branch under Actions > Run workflow, or run
+`gh workflow run server-ci.yml --ref <branch>` (substitute the affected workflow).
+Use this for Linux reproduction, cross-component changes, or release validation,
+not as the normal edit/build loop. These workflows retain their full test steps and
+use standard `ubuntu-latest` runners. The manual `clientbuild` publishing workflow
+is separate and must not be used to test an ordinary contribution.
+
+Green automatic checks do not prove full integration coverage. Record local
+evidence in the PR, and arrange the specific manual suite before merge if a
+required local check cannot run. Do not claim unavailable or skipped checks passed.
 
 ## Gates per component
 
@@ -58,10 +82,10 @@ Rules the gates enforce that are easy to trip:
   problem slug is missing from the API reference, or when a relative link under `docs/` is dead.
   The root `docs/` tree and the root markdown files are held to the same two rules by
   `scripts/docs_linkcheck.py`, which the repository-wide hygiene workflow runs.
-- **Migrations are additive-only**, enforced in CI. This repository has been at 1.0 since its first
+- **Migrations are additive-only**, enforced by the local gates and full CI suites. This repository has been at 1.0 since its first
   release, so an applied migration is never edited: `sqlx` validates a checksum per migration and
   an edit stops the server booting against any existing database.
-- **The kernels stay pure.** CI rejects any change that lets `munarium-core` or
+- **The kernels stay pure.** The local gates and full CI suites reject any change that lets `munarium-core` or
   `munarium-matrix-core` depend on the web, database or HTTP-client layers.
 - **Matrix never depends on a server crate.** `matrix/scripts/boundaries.py` rules on the shipping
   dependency graph. The two talk over a wire contract, not a crate edge — one repository does not

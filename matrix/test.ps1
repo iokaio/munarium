@@ -6,7 +6,7 @@
 .DESCRIPTION
   Default (no switch) is the OFFLINE tier: workspace unit tests plus the
   boundary checks, no database, no network, $0. That is what runs on every
-  save and what CI runs on every push.
+  save and what the manually dispatched full CI suite runs.
 
     ./test.ps1                 offline: unit tests + boundary + contract checks
     ./test.ps1 -Postgres       + store and conformance tests against compose Postgres
@@ -22,7 +22,7 @@
   The HTTP tier needs a compose-launched SERVER too, because sealing evidence
   needs a peer and a role that seals cannot run without one. Two profiles
   provide it: `server-source` builds THIS checkout's ../server and needs no
-  registry, which is what matrix-server-contract.yml tests on a pull request;
+  registry, which is what a manual matrix-server-contract.yml run tests;
   `server` pulls a published image instead and needs MUNARIUM_SERVER_IMAGE set:
 
     $env:MUNARIUM_MATRIX_COMPOSE_SERVER_URL = "http://munarium-server:8080"
