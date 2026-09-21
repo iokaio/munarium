@@ -273,6 +273,9 @@ nothing here grants any right to it. See [SUPPORT.md](SUPPORT.md).
 
 ## Contributing, support, security
 
+Join the [Ioka Discord server](https://discord.gg/YdDsb8Eeb) to ask questions,
+share what you're building with Munarium, and connect with the community.
+
 Signed-off pull requests, no CLA ([CONTRIBUTING.md](CONTRIBUTING.md)). Questions go to Discussions,
 defects to Issues, and suspected vulnerabilities to the private channel [SECURITY.md](SECURITY.md)
 names — never a public issue. What is and is not supported: [SUPPORT.md](SUPPORT.md). Conduct:
