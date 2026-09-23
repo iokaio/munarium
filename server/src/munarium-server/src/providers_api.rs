@@ -23,6 +23,10 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 use tonic::{Request, Response, Status};
 
+#[cfg(test)]
+#[path = "providers_usage_tests.rs"]
+mod usage_tests;
+
 /// Reserved config name engaging the default-provider rule.
 pub const DEFAULT_SELECTOR: &str = "default";
 
@@ -448,19 +452,31 @@ async fn complete_with_schema(
         tools: None,
     };
     let result = match schema {
-        Some(schema) => entry.provider.complete_structured(input, schema).await,
-        None => entry.provider.complete(input).await,
+        Some(schema) => {
+            entry
+                .provider
+                .complete_structured_detailed(input, schema)
+                .await
+        }
+        None => entry.provider.complete_detailed(input).await,
     };
-    // Settle whatever happened: actuals on success, the estimate on failure
+    // Settle complete observed counts; incomplete/unverified usage retains at
+    // least the estimate and its available subtotal. Failure retains the estimate
     // (the provider may have been reached — spent, never free). A settle
     // failure must not fail a completion that already happened; the stale
     // sweep stamps the row later, in the same spent direction.
     if let Some(r) = &cap_reservation {
-        let actual = result
-            .as_ref()
-            .ok()
-            .map(|o| o.input_tokens + o.output_tokens);
-        if let Err(e) = state.budgets().settle(r, actual).await {
+        let accounted = match result.as_ref() {
+            Ok(out) => match out.usage.accounted_units(r.units) {
+                Ok(units) => Some(units),
+                Err(e) => {
+                    tracing::warn!(error = %e, "invalid usage total; retaining budget estimate");
+                    None
+                }
+            },
+            Err(_) => None,
+        };
+        if let Err(e) = state.budgets().settle(r, accounted).await {
             tracing::warn!(error = %e, "budget settle failed; reservation stands at its estimate");
         }
     }
@@ -479,7 +495,7 @@ async fn complete_with_schema(
         crate::metrics::labels(&[("provider", family), ("kind", "complete")]),
         started.elapsed().as_secs_f64(),
     );
-    let out = result?;
+    let out = result?.response;
     state.metrics.inc_by(
         "munarium_provider_tokens_total",
         crate::metrics::labels(&[

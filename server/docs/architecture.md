@@ -398,6 +398,37 @@ Keys are **never stored in the ledger, in config maps, in the database, or in Te
 
 ### 9.3 Invocation provenance
 
+Completion admission reserves the existing prompt-bytes/4 + output-ceiling
+estimate when a capped tier resolves. Settlement uses the sum of input and output
+counts only when both were observed as valid unsigned integers. Two explicit
+zeros release that reservation's capacity. Missing, partial, malformed, or legacy
+unverified usage charges at least the reservation and at least the available
+subtotal. A usable answer remains successful when its usage is unavailable.
+Ollama continues to reject responses missing either required count.
+
+The internal `ModelProvider::complete_detailed` and
+`complete_structured_detailed` methods carry this distinction without changing
+existing response structs or required trait methods. Their defaults invoke the
+legacy method once and classify its counts as unverified; custom providers can
+override them to attest observed counts. Hosted adapters share one decode path
+with their legacy methods, preserving structured requests and request hashes.
+
+This correction has limits: wire counts, token metrics, and invocation records
+retain their existing numeric projection (including zero for unavailable counts).
+The budget ledger stores the accounted amount, not durable usage quality or the
+original estimate. It does not support late reconciliation. The estimate still
+omits system/schema overhead and is not an upper bound. An overflowing total or
+a failed settlement retains the reservation rather than wrapping or refunding
+it; PostgreSQL rejects amounts outside its signed `BIGINT` range. Such retained
+estimates do not prove full accounting of the provider's work. Retry attempts,
+embeddings, health probes, and requests without a capped tier retain their
+existing accounting scope.
+
+No migration is required for this first correction. Existing settled rows remain
+unchanged. All accounting writers must be upgraded before claiming the corrected
+settlement behavior across replicas; rolling back a writer restores the old
+missing-usage limitation.
+
 Every model call is recorded (request hash, provider, model, endpoint fingerprint, token counts, latency — never the key, and prompt/response bodies only per tenant retention policy). An answer's provenance envelope can therefore name not just its sources but the exact model configuration that touched them. Embedding calls are cached by request hash, which makes re-index runs cheap when only the chunker changed.
 
 ---

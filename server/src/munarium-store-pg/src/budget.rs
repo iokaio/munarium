@@ -59,6 +59,9 @@ impl BudgetStore for PgBudgetStore {
         let Some(limit) = limit else {
             return Ok(BudgetOutcome::Unlimited);
         };
+        let stored_units = i64::try_from(units).map_err(|_| {
+            munarium_core::KernelError::Storage("budget units exceed PostgreSQL BIGINT".into())
+        })?;
         let mut tx = self.pool.begin().await.map_err(storage_err)?;
         // Serialize per scope; the scope IS the rationed resource, so this is
         // exactly the contention we want and no more.
@@ -79,7 +82,7 @@ impl BudgetStore for PgBudgetStore {
             .await
             .map_err(storage_err)?;
         let active = active.max(0) as u64;
-        if active + units > limit {
+        if active.checked_add(units).is_none_or(|total| total > limit) {
             // Nothing was written; commit only ends the lock's transaction.
             tx.commit().await.map_err(storage_err)?;
             return Ok(BudgetOutcome::Exhausted {
@@ -99,7 +102,7 @@ impl BudgetStore for PgBudgetStore {
         .bind(tenant)
         .bind(config)
         .bind(tier)
-        .bind(units as i64)
+        .bind(stored_units)
         .fetch_one(&mut *tx)
         .await
         .map_err(storage_err)?;
@@ -121,6 +124,9 @@ impl BudgetStore for PgBudgetStore {
         reservation: &BudgetReservation,
         actual_units: Option<u64>,
     ) -> Result<()> {
+        let stored_units = actual_units.map(i64::try_from).transpose().map_err(|_| {
+            munarium_core::KernelError::Storage("budget units exceed PostgreSQL BIGINT".into())
+        })?;
         sqlx::query(
             "UPDATE token_budget_reservations
              SET state = 'settled',
@@ -129,7 +135,7 @@ impl BudgetStore for PgBudgetStore {
              WHERE id = $1 AND state = 'held'",
         )
         .bind(&reservation.id)
-        .bind(actual_units.map(|u| u as i64))
+        .bind(stored_units)
         .execute(&self.pool)
         .await
         .map_err(storage_err)?;

@@ -96,6 +96,204 @@ fn test_cred() -> CredentialRef {
 }
 
 #[tokio::test]
+async fn legacy_provider_defaults_preserve_structured_override_and_charge_conservatively() {
+    use munarium_core::provider::{
+        CompletionResponse, EmbeddingResponse, ProviderHealth, ProviderId, UsageSource,
+    };
+    struct Legacy(AtomicU32);
+    #[async_trait::async_trait]
+    impl ModelProvider for Legacy {
+        fn id(&self) -> ProviderId {
+            ProviderId::Openai
+        }
+        async fn complete(
+            &self,
+            req: CompletionRequest,
+        ) -> munarium_core::Result<CompletionResponse> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(CompletionResponse {
+                text: req.prompt,
+                stop_reason: "stop".into(),
+                input_tokens: 0,
+                output_tokens: 0,
+                request_hash: "fixture".into(),
+            })
+        }
+        async fn complete_structured(
+            &self,
+            mut req: CompletionRequest,
+            schema: serde_json::Value,
+        ) -> munarium_core::Result<CompletionResponse> {
+            assert_eq!(schema["type"], "object");
+            req.prompt = "structured override".into();
+            self.complete(req).await
+        }
+        async fn embed(&self, _: EmbeddingRequest) -> munarium_core::Result<EmbeddingResponse> {
+            unreachable!()
+        }
+        async fn health(&self) -> munarium_core::Result<ProviderHealth> {
+            unreachable!()
+        }
+    }
+    let provider = Legacy(AtomicU32::new(0));
+    let req = CompletionRequest {
+        model: "fixture".into(),
+        system: None,
+        prompt: "ordinary".into(),
+        max_tokens: 9,
+        temperature: None,
+        tools: None,
+    };
+    let ordinary = provider.complete_detailed(req.clone()).await.unwrap();
+    let structured = provider
+        .complete_structured_detailed(req, serde_json::json!({"type":"object"}))
+        .await
+        .unwrap();
+    assert_eq!(ordinary.response.text, "ordinary");
+    assert_eq!(structured.response.text, "structured override");
+    for out in [ordinary, structured] {
+        assert_eq!(out.usage.source, UsageSource::LegacyUnverified);
+        assert_eq!(out.usage.accounted_units(10).unwrap(), 10);
+    }
+    assert_eq!(provider.0.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn usage_evidence_preserves_missing_partial_malformed_and_explicit_zero() {
+    use munarium_core::provider::{UsageEvidence, UsageSource};
+    use serde_json::{json, Value};
+    let cases = [
+        (None, None, None, UsageSource::Missing),
+        (Some(json!({})), None, None, UsageSource::Missing),
+        (Some(Value::Null), None, None, UsageSource::Malformed),
+        (
+            Some(json!({"input":0,"output":0})),
+            Some(0),
+            Some(0),
+            UsageSource::ProviderReported,
+        ),
+        (
+            Some(json!({"input":3})),
+            Some(3),
+            None,
+            UsageSource::ProviderReported,
+        ),
+        (
+            Some(json!({"output":7})),
+            None,
+            Some(7),
+            UsageSource::ProviderReported,
+        ),
+        (
+            Some(json!({"input":null,"output":7})),
+            None,
+            Some(7),
+            UsageSource::Malformed,
+        ),
+        (
+            Some(json!({"input":"3","output":7})),
+            None,
+            Some(7),
+            UsageSource::Malformed,
+        ),
+        (
+            Some(json!({"input":-1,"output":7})),
+            None,
+            Some(7),
+            UsageSource::Malformed,
+        ),
+        (
+            Some(json!({"input":1.5,"output":7})),
+            None,
+            Some(7),
+            UsageSource::Malformed,
+        ),
+        (
+            Some(serde_json::from_str(r#"{"input":18446744073709551616,"output":7}"#).unwrap()),
+            None,
+            Some(7),
+            UsageSource::Malformed,
+        ),
+    ];
+    for (usage, input_tokens, output_tokens, source) in cases {
+        let mut body = json!({"choices":[{"message":{"content":"fixture"},"finish_reason":"stop"}],
+            "content":[{"type":"text","text":"fixture"}],"stop_reason":"end_turn"});
+        if let Some(mut usage) = usage {
+            if let Some(obj) = usage.as_object_mut() {
+                if let Some(v) = obj.remove("input") {
+                    obj.insert("prompt_tokens".into(), v.clone());
+                    obj.insert("input_tokens".into(), v);
+                }
+                if let Some(v) = obj.remove("output") {
+                    obj.insert("completion_tokens".into(), v.clone());
+                    obj.insert("output_tokens".into(), v);
+                }
+            }
+            body["usage"] = usage;
+        }
+        let calls = Arc::new(AtomicU32::new(0));
+        let observed = calls.clone();
+        let handler = move || {
+            observed.fetch_add(1, Ordering::SeqCst);
+            let body = body.clone();
+            async move { Json(body) }
+        };
+        let app = Router::new()
+            .route("/chat/completions", post(handler.clone()))
+            .route("/v1/messages", post(handler));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let providers: Vec<Box<dyn ModelProvider>> = vec![
+            Box::new(OpenAiProvider::new(Some(&endpoint), test_cred())),
+            Box::new(OpenAiProvider::openrouter(Some(&endpoint), test_cred())),
+            Box::new(AnthropicProvider::new(Some(&endpoint), test_cred())),
+        ];
+        for provider in providers {
+            let req = CompletionRequest {
+                model: "fixture".into(),
+                system: None,
+                prompt: "test".into(),
+                max_tokens: 9,
+                temperature: None,
+                tools: None,
+            };
+            let expected = UsageEvidence {
+                input_tokens,
+                output_tokens,
+                source,
+            };
+            let detailed = provider.complete_detailed(req.clone()).await.unwrap();
+            let legacy = provider.complete(req.clone()).await.unwrap();
+            let structured = provider
+                .complete_structured_detailed(req.clone(), json!({"type":"object"}))
+                .await
+                .unwrap();
+            let legacy_structured = provider
+                .complete_structured(req, json!({"type":"object"}))
+                .await
+                .unwrap();
+            assert_eq!(detailed.usage, expected);
+            assert_eq!(structured.usage, expected);
+            assert_eq!(legacy.request_hash, detailed.response.request_hash);
+            assert_eq!(
+                legacy_structured.request_hash,
+                structured.response.request_hash
+            );
+            assert_ne!(legacy.request_hash, legacy_structured.request_hash);
+            assert_eq!(legacy.input_tokens, input_tokens.unwrap_or(0));
+            assert_eq!(legacy.output_tokens, output_tokens.unwrap_or(0));
+        }
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            12,
+            "one dispatch per method call"
+        );
+        task.abort();
+    }
+}
+
+#[tokio::test]
 async fn configured_openrouter_route_is_explicit_and_legacy_routes_are_unchanged() {
     let recorded = Arc::new(std::sync::Mutex::new(Vec::<serde_json::Value>::new()));
     let sink = recorded.clone();

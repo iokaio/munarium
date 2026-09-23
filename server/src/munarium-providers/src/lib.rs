@@ -515,6 +515,30 @@ fn anthropic_text(v: &serde_json::Value) -> String {
 // Anthropic (Messages API)
 // ---------------------------------------------------------------------------
 
+/// Keep individually valid counts even when another field is malformed.
+/// Missing fields and malformed values must never become observed zeros.
+fn usage_evidence(value: &serde_json::Value, input: &str, output: &str) -> UsageEvidence {
+    let usage = value.get("usage");
+    let input_value = usage.and_then(|v| v.get(input));
+    let output_value = usage.and_then(|v| v.get(output));
+    let input_tokens = input_value.and_then(serde_json::Value::as_u64);
+    let output_tokens = output_value.and_then(serde_json::Value::as_u64);
+    let malformed = usage.is_some_and(|v| !v.is_object())
+        || input_value.is_some_and(|v| v.as_u64().is_none())
+        || output_value.is_some_and(|v| v.as_u64().is_none());
+    UsageEvidence {
+        input_tokens,
+        output_tokens,
+        source: if malformed {
+            UsageSource::Malformed
+        } else if input_tokens.is_some() || output_tokens.is_some() {
+            UsageSource::ProviderReported
+        } else {
+            UsageSource::Missing
+        },
+    }
+}
+
 #[derive(Clone)]
 pub struct AnthropicProvider {
     pub endpoint: String,
@@ -548,12 +572,30 @@ impl ModelProvider for AnthropicProvider {
         req: CompletionRequest,
         schema: serde_json::Value,
     ) -> Result<CompletionResponse> {
-        let mut request_provider = self.clone();
-        request_provider.output_schema = Some(schema);
-        request_provider.complete(req).await
+        Ok(self
+            .complete_structured_detailed(req, schema)
+            .await?
+            .response)
     }
 
     async fn complete(&self, req: CompletionRequest) -> Result<CompletionResponse> {
+        Ok(self.complete_detailed(req).await?.response)
+    }
+
+    async fn complete_structured_detailed(
+        &self,
+        req: CompletionRequest,
+        schema: serde_json::Value,
+    ) -> Result<DetailedCompletionResponse> {
+        let mut request_provider = self.clone();
+        request_provider.output_schema = Some(schema);
+        request_provider.complete_detailed(req).await
+    }
+
+    async fn complete_detailed(
+        &self,
+        req: CompletionRequest,
+    ) -> Result<DetailedCompletionResponse> {
         let key = resolve_credential(&self.cred)?;
         // Optional fields are OMITTED when absent — the Messages API rejects
         // explicit nulls (`system: Input should be a valid array`, found live
@@ -590,12 +632,16 @@ impl ModelProvider for AnthropicProvider {
             .json()
             .await
             .map_err(|e| KernelError::Provider(format!("bad response: {e}")))?;
-        Ok(CompletionResponse {
-            text: anthropic_text(&v),
-            stop_reason: extract_str(&v, &["stop_reason"]),
-            input_tokens: v["usage"]["input_tokens"].as_u64().unwrap_or(0),
-            output_tokens: v["usage"]["output_tokens"].as_u64().unwrap_or(0),
-            request_hash: hash,
+        let usage = usage_evidence(&v, "input_tokens", "output_tokens");
+        Ok(DetailedCompletionResponse {
+            usage,
+            response: CompletionResponse {
+                text: anthropic_text(&v),
+                stop_reason: extract_str(&v, &["stop_reason"]),
+                input_tokens: usage.input_tokens.unwrap_or(0),
+                output_tokens: usage.output_tokens.unwrap_or(0),
+                request_hash: hash,
+            },
         })
     }
 
@@ -703,7 +749,10 @@ impl OpenAiProvider {
 /// would turn every reasoning-exhausted frontier turn into a 502 with no
 /// retry, which is the behaviour the 2026-09-02 review's stricter decoding
 /// would otherwise have regressed at merge.
-fn parse_openai_completion(v: &serde_json::Value, hash: String) -> Result<CompletionResponse> {
+fn parse_openai_completion(
+    v: &serde_json::Value,
+    hash: String,
+) -> Result<DetailedCompletionResponse> {
     if let Some(err) = v.get("error").filter(|e| e.is_object()) {
         let message = err["message"].as_str().unwrap_or("unspecified");
         return Err(KernelError::Provider(format!(
@@ -731,12 +780,16 @@ fn parse_openai_completion(v: &serde_json::Value, hash: String) -> Result<Comple
             )));
         }
     };
-    Ok(CompletionResponse {
-        text,
-        stop_reason: finish_reason.to_string(),
-        input_tokens: v["usage"]["prompt_tokens"].as_u64().unwrap_or(0),
-        output_tokens: v["usage"]["completion_tokens"].as_u64().unwrap_or(0),
-        request_hash: hash,
+    let usage = usage_evidence(v, "prompt_tokens", "completion_tokens");
+    Ok(DetailedCompletionResponse {
+        usage,
+        response: CompletionResponse {
+            text,
+            stop_reason: finish_reason.to_string(),
+            input_tokens: usage.input_tokens.unwrap_or(0),
+            output_tokens: usage.output_tokens.unwrap_or(0),
+            request_hash: hash,
+        },
     })
 }
 
@@ -751,12 +804,30 @@ impl ModelProvider for OpenAiProvider {
         req: CompletionRequest,
         schema: serde_json::Value,
     ) -> Result<CompletionResponse> {
-        let mut request_provider = self.clone();
-        request_provider.output_schema = Some(schema);
-        request_provider.complete(req).await
+        Ok(self
+            .complete_structured_detailed(req, schema)
+            .await?
+            .response)
     }
 
     async fn complete(&self, req: CompletionRequest) -> Result<CompletionResponse> {
+        Ok(self.complete_detailed(req).await?.response)
+    }
+
+    async fn complete_structured_detailed(
+        &self,
+        req: CompletionRequest,
+        schema: serde_json::Value,
+    ) -> Result<DetailedCompletionResponse> {
+        let mut request_provider = self.clone();
+        request_provider.output_schema = Some(schema);
+        request_provider.complete_detailed(req).await
+    }
+
+    async fn complete_detailed(
+        &self,
+        req: CompletionRequest,
+    ) -> Result<DetailedCompletionResponse> {
         let key = resolve_credential(&self.cred)?;
         let mut messages = Vec::new();
         if let Some(system) = &req.system {
@@ -936,7 +1007,8 @@ spec:
 
     #[test]
     fn openai_decoder_pins_the_error_and_truncation_shapes() {
-        let parse = |v: serde_json::Value| parse_openai_completion(&v, "h".into());
+        let parse =
+            |v: serde_json::Value| parse_openai_completion(&v, "h".into()).map(|out| out.response);
         let ok = parse(serde_json::json!({
             "choices": [{"message": {"content": "hi"}, "finish_reason": "stop"}],
             "usage": {"prompt_tokens": 3, "completion_tokens": 1}

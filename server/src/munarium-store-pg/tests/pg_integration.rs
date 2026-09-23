@@ -872,6 +872,92 @@ mod budget {
     }
 
     #[tokio::test]
+    async fn conservative_settlement_is_idempotent_and_sweeps_stay_spent() {
+        for (name, store) in backends().await {
+            let tenant = fresh_tenant("bud-partial");
+            let BudgetOutcome::Granted(r) = store
+                .reserve(&tenant, "cfg", "fast", 10, Some(10))
+                .await
+                .unwrap()
+            else {
+                panic!("[{name}] grant");
+            };
+            store.settle(&r, Some(15)).await.unwrap();
+            store.settle(&r, Some(0)).await.unwrap();
+            store.sweep_stale(0).await.unwrap();
+            assert_eq!(
+                store.ledger(&tenant).await.unwrap()[0].settled_units,
+                15,
+                "[{name}]"
+            );
+            assert!(matches!(
+                store
+                    .reserve(&tenant, "cfg", "fast", 1, Some(10))
+                    .await
+                    .unwrap(),
+                BudgetOutcome::Exhausted { remaining: 0, .. }
+            ));
+
+            let tenant = fresh_tenant("bud-unknown");
+            let BudgetOutcome::Granted(r) = store
+                .reserve(&tenant, "cfg", "fast", 10, Some(10))
+                .await
+                .unwrap()
+            else {
+                panic!("[{name}] grant");
+            };
+            store.settle(&r, None).await.unwrap();
+            store.settle(&r, Some(0)).await.unwrap();
+            assert_eq!(
+                store.ledger(&tenant).await.unwrap()[0].settled_units,
+                10,
+                "[{name}]"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn postgres_budget_integer_bounds_leave_failed_settlement_held() {
+        let Some(url) = test_url() else {
+            eprintln!("PostgreSQL integer bounds NOT RUN: no MUNARIUM_TEST_DATABASE_URL");
+            return;
+        };
+        let tenant = fresh_tenant("bud-range");
+        let base = PgStore::connect(&url, &tenant)
+            .await
+            .expect("configured test database must connect");
+        let store = PgBudgetStore::new(base.pool().clone());
+        let maximum = i64::MAX as u64;
+        assert!(store
+            .reserve(&tenant, "cfg", "fast", maximum + 1, Some(u64::MAX))
+            .await
+            .is_err());
+        assert!(store.ledger(&tenant).await.unwrap().is_empty());
+        let BudgetOutcome::Granted(r) = store
+            .reserve(&tenant, "cfg", "fast", 10, Some(10))
+            .await
+            .unwrap()
+        else {
+            panic!("grant");
+        };
+        assert!(store.settle(&r, Some(maximum + 1)).await.is_err());
+        let row = &store.ledger(&tenant).await.unwrap()[0];
+        assert_eq!((row.held_units, row.settled_units), (10, 0));
+        store.settle(&r, Some(maximum)).await.unwrap();
+        assert_eq!(
+            store.ledger(&tenant).await.unwrap()[0].settled_units,
+            maximum
+        );
+        assert!(matches!(
+            store
+                .reserve(&tenant, "cfg", "fast", 1, Some(10))
+                .await
+                .unwrap(),
+            BudgetOutcome::Exhausted { remaining: 0, .. }
+        ));
+    }
+
+    #[tokio::test]
     async fn grants_until_the_ceiling_then_refuses_with_remaining() {
         for (name, store) in backends().await {
             let tenant = fresh_tenant("bud-ceiling");

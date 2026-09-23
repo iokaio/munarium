@@ -186,6 +186,32 @@ impl ModelProvider for OllamaProvider {
         parse_completion(&value, hash)
     }
 
+    async fn complete_detailed(
+        &self,
+        req: CompletionRequest,
+    ) -> Result<DetailedCompletionResponse> {
+        // The existing parser requires both counts; preserve that strict contract.
+        let response = self.complete(req).await?;
+        Ok(DetailedCompletionResponse {
+            usage: UsageEvidence {
+                input_tokens: Some(response.input_tokens),
+                output_tokens: Some(response.output_tokens),
+                source: UsageSource::ProviderReported,
+            },
+            response,
+        })
+    }
+
+    async fn complete_structured_detailed(
+        &self,
+        req: CompletionRequest,
+        schema: Value,
+    ) -> Result<DetailedCompletionResponse> {
+        let mut request_provider = self.clone();
+        request_provider.output_schema = Some(schema);
+        request_provider.complete_detailed(req).await
+    }
+
     async fn embed(&self, req: EmbeddingRequest) -> Result<EmbeddingResponse> {
         if req.inputs.is_empty() {
             return Err(KernelError::InvalidInput("inputs is required".into()));
