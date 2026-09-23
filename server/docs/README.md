@@ -21,6 +21,8 @@ and API references when applying them to a new deployment.
 |---|---|
 | [architecture.md](architecture.md) | The architecture of what ships: layers, crate boundaries, the data and retrieval tiers, shapes and runbooks, the deployment shapes, and the design targets the code does not yet reach. Read this before making structural decisions |
 | [security-posture.md](security-posture.md) | Why the API-management layer is the security boundary; the uid contract, capability JWTs, and credential posture |
+| [lessons-from-vcp.md](lessons-from-vcp.md) | Public engineering recommendations prompted by downstream use, grounded in Server sources and mapped to the implementation plan |
+| [lessons-from-vcp-impl.md](lessons-from-vcp-impl.md) | Proposed Server improvements from the VCP lessons: source analysis, implementation slices, compatibility constraints, regression coverage, and rollout criteria |
 
 ## API reference
 

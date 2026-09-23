@@ -852,15 +852,39 @@ mod budget {
     use munarium_store_pg::{PgBudgetStore, PgStore};
 
     async fn backends() -> Vec<(&'static str, Box<dyn BudgetStore>)> {
+        budget_backends(false).await
+    }
+
+    async fn budget_backends(isolate_sweep: bool) -> Vec<(&'static str, Box<dyn BudgetStore>)> {
         let mut out: Vec<(&'static str, Box<dyn BudgetStore>)> =
             vec![("mem", Box::new(MemBudgetStore::new()))];
         match test_url() {
             Some(url) => {
-                let base = PgStore::connect(&url, &fresh_tenant("bud")).await.expect(
+                let base = PgStore::connect_with_pool_size(
+                    &url,
+                    &fresh_tenant("bud"),
+                    if isolate_sweep { 1 } else { 10 },
+                )
+                .await
+                .expect(
                     "MUNARIUM_TEST_DATABASE_URL is set but the connection failed. This is a \
                      FAILURE, not a skip: a configured database that quietly falls back to \
                      memory is how a store tier reports green while testing nothing.",
                 );
+                if isolate_sweep {
+                    // Sweeping is global, not tenant-scoped. Shadow the migrated
+                    // table on one dedicated connection so a zero-age sweep
+                    // cannot settle other tests' held rows. PostgreSQL removes
+                    // this temporary table when the connection closes. Other
+                    // fixtures keep multi-connection pools for real races.
+                    sqlx::query(
+                        "CREATE TEMP TABLE token_budget_reservations \
+                         (LIKE token_budget_reservations INCLUDING ALL)",
+                    )
+                    .execute(base.pool())
+                    .await
+                    .expect("isolated budget sweep table");
+                }
                 out.push(("pg", Box::new(PgBudgetStore::new(base.pool().clone()))));
             }
             None => eprintln!(
@@ -873,7 +897,24 @@ mod budget {
 
     #[tokio::test]
     async fn conservative_settlement_is_idempotent_and_sweeps_stay_spent() {
-        for (name, store) in backends().await {
+        // Model another concurrently running test's live reservation. A sweep
+        // fixture must not settle rows in the shared integration-test table.
+        let neighbor = if let Some(url) = test_url() {
+            let tenant = fresh_tenant("bud-neighbor");
+            let base = PgStore::connect(&url, &tenant).await.unwrap();
+            let store = PgBudgetStore::new(base.pool().clone());
+            assert!(matches!(
+                store
+                    .reserve(&tenant, "cfg", "fast", 7, Some(10))
+                    .await
+                    .unwrap(),
+                BudgetOutcome::Granted(_)
+            ));
+            Some((store, tenant))
+        } else {
+            None
+        };
+        for (name, store) in budget_backends(true).await {
             let tenant = fresh_tenant("bud-partial");
             let BudgetOutcome::Granted(r) = store
                 .reserve(&tenant, "cfg", "fast", 10, Some(10))
@@ -884,7 +925,26 @@ mod budget {
             };
             store.settle(&r, Some(15)).await.unwrap();
             store.settle(&r, Some(0)).await.unwrap();
-            store.sweep_stale(0).await.unwrap();
+            let stale_tenant = fresh_tenant("bud-stale");
+            assert!(matches!(
+                store
+                    .reserve(&stale_tenant, "cfg", "fast", 4, Some(10))
+                    .await
+                    .unwrap(),
+                BudgetOutcome::Granted(_)
+            ));
+            assert_eq!(store.sweep_stale(3600).await.unwrap(), 0, "[{name}]");
+            assert_eq!(store.sweep_stale(0).await.unwrap(), 1, "[{name}]");
+            let swept = &store.ledger(&stale_tenant).await.unwrap()[0];
+            assert_eq!((swept.held_units, swept.settled_units), (0, 4), "[{name}]");
+            if let Some((neighbor, tenant)) = &neighbor {
+                let row = &neighbor.ledger(tenant).await.unwrap()[0];
+                assert_eq!(
+                    (row.held_units, row.settled_units),
+                    (7, 0),
+                    "[{name}] sweep fixture changed another test's reservation"
+                );
+            }
             assert_eq!(
                 store.ledger(&tenant).await.unwrap()[0].settled_units,
                 15,
