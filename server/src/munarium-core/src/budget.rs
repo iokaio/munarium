@@ -87,7 +87,10 @@ pub trait BudgetStore: Send + Sync {
     ) -> Result<BudgetOutcome>;
 
     /// Mark a reservation settled, correcting `units` to `actual_units` when
-    /// the caller can report what the work really cost. Idempotent: settling
+    /// the caller supplies an accounted amount. The argument name is retained
+    /// for compatibility: an amount can also be a conservative charge for
+    /// incomplete usage, not necessarily a fully observed total. `None` retains
+    /// the original reservation. Idempotent: settling
     /// a non-`held` reservation is a no-op.
     async fn settle(
         &self,

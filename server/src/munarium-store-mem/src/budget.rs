@@ -68,7 +68,7 @@ impl BudgetStore for MemBudgetStore {
         };
         let mut rows = self.rows.lock().await;
         let day = today_utc();
-        let active: u64 = rows
+        let active = rows
             .iter()
             .filter(|r| {
                 r.tenant == tenant
@@ -77,9 +77,11 @@ impl BudgetStore for MemBudgetStore {
                     && r.day == day
                     && r.state != RowState::Released
             })
-            .map(|r| r.units)
-            .sum();
-        if active + units > limit {
+            .try_fold(0u64, |total, r| total.checked_add(r.units))
+            .ok_or_else(|| {
+                munarium_core::KernelError::Storage("budget total exceeds u64".into())
+            })?;
+        if active.checked_add(units).is_none_or(|total| total > limit) {
             return Ok(BudgetOutcome::Exhausted {
                 requested: units,
                 remaining: limit.saturating_sub(active),
@@ -173,8 +175,17 @@ impl BudgetStore for MemBudgetStore {
                     reservations: 0,
                 });
             match r.state {
-                RowState::Held => entry.held_units += r.units,
-                RowState::Settled => entry.settled_units += r.units,
+                RowState::Held => {
+                    entry.held_units = entry.held_units.checked_add(r.units).ok_or_else(|| {
+                        munarium_core::KernelError::Storage("budget total exceeds u64".into())
+                    })?;
+                }
+                RowState::Settled => {
+                    entry.settled_units =
+                        entry.settled_units.checked_add(r.units).ok_or_else(|| {
+                            munarium_core::KernelError::Storage("budget total exceeds u64".into())
+                        })?;
+                }
                 RowState::Released => unreachable!("released rows are filtered above"),
             }
             entry.reservations += 1;
@@ -186,6 +197,50 @@ impl BudgetStore for MemBudgetStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn admission_does_not_wrap_after_large_settlement() {
+        let store = MemBudgetStore::new();
+        let BudgetOutcome::Granted(r) = store
+            .reserve("large", "cfg", "fast", 1, Some(u64::MAX))
+            .await
+            .unwrap()
+        else {
+            panic!("grant");
+        };
+        store.settle(&r, Some(u64::MAX)).await.unwrap();
+        assert!(matches!(
+            store
+                .reserve("large", "cfg", "fast", 1, Some(u64::MAX))
+                .await
+                .unwrap(),
+            BudgetOutcome::Exhausted { remaining: 0, .. }
+        ));
+    }
+
+    #[tokio::test]
+    async fn aggregate_overflow_fails_admission_and_reporting() {
+        let store = MemBudgetStore::new();
+        let mut reservations = Vec::new();
+        for _ in 0..2 {
+            let BudgetOutcome::Granted(r) = store
+                .reserve("overflow", "cfg", "fast", 1, Some(10))
+                .await
+                .unwrap()
+            else {
+                panic!("grant");
+            };
+            reservations.push(r);
+        }
+        for r in reservations {
+            store.settle(&r, Some(u64::MAX)).await.unwrap();
+        }
+        assert!(store
+            .reserve("overflow", "cfg", "fast", 1, Some(10))
+            .await
+            .is_err());
+        assert!(store.ledger("overflow").await.is_err());
+    }
 
     #[tokio::test]
     async fn unlimited_scope_writes_nothing() {

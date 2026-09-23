@@ -108,6 +108,31 @@ fn config_requires_endpoint_and_keeps_cloud_credentials_required() {
 }
 
 #[tokio::test]
+async fn detailed_ollama_calls_preserve_observed_counts_and_schema() {
+    use munarium_core::provider::UsageSource;
+    let (endpoint, calls) = mock().await;
+    let provider = build_provider(&parse_provider_config(&config(&endpoint)).unwrap()).unwrap();
+    let plain = provider
+        .complete_detailed(request("qwen3:1.7b"))
+        .await
+        .unwrap();
+    let structured = provider
+        .complete_structured_detailed(request("qwen3:1.7b"), json!({"type":"object"}))
+        .await
+        .unwrap();
+    for out in [plain, structured] {
+        assert_eq!(out.usage.source, UsageSource::ProviderReported);
+        assert_eq!(out.usage.input_tokens, Some(9));
+        assert_eq!(out.usage.output_tokens, Some(2));
+        assert_eq!(out.usage.accounted_units(100).unwrap(), 11);
+    }
+    let calls = calls.lock().unwrap();
+    assert_eq!(calls.len(), 2);
+    assert!(calls[0].1.get("format").is_none());
+    assert_eq!(calls[1].1["format"], json!({"type":"object"}));
+}
+
+#[tokio::test]
 async fn native_completion_embeddings_health_and_request_identity() {
     let (endpoint, calls) = mock().await;
     let mut doc = parse_provider_config(&config(&endpoint)).unwrap();
