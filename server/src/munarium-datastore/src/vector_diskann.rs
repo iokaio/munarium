@@ -793,6 +793,17 @@ impl DiskAnnVectorIndex {
 
 impl VectorIndex for DiskAnnVectorIndex {
     fn vector_candidates(&self, embedding: &[f32], limit: usize) -> Result<Vec<Candidate>, Error> {
+        Ok(self
+            .vector_candidates_diagnosed(embedding, limit)?
+            .candidates)
+    }
+
+    fn vector_candidates_diagnosed(
+        &self,
+        embedding: &[f32],
+        limit: usize,
+    ) -> Result<crate::diagnostics::CandidateBatch, Error> {
+        use crate::diagnostics::{CandidateBatch, CandidateDiagnostics};
         if embedding.len() != self.dims {
             return Err(Error::Invalid(format!(
                 "query has {} dimensions, index holds {}",
@@ -801,7 +812,14 @@ impl VectorIndex for DiskAnnVectorIndex {
             )));
         }
         if limit == 0 {
-            return Ok(Vec::new());
+            let mut diagnostics = CandidateDiagnostics::returned(limit, 0, 0);
+            diagnostics.visited = Some(0);
+            diagnostics.distance_computations = Some(0);
+            diagnostics.work_limit = Some(0);
+            return Ok(CandidateBatch {
+                candidates: Vec::new(),
+                diagnostics,
+            });
         }
         // A zero-norm query has no direction; every cosine distance is the
         // oracle's 1.0 and any traversal is arbitrary. Answer exactly what the
@@ -809,14 +827,24 @@ impl VectorIndex for DiskAnnVectorIndex {
         if embedding.iter().all(|v| *v == 0.0) {
             let mut ids: Vec<&String> = self.chunk_ids.iter().collect();
             ids.sort();
-            return Ok(ids
+            let candidates: Vec<_> = ids
                 .into_iter()
                 .take(limit)
                 .map(|id| Candidate {
                     chunk_id: id.clone(),
                     score: 1.0,
                 })
-                .collect());
+                .collect();
+            let mut diagnostics =
+                CandidateDiagnostics::returned(limit, candidates.len(), candidates.len());
+            diagnostics.visited = Some(self.chunk_ids.len());
+            diagnostics.distance_computations = Some(0);
+            diagnostics.work_limit = Some(self.chunk_ids.len());
+            diagnostics.exhausted = Some(true);
+            return Ok(CandidateBatch {
+                candidates,
+                diagnostics,
+            });
         }
 
         let k = limit.min(self.chunk_ids.len());
@@ -826,11 +854,12 @@ impl VectorIndex for DiskAnnVectorIndex {
         let mut ids = vec![0u32; k];
         let mut distances = vec![0f32; k];
         let mut output = IdDistance::new(&mut ids, &mut distances);
-        block_on(
-            self.index
-                .search(knn, &self.strategy, &self.context, embedding, &mut output),
-        )
-        .map_err(ann)?;
+        let stats =
+            block_on(
+                self.index
+                    .search(knn, &self.strategy, &self.context, embedding, &mut output),
+            )
+            .map_err(ann)?;
         use diskann::graph::search_output_buffer::SearchOutputBuffer as _;
         let filled = output.current_len();
 
@@ -851,7 +880,13 @@ impl VectorIndex for DiskAnnVectorIndex {
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then_with(|| a.chunk_id.cmp(&b.chunk_id))
         });
-        Ok(scored)
+        let mut diagnostics = CandidateDiagnostics::returned(limit, scored.len(), scored.len());
+        diagnostics.distance_computations = Some(stats.cmps as usize);
+        diagnostics.search_list = Some(l);
+        Ok(CandidateBatch {
+            candidates: scored,
+            diagnostics,
+        })
     }
 
     fn dimensions(&self) -> usize {

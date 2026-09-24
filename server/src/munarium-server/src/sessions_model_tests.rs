@@ -286,3 +286,168 @@ spec:
         }
     }
 }
+
+/// P07: sparse collection eligibility uses current collection policy even when
+/// content is explicitly pinned. No record-level ACL capability is assumed.
+#[tokio::test]
+async fn sparse_collection_eligibility_rechecks_policy_and_preserves_old_pins() {
+    let Ok(url) = std::env::var("MUNARIUM_TEST_DATABASE_URL") else {
+        eprintln!("P07 PostgreSQL authorization characterization NOT RUN: database unset");
+        return;
+    };
+    let state = model_test_state(url.clone()).await;
+    let tenant = format!("p07-{}", uuid::Uuid::new_v4().simple());
+    let retrieval = state.retrieval_for(&tenant).unwrap();
+    let mut names = Vec::new();
+    for i in 0..24 {
+        let name = format!("scope-{i:02}");
+        let (level, compartments) = if i == 23 {
+            (0, vec![])
+        } else if i % 2 == 0 {
+            (3, vec![])
+        } else {
+            (0, vec!["engineering".to_string()])
+        };
+        retrieval
+            .ensure_collection(&name, "article@1", level, &compartments, None)
+            .await
+            .unwrap();
+        names.push(name);
+    }
+    let yaml = format!("apiVersion: munarium.ioka.io/v1\nkind: Runbook\nmetadata: {{ name: sparse, version: 1 }}\nspec:\n  collections: [{}]\n  steps: [{{ buildIndex: {{}} }}]\n",
+        names.iter().map(|name| format!("{{ name: {name}, shape: article@1 }}")).collect::<Vec<_>>().join(", "));
+    let doc = munarium_runbooks::parse_runbook(&yaml).unwrap();
+    let permitted = permitted_collections(&state, &tenant, &doc, 0, &[])
+        .await
+        .unwrap();
+    assert_eq!(
+        permitted
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["scope-23"]
+    );
+    // Independent expected sets for level-only and compartment-only clearance.
+    let elevated = permitted_collections(&state, &tenant, &doc, 3, &[])
+        .await
+        .unwrap();
+    assert_eq!(
+        elevated.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
+        vec![
+            "scope-00", "scope-02", "scope-04", "scope-06", "scope-08", "scope-10", "scope-12",
+            "scope-14", "scope-16", "scope-18", "scope-20", "scope-22", "scope-23"
+        ]
+    );
+    let compartment = permitted_collections(&state, &tenant, &doc, 0, &["engineering".into()])
+        .await
+        .unwrap();
+    assert_eq!(
+        compartment
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "scope-01", "scope-03", "scope-05", "scope-07", "scope-09", "scope-11", "scope-13",
+            "scope-15", "scope-17", "scope-19", "scope-21", "scope-23"
+        ]
+    );
+    let other_tenant = format!("other-{}", uuid::Uuid::new_v4().simple());
+    assert!(
+        permitted_collections(&state, &other_tenant, &doc, 3, &["engineering".into()])
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let collection = &permitted[0];
+    let (source, _, _) = retrieval
+        .put_source(
+            "",
+            "text/plain",
+            "old.txt",
+            None,
+            b"vacation original handbook",
+        )
+        .await
+        .unwrap();
+    retrieval
+        .bind_source(&collection.id, &source, None)
+        .await
+        .unwrap();
+    let old = retrieval
+        .build_collection_index(&collection.id, 2000, 1, true)
+        .await
+        .unwrap();
+    let (new_source, _, _) = retrieval
+        .put_source(
+            "",
+            "text/plain",
+            "new.txt",
+            None,
+            b"vacation replacement policy",
+        )
+        .await
+        .unwrap();
+    retrieval
+        .bind_source(&collection.id, &new_source, None)
+        .await
+        .unwrap();
+    let new = retrieval
+        .build_collection_index(&collection.id, 2000, 2, true)
+        .await
+        .unwrap();
+    assert_ne!(old.id, new.id);
+    let pinned = retrieval
+        .search_collection(
+            &collection.id,
+            "vacation",
+            Default::default(),
+            Some(&old.id),
+        )
+        .await
+        .unwrap();
+    assert_eq!(pinned.envelope.index_version, old.id);
+    assert!(!pinned.hits.is_empty());
+    assert!(pinned.hits.iter().all(|hit| hit.source_id == source));
+    let current = retrieval
+        .search_collection(&collection.id, "vacation", Default::default(), None)
+        .await
+        .unwrap();
+    assert_eq!(current.envelope.index_version, new.id);
+    assert!(current.hits.iter().any(|hit| hit.source_id == new_source));
+    // A second connection changes current policy. A content pin cannot grant
+    // the collection back to the next serving-boundary authorization check.
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&url)
+        .await
+        .unwrap();
+    let id = collection.id.clone();
+    let changed_tenant = tenant.clone();
+    tokio::spawn(async move {
+        sqlx::query("UPDATE collections SET access_level=4 WHERE tenant_id=$1 AND id=$2")
+            .bind(changed_tenant)
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        pool.close().await;
+    })
+    .await
+    .unwrap();
+    assert!(permitted_collections(&state, &tenant, &doc, 0, &[])
+        .await
+        .unwrap()
+        .is_empty());
+    sqlx::query(
+        "UPDATE collections SET access_level=0, status='removed' WHERE tenant_id=$1 AND id=$2",
+    )
+    .bind(&tenant)
+    .bind(&collection.id)
+    .execute(state.pg_pool().unwrap())
+    .await
+    .unwrap();
+    assert!(permitted_collections(&state, &tenant, &doc, 0, &[])
+        .await
+        .unwrap()
+        .is_empty());
+}

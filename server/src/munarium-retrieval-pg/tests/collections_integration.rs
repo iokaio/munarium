@@ -1336,3 +1336,142 @@ async fn number_forms_reach_the_corpus_spelling() {
     assert_eq!(a.expect("a"), vec!["us7909749".to_string()]);
     assert_eq!(b.expect("b"), vec!["us7909749".to_string()]);
 }
+
+/// Exact ordering has an independent analytic oracle: for q=(1,0,...),
+/// distance to (1,t,0,...) increases strictly with positive t.
+#[tokio::test]
+async fn sparse_generation_exact_oracle_and_hnsw_recall() {
+    use munarium_core::retrieval::PreparedSearchQuery;
+    let Some(url) = test_url() else {
+        eprintln!("P07 PostgreSQL recall NOT RUN: database unset");
+        return;
+    };
+    let tenant = fresh_tenant("p07-sparse");
+    let r = retrieval_for(&url, &tenant).await;
+    let col = r
+        .ensure_collection("sparse", "article@1", 0, &[], None)
+        .await
+        .unwrap();
+    let (source, hash, _) = r
+        .put_source("", "text/plain", "first.txt", None, b"first generation")
+        .await
+        .unwrap();
+    r.bind_source(&col.id, &source, None).await.unwrap();
+    let old = r
+        .build_collection_index(&col.id, 2000, 1, true)
+        .await
+        .unwrap();
+    let (second, _, _) = r
+        .put_source("", "text/plain", "second.txt", None, b"second generation")
+        .await
+        .unwrap();
+    r.bind_source(&col.id, &second, None).await.unwrap();
+    let current = r
+        .build_collection_index(&col.id, 2000, 2, true)
+        .await
+        .unwrap();
+    // Replace only this fixture's chunks with analytically scored vectors.
+    sqlx::query("DELETE FROM collection_chunks WHERE tenant_id=$1 AND collection_id=$2")
+        .bind(&tenant)
+        .bind(&col.id)
+        .execute(r.pool())
+        .await
+        .unwrap();
+    for (version, count, offset) in [(&old.id, 1024_i32, 0_f64), (&current.id, 32, 2_f64)] {
+        sqlx::query("INSERT INTO collection_chunks (tenant_id,collection_id,index_version_id,chunk_id,source_id,source_hash,ordinal,text,embedding) SELECT $1,$2,$3,'c'||lpad(n::text,4,'0'),$4,$5,n,'fixture',('[1,'||($7::double precision+n::double precision/$6::double precision)::text||repeat(',0',254)||']')::vector FROM generate_series(1,$6::integer) n")
+            .bind(&tenant).bind(&col.id).bind(version).bind(&source).bind(&hash)
+            .bind(count).bind(offset).execute(r.pool()).await.unwrap();
+    }
+    // Pools are isolated from other tests. Exact disables index scans;
+    // ANN discourages sequential scan/sort and proves the HNSW access path.
+    let exact_pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .after_connect(|conn, _| {
+            Box::pin(async move {
+                sqlx::query("SET enable_indexscan=off")
+                    .execute(conn)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect(&url)
+        .await
+        .unwrap();
+    let ann_pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .after_connect(|conn, _| {
+            Box::pin(async move {
+                sqlx::query("SET enable_seqscan=off")
+                    .execute(&mut *conn)
+                    .await?;
+                sqlx::query("SET enable_sort=off").execute(conn).await?;
+                Ok(())
+            })
+        })
+        .connect(&url)
+        .await
+        .unwrap();
+    let exact = PgRetrieval::new(exact_pool, &tenant);
+    let ann = PgRetrieval::new(ann_pool, &tenant);
+    let mut vector = vec![0_f32; 256];
+    vector[0] = 1.0;
+    let prepared = PreparedSearchQuery {
+        lexical: None,
+        embedding: Some(vector.clone().into()),
+        lexical_candidates: 0,
+        vector_candidates: 10,
+        top_k: 10,
+        rrf_k: 60.0,
+    };
+    for version in [&old.id, &current.id] {
+        let result = exact
+            .search_collection_prepared(&col.id, &prepared, Some(version))
+            .await
+            .unwrap();
+        let expected: Vec<String> = (1..=10).map(|n| format!("c{n:04}")).collect();
+        assert_eq!(
+            result
+                .hits
+                .iter()
+                .map(|h| h.chunk_id.clone())
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert_eq!(&result.envelope.index_version, version);
+        let plan: Vec<String> = sqlx::query_scalar("EXPLAIN (COSTS OFF) SELECT chunk_id FROM collection_chunks WHERE tenant_id=$1 AND collection_id=$2 AND index_version_id=$3 ORDER BY embedding <=> $4 LIMIT 10")
+            .bind(&tenant).bind(&col.id).bind(version).bind(pgvector::Vector::from(vector.clone()))
+            .fetch_all(ann.pool()).await.unwrap();
+        assert!(
+            plan.iter()
+                .any(|line| line.contains("Index Scan") && line.contains("embedding")),
+            "expected HNSW: {plan:?}"
+        );
+        let approximate = ann
+            .search_collection_prepared(&col.id, &prepared, Some(version))
+            .await
+            .unwrap();
+        assert_eq!(&approximate.envelope.index_version, version);
+        assert!(approximate.hits.len() <= 10);
+        let recall = approximate
+            .hits
+            .iter()
+            .filter(|h| expected.contains(&h.chunk_id))
+            .count() as f64
+            / 10.0;
+        println!("P07 postgres eligible={} total=1056 k=10 ef_search=40 recall={recall} visited=unavailable hard_work_limit=unavailable", if version == &old.id { 1024 } else { 32 });
+        // Validate eligibility and every score, including approximate misses.
+        for hit in &approximate.hits {
+            let n: f64 = hit.chunk_id[1..].parse().unwrap();
+            let t = if version == &old.id {
+                n / 1024.0
+            } else {
+                2.0 + n / 32.0
+            };
+            assert!(n >= 1.0 && n <= if version == &old.id { 1024.0 } else { 32.0 });
+            let distance = 1.0 - 1.0 / (1.0 + t * t).sqrt();
+            assert!((hit.vector_distance.unwrap() - distance).abs() < 1e-5);
+        }
+    }
+    exact.pool().close().await;
+    ann.pool().close().await;
+}

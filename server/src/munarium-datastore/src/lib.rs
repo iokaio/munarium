@@ -34,6 +34,7 @@
 //! [`ArtifactCacheKey`], and durable catalog keys carry the tenant separately.
 
 pub mod canonical;
+pub mod diagnostics;
 pub mod fusion;
 pub mod hydrate;
 #[cfg(feature = "lexical-tantivy")]

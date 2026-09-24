@@ -204,9 +204,12 @@ impl IdentityDelta {
     }
 }
 
-/// Per-phase timing, in milliseconds.
+/// Per-phase timing in milliseconds, with optional engine work observations.
+/// A missing work record means the leg was not observed, not zero work.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PhaseLatency {
+    pub lexical_work: Option<Box<munarium_datastore::diagnostics::CandidateDiagnostics>>,
+    pub vector_work: Option<Box<munarium_datastore::diagnostics::CandidateDiagnostics>>,
     pub lexical_ms: f64,
     pub vector_ms: f64,
     pub fusion_ms: f64,

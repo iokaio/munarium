@@ -124,7 +124,7 @@ Each row is a coherent implementation slice; it may require more than one PR whe
 | P15 | Library support and lint tightening | D5; measured audit | Medium | Isolated consumer builds/MSRV if adopted; targeted production failure handling |
 | P16 | Shared gate definitions and policy follow-ups | P02 stabilized; maintainer-owned workflow changes | Medium | Same required coverage before/after, automatic CI retained, checker self-tests |
 
-P02–P04 are merged. Prioritize the remaining P01 follow-ups and P05 dispatch diagnostics. P06–P08 are the next engineering investment because they establish whether performance and recovery changes are needed. A failing authorization, persistence, or compatibility reproduction discovered in any slice takes priority over optimization. Money and embedded support are conditional product work, not prerequisites for fixing shared-code defects.
+P02–P06 diagnostics and baseline slices are merged; broader P05 admission and diagnostic access still await D1/D7. P07 retrieval instrumentation and characterization is the next engineering slice, followed by the P08 application-process crash baseline under D3. Keep the outstanding P01 late reconciliation, estimator revisions, and usage-quality reporting separate. Characterization establishes whether retrieval and recovery fixes are needed. A failing authorization, persistence, or compatibility reproduction discovered in any slice takes priority over optimization. Money and embedded support are conditional product work, not prerequisites for fixing shared-code defects.
 
 For each PR, record affected invariants, a behavioral example, files changed, focused checks, unavailable evidence, and rollback constraints. Keep one behavior and its tests/documentation together. Avoid a large preliminary refactor merely to make later changes aesthetically uniform.
 
@@ -401,6 +401,76 @@ Recheck current authorization at the serving boundary according to the existing 
 Keep multi-collection RRF behavior and per-index BM25 scales intact. Reuse the existing late-file/starvation regression in `merge.rs`. Preserve datastore mode's no-silent-PostgreSQL-fallback behavior; a rollout comparison is not permission to change the serving engine after an error.
 
 **Rollout:** add metrics first, run shadow comparisons on fictional/test data, then enable the measured optimization through the existing retrieval selector or a narrowly scoped configuration. Compare result identities, eligibility, provenance, p95, and resource work. Roll back on any authorization mismatch, incorrect pin, or unexplained quality loss, even if latency improves. Retain the previous artifact format and engine option until the new path qualifies.
+
+#### P07 characterization slice
+
+The first slice adds internal candidate/work diagnostics alongside datastore
+`PhaseLatency`, and opt-in debug events under `munarium_retrieval::work` for
+PostgreSQL and datastore collection searches. It adds no diagnostic endpoint or
+new metric labels. Records contain counts, engine/leg categories and timings;
+no tenant, query, collection, source, or chunk identities are emitted by these
+events. D7 still governs any wider diagnostic access.
+
+`requested` is the caller's candidate count; `candidate_limit` includes lexical
+demotion overfetch; `fetched` is the returned engine pool; `accepted` and
+`rejected` describe adapter truncation only (`rank_cutoff`). They do not measure
+engine-internal rejection or authorization decisions. Refill remains zero.
+Flat vectors report a full scan and its corpus-size work bound, including the
+existing scan at a zero result limit. DiskANN reports its engine's distance
+computations and effective search-list size. That list size is not a hard work
+bound or a unique-node count. Tantivy/SQL visited work and engine exhaustion
+remain unavailable. A short result alone does not prove exhaustion. PostgreSQL
+reports adapter counts and configured `ef_search` in debug events; its existing
+shadow reference timing remains aggregate and has no attached work record.
+
+The focused fixtures are:
+
+- [Independent exact and ANN characterization](../src/munarium-datastore/tests/retrieval_characterization.rs):
+  independently computed f64 cosine ordering, sparse preselected generations,
+  late nearest candidates, zero queries, zero/exact/over-limit candidate counts,
+  reopen, and measured identity recall@10 at two ANN search-list sizes. These
+  engine fixtures do not implement or claim record-level ACLs.
+- [Artifact round trips](../src/munarium-datastore/tests/round_trip.rs):
+  demotion promotes a late candidate inside the bounded overfetch pool; a
+  narrower pool honestly misses it. Concurrent replacement-generation building
+  leaves an already opened pin unchanged, including records absent from the new
+  snapshot. This is immutable artifact behavior, not a removal-denial contract.
+- [PostgreSQL collection characterization](../src/munarium-retrieval-pg/tests/collections_integration.rs):
+  32 current vectors beside 1,024 retired-generation vectors, an analytic exact
+  ordering oracle, explicit historical pins, and ANN recall with a verified
+  HNSW plan. Exact planner controls are test-only. Scores and generation identity
+  are checked even when bounded ANN misses the oracle's top ten.
+- [Serving authorization characterization](../src/munarium-server/src/sessions_model_tests.rs):
+  one eligible collection out of 24, independent level/compartment expectations,
+  tenant isolation, old/current generation provenance, and a second connection's
+  policy change followed by the next serving-boundary eligibility check. Removed
+  collections remain ineligible. This does not establish an atomic authorization
+  snapshot across an in-flight policy change.
+- [Mirror execution](../src/munarium-retrieval/tests/mirror_integration.rs)
+  checks that candidate diagnostics reach the execution latency record. Existing
+  merge late-file/starvation and serving no-fallback regressions remain in place.
+
+Run the focused characterization with an isolated PostgreSQL test URL:
+
+```powershell
+cargo test --locked --offline -p munarium-datastore --features vector-diskann --test retrieval_characterization --test round_trip -- --nocapture
+cargo test --locked --offline -p munarium-retrieval-pg --test collections_integration -- --nocapture
+cargo test --locked --offline -p munarium-retrieval --lib --test mirror_integration
+cargo test --locked --offline -p munarium-server sparse_collection_eligibility -- --nocapture
+```
+
+The PostgreSQL fixtures report `NOT RUN` when their database is unavailable;
+the test runner's success in that case is not database evidence. Synthetic recall
+is characterization, not a corpus-wide quality guarantee or calibrated latency
+SLO. The slice preserves ranking, generation selection, existing overfetch/search
+settings, artifact format, and engine routing. No retrieval fix or new eligibility
+seam follows merely from the plan; a separately demonstrated gap must scope one.
+Rollback removes instrumentation/tests without data migration. P08 remains the
+next slice, with D3 defining application-process recovery guarantees separately
+from database and power-loss recovery. P01 late reconciliation must preserve
+history/original day, handle concurrent/replayed evidence idempotently, and let
+excess usage reduce future admission; it remains separate from estimator and
+usage-quality reporting follow-ups.
 
 ### 8.2 P12: qualify supported path permissions — R12
 
