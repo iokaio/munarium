@@ -1,0 +1,88 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="640" viewBox="0 0 1500 640" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+  <defs>
+    <marker id="a2f855a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#2f855a" />
+    </marker>
+    <marker id="s2f855a" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#2f855a" />
+    </marker>
+    <marker id="a52606d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#52606d" />
+    </marker>
+    <marker id="s52606d" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#52606d" />
+    </marker>
+    <marker id="ac05621" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#c05621" />
+    </marker>
+    <marker id="sc05621" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#c05621" />
+    </marker>
+    <marker id="ad9dee4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#d9dee4" />
+    </marker>
+    <marker id="sd9dee4" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#d9dee4" />
+    </marker>
+  </defs>
+  <rect width="100%" height="100%" fill="#ffffff" />
+  <text x="32" y="44" font-size="24" font-weight="700" fill="#1f2933" text-anchor="start">Provider usage certainty in budget settlement (PR #44, roadmap P01 / R01)</text>
+  <text x="32" y="72" font-size="14" font-weight="400" fill="#52606d" text-anchor="start">A successful answer does not prove the provider reported complete usage.</text>
+  <rect x="40" y="130" width="280" height="80" rx="10" fill="#e8f0fe" stroke="#2b6cb0" stroke-width="1.6" />
+  <text x="180.0" y="166.76" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">Admit call</text>
+  <text x="180.0" y="188.7" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">reserve estimate R tokens</text>
+  <rect x="380" y="130" width="280" height="80" rx="10" fill="#f4f5f7" stroke="#7b8794" stroke-width="1.6" />
+  <text x="520.0" y="166.76" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">Provider call succeeds</text>
+  <text x="520.0" y="188.7" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">usage report may be partial</text>
+  <path d="M 320 170 L 380 170" fill="none" stroke="#52606d" stroke-width="1.8" marker-end="url(#a52606d)" />
+  <polygon points="860,105.0 1025.0,170 860,235.0 695.0,170" fill="#f4f5f7" stroke="#7b8794" stroke-width="1.6" />
+  <text x="860" y="166.10000000000002" font-size="13" font-weight="700" fill="#1f2933" text-anchor="middle">Complete observed</text>
+  <text x="860" y="183.00000000000003" font-size="13" font-weight="400" fill="#1f2933" text-anchor="middle">counts?</text>
+  <path d="M 660 170 L 695 170" fill="none" stroke="#52606d" stroke-width="1.8" marker-end="url(#a52606d)" />
+  <rect x="1110" y="110" width="350" height="90" rx="10" fill="#e6f4ea" stroke="#2f855a" stroke-width="1.6" />
+  <text x="1285.0" y="151.76" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">Settle the checked sum</text>
+  <text x="1285.0" y="173.7" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">explicit zero is a valid count</text>
+  <path d="M 1025 170 L 1110 155" fill="none" stroke="#2f855a" stroke-width="1.8" marker-end="url(#a2f855a)" />
+  <rect x="1048.92" y="138" width="32.160000000000004" height="20" rx="4" fill="#ffffff" opacity="0.92" />
+  <text x="1065" y="151" font-size="12" font-weight="600" fill="#2f855a" text-anchor="middle">yes</text>
+  <rect x="1110" y="250" width="350" height="110" rx="10" fill="#fff4e0" stroke="#c05621" stroke-width="1.6" />
+  <text x="1285.0" y="293.47999999999996" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">Settle max(R, known subtotal)</text>
+  <text x="1285.0" y="315.41999999999996" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">missing, partial, malformed or</text>
+  <text x="1285.0" y="331.97999999999996" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">legacy unverified usage</text>
+  <path d="M 860 235 L 860 305 L 1110 305" fill="none" stroke="#c05621" stroke-width="1.8" marker-end="url(#ac05621)" />
+  <rect x="887.28" y="278" width="25.44" height="20" rx="4" fill="#ffffff" opacity="0.92" />
+  <text x="900" y="291" font-size="12" font-weight="600" fill="#c05621" text-anchor="middle">no</text>
+  <rect x="380" y="250" width="420" height="110" rx="10" fill="#fdecec" stroke="#c53030" stroke-width="1.6" />
+  <text x="590.0" y="293.47999999999996" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">Before #44</text>
+  <text x="590.0" y="315.41999999999996" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">absent usage could become 0,</text>
+  <text x="590.0" y="331.97999999999996" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">so the reservation settled to zero</text>
+  <text x="40" y="420" font-size="16" font-weight="700" fill="#1f2933" text-anchor="start">Examples (reservation R = 10)</text>
+  <text x="50" y="454" font-size="14" font-weight="700" fill="#1f2933" text-anchor="start">Provider reports</text>
+  <text x="310" y="454" font-size="14" font-weight="700" fill="#1f2933" text-anchor="start">Before #44</text>
+  <text x="470" y="454" font-size="14" font-weight="700" fill="#1f2933" text-anchor="start">After #44</text>
+  <path d="M 40 462 L 620 462" fill="none" stroke="#d9dee4" stroke-width="1" />
+  <text x="50" y="484" font-size="14" font-weight="400" fill="#1f2933" text-anchor="start">nothing</text>
+  <text x="310" y="484" font-size="14" font-weight="400" fill="#c53030" text-anchor="start">0</text>
+  <text x="470" y="484" font-size="14" font-weight="400" fill="#1f2933" text-anchor="start">10</text>
+  <path d="M 40 492 L 620 492" fill="none" stroke="#d9dee4" stroke-width="1" />
+  <text x="50" y="514" font-size="14" font-weight="400" fill="#1f2933" text-anchor="start">partial count of 15</text>
+  <text x="310" y="514" font-size="14" font-weight="400" fill="#1f2933" text-anchor="start">provider-specific</text>
+  <text x="470" y="514" font-size="14" font-weight="400" fill="#1f2933" text-anchor="start">15</text>
+  <path d="M 40 522 L 620 522" fill="none" stroke="#d9dee4" stroke-width="1" />
+  <text x="50" y="544" font-size="14" font-weight="400" fill="#1f2933" text-anchor="start">complete: 7</text>
+  <text x="310" y="544" font-size="14" font-weight="400" fill="#1f2933" text-anchor="start">7</text>
+  <text x="470" y="544" font-size="14" font-weight="400" fill="#1f2933" text-anchor="start">7</text>
+  <path d="M 40 552 L 620 552" fill="none" stroke="#d9dee4" stroke-width="1" />
+  <text x="50" y="574" font-size="14" font-weight="400" fill="#1f2933" text-anchor="start">complete: explicit 0</text>
+  <text x="310" y="574" font-size="14" font-weight="400" fill="#1f2933" text-anchor="start">0</text>
+  <text x="470" y="574" font-size="14" font-weight="400" fill="#1f2933" text-anchor="start">0</text>
+  <path d="M 40 582 L 620 582" fill="none" stroke="#d9dee4" stroke-width="1" />
+  <text x="700" y="452.0" font-size="14" font-weight="400" fill="#52606d" text-anchor="start">• Ollama still requires valid counts; invalid counts are an error.</text>
+  <text x="700" y="472.3" font-size="14" font-weight="400" fill="#52606d" text-anchor="start">• Existing response structs and required trait methods are unchanged;</text>
+  <text x="700" y="492.6" font-size="14" font-weight="400" fill="#52606d" text-anchor="start">  detailed usage arrives through new defaulted provider methods.</text>
+  <text x="700" y="512.9" font-size="14" font-weight="400" fill="#52606d" text-anchor="start">• No migration or wire change. Historical rows are not rewritten.</text>
+  <text x="700" y="533.2" font-size="14" font-weight="400" fill="#52606d" text-anchor="start">• Every accounting writer must be upgraded before behavior is uniform</text>
+  <text x="700" y="553.5" font-size="14" font-weight="400" fill="#52606d" text-anchor="start">  across replicas; conservative charges are not a strict upper bound.</text>
+  <text x="700" y="573.8" font-size="14" font-weight="400" fill="#52606d" text-anchor="start">• Open #47/#48: evidence and retries; reconciliation remains separate.</text>
+</svg>
