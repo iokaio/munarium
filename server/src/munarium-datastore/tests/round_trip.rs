@@ -772,7 +772,7 @@ fn demotion_reports_bounded_pool_and_keeps_the_late_candidate() {
                 "s1",
                 i,
                 if i == 19 {
-                    "vacation handbook"
+                    "vacation handbook guidance employees managers scheduling annual leave requests"
                 } else {
                     "vacation catalog"
                 },
@@ -803,8 +803,19 @@ fn demotion_reports_bounded_pool_and_keeps_the_late_candidate() {
         }],
         ..Default::default()
     };
-    // All equal raw scores: the independent expected order is c00..c19.
+    // The longer handbook has a strictly lower raw BM25 score than every
+    // catalog row. This puts it outside a ten-row pool regardless of how
+    // Tantivy chooses between equal-score catalog rows at the cutoff.
+    let raw_query = LexicalPlan {
+        demotions: Vec::new(),
+        ..query.clone()
+    };
+    let raw = shard.lexical_candidates(&raw_query, 20).unwrap();
+    assert_eq!(raw.len(), 20);
+    assert_eq!(raw[19].chunk_id, "c19");
+    assert!(raw[..19].iter().all(|c| c.score > raw[19].score));
     // At k=5 the 4x pool reaches c19, which rises above every catalog row.
+    // The entire pool is present, so ties then break on chunk id.
     let batch = shard.lexical_candidates_diagnosed(&query, 5).unwrap();
     assert_eq!(
         batch
@@ -827,7 +838,12 @@ fn demotion_reports_bounded_pool_and_keeps_the_late_candidate() {
     // the late candidate is outside that pool. No unbounded refill is added.
     let narrow = shard.lexical_candidates_diagnosed(&query, 1).unwrap();
     assert_eq!(narrow.diagnostics.candidate_limit, 10);
-    assert_eq!(narrow.candidates[0].chunk_id, "c00");
+    assert_eq!(narrow.diagnostics.fetched, 10);
+    assert_eq!(narrow.diagnostics.accepted, 1);
+    assert_eq!(narrow.diagnostics.rejected, 9);
+    assert_eq!(narrow.candidates.len(), 1);
+    assert_ne!(narrow.candidates[0].chunk_id, "c19");
+    assert!(narrow.candidates[0].score < batch.candidates[0].score);
     let zero = shard.lexical_candidates_diagnosed(&query, 0).unwrap();
     assert!(zero.candidates.is_empty());
     assert_eq!(zero.diagnostics.fetched, 10);
