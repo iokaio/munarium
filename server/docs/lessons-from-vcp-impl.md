@@ -1,6 +1,6 @@
 # Munarium Server implementation plan from the VCP lessons
 
-**Status:** implementation roadmap. The first P01 accounting correction merged in [PR #44](https://github.com/iokaio/munarium/pull/44); the remaining work below is proposed. This documentation change adds no runtime behavior.
+**Status:** implementation roadmap. The first P01 accounting correction merged in [PR #44](https://github.com/iokaio/munarium/pull/44); P02–P04 merged in [PR #46](https://github.com/iokaio/munarium/pull/46). The durable P01 evidence slice is implemented below; later slices remain proposed.
 
 **Reviewed:** 2026-09-23.
 
@@ -8,7 +8,7 @@
 
 **Input:** [lessons-from-vcp.md](lessons-from-vcp.md), including its R01–R34 recommendation identifiers.
 
-With the first provider usage correction merged, the next independent slices are truthful validation results (P02), persistence round-trip tests (P03), and verified documentation corrections (P04). Track the remaining P01 evidence/reporting work separately. Then measure governance and retrieval before optimizing them. Changes to historical interpretation, recovery guarantees, retention, and the public protocol require explicit compatibility designs before implementation.
+P02–P04 are merged in PR #46: truthful validation results, persistence round-trip tests, and verified documentation corrections. P01 now retains durable reservation and usage evidence; late reconciliation and reporting remain separate follow-ups. Then measure governance and retrieval before optimizing them. Changes to historical interpretation, recovery guarantees, retention, and the public protocol require explicit compatibility designs before implementation.
 
 This plan develops the recommendations against the current Munarium source. It does not treat downstream measurements as Server benchmarks or assume that every proposed safeguard is absent. The analysis is newly written for this repository; implementation references below point to this repository, without requiring another project's code or private operational records.
 
@@ -107,10 +107,10 @@ Each row is a coherent implementation slice; it may require more than one PR whe
 
 | Slice | Deliverable | Dependencies | Relative scope | Exit evidence |
 |---|---|---|---|---|
-| P01 | Provider usage certainty and conservative settlement; first correction merged in PR #44, durable evidence and reconciliation pending | Baseline parser/budget tests | Medium | Explicit zero accepted; absent/partial usage never settles as observed zero; memory/PG parity |
-| P02 | Check outcomes, receipts, checker controls | None; parallel with P01 | Medium | Pass/fail/missing/interrupted fixtures and correct exit precedence |
-| P03 | JSON feature/persistence characterization | None; parallel with P01 | Small–medium | Default and feature-enabled round trips through actual persistence paths |
-| P04 | Verified documentation corrections | Current-source recheck | Small | Current references corrected; historical examples preserved; documentation gates |
+| P01 | Provider usage certainty and conservative settlement; first correction merged in PR #44, durable evidence implemented; reconciliation pending | Baseline parser/budget tests | Medium | Explicit zero accepted; absent/partial usage never settles as observed zero; memory/PG parity |
+| P02 | Merged in PR #46: Check outcomes, receipts, checker controls | None; parallel with P01 | Medium | Pass/fail/missing/interrupted fixtures and correct exit precedence |
+| P03 | Merged in PR #46: JSON feature/persistence characterization | None; parallel with P01 | Small–medium | Default and feature-enabled round trips through actual persistence paths |
+| P04 | Merged in PR #46: Verified documentation corrections | Current-source recheck | Small | Current references corrected; historical examples preserved; documentation gates |
 | P05 | Provider path inventory, attempts, caps, retry diagnostics | P01; D1/D7 for policy changes | Medium–large | Every dispatch has an explicit accounting policy; concurrent/retry/cancellation tests |
 | P06 | Clock/ID seams and governance baseline | Existing conformance; P02 receipts | Medium | Existing constructors unchanged; reproducible traces and separated timings |
 | P07 | Sparse-scope retrieval characterization and measured fix | P06 baseline where relevant | Medium | Exact-oracle comparisons, authorization parity, bounded-work evidence |
@@ -124,7 +124,7 @@ Each row is a coherent implementation slice; it may require more than one PR whe
 | P15 | Library support and lint tightening | D5; measured audit | Medium | Isolated consumer builds/MSRV if adopted; targeted production failure handling |
 | P16 | Shared gate definitions and policy follow-ups | P02 stabilized; maintainer-owned workflow changes | Medium | Same required coverage before/after, automatic CI retained, checker self-tests |
 
-Prioritize P02–P04 and the remaining P01 follow-ups. P06–P08 are the next engineering investment because they establish whether performance and recovery changes are needed. A failing authorization, persistence, or compatibility reproduction discovered in any slice takes priority over optimization. Money and embedded support are conditional product work, not prerequisites for fixing shared-code defects.
+P02–P04 are merged. Prioritize the remaining P01 follow-ups and P05 dispatch diagnostics. P06–P08 are the next engineering investment because they establish whether performance and recovery changes are needed. A failing authorization, persistence, or compatibility reproduction discovered in any slice takes priority over optimization. Money and embedded support are conditional product work, not prerequisites for fixing shared-code defects.
 
 For each PR, record affected invariants, a behavioral example, files changed, focused checks, unavailable evidence, and rollback constraints. Keep one behavior and its tests/documentation together. Avoid a large preliminary refactor merely to make later changes aesthetically uniform.
 
@@ -138,7 +138,9 @@ At the original baseline, `CompletionResponse` contained two mandatory `u64` cou
 
 **Merged first slice:** `UsageEvidence` and `DetailedCompletionResponse` now carry independently optional counts through defaulted detailed provider methods. Complete observed usage settles its checked sum, including explicit zero. Incomplete or unverified usage charges `max(original_reservation, known_subtotal)`; no missing-component estimator was added. Hosted adapters share one decode/request path, Ollama retains its strict parser, and memory/PostgreSQL budget arithmetic is checked. Scripted gateway tests cover both stores and ordinary/structured completion. See [current invocation provenance](architecture.md#93-invocation-provenance).
 
-**Still proposed:** durable usage quality, an effective-request estimator with revision identity, late reconciliation, broader attempt/admission coverage, and usage-quality reporting. The existing wire counts, metrics, and reports retain their numeric projections. The design and full acceptance matrix below include these follow-ups; PR #44 does not complete all of them.
+**Durable evidence slice:** memory and PostgreSQL preserve original reserved units, accounted units, independently optional usage counts and source quality in one settlement. The reservation ID identifies the evidence. Migration 0035 leaves historical original units and usage unknown; it does not relabel historical zeros. Legacy `settle` and custom stores remain source compatible through defaulted methods. Full observation is derived from provider-reported source and both counts; partial/missing/malformed/unverified evidence stays distinct. Duplicate settlement, release and sweep cannot replace settled evidence.
+
+**Still proposed:** an effective-request estimator with revision identity, late reconciliation, broader attempt/admission coverage, and usage-quality reporting. The existing wire counts, metrics, and reports retain their numeric projections. The design and full acceptance matrix below include these follow-ups; PR #44 does not complete all of them.
 
 **Internal representation and extensions.** The first slice added provider-neutral usage evidence with independently optional input/output counts and a source classification. Add an estimator revision when improved estimates are introduced. Preserve raw observed categories needed for future accounting without conflating overlapping categories. The conceptual shape is:
 
@@ -646,7 +648,7 @@ Rollback must be described at the level of state and semantics. Switching an eng
 
 | ID | Planned treatment | Slice / section |
 |---|---|---|
-| R01 | First missing/partial usage correction merged in PR #44; durable evidence, estimates, and reconciliation remain proposed | P01, §4.1 |
+| R01 | First missing/partial usage correction merged in PR #44; durable evidence implemented; estimates and reconciliation remain proposed | P01, §4.1 |
 | R02 | Profile-scoped outcomes and durable local receipts | P02, §5.1; Matrix follow-up |
 | R03 | Fix reverified current drift only | P04, §5.3 |
 | R04 | Checker meaning/limitations guidance, synchronized agent instructions | P16, §5.3 and §13.3; maintainer-owned policy |
@@ -691,4 +693,4 @@ This planning task is complete when this document is indexed, its current-source
 
 An implementation slice is complete only when its behavior, compatibility, migration/rollback constraints, tests, and documentation meet its exit criteria. A research slice can complete with rejection or inconclusive evidence if that is an allowed preregistered outcome. An unavailable environment or accepted waiver can permit a separately recorded release decision, but cannot manufacture qualification evidence.
 
-The immediate actionable backlog is P02–P04 plus the remaining P01 follow-ups. Their outputs should refine the estimates and contracts for later slices before additional architecture is committed.
+P02–P04 are merged in PR #46. The immediate actionable backlog is P05 and the remaining P01 follow-ups. Their outputs should refine the estimates and contracts for later slices before additional architecture is committed.

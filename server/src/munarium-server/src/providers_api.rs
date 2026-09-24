@@ -476,7 +476,11 @@ async fn complete_with_schema(
             },
             Err(_) => None,
         };
-        if let Err(e) = state.budgets().settle(r, accounted).await {
+        if let Err(e) = state
+            .budgets()
+            .settle_with_evidence(r, accounted, result.as_ref().ok().map(|out| out.usage))
+            .await
+        {
             tracing::warn!(error = %e, "budget settle failed; reservation stands at its estimate");
         }
     }

@@ -70,6 +70,17 @@ pub struct BudgetLedgerRow {
     pub reservations: u64,
 }
 
+/// Evidence for one reservation. Missing original units or usage means unknown.
+/// The reservation ID identifies the evidence; settlement is first-writer-wins.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BudgetEvidence {
+    pub reservation_id: String,
+    pub original_units: Option<u64>,
+    pub accounted_units: u64,
+    pub state: String,
+    pub usage: Option<crate::provider::UsageEvidence>,
+}
+
 /// Persistence for daily token budgets.
 #[async_trait::async_trait]
 pub trait BudgetStore: Send + Sync {
@@ -97,6 +108,22 @@ pub trait BudgetStore: Send + Sync {
         reservation: &BudgetReservation,
         actual_units: Option<u64>,
     ) -> Result<()>;
+
+    /// Atomically settle an amount and its evidence. Legacy stores retain their
+    /// existing behavior through this default; they cannot attest durable quality.
+    async fn settle_with_evidence(
+        &self,
+        reservation: &BudgetReservation,
+        accounted_units: Option<u64>,
+        _usage: Option<crate::provider::UsageEvidence>,
+    ) -> Result<()> {
+        self.settle(reservation, accounted_units).await
+    }
+
+    /// Read tenant-scoped evidence. Unsupported legacy stores return None.
+    async fn evidence(&self, _tenant: &str, _id: &str) -> Result<Option<BudgetEvidence>> {
+        Ok(None)
+    }
 
     /// Refund a reservation whose work never started. Idempotent like
     /// `settle`. Never call this after the provider may have been reached.

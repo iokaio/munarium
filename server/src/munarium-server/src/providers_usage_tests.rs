@@ -146,6 +146,16 @@ async fn settlement_case(
             reopened.ledger(&tenant).await.unwrap()[0].settled_units,
             accounted
         );
+        let id: String = sqlx::query_scalar("SELECT id FROM token_budget_reservations WHERE tenant_id = $1 ORDER BY created_at LIMIT 1")
+            .bind(&tenant).fetch_one(&pool).await.unwrap();
+        let stored = reopened.evidence(&tenant, &id).await.unwrap().unwrap();
+        assert_eq!(stored.original_units, Some(10));
+        assert_eq!(stored.accounted_units, accounted);
+        let usage = stored
+            .usage
+            .expect("gateway persists usage even for absent or overflowing counts");
+        assert_eq!(usage.input_tokens.unwrap_or(0), input);
+        assert_eq!(usage.output_tokens.unwrap_or(0), output);
         pool.close().await;
     }
 }

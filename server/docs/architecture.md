@@ -419,8 +419,10 @@ with their legacy methods, preserving structured requests and request hashes.
 
 This correction has limits: wire counts, token metrics, and invocation records
 retain their existing numeric projection (including zero for unavailable counts).
-The budget ledger stores the accounted amount, not durable usage quality or the
-original estimate. It does not support late reconciliation. The estimate still
+The budget ledger retains the original reservation, accounted amount, optional
+input/output counts and source quality in one settlement. Completeness is derived
+from both counts and a provider-reported source. Missing evidence is unknown.
+It does not support late reconciliation. The estimate still
 omits system/schema overhead and is not an upper bound. An overflowing total or
 a failed settlement retains the reservation rather than wrapping or refunding
 it; PostgreSQL rejects amounts outside its signed `BIGINT` range. Such retained
@@ -428,8 +430,10 @@ estimates do not prove full accounting of the provider's work. Retry attempts,
 embeddings, health probes, and requests without a capped tier retain their
 existing accounting scope.
 
-No migration is required for this first correction. Existing settled rows remain
-unchanged. All accounting writers must be upgraded before claiming the corrected
+Migration 0035 adds nullable original reservation and usage evidence columns.
+Historical rows and old writers retain unknown evidence; their mutable amounts
+cannot establish original reservations or observed usage. All accounting writers
+must be upgraded before claiming the corrected
 settlement behavior across replicas; rolling back a writer restores the old
 missing-usage limitation.
 
