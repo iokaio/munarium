@@ -243,6 +243,91 @@ fn build_seal_reopen_verify_and_query_with_no_server() {
     assert!(hits[0].lexical_rank.is_some() && hits[0].vector_rank.is_some());
 }
 
+/// Metadata is a string map; reserved-looking keys and exact decimal strings
+/// must survive the actual artifact format, not a Value-only simulation.
+#[test]
+fn json_feature_artifact_write() {
+    let temporary = tempfile::tempdir().unwrap();
+    let root = std::env::var_os("MUNARIUM_JSON_ARTIFACT_WRITE")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| temporary.path().to_path_buf());
+    let store = LocalFileStore::new(&root).unwrap();
+    let mut writer = ShardWriter::new(Some(3));
+    for mut c in fixture() {
+        c.metadata
+            .insert("$serde_json::private::Number".into(), "123".into());
+        c.metadata
+            .insert("decimal".into(), "12345678901234567890.123456789".into());
+        c.metadata.insert(
+            "nested-json-text".into(),
+            r#"{"$serde_json::private::Number":"text"}"#.into(),
+        );
+        writer.add(c).unwrap();
+    }
+    let mut specification = spec();
+    specification.chunker.params.insert(
+        "$serde_json::private::Number".into(),
+        Param::Text("ordinary text".into()),
+    );
+    let sealed = writer.seal(&specification, &plan(), &store).unwrap();
+    sealed.publish_manifest(&store).unwrap();
+    std::fs::write(root.join("qualification-id.txt"), &sealed.artifact_id).unwrap();
+    drop(store);
+    assert_json_artifact(&root);
+}
+
+fn assert_json_artifact(root: &std::path::Path) {
+    let id = std::fs::read_to_string(root.join("qualification-id.txt")).unwrap();
+    let store = LocalFileStore::new(root).unwrap();
+    let shard =
+        OpenShard::open(&store, &id, &ReaderCapabilities::v1(), &Limits::default()).unwrap();
+    let record = shard.record("s1#1").unwrap();
+    assert_eq!(record.source_id, "s1");
+    assert_eq!(record.source_path, "corpus/s1.md");
+    assert!(record.text.contains("washington"));
+    assert_eq!(record.metadata["$serde_json::private::Number"], "123");
+    assert_eq!(record.metadata["decimal"], "12345678901234567890.123456789");
+    assert_eq!(
+        record.metadata["nested-json-text"],
+        r#"{"$serde_json::private::Number":"text"}"#
+    );
+    assert_eq!(
+        shard.vector_candidates(&[1.0, 0.0, 0.0], 3).unwrap()[0].chunk_id,
+        "s1#0"
+    );
+}
+
+#[test]
+#[ignore = "requires artifact from another feature configuration; tools/test-json-features.ps1"]
+fn json_feature_artifact_read_other_configuration() {
+    let root = std::env::var_os("MUNARIUM_JSON_ARTIFACT_READ")
+        .expect("required artifact from the other feature configuration");
+    assert_json_artifact(std::path::Path::new(&root));
+}
+
+#[test]
+fn json_feature_typed_parameters_reject_unsupported_values() {
+    for raw in ["0.5", "18446744073709551615", "[]", "{}"] {
+        assert!(serde_json::from_str::<Param>(raw).is_err(), "{raw}");
+    }
+    for raw in [
+        "-9223372036854775808",
+        "9223372036854775807",
+        "null",
+        "true",
+        r#""0.123456789012345678901""#,
+    ] {
+        let value: Param = serde_json::from_str(raw).unwrap();
+        assert_eq!(
+            munarium_datastore::canonical::canonical_bytes(&value).unwrap(),
+            raw.as_bytes()
+        );
+    }
+    for value in [serde_json::json!(0.5), serde_json::json!(u64::MAX)] {
+        assert!(munarium_datastore::canonical::canonical_bytes(&value).is_err());
+    }
+}
+
 /// What converges, and what does not.
 ///
 /// The content-pure manifest means two builds of the same inputs produce the

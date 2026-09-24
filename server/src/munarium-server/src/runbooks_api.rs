@@ -125,7 +125,7 @@ async fn step_detail(
     run_id: &str,
     name: &str,
 ) -> Result<Option<serde_json::Value>> {
-    let row: Option<(Option<serde_json::Value>,)> = sqlx::query_as(
+    let row: Option<(Option<sqlx::types::Json<dto::json::LiteralValue>>,)> = sqlx::query_as(
         "SELECT detail FROM runbook_steps
           WHERE tenant_id = $1 AND run_id = $2 AND name = $3 ORDER BY ordinal LIMIT 1",
     )
@@ -135,7 +135,7 @@ async fn step_detail(
     .fetch_optional(pool(state)?)
     .await
     .map_err(|e| KernelError::Storage(e.to_string()))?;
-    Ok(row.and_then(|(d,)| d))
+    Ok(row.and_then(|(d,)| d).map(|v| v.0 .0))
 }
 
 /// The flattened execution plan: v1 = one unit per step (the pipeline,
@@ -868,7 +868,12 @@ pub async fn op_get_run(
         kind: "run",
         id: run_id.to_string(),
     })?;
-    let steps: Vec<(i32, String, String, Option<serde_json::Value>)> = sqlx::query_as(
+    let steps: Vec<(
+        i32,
+        String,
+        String,
+        Option<sqlx::types::Json<dto::json::LiteralValue>>,
+    )> = sqlx::query_as(
         "SELECT ordinal, name, state, detail FROM runbook_steps
           WHERE tenant_id = $1 AND run_id = $2 ORDER BY ordinal",
     )
@@ -888,7 +893,7 @@ pub async fn op_get_run(
                 ordinal: o as u32,
                 name: n,
                 state: s,
-                detail: d,
+                detail: d.map(|v| v.0 .0),
             })
             .collect(),
     })
@@ -2016,5 +2021,64 @@ spec:
                 "verifyDataViews"
             ],
         );
+    }
+}
+
+#[cfg(test)]
+mod json_persistence_tests {
+    use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires isolated PostgreSQL; tools/test-json-features.ps1 -Postgres"]
+    async fn json_feature_pg_runbook_result_reopens() {
+        let state = crate::json_persistence_tests::state().await;
+        let tenant = format!("json-run-{}", uuid::Uuid::new_v4());
+        // Seed only the pending plan; use the real result writer and reader.
+        let run = "fixture-run";
+        sqlx::query("INSERT INTO runbook_runs (tenant_id,id,runbook_ref,state) VALUES ($1,$2,'fixture@1','running')")
+            .bind(&tenant).bind(run).execute(pool(&state).unwrap()).await.unwrap();
+        let mut values = crate::json_persistence_tests::values();
+        for (ordinal, value) in values.iter().enumerate() {
+            sqlx::query("INSERT INTO runbook_steps (tenant_id,run_id,ordinal,name,state) VALUES ($1,$2,$3,'fixture','pending')")
+                .bind(&tenant).bind(run).bind(ordinal as i32).execute(pool(&state).unwrap()).await.unwrap();
+            set_step(
+                &state,
+                &tenant,
+                run,
+                ordinal,
+                "fixture",
+                StepState::Done,
+                Some(value.clone()),
+                None,
+            )
+            .await
+            .unwrap();
+        }
+        sqlx::query("INSERT INTO runbook_steps (tenant_id,run_id,ordinal,name,state,detail) VALUES ($1,$2,$3,'pre-fix','done',$4::jsonb)")
+            .bind(&tenant).bind(run).bind(values.len() as i32)
+            .bind(crate::json_persistence_tests::PRE_FIX_JSON)
+            .execute(pool(&state).unwrap()).await.unwrap();
+        values.push(crate::json_persistence_tests::pre_fix_value());
+        state.pg_pool().unwrap().close().await;
+        drop(state);
+        let reopened = crate::json_persistence_tests::state().await;
+        let response = op_get_run(&reopened, &tenant, run).await.unwrap();
+        assert_eq!(
+            step_detail(&reopened, &tenant, run, "pre-fix")
+                .await
+                .unwrap(),
+            Some(crate::json_persistence_tests::pre_fix_value())
+        );
+        let decoded: dto::RunStatusResponse =
+            serde_json::from_slice(&serde_json::to_vec(&response).unwrap()).unwrap();
+        assert_eq!(
+            decoded.steps.last().unwrap().detail,
+            Some(crate::json_persistence_tests::pre_fix_value())
+        );
+        assert_eq!(response.steps.len(), values.len());
+        for (step, expected) in response.steps.iter().zip(values) {
+            assert_eq!(step.state, "done");
+            assert_eq!(step.detail, Some(expected));
+        }
     }
 }

@@ -375,8 +375,12 @@ The gateway is the only component that speaks to LLM APIs, and it speaks with th
 | **Anthropic** | Messages API | yes (default `api.anthropic.com`) | supports platform gateways/proxies via base-URL override |
 | **OpenAI** | Chat Completions + Embeddings | yes | override covers Azure OpenAI-style deployments via compatible endpoint |
 | **OpenRouter** | OpenAI-compatible | yes | one integration yields broad model routing; per-model allowlist supported |
+| **Ollama** | Native HTTP chat + embeddings | required operator-configured endpoint | explicit model tiers; local endpoints may omit credentials |
 
-The `ModelProvider` trait (§3) is the seam; a fourth provider is a new implementation of the trait plus a conformance fixture — no core changes.
+The `ModelProvider` trait (§3) is the extension point: an additional provider
+implements that trait and adds a conformance fixture. Ollama is an HTTP transport
+to the configured endpoint. It does not embed inference in Server or establish
+that the installation is offline; that depends on the endpoint and environment.
 
 ### 9.2 Credential handling
 
@@ -454,7 +458,13 @@ Cross-cutting: idempotency keys on all command paths (stateless replicas require
 
 ## 11. Container and Runtime
 
-- **Image:** `cargo build --release --target x86_64-unknown-linux-musl`, static binaries (`munarium-server` and `mmctl`) into `gcr.io/distroless/static-debian12:nonroot`. Under 30 MB, cold start in milliseconds, no shell, no OS CVE surface. `build.ps1 -Image` runs the same `docker build`.
+- **Image:** the [Dockerfile](../Dockerfile) cross-builds static `munarium-server`
+  and `mmctl` binaries for `linux/amd64` (`x86_64-unknown-linux-musl`) and
+  `linux/arm64` (`aarch64-unknown-linux-musl`) into distroless static nonroot.
+  `build.ps1 -Image` uses this Dockerfile. Build support alone is not native
+  runtime qualification: the [container verification record](../CONTAINER.md#versions-and-verification)
+  distinguishes native AMD64 execution from emulated ARM64 execution. Image size,
+  startup latency and vulnerability findings depend on the build and measurement.
 - **Supply chain:** `cargo deny` runs in this repository's CI as the license and advisory gate. Signed release images, with SBOM and provenance attestations, are cut by Ioka outside this repository; pin them by digest.
 - **Runtime posture:** non-root (uid 65532 in the chart), read-only rootfs, no shell in the image. Config via environment; secrets only via the platform's secret mechanism.
 - **Health:** `/healthz` (liveness), `/readyz` (probes the store; reports `draining` once SIGTERM arrives), graceful drain before pod termination.

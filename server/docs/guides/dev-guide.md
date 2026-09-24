@@ -10,6 +10,11 @@ Historical implementation entries below describe the interfaces available when
 they were written. Their REST-only statements do not limit Server 1.2's named
 ServerApiService operations; consult the current API guide for transport support.
 
+The [current validation guide](validation.md) supersedes the fixed test ports,
+Compose database reuse, listener reaping and first-failure summaries in the
+historical walkthrough below. The current runners use disposable run-owned
+resources, retain every selected outcome and write source-bound receipts.
+
 ## About this guide
 
 This guide is part of Munarium Server and is licensed with it under the Apache
@@ -1551,10 +1556,11 @@ conformance. Therefore, `-BlackBox` alone still proves the offline world
 first because test.ps1:46-58 always runs. The flags add gates rather than
 replace them. `-All` simply sets all three (test.ps1:23).
 
-Second, **it fails at the first failing tier** with a non-zero exit
-(test.ps1:12). This makes it safe to chain in scripts. A green final line,
-`all requested test tiers OK`, certifies everything you asked for, not just
-the last item printed.
+Second, **the current runner records every selected requirement**. Independent
+checks continue after a failure; dependent checks record why they did not run.
+Exit 1 means failure, exit 3 means required coverage was unavailable/incomplete,
+and exit 0 means the selected profile passed with unchanged source inputs.
+Consult the [receipt](validation.md), not a historical success-banner transcript.
 
 ### `build.ps1`: compile and the CI lint pair
 
@@ -7910,9 +7916,10 @@ than here:
 - Fetch-on-cite re-retrieval is not ported into turn verification. The
   corrective round re-serves what the turn already served; extending it
   is the documented next step (verification.rs header; entry 10).
-- The streaming turn (`POST /v1/sessions/{id}/turns/stream`) and the
-  provider listing (`GET /v1/providers`) are REST-only. `session.proto`
-  has no server-streaming `Turn` and `ProviderService` no List (entry 16).
+- The typed `SessionService` still has no streaming Turn and the typed
+  `ProviderService` has no List. **Resolution verified 2026-09-23:** the
+  native `ServerApiService` provides `TurnStream` and `ListProviders`;
+  the whole Server surface is no longer REST-only (entry 16).
 
 ### 13.3 Folklore
 
@@ -8138,6 +8145,11 @@ deliberately, it failed in 5.01 s) and a real-router route test. Still
 REST-only — `session.proto` has no server-streaming `Turn` and
 `ProviderService` no List — the same parity debt entry 9 retired for the
 unary surface, open for these two routes and noted in §13.2.
+
+**Resolution verified 2026-09-23:** [the native Server API](../api/grpc.md)
+now exposes `ServerApiService.TurnStream` and `ListProviders`. The dispatcher
+streams the response body incrementally. The older typed `SessionService`
+and `ProviderService` retain the gaps described in this dated record.
 
 **Entry 17 — the cross-collection turn merge starved relevant
 collections.** Closed: `merge_hits` flattened per-collection hits and
@@ -10823,6 +10835,11 @@ recorded metric is the 4xx the event carried.
 One honesty remains. The route is **REST-only**; `session.proto` has no
 server-streaming `Turn` yet, so a gRPC client gets the unary turn and
 nothing in between.
+
+**Resolution verified 2026-09-23:** [the native Server API](../api/grpc.md)
+now exposes `ServerApiService.TurnStream` and `ListProviders`. The dispatcher
+streams the response body incrementally. The older typed `SessionService`
+and `ProviderService` retain the gaps described in this dated record.
 
 ### The grounding lessons
 

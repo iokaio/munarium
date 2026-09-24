@@ -8,6 +8,8 @@ description = "PostgreSQL StorageBackend: partitioned append-only ledger, lineag
 
 [dependencies]
 munarium-core = { path = "../munarium-core" }
+# Pure JSON-boundary decoder shared with the wire DTOs; no transport dependency.
+munarium-api-types = { path = "../munarium-api-types" }
 async-trait = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }

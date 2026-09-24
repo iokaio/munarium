@@ -272,7 +272,12 @@ fn row_to_claim(row: &sqlx::postgres::PgRow) -> Result<Claim> {
         provenance,
         supersedes_id: row.get("supersedes_id"),
         entity_id: row.get("entity_id"),
-        evidence: row.get("evidence"),
+        evidence: row
+            .try_get::<Option<sqlx::types::Json<munarium_api_types::json::LiteralValue>>, _>(
+                "evidence",
+            )
+            .map_err(storage_err)?
+            .map(|v| v.0 .0),
         confidence: row.get("confidence"),
         shape_ref: row.get("shape_ref"),
         // A JSONB that does not decode is a corrupt row, not an absent
@@ -858,7 +863,7 @@ impl StorageBackend for PgStore {
     }
 
     async fn version_metadata(&self, version_id: &str) -> Result<Option<serde_json::Value>> {
-        let row: Option<(Option<serde_json::Value>,)> =
+        let row: Option<(Option<sqlx::types::Json<munarium_api_types::json::LiteralValue>>,)> =
             sqlx::query_as("SELECT metadata FROM memory_versions WHERE tenant_id = $1 AND id = $2")
                 .bind(&self.tenant_id)
                 .bind(version_id)
@@ -866,7 +871,7 @@ impl StorageBackend for PgStore {
                 .await
                 .map_err(storage_err)?;
         match row {
-            Some((meta,)) => Ok(meta),
+            Some((meta,)) => Ok(meta.map(|v| v.0 .0)),
             None => Err(KernelError::NotFound {
                 kind: "version",
                 id: version_id.to_string(),

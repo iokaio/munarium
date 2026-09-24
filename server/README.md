@@ -249,6 +249,14 @@ future architecture; it is not a list of environment switches that enable every 
 
 ## Conformance
 
+The PowerShell 7 [validation runners](docs/guides/validation.md) record selected
+checks and source hashes in a JSON receipt. Use `./test.ps1` for offline checks,
+then add `-Postgres`, `-BlackBox`, `-Platform`, or `-Cluster` as needed (`-All`
+selects every tier). `-Enterprise` is a compatibility alias for `-Platform`.
+Exit codes are **0** for the selected profile passing, **1** for failure, and
+**3** for unavailable or incomplete required coverage. An offline pass does
+not establish PostgreSQL coverage.
+
 ```powershell
 cargo run -p mmp-conformance -- --in-process   # in-memory backend
 docker compose up -d postgres
@@ -265,8 +273,10 @@ chart ([deploy/helm/munarium/](deploy/helm/munarium/README.md)) and an illustrat
 module that stands up AKS, CloudNativePG and Envoy Gateway and installs the chart
 ([deploy/terraform/example-aks/](deploy/terraform/example-aks/README.md)). The operator's
 procedure — build, roll, verify, roll back — is
-[docs/ops/deployment-runbook.md](docs/ops/deployment-runbook.md). `.\gates.ps1` runs every
-gate CI runs, locally, against a compose PostgreSQL. CI: `.github/workflows/server-ci.yml`
+[docs/ops/deployment-runbook.md](docs/ops/deployment-runbook.md). `.\gates.ps1` runs the
+local gate profile against a disposable PostgreSQL container. Missing local
+`cargo-deny` is incomplete coverage; the receipt names what ran. CI retains its
+independent build, feature, dependency and infrastructure checks in `.github/workflows/server-ci.yml`
 (path-scoped to `server/**`).
 
 ---

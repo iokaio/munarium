@@ -38,7 +38,8 @@ customer source.
 
 ## About this repository
 
-Matrix versions independently of Server, whose current published image is 1.1.1.
+Matrix versions independently of Server, whose current published image is 1.2.1
+(see [Server versions and verification](../server/CONTAINER.md#versions-and-verification)).
 Build Matrix from this checkout using its Dockerfile or Rust workspace. The
 Server's `iokaio/munarium` image contains Server and `mmctl`; it does not contain
 Matrix or `mxctl`. Matrix's compatibility check distinguishes an exact version
@@ -115,6 +116,8 @@ docker compose --profile server up -d --build
 
 The base stack alone can manage assets; operations that need the Server to seal
 evidence fail without that peer. The optional Server publishes port 18080.
+This example retains its explicit 1.1.1 pin; updating the current-release field
+above does not qualify this example against another Server image.
 
 ## The five ideas worth knowing
 

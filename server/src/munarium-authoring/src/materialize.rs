@@ -43,7 +43,7 @@ pub fn seed_documents(
         serde_yaml::from_str(runbook_yaml).map_err(|e| format!("exemplar yaml: {e}"))?;
     tree["metadata"]["name"] = json!(name);
     tree["metadata"]["version"] = json!(1);
-    let renamed = serde_yaml::to_string(&tree).map_err(|e| format!("emit: {e}"))?;
+    let renamed = emit_yaml(&tree)?;
     munarium_runbooks::parse_runbook(&renamed).map_err(|e| format!("seeded runbook: {e}"))?;
     docs.insert(
         format!("runbooks/{name}.yaml"),
@@ -229,7 +229,7 @@ pub fn build_documents(
         "metadata": { "name": name, "version": 1 },
         "spec": spec,
     });
-    let runbook_yaml = serde_yaml::to_string(&runbook_tree).map_err(|e| format!("emit: {e}"))?;
+    let runbook_yaml = emit_yaml(&runbook_tree)?;
     let runbook_yaml = format!(
         "{}{}",
         header_comment(name, pattern, &description, &areas),
@@ -291,7 +291,7 @@ pub fn build_documents(
             "chunking": { "max_chars": max_chars },
         },
     });
-    let shape_yaml = serde_yaml::to_string(&shape_tree).map_err(|e| format!("emit: {e}"))?;
+    let shape_yaml = emit_yaml(&shape_tree)?;
     munarium_shapes::parse_shape(&shape_yaml)
         .map_err(|e| format!("materialized shape does not parse: {e}"))?;
 
@@ -345,6 +345,17 @@ fn header_comment(
         "#   mmctl apply -f shapes/{name}-documents.yaml\n#   mmctl apply -f runbooks/{name}.yaml\n"
     ));
     out
+}
+
+// Translate through JSON text into YAML's own value tree. Serializing a JSON
+// Number directly with a YAML serializer leaks serde_json's private number
+// representation when arbitrary_precision is unified into the graph. Parsing
+// the JSON tokens also keeps literal marker-like object keys as object keys.
+fn emit_yaml(tree: &Value) -> Result<String, String> {
+    let json = serde_json::to_string(tree).map_err(|e| format!("emit JSON: {e}"))?;
+    let yaml: serde_yaml::Value =
+        serde_yaml::from_str(&json).map_err(|e| format!("emit YAML value: {e}"))?;
+    serde_yaml::to_string(&yaml).map_err(|e| format!("emit: {e}"))
 }
 
 // ---- answer accessors -------------------------------------------------------
@@ -481,6 +492,28 @@ fn valid_field_name(s: &str) -> bool {
 mod tests {
     use super::*;
     use crate::catalog;
+
+    #[test]
+    fn json_feature_yaml_keeps_numbers_and_literal_keys_distinct() {
+        let tree = json!({
+            "signed": i64::MIN,
+            "unsigned": u64::MAX,
+            "fraction": 0.5,
+            "literal": {"$serde_json::private::Number": "ordinary text"},
+            "array": [true, null, "123"]
+        });
+        let yaml: serde_yaml::Value = serde_yaml::from_str(&emit_yaml(&tree).unwrap()).unwrap();
+        assert_eq!(yaml["signed"].as_i64(), Some(i64::MIN));
+        assert_eq!(yaml["unsigned"].as_u64(), Some(u64::MAX));
+        assert_eq!(yaml["fraction"].as_f64(), Some(0.5));
+        assert_eq!(
+            yaml["literal"]["$serde_json::private::Number"].as_str(),
+            Some("ordinary text")
+        );
+        assert_eq!(yaml["array"][0].as_bool(), Some(true));
+        assert!(yaml["array"][1].is_null());
+        assert_eq!(yaml["array"][2].as_str(), Some("123"));
+    }
 
     fn canonical_answers() -> Value {
         json!({
