@@ -1315,6 +1315,7 @@ impl PgRetrieval {
             };
             candidate_tsquery(&plan.lexemes, &stop, plan.minimum_should_match).unwrap_or_default()
         };
+        let lexical_started = std::time::Instant::now();
         let lexical = sqlx::query(
             "WITH rules AS (
                     SELECT (rule->>'lexical_multiplier')::double precision AS multiplier,
@@ -1368,6 +1369,14 @@ impl PgRetrieval {
         // a lexical-only query, or a collection built without vectors -- and
         // an adapter must never fabricate a leg, so an absent embedding means
         // the vector leg contributes nothing rather than contributing noise.
+        tracing::debug!(target: "munarium_retrieval::work", engine = "postgres", leg = "lexical",
+            requested = prepared.lexical_candidates, candidate_limit = prepared.lexical_candidates,
+            fetched = lexical.len(), accepted = lexical.len(),
+            adapter_rejected = 0, rejection_reason = "none", refill_count = 0,
+            visited = "unavailable", work_limit = "unavailable", exhausted = "unavailable",
+            elapsed_ms = lexical_started.elapsed().as_secs_f64() * 1000.0,
+            "retrieval candidate work");
+        let vector_started = std::time::Instant::now();
         let qvec = prepared
             .embedding
             .as_ref()
@@ -1454,6 +1463,16 @@ impl PgRetrieval {
                 vector
             }
         };
+
+        tracing::debug!(target: "munarium_retrieval::work", engine = "postgres", leg = "vector",
+            enabled = prepared.embedding.is_some(),
+            requested = prepared.vector_candidates, candidate_limit = prepared.vector_candidates,
+            fetched = vector.len(), accepted = vector.len(),
+            adapter_rejected = 0, rejection_reason = "none", refill_count = 0,
+            search_list = prepared.vector_candidates.clamp(40, 1000),
+            visited = "unavailable", work_limit = "unavailable", exhausted = "unavailable",
+            elapsed_ms = vector_started.elapsed().as_secs_f64() * 1000.0,
+            "retrieval candidate work");
 
         let mut hits = crate::rrf_fuse(&lexical, &vector, prepared.rrf_k);
         hits.truncate(if prepared.top_k == 0 {

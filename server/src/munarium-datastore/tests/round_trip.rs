@@ -757,3 +757,129 @@ fn an_unknown_vector_engine_is_refused_at_seal() {
         other => panic!("expected an Invalid refusal, got {other:?}"),
     }
 }
+
+#[cfg(feature = "lexical-tantivy")]
+#[test]
+fn demotion_reports_bounded_pool_and_keeps_the_late_candidate() {
+    use munarium_datastore::lexical::{Demotion, LexicalPlan, PlanTerm};
+    let dir = tempfile::tempdir().unwrap();
+    let store = LocalFileStore::new(dir.path()).unwrap();
+    let mut writer = ShardWriter::new(Some(3));
+    for i in 0..20 {
+        writer
+            .add(chunk(
+                &format!("c{i:02}"),
+                "s1",
+                i,
+                if i == 19 {
+                    "vacation handbook"
+                } else {
+                    "vacation catalog"
+                },
+                Some(vec![1.0, 0.0, 0.0]),
+            ))
+            .unwrap();
+    }
+    let sealed = writer.seal(&spec(), &plan(), &store).unwrap();
+    sealed.publish_manifest(&store).unwrap();
+    let shard = OpenShard::open(
+        &store,
+        &sealed.artifact_id,
+        &ReaderCapabilities::v1(),
+        &Limits::default(),
+    )
+    .unwrap();
+    let query = LexicalPlan {
+        terms: shard
+            .analyze("vacation")
+            .unwrap()
+            .into_iter()
+            .map(PlanTerm::user)
+            .collect(),
+        minimum_should_match: 1,
+        demotions: vec![Demotion {
+            contains: "catalog".into(),
+            multiplier: 0.01,
+        }],
+        ..Default::default()
+    };
+    // All equal raw scores: the independent expected order is c00..c19.
+    // At k=5 the 4x pool reaches c19, which rises above every catalog row.
+    let batch = shard.lexical_candidates_diagnosed(&query, 5).unwrap();
+    assert_eq!(
+        batch
+            .candidates
+            .iter()
+            .map(|c| c.chunk_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["c19", "c00", "c01", "c02", "c03"]
+    );
+    assert_eq!(batch.diagnostics.candidate_limit, 20);
+    assert_eq!(batch.diagnostics.fetched, 20);
+    assert_eq!(batch.diagnostics.accepted, 5);
+    assert_eq!(batch.diagnostics.rejected, 15);
+    assert_eq!(batch.diagnostics.rejection_reason, Some("rank_cutoff"));
+    assert_eq!(batch.diagnostics.visited, None);
+    assert_eq!(batch.diagnostics.work_limit, None);
+    assert_eq!(batch.diagnostics.exhausted, None);
+    assert_eq!(batch.diagnostics.refill_count, 0);
+    // Characterize the boundary honestly: k=1 overfetches only ten rows;
+    // the late candidate is outside that pool. No unbounded refill is added.
+    let narrow = shard.lexical_candidates_diagnosed(&query, 1).unwrap();
+    assert_eq!(narrow.diagnostics.candidate_limit, 10);
+    assert_eq!(narrow.candidates[0].chunk_id, "c00");
+    let zero = shard.lexical_candidates_diagnosed(&query, 0).unwrap();
+    assert!(zero.candidates.is_empty());
+    assert_eq!(zero.diagnostics.fetched, 10);
+}
+
+#[test]
+fn concurrent_generation_build_does_not_change_an_open_pin() {
+    let old_dir = tempfile::tempdir().unwrap();
+    let (old_store, old_id) = build_into(old_dir.path());
+    let old = std::sync::Arc::new(
+        OpenShard::open(
+            &old_store,
+            &old_id,
+            &ReaderCapabilities::v1(),
+            &Limits::default(),
+        )
+        .unwrap(),
+    );
+    let reader = old.clone();
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+    let reader_barrier = barrier.clone();
+    let thread = std::thread::spawn(move || {
+        reader_barrier.wait();
+        for _ in 0..32 {
+            let batch = reader
+                .vector_candidates_diagnosed(&[1.0, 0.0, 0.0], 1)
+                .unwrap();
+            assert_eq!(batch.candidates[0].chunk_id, "s1#0");
+            assert_eq!(batch.diagnostics.visited, Some(3));
+        }
+    });
+    barrier.wait();
+    let new_dir = tempfile::tempdir().unwrap();
+    let store = LocalFileStore::new(new_dir.path()).unwrap();
+    let mut writer = ShardWriter::new(Some(3));
+    // The replacement snapshot omits s1#0. An old pin still reads it.
+    for c in fixture().into_iter().skip(1) {
+        writer.add(c).unwrap();
+    }
+    let mut new_spec = spec();
+    new_spec.snapshot.watermark_seq += 1;
+    let sealed = writer.seal(&new_spec, &plan(), &store).unwrap();
+    sealed.publish_manifest(&store).unwrap();
+    let new = OpenShard::open(
+        &store,
+        &sealed.artifact_id,
+        &ReaderCapabilities::v1(),
+        &Limits::default(),
+    )
+    .unwrap();
+    assert_ne!(old.artifact_id, new.artifact_id);
+    assert!(new.record("s1#0").is_none());
+    assert!(old.record("s1#0").is_some());
+    thread.join().unwrap();
+}

@@ -25,6 +25,23 @@ pub struct Candidate {
 /// hide fusion inside a monolithic `search`.
 pub trait VectorIndex: Send + Sync {
     fn vector_candidates(&self, embedding: &[f32], limit: usize) -> Result<Vec<Candidate>, Error>;
+    /// Compatible default for engines that do not expose search work.
+    fn vector_candidates_diagnosed(
+        &self,
+        embedding: &[f32],
+        limit: usize,
+    ) -> Result<crate::diagnostics::CandidateBatch, Error> {
+        let candidates = self.vector_candidates(embedding, limit)?;
+        let diagnostics = crate::diagnostics::CandidateDiagnostics::returned(
+            limit,
+            candidates.len(),
+            candidates.len(),
+        );
+        Ok(crate::diagnostics::CandidateBatch {
+            candidates,
+            diagnostics,
+        })
+    }
     fn dimensions(&self) -> usize;
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool {
@@ -177,6 +194,26 @@ fn cosine_distance(a: &[f32], b: &[f32]) -> f32 {
 }
 
 impl VectorIndex for FlatVectorIndex {
+    fn vector_candidates_diagnosed(
+        &self,
+        embedding: &[f32],
+        limit: usize,
+    ) -> Result<crate::diagnostics::CandidateBatch, Error> {
+        let candidates = self.vector_candidates(embedding, limit)?;
+        let mut diagnostics = crate::diagnostics::CandidateDiagnostics::returned(
+            limit,
+            candidates.len(),
+            candidates.len(),
+        );
+        diagnostics.visited = Some(self.len());
+        diagnostics.distance_computations = Some(self.len());
+        diagnostics.work_limit = Some(self.len());
+        diagnostics.exhausted = Some(true);
+        Ok(crate::diagnostics::CandidateBatch {
+            candidates,
+            diagnostics,
+        })
+    }
     fn vector_candidates(&self, embedding: &[f32], limit: usize) -> Result<Vec<Candidate>, Error> {
         if embedding.len() != self.dims {
             return Err(Error::Invalid(format!(

@@ -826,6 +826,16 @@ async fn the_shadow_candidate_executes_and_compares_against_the_reference() {
         "every document mentions the tea; the lexical leg cannot be empty"
     );
     assert!(execution.latency.total_ms > 0.0);
+    let lexical_work = execution.latency.lexical_work.as_ref().unwrap();
+    assert_eq!(lexical_work.requested, prepared.lexical_candidates as usize);
+    assert!(lexical_work.accepted > 0);
+    assert!(lexical_work.fetched <= lexical_work.candidate_limit);
+    assert_eq!(lexical_work.visited, None);
+    let vector_work = execution.latency.vector_work.as_ref().unwrap();
+    assert_eq!(vector_work.requested, prepared.vector_candidates as usize);
+    assert!(vector_work.visited.unwrap() >= vector_work.accepted);
+    assert_eq!(vector_work.visited, vector_work.work_limit);
+    assert_eq!(vector_work.refill_count, 0);
     for hit in &execution.hits {
         assert!(
             hit.text.is_empty(),

@@ -342,6 +342,7 @@ fn run_blocking(
     // query through this artifact's own analyzer (module header). Selection
     // always uses the expanded formulation, mirroring the reference.
     let lex_started = Instant::now();
+    let mut lexical_work = None;
     let lexical = match &prepared.lexical {
         None => Vec::new(),
         Some(plan) => {
@@ -382,8 +383,13 @@ fn run_blocking(
                     .collect(),
                 minimum_should_match: plan.minimum_should_match,
             };
-            match shard.lexical_candidates(&ds_plan, prepared.lexical_candidates.max(0) as usize) {
-                Ok(c) => c,
+            match shard
+                .lexical_candidates_diagnosed(&ds_plan, prepared.lexical_candidates.max(0) as usize)
+            {
+                Ok(batch) => {
+                    lexical_work = Some(batch.diagnostics);
+                    batch.candidates
+                }
                 Err(e) => return refuse_or_fail(e),
             }
         }
@@ -391,11 +397,17 @@ fn run_blocking(
     let lexical_ms = lex_started.elapsed().as_secs_f64() * 1000.0;
 
     let vec_started = Instant::now();
+    let mut vector_work = None;
     let vector = match prepared.embedding.as_deref() {
         None => Vec::new(),
         Some(embedding) => {
-            match shard.vector_candidates(embedding, prepared.vector_candidates.max(0) as usize) {
-                Ok(c) => c,
+            match shard
+                .vector_candidates_diagnosed(embedding, prepared.vector_candidates.max(0) as usize)
+            {
+                Ok(batch) => {
+                    vector_work = Some(batch.diagnostics);
+                    batch.candidates
+                }
                 // A lexical-only artifact answering a hybrid query serves the
                 // leg it has; a dimension mismatch is a refusal.
                 Err(e) => return refuse_or_fail(e),
@@ -404,6 +416,9 @@ fn run_blocking(
     };
     let vector_ms = vec_started.elapsed().as_secs_f64() * 1000.0;
 
+    tracing::debug!(target: "munarium_retrieval::work", engine = "datastore",
+        lexical = ?lexical_work, vector = ?vector_work, lexical_ms, vector_ms,
+        "retrieval candidate work");
     let fuse_started = Instant::now();
     let fused = munarium_datastore::fusion::fuse(
         &lexical,
@@ -468,6 +483,8 @@ fn run_blocking(
         engine,
         hits,
         latency: PhaseLatency {
+            lexical_work: lexical_work.map(Box::new),
+            vector_work: vector_work.map(Box::new),
             lexical_ms,
             vector_ms,
             fusion_ms,

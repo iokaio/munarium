@@ -578,6 +578,16 @@ impl OpenShard {
         plan: &crate::lexical::LexicalPlan,
         limit: usize,
     ) -> Result<Vec<Candidate>, Error> {
+        Ok(self.lexical_candidates_diagnosed(plan, limit)?.candidates)
+    }
+
+    /// Same selection and demotion policy, with observable candidate counts.
+    #[cfg(feature = "lexical-tantivy")]
+    pub fn lexical_candidates_diagnosed(
+        &self,
+        plan: &crate::lexical::LexicalPlan,
+        limit: usize,
+    ) -> Result<crate::diagnostics::CandidateBatch, Error> {
         use crate::lexical::LexicalIndex as _;
         let Some(ix) = self.lexical.as_ref() else {
             return Err(Error::Unsupported(
@@ -612,8 +622,15 @@ impl OpenShard {
                     .then_with(|| a.chunk_id.cmp(&b.chunk_id))
             });
         }
+        let fetched = candidates.len();
         candidates.truncate(limit);
-        Ok(candidates)
+        let mut diagnostics =
+            crate::diagnostics::CandidateDiagnostics::returned(limit, fetched, candidates.len());
+        diagnostics.candidate_limit = fetch;
+        Ok(crate::diagnostics::CandidateBatch {
+            candidates,
+            diagnostics,
+        })
     }
 
     /// Analyze text through this artifact's OWN lexical analyzer.
@@ -653,8 +670,21 @@ impl OpenShard {
         embedding: &[f32],
         limit: usize,
     ) -> Result<Vec<Candidate>, Error> {
+        Ok(self
+            .vector_candidates_diagnosed(embedding, limit)?
+            .candidates)
+    }
+
+    pub fn vector_candidates_diagnosed(
+        &self,
+        embedding: &[f32],
+        limit: usize,
+    ) -> Result<crate::diagnostics::CandidateBatch, Error> {
         match &self.vectors {
-            None => Ok(Vec::new()),
+            None => Ok(crate::diagnostics::CandidateBatch {
+                candidates: Vec::new(),
+                diagnostics: crate::diagnostics::CandidateDiagnostics::returned(limit, 0, 0),
+            }),
             Some(ix) => {
                 // Stored vectors are refused non-finite at `push`; the query
                 // gets the same rule here, once, whatever engine answers it.
@@ -667,7 +697,7 @@ impl OpenShard {
                         "query embedding holds a non-finite value".into(),
                     ));
                 }
-                ix.vector_candidates(embedding, limit)
+                ix.vector_candidates_diagnosed(embedding, limit)
             }
         }
     }
