@@ -17,6 +17,8 @@ mod charts;
 mod chronology_api;
 mod collections_api;
 mod config;
+#[cfg(test)]
+mod crash_recovery;
 mod dashboard;
 mod datastore_builds;
 mod datastore_jobs;

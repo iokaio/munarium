@@ -1226,6 +1226,8 @@ impl AppState {
     }
 
     pub async fn idem_store(&self, tenant: &str, key: &str, request_hash: &str, response: &str) {
+        #[cfg(test)]
+        crate::crash_recovery::receipt_barrier(request_hash, response);
         if let Some(pool) = self.pg_pool() {
             // Recorded after the command completes (documented retry
             // contract); a concurrent duplicate keeps the first record.
@@ -1243,6 +1245,8 @@ impl AppState {
             if let Err(e) = result {
                 tracing::warn!(error = %e, "idempotency record insert failed");
             }
+            #[cfg(test)]
+            crate::crash_recovery::barrier("receipt_persisted");
             return;
         }
         self.idem.lock().await.insert(
