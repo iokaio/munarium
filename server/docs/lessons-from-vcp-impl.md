@@ -92,7 +92,7 @@ Discovery and tests can proceed before these decisions; dependent behavior chang
 |---|---|---|
 | D1: What is capped when no tier resolves? | Keep existing routing/cap behavior while explicitly reporting the scope. Design an opt-in config-wide cap or explicit missing-tier policy | Broader R15 enforcement; never silently assign a tier to an explicit model |
 | D2: Is money a Server reporting feature? | Defer prices until token evidence and invocation coverage are trustworthy | R16 schema, price maintenance, report API |
-| D3: Which fault guarantees are supported? | Name application-process recovery separately from database, disk, and power-loss guarantees | R13 acceptance and required CI coverage |
+| D3: Which fault guarantees are supported? | P08 scope: kill/restart the application while PostgreSQL stays running. Database crashes and power loss need separate qualification; stronger recovery contracts remain open | R13 acceptance and required CI coverage |
 | D4: What does deletion mean? | Preserve current soft-removal and audit retention; design each stronger mode explicitly | R21 cleanup, tombstones, restore behavior |
 | D5: Are embedded crates supported public Rust APIs? | Preserve existing constructors and minimize source breakage while documenting the decision | R31 MSRV/support tier; API shape for R01/R07/R08 |
 | D6: What makes governance useful for a target workload? | Freeze task population, minimum useful effect, cost/latency constraints, and mandatory authorization checks before the final evaluation | R25 quality claims and any paid campaign |
@@ -113,7 +113,7 @@ Each row is a coherent implementation slice; it may require more than one PR whe
 | P04 | Merged in PR #46: Verified documentation corrections | Current-source recheck | Small | Current references corrected; historical examples preserved; documentation gates |
 | P05 | Dispatch inventory and retry diagnostics implemented; broader admission and diagnostics pending | P01; D1/D7 for policy changes | Medium–large | Every dispatch has an explicit accounting policy; concurrent/retry/cancellation tests |
 | P06 | Injectable clocks/IDs and separated governance baseline implemented | Existing conformance; P02 receipts | Medium | Existing constructors unchanged; reproducible traces and separated timings |
-| P07 | Sparse-scope retrieval characterization and measured fix | P06 baseline where relevant | Medium | Exact-oracle comparisons, authorization parity, bounded-work evidence |
+| P07 | Characterization merged in PR #51; fixes require demonstrated gaps | P06 baseline where relevant | Medium | Exact-oracle comparisons, authorization parity, bounded-work evidence |
 | P08 | Crash tier and first recovery fixes | D3; P02; existing mirror fault hooks | Large | Named barriers, process termination, reopened-state assertions, reviewed recovery contracts |
 | P09 | Versioned value comparison | D5/D8; P06; contract design | Medium–large | Historical replay unchanged; exact-policy cross-backend/transport tests |
 | P10 | Authority/evidence audit and retention inventory | D4 for retention changes | Medium | Access-path matrix, effect-denial tests, declared derived-content treatment |
@@ -124,7 +124,7 @@ Each row is a coherent implementation slice; it may require more than one PR whe
 | P15 | Library support and lint tightening | D5; measured audit | Medium | Isolated consumer builds/MSRV if adopted; targeted production failure handling |
 | P16 | Shared gate definitions and policy follow-ups | P02 stabilized; maintainer-owned workflow changes | Medium | Same required coverage before/after, automatic CI retained, checker self-tests |
 
-P02–P06 diagnostics and baseline slices are merged; broader P05 admission and diagnostic access still await D1/D7. P07 retrieval instrumentation and characterization is the next engineering slice, followed by the P08 application-process crash baseline under D3. Keep the outstanding P01 late reconciliation, estimator revisions, and usage-quality reporting separate. Characterization establishes whether retrieval and recovery fixes are needed. A failing authorization, persistence, or compatibility reproduction discovered in any slice takes priority over optimization. Money and embedded support are conditional product work, not prerequisites for fixing shared-code defects.
+P02–P06 diagnostics and baseline slices are merged; broader P05 admission and diagnostic access still await D1/D7. P07 retrieval instrumentation and characterization merged in PR #51. P08 application-process crash characterization is the next engineering slice under D3. Keep the outstanding P01 late reconciliation, estimator revisions, and usage-quality reporting separate. Characterization establishes whether retrieval and recovery fixes are needed. A failing authorization, persistence, or compatibility reproduction discovered in any slice takes priority over optimization. Money and embedded support are conditional product work, not prerequisites for fixing shared-code defects.
 
 For each PR, record affected invariants, a behavioral example, files changed, focused checks, unavailable evidence, and rollback constraints. Keep one behavior and its tests/documentation together. Avoid a large preliminary refactor merely to make later changes aesthetically uniform.
 
@@ -509,6 +509,44 @@ Assert uniqueness and monotonic ordering under the actual sequence contract, not
 
 PostgreSQL remains running during an application-process kill. This does not qualify database restart, volume exhaustion, torn writes, host power loss, or backup restore. Define those as separate fault classes with their own environments and evidence. Memory mode is not required to survive process restart unless a new persistence contract is deliberately added.
 
+#### First P08 ledger fixture
+
+The [child-process fixture](../src/munarium-store-pg/src/crash_recovery.rs)
+exercises the actual `PgStore::append_claims` transaction at `before_commit`
+and `after_commit`, then `before_reply` in the fixture caller. The latter is a
+local acknowledgement boundary, not an HTTP/gRPC transport qualification.
+Each phase runs once with release/completion and once with forced child death.
+A fresh process reconnects, checks whole batches and previously acknowledged
+claims, verifies corrections/disputed rows and the original pin, compares every
+claim to its ledger event and allocation head, and appends using the recovered
+head. PostgreSQL runs continuously. Sequence assertions require unique ordered
+rows, not gapless global identity allocation.
+
+The fixture and hooks are guarded by `cfg(test)`, with no Cargo feature, endpoint,
+or shipping configuration. Even `--all-features` library/server builds omit them.
+Markers use a unique run directory; waits have 30-second bounds. The parent
+owns child handles and retains markers on failure. Offline controls check marker
+timeout and early exit as distinct failures and successful barrier release.
+Use a disposable database: unique tenant rows remain for inspection until that
+database is removed. No broad database or process cleanup is performed.
+
+From `server/`, with `MUNARIUM_TEST_DATABASE_URL` set to that disposable database:
+
+```powershell
+cargo test --locked --offline -p munarium-store-pg --lib crash_recovery -- --nocapture
+```
+
+Without the URL, the ledger test reports `UNAVAILABLE`; a green Cargo result
+then covers only offline controls. The child entry is intentionally ignored and
+launched by its parent. Existing database-enabled workspace CI runs the parent
+without a workflow change. This slice does not change recovery semantics or
+claim completion of P08. Command/receipt gaps, REST/gRPC acknowledgements,
+runbook effect/checkpoint divergence and approval-preserving explicit resume,
+artifact publication phases, and two-instance races remain subsequent coverage.
+Any demonstrated defect needs an explicitly reviewed recovery contract before
+a stronger guarantee is implemented. Database crashes, power loss and backup
+restore remain separate qualifications under D3.
+
 ### 9.2 Strengthen command recovery only where the contract supports it
 
 The current [REST retry documentation](api/rest.md) describes post-completion receipt behavior. A fault test exposing that window is characterization, not permission to silently impose a new contract across every command.
@@ -767,4 +805,4 @@ This planning task is complete when this document is indexed, its current-source
 
 An implementation slice is complete only when its behavior, compatibility, migration/rollback constraints, tests, and documentation meet its exit criteria. A research slice can complete with rejection or inconclusive evidence if that is an allowed preregistered outcome. An unavailable environment or accepted waiver can permit a separately recorded release decision, but cannot manufacture qualification evidence.
 
-P02–P04 are merged in PR #46. The remaining actionable work includes P01 reconciliation/reporting, D1/D7 decisions for broader P05 changes, and P07–P08 characterization. Their outputs should refine the estimates and contracts for later slices before additional architecture is committed.
+P02–P04 are merged in PR #46. The remaining actionable work includes P01 reconciliation/reporting, D1/D7 decisions for broader P05 changes, and P08 crash characterization after P07 merged in PR #51. Their outputs should refine the estimates and contracts for later slices before additional architecture is committed.

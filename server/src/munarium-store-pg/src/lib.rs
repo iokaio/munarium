@@ -35,6 +35,9 @@ use std::collections::BTreeMap;
 
 pub const DEFAULT_TENANT: &str = "tenant-default";
 
+#[cfg(test)]
+mod crash_recovery;
+
 pub mod artifacts;
 pub mod attempts;
 pub mod budget;
@@ -521,7 +524,11 @@ impl StorageBackend for PgStore {
         .execute(&mut *tx)
         .await
         .map_err(storage_err)?;
+        #[cfg(test)]
+        crash_recovery::barrier("before_commit");
         tx.commit().await.map_err(storage_err)?;
+        #[cfg(test)]
+        crash_recovery::barrier("after_commit");
 
         Ok(out)
     }
