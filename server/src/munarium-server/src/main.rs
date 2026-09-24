@@ -35,6 +35,8 @@ mod grpc_data;
 mod grpc_platform;
 mod ingest_api;
 mod interactions;
+#[cfg(test)]
+mod json_persistence_tests;
 mod max_tokens_api;
 mod metrics;
 mod middleware;

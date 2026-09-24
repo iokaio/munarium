@@ -7,6 +7,8 @@ license.workspace = true
 description = "Immutable, content-verified Munarium search artifacts: build, seal, verify, open, query. Independently usable — no Axum, tonic, SQLx, PostgreSQL, server config, auth or runbooks anywhere in its graph."
 
 [features]
+# Qualification only; keeps the normal serializer graph unchanged.
+json-arbitrary-precision = ["serde_json/arbitrary_precision"]
 default = ["lexical-tantivy", "vector-flat", "artifact-file"]
 # Lexical search through Tantivy's public crate API and Directory abstraction.
 lexical-tantivy = ["dep:tantivy", "dep:tempfile", "dep:rust-stemmers"]

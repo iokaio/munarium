@@ -19,7 +19,7 @@ proto = ["dep:munarium-proto"]
 # the path, so the crate can leave the workspace. munarium-proto goes first.
 munarium-proto = { path = "../munarium-proto", version = "1.2.1", optional = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
+serde_json = { workspace = true, features = ["raw_value"] }
 utoipa = { workspace = true }
 
 [dev-dependencies]

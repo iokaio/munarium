@@ -1488,9 +1488,9 @@ pub async fn op_get_session(
         i32,
         String,
         Vec<String>,
-        serde_json::Value,
-        serde_json::Value,
-        Option<serde_json::Value>,
+        sqlx::types::Json<dto::json::LiteralValue>,
+        sqlx::types::Json<dto::json::LiteralValue>,
+        Option<sqlx::types::Json<dto::json::LiteralValue>>,
         String,
     )> = sqlx::query_as(
         "SELECT ordinal, query, collections_searched, hits, envelope, completion, created_at::text
@@ -1517,9 +1517,9 @@ pub async fn op_get_session(
                         ordinal: ordinal as u32,
                         query,
                         collections_searched: searched,
-                        hits,
-                        envelope,
-                        completion,
+                        hits: hits.0 .0,
+                        envelope: envelope.0 .0,
+                        completion: completion.map(|v| v.0 .0),
                         created_at,
                     }
                 },

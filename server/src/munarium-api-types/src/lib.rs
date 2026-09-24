@@ -13,6 +13,127 @@ use utoipa::ToSchema;
 #[cfg(feature = "proto")]
 pub mod wire;
 
+/// JSON-boundary decoding that preserves literal object keys under Cargo feature
+/// unification. `serde_json::Value` interprets private number/raw-value marker
+/// keys when those serde_json features are enabled. Decode containers explicitly
+/// instead, using RawValue only to retain the original JSON token kind.
+///
+/// This module is inline so the standalone wire-contract crate includes it.
+pub mod json {
+    use serde::{Deserialize, Deserializer, Serialize};
+    use serde_json::{value::RawValue, Value};
+
+    /// A JSON value for deserialization at JSON/JSONB boundaries. Serialization
+    /// remains ordinary JSON; no new persisted format or marker is introduced.
+    #[derive(Debug, Clone, Serialize)]
+    #[serde(transparent)]
+    pub struct LiteralValue(pub Value);
+
+    impl<'de> Deserialize<'de> for LiteralValue {
+        fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            let raw = Box::<RawValue>::deserialize(deserializer)?;
+            parse(raw.get(), 0)
+                .map(Self)
+                .map_err(serde::de::Error::custom)
+        }
+    }
+
+    fn parse(text: &str, depth: usize) -> serde_json::Result<Value> {
+        if depth >= 128 {
+            return Err(serde::de::Error::custom("JSON nesting limit exceeded"));
+        }
+        match text.as_bytes().first() {
+            Some(b'{') => {
+                // Borrow child tokens from the one owned input buffer; deeply
+                // nested documents must not copy their payload at every level.
+                let entries: std::collections::BTreeMap<String, &RawValue> =
+                    serde_json::from_str(text)?;
+                entries
+                    .into_iter()
+                    .map(|(key, raw)| parse(raw.get(), depth + 1).map(|value| (key, value)))
+                    .collect::<serde_json::Result<serde_json::Map<_, _>>>()
+                    .map(Value::Object)
+            }
+            Some(b'[') => {
+                let entries: Vec<&RawValue> = serde_json::from_str(text)?;
+                entries
+                    .into_iter()
+                    .map(|raw| parse(raw.get(), depth + 1))
+                    .collect::<serde_json::Result<Vec<_>>>()
+                    .map(Value::Array)
+            }
+            // Scalar decoding cannot confuse a literal object with an internal
+            // marker. Retain serde_json's number/range semantics for this graph.
+            _ => serde_json::from_str(text),
+        }
+    }
+
+    pub fn optional<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Value>, D::Error> {
+        Option::<LiteralValue>::deserialize(deserializer).map(|v| v.map(|v| v.0))
+    }
+
+    pub fn value<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Value, D::Error> {
+        LiteralValue::deserialize(deserializer).map(|v| v.0)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn json_feature_literal_keys_and_scalar_tokens() {
+            for key in [
+                "$serde_json::private::Number",
+                "$serde_json::private::RawValue",
+            ] {
+                for text in ["123", "ordinary text", "null", "{\"nested\":true}"] {
+                    let object = Value::Object(serde_json::Map::from_iter([(
+                        key.to_string(),
+                        Value::String(text.to_string()),
+                    )]));
+                    for expected in [object.clone(), serde_json::json!([object, 0.5, null])] {
+                        let bytes = serde_json::to_vec(&expected).unwrap();
+                        let decoded: LiteralValue = serde_json::from_slice(&bytes).unwrap();
+                        assert_eq!(decoded.0, expected);
+                        let decoded: LiteralValue =
+                            serde_json::from_reader(bytes.as_slice()).unwrap();
+                        assert_eq!(decoded.0, expected);
+                        let decoded: LiteralValue =
+                            serde_json::from_value(expected.clone()).unwrap();
+                        assert_eq!(decoded.0, expected);
+                        assert_eq!(serde_json::to_vec(&decoded).unwrap(), bytes);
+                    }
+                }
+            }
+            // Escapes/whitespace must not change the interpretation of the key.
+            let value: LiteralValue =
+                serde_json::from_str(r#" { "\u0024serde_json::private::Number" : "123" } "#)
+                    .unwrap();
+            assert_eq!(value.0["$serde_json::private::Number"], "123");
+            for text in ["null", "true", "false", "0", "-1", "0.5", "1e2", "\"123\""] {
+                let value: LiteralValue = serde_json::from_str(text).unwrap();
+                assert_eq!(value.0, serde_json::from_str::<Value>(text).unwrap());
+            }
+        }
+
+        #[test]
+        fn json_feature_rejects_invalid_and_excessively_nested_json() {
+            for text in ["[}", "NaN", "{\"a\":}", "{} true", "", "01"] {
+                assert!(
+                    serde_json::from_str::<LiteralValue>(text).is_err(),
+                    "{text}"
+                );
+            }
+            let deep = format!("{}null{}", "[".repeat(129), "]".repeat(129));
+            assert!(serde_json::from_str::<LiteralValue>(&deep).is_err());
+            for text in ["{}", r#"{"metadata":null}"#] {
+                let request: crate::CreateVersionRequest = serde_json::from_str(text).unwrap();
+                assert!(request.metadata.is_none());
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // problem+json
 // ---------------------------------------------------------------------------
@@ -92,6 +213,7 @@ pub struct GateFindingDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scope_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "json::optional")]
     pub detail: Option<serde_json::Value>,
 }
 
@@ -132,6 +254,7 @@ pub struct ClaimDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entity_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "json::optional")]
     pub evidence: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confidence: Option<f64>,
@@ -196,7 +319,8 @@ pub struct SectionDto {
 pub struct CreateVersionRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_version_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "json::optional")]
     pub metadata: Option<serde_json::Value>,
 }
 
@@ -222,7 +346,8 @@ pub struct ProposeClaimRequest {
     pub supersedes_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entity_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "json::optional")]
     pub evidence: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub confidence: Option<f64>,
@@ -283,7 +408,8 @@ pub struct LockAnchorRequest {
     pub value: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope_path: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "json::optional")]
     pub evidence: Option<serde_json::Value>,
 }
 
@@ -468,6 +594,7 @@ pub struct IndexStatusResponse {
     pub event_watermark: u64,
     pub active: bool,
     #[schema(value_type = Object)]
+    #[serde(deserialize_with = "json::value")]
     pub manifest: serde_json::Value,
 }
 
@@ -488,6 +615,7 @@ pub struct SearchRequest {
     /// is rejected as invalid-input.
     #[serde(default)]
     #[schema(value_type = Option<Object>)]
+    #[serde(deserialize_with = "json::optional")]
     pub filter: Option<serde_json::Value>,
 }
 
@@ -513,6 +641,7 @@ pub struct SearchHitDto {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vector_distance: Option<f64>,
     #[schema(value_type = Option<Object>)]
+    #[serde(default, deserialize_with = "json::optional")]
     pub metadata: Option<serde_json::Value>,
 }
 
@@ -682,6 +811,7 @@ pub struct RunbookStepDto {
     /// pending | running | awaiting_approval | done | failed
     pub state: String,
     #[schema(value_type = Option<Object>)]
+    #[serde(default, deserialize_with = "json::optional")]
     pub detail: Option<serde_json::Value>,
 }
 
@@ -745,9 +875,11 @@ pub struct RunbookInfoResponse {
     /// The models block (defaults per task level + override policy), echoed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(value_type = Option<Object>)]
+    #[serde(deserialize_with = "json::optional")]
     pub models: Option<serde_json::Value>,
     /// Retrieval knobs in effect.
     #[schema(value_type = Object)]
+    #[serde(deserialize_with = "json::value")]
     pub retrieval: serde_json::Value,
     /// Whether session turns can run a RAG completion step.
     pub has_completion: bool,
@@ -895,9 +1027,11 @@ pub struct AuditEntryDto {
     pub latency_ms: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(value_type = Option<Object>)]
+    #[serde(deserialize_with = "json::optional")]
     pub request: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(value_type = Option<Object>)]
+    #[serde(deserialize_with = "json::optional")]
     pub response: Option<serde_json::Value>,
     pub created_at: String,
 }
@@ -1665,11 +1799,14 @@ pub struct SessionTurnDto {
     pub query: String,
     pub collections_searched: Vec<String>,
     #[schema(value_type = Object)]
+    #[serde(deserialize_with = "json::value")]
     pub hits: serde_json::Value,
     #[schema(value_type = Object)]
+    #[serde(deserialize_with = "json::value")]
     pub envelope: serde_json::Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(value_type = Option<Object>)]
+    #[serde(deserialize_with = "json::optional")]
     pub completion: Option<serde_json::Value>,
     pub created_at: String,
 }
@@ -1735,6 +1872,7 @@ pub struct VersionInfo {
     pub version: String,
     /// Plane -> port map (documentation of the demo posture, not config).
     #[schema(value_type = Object)]
+    #[serde(deserialize_with = "json::value")]
     pub planes: serde_json::Value,
 }
 
@@ -1805,6 +1943,7 @@ pub struct InterviewQuestionDto {
     pub required: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schema(value_type = Object)]
+    #[serde(deserialize_with = "json::optional")]
     pub default: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub choices: Vec<String>,
@@ -1878,6 +2017,7 @@ pub struct DraftResponse {
     pub pattern_id: Option<String>,
     /// Flat map keyed by interview question id.
     #[schema(value_type = Object)]
+    #[serde(deserialize_with = "json::value")]
     pub answers: serde_json::Value,
     /// The interview for this draft (completion section is pattern-gated).
     pub interview: Vec<InterviewSectionDto>,
@@ -1898,6 +2038,7 @@ pub struct DraftResponse {
 pub struct UpdateAnswersRequest {
     /// Flat map keyed by interview question id; replaces the stored answers.
     #[schema(value_type = Object)]
+    #[serde(deserialize_with = "json::value")]
     pub answers: serde_json::Value,
     /// Re-materialize documents from the answers (default true). Pass false
     /// to store answers without touching documents (e.g. a seeded or
@@ -2030,6 +2171,7 @@ pub struct SealEvidenceRequest {
     /// deserialized into `munarium_core::evidence::EvidenceManifest` and
     /// validated there, so the contract has exactly one Rust mirror rather
     /// than a DTO copy that could drift from it.
+    #[serde(deserialize_with = "json::value")]
     pub manifest: serde_json::Value,
     /// Standard base64 of the artifact bytes. Absent selects the grant flow.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2228,7 +2370,8 @@ pub struct IndexBuildJobDto {
     pub attempts: i32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claimed_by: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "json::optional")]
     pub result: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,

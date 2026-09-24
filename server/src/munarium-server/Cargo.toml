@@ -11,6 +11,8 @@ name = "munarium-server"
 path = "src/main.rs"
 
 [features]
+# Qualification only: tests must establish compatibility before production use.
+json-arbitrary-precision = ["serde_json/arbitrary_precision"]
 # The approximate vector engine, forwarded down to munarium-datastore. Off by
 # default; the release image ships with it ON (see the Dockerfile's FEATURES
 # argument).
