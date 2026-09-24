@@ -1,14 +1,14 @@
 # Munarium Server implementation plan from the VCP lessons
 
-**Status:** implementation roadmap. The first P01 accounting correction merged in [PR #44](https://github.com/iokaio/munarium/pull/44); P02–P04 merged in [PR #46](https://github.com/iokaio/munarium/pull/46). The durable P01 evidence slice is implemented below; later slices remain proposed.
+**Status:** implementation roadmap. The first P01 accounting correction merged in [PR #44](https://github.com/iokaio/munarium/pull/44); P02–P04 merged in [PR #46](https://github.com/iokaio/munarium/pull/46). Durable P01 evidence ([PR #47](https://github.com/iokaio/munarium/pull/47)), the P05 dispatch/retry slice ([PR #48](https://github.com/iokaio/munarium/pull/48)), and the P06 deterministic baseline are implemented below. Their broader follow-ups remain proposed.
 
-**Reviewed:** 2026-09-23.
+**Reviewed:** 2026-09-24.
 
 **Code baseline:** `fe1f216f710b334ee91c2e1d8d894019593bd087`, Server 1.2.1. Completion status updated against `08f9033952fbb65030ae0bbaceca423403c91e04` after PR #44. Unless explicitly updated below, source findings describe the original baseline.
 
 **Input:** [lessons-from-vcp.md](lessons-from-vcp.md), including its R01–R34 recommendation identifiers.
 
-P02–P04 are merged in PR #46: truthful validation results, persistence round-trip tests, and verified documentation corrections. P01 now retains durable reservation and usage evidence; late reconciliation and reporting remain separate follow-ups. Then measure governance and retrieval before optimizing them. Changes to historical interpretation, recovery guarantees, retention, and the public protocol require explicit compatibility designs before implementation.
+P02–P04 are merged in PR #46: truthful validation results, persistence round-trip tests, and verified documentation corrections. P01 now retains durable reservation and usage evidence; late reconciliation and reporting remain separate follow-ups. P05 dispatch diagnostics and the P06 governance baseline are implemented; use their observations and measure retrieval before optimizing either path. Changes to historical interpretation, recovery guarantees, retention, and the public protocol require explicit compatibility designs before implementation.
 
 This plan develops the recommendations against the current Munarium source. It does not treat downstream measurements as Server benchmarks or assume that every proposed safeguard is absent. The analysis is newly written for this repository; implementation references below point to this repository, without requiring another project's code or private operational records.
 
@@ -112,7 +112,7 @@ Each row is a coherent implementation slice; it may require more than one PR whe
 | P03 | Merged in PR #46: JSON feature/persistence characterization | None; parallel with P01 | Small–medium | Default and feature-enabled round trips through actual persistence paths |
 | P04 | Merged in PR #46: Verified documentation corrections | Current-source recheck | Small | Current references corrected; historical examples preserved; documentation gates |
 | P05 | Dispatch inventory and retry diagnostics implemented; broader admission and diagnostics pending | P01; D1/D7 for policy changes | Medium–large | Every dispatch has an explicit accounting policy; concurrent/retry/cancellation tests |
-| P06 | Clock/ID seams and governance baseline | Existing conformance; P02 receipts | Medium | Existing constructors unchanged; reproducible traces and separated timings |
+| P06 | Injectable clocks/IDs and separated governance baseline implemented | Existing conformance; P02 receipts | Medium | Existing constructors unchanged; reproducible traces and separated timings |
 | P07 | Sparse-scope retrieval characterization and measured fix | P06 baseline where relevant | Medium | Exact-oracle comparisons, authorization parity, bounded-work evidence |
 | P08 | Crash tier and first recovery fixes | D3; P02; existing mirror fault hooks | Large | Named barriers, process termination, reopened-state assertions, reviewed recovery contracts |
 | P09 | Versioned value comparison | D5/D8; P06; contract design | Medium–large | Historical replay unchanged; exact-policy cross-backend/transport tests |
@@ -333,6 +333,8 @@ Keep serialization/digest goldens for formats that promise byte stability, and s
 ## 7. Deterministic governance and value comparison
 
 ### 7.1 P06: inject only the nondeterminism actually owned — R07
+
+**Implemented baseline:** see [deterministic governance baseline](governance-baseline.md) for constructor compatibility, clock rules, replay tests, measured stages and the local release observations. This adds measurement seams; it does not optimize or change the gates.
 
 **Change locations:** [memory store](../src/munarium-store-mem/src/lib.rs), its budget store, and the existing core/store conformance fixtures.
 
@@ -695,4 +697,4 @@ This planning task is complete when this document is indexed, its current-source
 
 An implementation slice is complete only when its behavior, compatibility, migration/rollback constraints, tests, and documentation meet its exit criteria. A research slice can complete with rejection or inconclusive evidence if that is an allowed preregistered outcome. An unavailable environment or accepted waiver can permit a separately recorded release decision, but cannot manufacture qualification evidence.
 
-P02–P04 are merged in PR #46. The immediate actionable backlog is P05 and the remaining P01 follow-ups. Their outputs should refine the estimates and contracts for later slices before additional architecture is committed.
+P02–P04 are merged in PR #46. The remaining actionable work includes P01 reconciliation/reporting, D1/D7 decisions for broader P05 changes, and P07–P08 characterization. Their outputs should refine the estimates and contracts for later slices before additional architecture is committed.

@@ -29,6 +29,8 @@ mod evidence_hierarchy;
 mod evidence_providers;
 mod evidence_routes;
 mod governance_api;
+#[cfg(test)]
+mod governance_baseline;
 mod grpc;
 mod grpc_api;
 mod grpc_data;

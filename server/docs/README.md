@@ -19,6 +19,7 @@ and API references when applying them to a new deployment.
 
 | Document | What it is |
 |---|---|
+| [governance-baseline.md](governance-baseline.md) | Injectable memory-store dependencies and separate governance, snapshot, serialization and growing-write measurements |
 | [architecture.md](architecture.md) | The architecture of what ships: layers, crate boundaries, the data and retrieval tiers, shapes and runbooks, the deployment shapes, and the design targets the code does not yet reach. Read this before making structural decisions |
 | [security-posture.md](security-posture.md) | Why the API-management layer is the security boundary; the uid contract, capability JWTs, and credential posture |
 | [lessons-from-vcp.md](lessons-from-vcp.md) | Public engineering recommendations prompted by downstream use, grounded in Server sources and mapped to the implementation plan |
