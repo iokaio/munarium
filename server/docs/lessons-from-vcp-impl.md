@@ -114,7 +114,7 @@ Each row is a coherent implementation slice; it may require more than one PR whe
 | P05 | Dispatch inventory and retry diagnostics implemented; broader admission and diagnostics pending | P01; D1/D7 for policy changes | Medium–large | Every dispatch has an explicit accounting policy; concurrent/retry/cancellation tests |
 | P06 | Injectable clocks/IDs and separated governance baseline implemented | Existing conformance; P02 receipts | Medium | Existing constructors unchanged; reproducible traces and separated timings |
 | P07 | Characterization merged in PR #51; fixes require demonstrated gaps | P06 baseline where relevant | Medium | Exact-oracle comparisons, authorization parity, bounded-work evidence |
-| P08 | Crash tier and first recovery fixes | D3; P02; existing mirror fault hooks | Large | Named barriers, process termination, reopened-state assertions, reviewed recovery contracts |
+| P08 | Ledger characterization merged in PR #52; broader process-crash characterization below; recovery fixes require reviewed contracts | D3; P02; existing mirror fault hooks | Large | Named barriers, process termination, reopened-state assertions, reviewed recovery contracts |
 | P09 | Versioned value comparison | D5/D8; P06; contract design | Medium–large | Historical replay unchanged; exact-policy cross-backend/transport tests |
 | P10 | Authority/evidence audit and retention inventory | D4 for retention changes | Medium | Access-path matrix, effect-denial tests, declared derived-content treatment |
 | P11 | Integer/unknown-field protocol characterization | Existing contract publisher/client suites | Medium | N/N−1 fixtures; exact integer tests; no unversioned field-type change |
@@ -124,7 +124,7 @@ Each row is a coherent implementation slice; it may require more than one PR whe
 | P15 | Library support and lint tightening | D5; measured audit | Medium | Isolated consumer builds/MSRV if adopted; targeted production failure handling |
 | P16 | Shared gate definitions and policy follow-ups | P02 stabilized; maintainer-owned workflow changes | Medium | Same required coverage before/after, automatic CI retained, checker self-tests |
 
-P02–P06 diagnostics and baseline slices are merged; broader P05 admission and diagnostic access still await D1/D7. P07 retrieval instrumentation and characterization merged in PR #51. P08 application-process crash characterization is the next engineering slice under D3. Keep the outstanding P01 late reconciliation, estimator revisions, and usage-quality reporting separate. Characterization establishes whether retrieval and recovery fixes are needed. A failing authorization, persistence, or compatibility reproduction discovered in any slice takes priority over optimization. Money and embedded support are conditional product work, not prerequisites for fixing shared-code defects.
+P02–P06 diagnostics and baseline slices are merged; broader P05 admission and diagnostic access still await D1/D7. P07 retrieval instrumentation and characterization merged in PR #51. P08 ledger characterization merged in PR #52; broader command, runbook and artifact characterization now follows under D3 (§9.1). Keep the outstanding P01 late reconciliation, estimator revisions, and usage-quality reporting separate. Characterization establishes whether retrieval and recovery fixes are needed. A failing authorization, persistence, or compatibility reproduction discovered in any slice takes priority over optimization. Money and embedded support are conditional product work, not prerequisites for fixing shared-code defects.
 
 For each PR, record affected invariants, a behavioral example, files changed, focused checks, unavailable evidence, and rollback constraints. Keep one behavior and its tests/documentation together. Avoid a large preliminary refactor merely to make later changes aesthetically uniform.
 
@@ -509,7 +509,7 @@ Assert uniqueness and monotonic ordering under the actual sequence contract, not
 
 PostgreSQL remains running during an application-process kill. This does not qualify database restart, volume exhaustion, torn writes, host power loss, or backup restore. Define those as separate fault classes with their own environments and evidence. Memory mode is not required to survive process restart unless a new persistence contract is deliberately added.
 
-#### First P08 ledger fixture
+#### First P08 ledger fixture (merged in PR #52)
 
 The [child-process fixture](../src/munarium-store-pg/src/crash_recovery.rs)
 exercises the actual `PgStore::append_claims` transaction at `before_commit`
@@ -540,12 +540,67 @@ Without the URL, the ledger test reports `UNAVAILABLE`; a green Cargo result
 then covers only offline controls. The child entry is intentionally ignored and
 launched by its parent. Existing database-enabled workspace CI runs the parent
 without a workflow change. This slice does not change recovery semantics or
-claim completion of P08. Command/receipt gaps, REST/gRPC acknowledgements,
-runbook effect/checkpoint divergence and approval-preserving explicit resume,
-artifact publication phases, and two-instance races remain subsequent coverage.
+claim completion of P08. The broader fixtures below extend command/receipt,
+runbook and publication coverage. General two-instance append interleavings
+and stronger recovery protocols remain separate work.
 Any demonstrated defect needs an explicitly reviewed recovery contract before
 a stronger guarantee is implemented. Database crashes, power loss and backup
 restore remain separate qualifications under D3.
+
+#### Broader P08 process-crash characterization
+
+The [shared process harness](../tests/support/process_crash.rs) starts separate
+setup, writer, observer and recovery processes. It waits for an atomically
+published named marker, observes the still-live writer from another process,
+then either releases the no-crash control or terminates only the owned child.
+Every child and marker wait has a 45-second bound. Each run owns a unique tenant
+and local directory; failure retains the directory and prints its identity.
+Successful runs remove only their own local files. Use a disposable database:
+fixture tenants remain until that database is removed. PostgreSQL stays running.
+
+| Fixture | Cases and checks | Characterized limit |
+|---|---|---|
+| [Command receipts](../src/munarium-server/src/crash_recovery.rs) | Eight REST/typed-gRPC scenarios across command-completed and receipt-persisted barriers, each with a no-crash control; real authenticated loopback calls, original response replay, request/plane mismatch, tenant scoping and independent version-row counts | Killing after the command but before its receipt leaves a committed version with no receipt. Retrying creates a second version. Killing after the receipt preserves the original encoded response and retry creates no extra version. No exactly-once claim follows. |
+| [Runbook checkpoints](../src/munarium-server/src/runbook_crash_tests.rs) | 28 scenarios: effect/state/event boundaries for buildIndex, verify, approval-gated cutover and retireOld; approval-state/event boundaries; live advisory-lock exclusion, release on death, reopen without advancement, explicit executor re-entry and approval before completion | Step state and transition history are separate writes. A crash after a done checkpoint can permanently omit its transition: re-entry skips done steps. A cutover effect can already be active while the checkpoint remains running. No automatic resume or invented transition repair. |
+| [Artifact publication](../src/munarium-retrieval/tests/process_recovery.rs) | 28 scenarios across all seven existing BuildPhase markers, with controls and same-node/replacement-node recovery; second-process lease exclusion, manifest-last visibility, catalog/binding checks, opened artifact contents and the unchanged previous serving artifact | Same-node sealed publication resumes only while its lease is fresh and staging exists. A replacement node leaves a live owner alone, then abandons its sealed attempt after lease expiry. Before-catalog running attempts expire; expiration is not evidence of publication or staging cleanup. |
+
+Lease expiry is advanced with tenant/version-scoped test SQL **after** the writer
+has exited; the test does not wait on wall-clock lease expiry or change production
+lease duration. Artifact fixtures use local disk, not a cloud object store. Both
+old serving and any new staged binding must reference verified, openable content;
+mirror recovery never promotes the new generation to serving. Orphaned/unbound
+content is not treated as serving success. Reconciliation is checked twice to
+establish a stable second pass.
+
+Runbook tests invoke the existing private executor explicitly after restart to
+characterize re-entry. They add no public resume endpoint or scheduler. The
+fixture is a v1 shape-scoped runbook; v2 collection ordering and external effects
+are not qualified by it. Command fixtures cover the REST command router and
+typed CommandService, not the entire ServerApiService surface, ingress stack,
+receipt TTL sweep, or simultaneous duplicate command races. Server barriers are
+`cfg(test)` only; artifact barriers use the existing programmatic FaultHook from
+an integration-test executable. No fault endpoint, Cargo feature, or production
+environment switch is introduced, including under `--all-features`.
+
+From `server/`, with an isolated `MUNARIUM_TEST_DATABASE_URL`:
+
+```powershell
+cargo test --locked --offline -p munarium-server process_recovery -- --nocapture
+cargo test --locked --offline -p munarium-retrieval --test process_recovery -- --nocapture
+```
+
+These parents participate in existing database-enabled workspace CI. Without a
+database they print `UNAVAILABLE`, which is not recovery evidence. Child entries
+are intentionally ignored by the ordinary runner and invoked only by parents.
+
+The command gap matches the published post-completion retry contract. The
+runbook checkpoint/history gap is now an explicit limitation requiring a recovery
+decision: either commit the checkpoint and transition together, or adopt a durable
+transition identity plus idempotent reconstruction. Either design must preserve
+step details, append-only history, approval semantics, lineage serialization and
+compatibility with existing runs. It must not claim an absent historical event
+was observed. This characterization adds no such protocol, migration or repair;
+fixes require review under §9.2. P01 and D1/D7 remain separate.
 
 ### 9.2 Strengthen command recovery only where the contract supports it
 
@@ -805,4 +860,4 @@ This planning task is complete when this document is indexed, its current-source
 
 An implementation slice is complete only when its behavior, compatibility, migration/rollback constraints, tests, and documentation meet its exit criteria. A research slice can complete with rejection or inconclusive evidence if that is an allowed preregistered outcome. An unavailable environment or accepted waiver can permit a separately recorded release decision, but cannot manufacture qualification evidence.
 
-P02–P04 are merged in PR #46. The remaining actionable work includes P01 reconciliation/reporting, D1/D7 decisions for broader P05 changes, and P08 crash characterization after P07 merged in PR #51. Their outputs should refine the estimates and contracts for later slices before additional architecture is committed.
+P02–P04 are merged in PR #46. The remaining actionable work includes P01 reconciliation/reporting, D1/D7 decisions for broader P05 changes, and P08 recovery-contract decisions and remaining qualification after the ledger baseline in PR #52 and the broader characterization in §9.1. Their outputs should refine the estimates and contracts for later slices before additional architecture is committed.

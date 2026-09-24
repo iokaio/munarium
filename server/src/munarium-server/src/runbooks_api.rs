@@ -14,6 +14,10 @@ use munarium_core::{KernelError, Result};
 use munarium_runbooks::{parse_runbook, RunbookDoc, StepSpec, StepState};
 use std::sync::Arc;
 
+#[cfg(test)]
+#[path = "runbook_crash_tests.rs"]
+mod crash_tests;
+
 /// The pg pool or a uniform "this endpoint requires postgres" error — shared
 /// by every pg-only feature route (runbooks, sessions, ingest, reports) so
 /// they present one error contract.
@@ -90,6 +94,8 @@ async fn set_step(
     );
 
     // every transition is a ledger event when the run names a lineage
+    #[cfg(test)]
+    crate::crash_recovery::barrier(&format!("step_state:{}:{}", ordinal, step_state.as_str()));
     if let Some(version_id) = version_id {
         let store = state.store_for(tenant).await?;
         let mut claim = munarium_core::storage::NewClaim::fact(
@@ -100,6 +106,8 @@ async fn set_step(
         claim.evidence = detail;
         let _ = store.append_claim(version_id, claim, None).await?;
     }
+    #[cfg(test)]
+    crate::crash_recovery::barrier(&format!("step_event:{}:{}", ordinal, step_state.as_str()));
     Ok(())
 }
 
@@ -634,6 +642,8 @@ async fn execute(
 
         match outcome {
             Ok(detail) => {
+                #[cfg(test)]
+                crate::crash_recovery::barrier(&format!("step_effect:{ordinal}"));
                 set_step(
                     state,
                     tenant,
