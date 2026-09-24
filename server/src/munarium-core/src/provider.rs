@@ -39,14 +39,15 @@ pub struct CompletionResponse {
 
 /// Internal accounting evidence, separate from the stable numeric response DTO.
 /// Completeness requires both counts and a provider-reported source.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UsageEvidence {
     pub input_tokens: Option<u64>,
     pub output_tokens: Option<u64>,
     pub source: UsageSource,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum UsageSource {
     ProviderReported,
     LegacyUnverified,

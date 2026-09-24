@@ -21,7 +21,9 @@
 //!   load-bearing on the refusal path that happy-path tests never reach.
 
 use async_trait::async_trait;
-use munarium_core::budget::{BudgetLedgerRow, BudgetOutcome, BudgetReservation, BudgetStore};
+use munarium_core::budget::{
+    BudgetEvidence, BudgetLedgerRow, BudgetOutcome, BudgetReservation, BudgetStore,
+};
 use munarium_core::Result;
 use sqlx::{PgPool, Row};
 
@@ -94,8 +96,8 @@ impl BudgetStore for PgBudgetStore {
         let id = uuid::Uuid::new_v4().simple().to_string();
         let day: String = sqlx::query_scalar(
             "INSERT INTO token_budget_reservations
-                (id, tenant_id, config_name, tier, day, units, state)
-             VALUES ($1, $2, $3, $4, (now() AT TIME ZONE 'utc')::date, $5, 'held')
+                (id, tenant_id, config_name, tier, day, units, state, original_units)
+             VALUES ($1, $2, $3, $4, (now() AT TIME ZONE 'utc')::date, $5, 'held', $5)
              RETURNING day::text",
         )
         .bind(&id)
@@ -124,6 +126,16 @@ impl BudgetStore for PgBudgetStore {
         reservation: &BudgetReservation,
         actual_units: Option<u64>,
     ) -> Result<()> {
+        self.settle_with_evidence(reservation, actual_units, None)
+            .await
+    }
+
+    async fn settle_with_evidence(
+        &self,
+        reservation: &BudgetReservation,
+        actual_units: Option<u64>,
+        usage: Option<munarium_core::provider::UsageEvidence>,
+    ) -> Result<()> {
         let stored_units = actual_units.map(i64::try_from).transpose().map_err(|_| {
             munarium_core::KernelError::Storage("budget units exceed PostgreSQL BIGINT".into())
         })?;
@@ -131,15 +143,33 @@ impl BudgetStore for PgBudgetStore {
             "UPDATE token_budget_reservations
              SET state = 'settled',
                  units = COALESCE($2, units),
+                 usage_evidence = $3,
                  settled_at = now()
              WHERE id = $1 AND state = 'held'",
         )
         .bind(&reservation.id)
         .bind(stored_units)
+        .bind(usage.map(sqlx::types::Json))
         .execute(&self.pool)
         .await
         .map_err(storage_err)?;
         Ok(())
+    }
+
+    async fn evidence(&self, tenant: &str, id: &str) -> Result<Option<BudgetEvidence>> {
+        let row = sqlx::query("SELECT id, original_units, units, state, usage_evidence FROM token_budget_reservations WHERE tenant_id = $1 AND id = $2")
+            .bind(tenant).bind(id).fetch_optional(&self.pool).await.map_err(storage_err)?;
+        Ok(row.map(|r| BudgetEvidence {
+            reservation_id: r.get("id"),
+            original_units: r.get::<Option<i64>, _>("original_units").map(|v| v as u64),
+            accounted_units: r.get::<i64, _>("units") as u64,
+            state: r.get("state"),
+            usage: r
+                .get::<Option<sqlx::types::Json<munarium_core::provider::UsageEvidence>>, _>(
+                    "usage_evidence",
+                )
+                .map(|v| v.0),
+        }))
     }
 
     async fn release(&self, reservation: &BudgetReservation) -> Result<()> {

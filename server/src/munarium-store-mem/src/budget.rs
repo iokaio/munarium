@@ -7,7 +7,9 @@
 //! the property the Postgres side needs an advisory lock to get.
 
 use async_trait::async_trait;
-use munarium_core::budget::{BudgetLedgerRow, BudgetOutcome, BudgetReservation, BudgetStore};
+use munarium_core::budget::{
+    BudgetEvidence, BudgetLedgerRow, BudgetOutcome, BudgetReservation, BudgetStore,
+};
 use munarium_core::Result;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
@@ -20,6 +22,8 @@ struct Row {
     tier: String,
     day: String,
     units: u64,
+    original_units: u64,
+    usage: Option<munarium_core::provider::UsageEvidence>,
     state: RowState,
     created_unix: u64,
 }
@@ -103,6 +107,8 @@ impl BudgetStore for MemBudgetStore {
             tier: tier.to_string(),
             day,
             units,
+            original_units: units,
+            usage: None,
             state: RowState::Held,
             created_unix: now_unix(),
         });
@@ -114,17 +120,49 @@ impl BudgetStore for MemBudgetStore {
         reservation: &BudgetReservation,
         actual_units: Option<u64>,
     ) -> Result<()> {
+        self.settle_with_evidence(reservation, actual_units, None)
+            .await
+    }
+
+    async fn settle_with_evidence(
+        &self,
+        reservation: &BudgetReservation,
+        actual_units: Option<u64>,
+        usage: Option<munarium_core::provider::UsageEvidence>,
+    ) -> Result<()> {
         let mut rows = self.rows.lock().await;
         if let Some(row) = rows
             .iter_mut()
             .find(|r| r.id == reservation.id && r.state == RowState::Held)
         {
             row.state = RowState::Settled;
+            row.usage = usage;
             if let Some(actual) = actual_units {
                 row.units = actual;
             }
         }
         Ok(())
+    }
+
+    async fn evidence(&self, tenant: &str, id: &str) -> Result<Option<BudgetEvidence>> {
+        Ok(self
+            .rows
+            .lock()
+            .await
+            .iter()
+            .find(|r| r.tenant == tenant && r.id == id)
+            .map(|r| BudgetEvidence {
+                reservation_id: r.id.clone(),
+                original_units: Some(r.original_units),
+                accounted_units: r.units,
+                state: match r.state {
+                    RowState::Held => "held",
+                    RowState::Settled => "settled",
+                    RowState::Released => "released",
+                }
+                .into(),
+                usage: r.usage,
+            }))
     }
 
     async fn release(&self, reservation: &BudgetReservation) -> Result<()> {

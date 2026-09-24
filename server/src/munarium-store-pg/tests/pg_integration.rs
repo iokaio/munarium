@@ -896,6 +896,136 @@ mod budget {
     }
 
     #[tokio::test]
+    async fn durable_usage_evidence_parity() {
+        use munarium_core::provider::{UsageEvidence, UsageSource};
+        for (name, store) in budget_backends(true).await {
+            for usage in [
+                None,
+                Some(UsageEvidence {
+                    input_tokens: Some(0),
+                    output_tokens: Some(0),
+                    source: UsageSource::ProviderReported,
+                }),
+                Some(UsageEvidence {
+                    input_tokens: None,
+                    output_tokens: Some(15),
+                    source: UsageSource::ProviderReported,
+                }),
+                Some(UsageEvidence {
+                    input_tokens: None,
+                    output_tokens: None,
+                    source: UsageSource::Missing,
+                }),
+                Some(UsageEvidence {
+                    input_tokens: None,
+                    output_tokens: Some(3),
+                    source: UsageSource::Malformed,
+                }),
+                Some(UsageEvidence {
+                    input_tokens: Some(0),
+                    output_tokens: Some(0),
+                    source: UsageSource::LegacyUnverified,
+                }),
+            ] {
+                let tenant = fresh_tenant("evidence");
+                let BudgetOutcome::Granted(r) = store
+                    .reserve(&tenant, "cfg", "fast", 10, Some(10))
+                    .await
+                    .unwrap()
+                else {
+                    panic!("grant")
+                };
+                let before = store.evidence(&tenant, &r.id).await.unwrap().unwrap();
+                assert_eq!(before.original_units, Some(10), "{name}");
+                assert_eq!(before.usage, None);
+                assert!(store
+                    .evidence("other-tenant", &r.id)
+                    .await
+                    .unwrap()
+                    .is_none());
+                let amount = usage.map(|u| u.accounted_units(10).unwrap());
+                store.settle_with_evidence(&r, amount, usage).await.unwrap();
+                let after = store.evidence(&tenant, &r.id).await.unwrap().unwrap();
+                assert_eq!(after.original_units, Some(10));
+                assert_eq!(after.accounted_units, amount.unwrap_or(10));
+                assert_eq!(after.usage, usage);
+                assert_eq!(after.state, "settled");
+                store
+                    .settle_with_evidence(&r, Some(999), None)
+                    .await
+                    .unwrap();
+                store.release(&r).await.unwrap();
+                assert_eq!(
+                    store.evidence(&tenant, &r.id).await.unwrap().unwrap(),
+                    after
+                );
+            }
+            for release in [true, false] {
+                let tenant = fresh_tenant("unresolved");
+                let BudgetOutcome::Granted(r) = store
+                    .reserve(&tenant, "cfg", "fast", 10, Some(10))
+                    .await
+                    .unwrap()
+                else {
+                    panic!("grant")
+                };
+                if release {
+                    store.release(&r).await.unwrap();
+                } else {
+                    store.sweep_stale(0).await.unwrap();
+                }
+                store.settle_with_evidence(&r, Some(0), None).await.unwrap();
+                let row = store.evidence(&tenant, &r.id).await.unwrap().unwrap();
+                assert_eq!(row.original_units, Some(10));
+                assert_eq!(row.accounted_units, 10);
+                assert_eq!(row.usage, None);
+                assert_eq!(row.state, if release { "released" } else { "settled" });
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn usage_evidence_upgrade_preserves_legacy_unknowns() {
+        let Some(url) = test_url() else {
+            eprintln!("PostgreSQL upgrade NOT RUN: no MUNARIUM_TEST_DATABASE_URL");
+            return;
+        };
+        // Temporary pre-upgrade table, isolated on one connection. Apply the
+        // actual additive migration over a historical settled zero.
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&url)
+            .await
+            .unwrap();
+        sqlx::query("CREATE TEMP TABLE token_budget_reservations (id TEXT PRIMARY KEY, tenant_id TEXT, config_name TEXT, tier TEXT, day DATE, units BIGINT, state TEXT, settled_at TIMESTAMPTZ)").execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO token_budget_reservations (id, tenant_id, units, state) VALUES ('historical', 'legacy', 0, 'settled')").execute(&pool).await.unwrap();
+        sqlx::raw_sql(include_str!("../migrations/0035_budget_usage_evidence.sql"))
+            .execute(&pool)
+            .await
+            .unwrap();
+        let store = PgBudgetStore::new(pool.clone());
+        let row = store
+            .evidence("legacy", "historical")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.original_units, None);
+        assert_eq!(row.usage, None);
+        assert_eq!(row.accounted_units, 0);
+        // Old writers can still insert and settle with their original SQL.
+        sqlx::query("INSERT INTO token_budget_reservations (id, tenant_id, units, state) VALUES ('old-writer', 'legacy', 10, 'held')").execute(&pool).await.unwrap();
+        sqlx::query("UPDATE token_budget_reservations SET units = 0, state = 'settled' WHERE id = 'old-writer'").execute(&pool).await.unwrap();
+        let row = store
+            .evidence("legacy", "old-writer")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.original_units, None);
+        assert_eq!(row.usage, None);
+        pool.close().await;
+    }
+
+    #[tokio::test]
     async fn conservative_settlement_is_idempotent_and_sweeps_stay_spent() {
         // Model another concurrently running test's live reservation. A sweep
         // fixture must not settle rows in the shared integration-test table.
