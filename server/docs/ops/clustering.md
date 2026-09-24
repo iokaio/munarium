@@ -111,11 +111,35 @@ newest `updated_at`, and no instance logs progress. What happened: the
 executing instance died; its connection dropped, so PostgreSQL released
 the advisory lock — the run is UNLOCKED but nothing auto-resumes it (by
 design: silent auto-resume of half-done index builds is how surprises
-ship). Recovery: re-drive it — `POST` the pending approval again, or for a
-pre-approval crash re-run the runbook; `execute` re-reads step states and
-resumes from the first non-`done` step. A second executor arriving while
-one is still alive answers 409 `run-locked` — that is the lock working,
-not a stuck run.
+ship). A pending `awaiting_approval` step can be approved through the existing
+approval endpoint. There is no general public resume endpoint: starting the
+runbook again creates a **new run**, not a continuation of the old run. Inspect
+persisted step details and actual index state before deciding how to proceed;
+a cutover effect can already be active while its checkpoint still says running.
+Private executor re-entry is qualified in tests, not exposed as an operator API.
+A second executor arriving while one is still alive answers 409 `run-locked`.
+Approval state is checked under that lock; a retry after completion is rejected
+as no longer awaiting approval.
+
+Each new step checkpoint and, when the run has a `version_id`, its ledger
+transition commit in one PostgreSQL transaction. Failure before commit leaves
+neither new record; failure after commit leaves both. Runs without a version
+intentionally keep only the checkpoint. This does not make index effects and
+checkpoints atomic, provide exactly-once effects, or automatically resume work.
+Run-summary state is a separate write; inspect the step checkpoints when a
+summary remains running after a crash.
+
+Historical runs may have a done checkpoint without its event. Done steps remain
+skipped and their details retained; no event is fabricated or backdated to fill
+the gap. An old checkpoint is not proof of complete historical transition or
+approval evidence. New writes do not certify that earlier history.
+
+No schema migration or backfill is required. Drain all older checkpoint/approval
+writers before relying on atomic checkpoint/history writes. Old readers can read
+the unchanged rows and wire responses, but mixed writers or rollback to an older
+binary reopen the gap. Retain all history on rollback. Qualification covers
+application-process death with PostgreSQL continuously running, not database
+crashes, power loss, backup restore, or arbitrary external effects.
 
 ## Partition overflow (the one manual procedure)
 

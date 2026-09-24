@@ -688,6 +688,16 @@ impl AppState {
         }
     }
 
+    /// Concrete PostgreSQL handle for coordinated transactions.
+    pub(crate) async fn pg_store_for(&self, tenant: &str) -> munarium_core::Result<PgStore> {
+        match &self.stores {
+            StoreRegistry::Pg(base) => base.with_tenant(tenant).await,
+            StoreRegistry::Mem(_) => Err(munarium_core::KernelError::InvalidInput(
+                "this endpoint requires the postgres store (MUNARIUM_STORE=postgres)".into(),
+            )),
+        }
+    }
+
     /// The configured source-bytes backend id (az | s3 | gcs | file | pg |
     /// mem) — the /admin health page's configuration table (2026-08-27).
     pub fn source_backend_id(&self) -> &'static str {

@@ -114,7 +114,7 @@ Each row is a coherent implementation slice; it may require more than one PR whe
 | P05 | Dispatch inventory and retry diagnostics implemented; broader admission and diagnostics pending | P01; D1/D7 for policy changes | Medium–large | Every dispatch has an explicit accounting policy; concurrent/retry/cancellation tests |
 | P06 | Injectable clocks/IDs and separated governance baseline implemented | Existing conformance; P02 receipts | Medium | Existing constructors unchanged; reproducible traces and separated timings |
 | P07 | Characterization merged in PR #51; fixes require demonstrated gaps | P06 baseline where relevant | Medium | Exact-oracle comparisons, authorization parity, bounded-work evidence |
-| P08 | Ledger characterization merged in PR #52; broader process-crash characterization below; recovery fixes require reviewed contracts | D3; P02; existing mirror fault hooks | Large | Named barriers, process termination, reopened-state assertions, reviewed recovery contracts |
+| P08 | Implemented and locally qualified for the D3 application-process scope; atomic runbook checkpoints and retained legacy gaps, §9.1 | D3; P02; existing mirror fault hooks | Large | Named barriers, process termination, reopened-state assertions, reviewed recovery contracts |
 | P09 | Versioned value comparison | D5/D8; P06; contract design | Medium–large | Historical replay unchanged; exact-policy cross-backend/transport tests |
 | P10 | Authority/evidence audit and retention inventory | D4 for retention changes | Medium | Access-path matrix, effect-denial tests, declared derived-content treatment |
 | P11 | Integer/unknown-field protocol characterization | Existing contract publisher/client suites | Medium | N/N−1 fixtures; exact integer tests; no unversioned field-type change |
@@ -124,7 +124,7 @@ Each row is a coherent implementation slice; it may require more than one PR whe
 | P15 | Library support and lint tightening | D5; measured audit | Medium | Isolated consumer builds/MSRV if adopted; targeted production failure handling |
 | P16 | Shared gate definitions and policy follow-ups | P02 stabilized; maintainer-owned workflow changes | Medium | Same required coverage before/after, automatic CI retained, checker self-tests |
 
-P02–P06 diagnostics and baseline slices are merged; broader P05 admission and diagnostic access still await D1/D7. P07 retrieval instrumentation and characterization merged in PR #51. P08 ledger characterization merged in PR #52; broader command, runbook and artifact characterization now follows under D3 (§9.1). Keep the outstanding P01 late reconciliation, estimator revisions, and usage-quality reporting separate. Characterization establishes whether retrieval and recovery fixes are needed. A failing authorization, persistence, or compatibility reproduction discovered in any slice takes priority over optimization. Money and embedded support are conditional product work, not prerequisites for fixing shared-code defects.
+P02–P06 diagnostics and baseline slices are merged; broader P05 admission and diagnostic access still await D1/D7. P07 retrieval instrumentation and characterization merged in PR #51. P08 ledger characterization merged in PR #52 and broader characterization in PR #53; atomic runbook recovery and local qualification complete the supported D3 scope (§9.1). Keep the outstanding P01 late reconciliation, estimator revisions, and usage-quality reporting separate. Characterization establishes whether retrieval and recovery fixes are needed. A failing authorization, persistence, or compatibility reproduction discovered in any slice takes priority over optimization. Money and embedded support are conditional product work, not prerequisites for fixing shared-code defects.
 
 For each PR, record affected invariants, a behavioral example, files changed, focused checks, unavailable evidence, and rollback constraints. Keep one behavior and its tests/documentation together. Avoid a large preliminary refactor merely to make later changes aesthetically uniform.
 
@@ -496,7 +496,7 @@ Characterize existing guarantees before strengthening them:
 |---|---|---|
 | Ledger transaction | Append is transactional and head-checked | No partial batch; committed acknowledged claims survive; pins and supersession remain coherent |
 | Command versus replay receipt | `with_idempotency` executes before `idem_store`; insertion is separate and can warn on failure | A durable receipt replays its result; the gap without one is explicitly characterized, not assumed impossible |
-| Runbook step versus transition event | `set_step` updates state and appends the transition separately | Identify any state/event divergence and its documented recovery or required fix |
+| Runbook step versus transition event | `set_step` now commits checkpoint and required transition together | All-or-neither persistence; legacy missing events remain unknown |
 | Runbook lock and resume | Advisory connection releases on death; execution resumes explicitly from a non-done step | No implied automatic resume; approval gates survive and cannot be bypassed |
 | Artifact publication | Files, manifest, catalog, and binding have separate phases and reconciliation | Never serve a partial/unverified active generation; interrupted work resolves or remains clearly unavailable |
 | External provider submission | Remote work is not in the database transaction | Ambiguous submission retains liability and cannot be silently interpreted as an unsubmitted call |
@@ -541,8 +541,8 @@ then covers only offline controls. The child entry is intentionally ignored and
 launched by its parent. Existing database-enabled workspace CI runs the parent
 without a workflow change. This slice does not change recovery semantics or
 claim completion of P08. The broader fixtures below extend command/receipt,
-runbook and publication coverage. General two-instance append interleavings
-and stronger recovery protocols remain separate work.
+runbook and publication coverage. Two-pool seeded append qualification is added below; stronger command/effect
+recovery protocols remain separate work.
 Any demonstrated defect needs an explicitly reviewed recovery contract before
 a stronger guarantee is implemented. Database crashes, power loss and backup
 restore remain separate qualifications under D3.
@@ -561,7 +561,7 @@ fixture tenants remain until that database is removed. PostgreSQL stays running.
 | Fixture | Cases and checks | Characterized limit |
 |---|---|---|
 | [Command receipts](../src/munarium-server/src/crash_recovery.rs) | Eight REST/typed-gRPC scenarios across command-completed and receipt-persisted barriers, each with a no-crash control; real authenticated loopback calls, original response replay, request/plane mismatch, tenant scoping and independent version-row counts | Killing after the command but before its receipt leaves a committed version with no receipt. Retrying creates a second version. Killing after the receipt preserves the original encoded response and retry creates no extra version. No exactly-once claim follows. |
-| [Runbook checkpoints](../src/munarium-server/src/runbook_crash_tests.rs) | 28 scenarios: effect/state/event boundaries for buildIndex, verify, approval-gated cutover and retireOld; approval-state/event boundaries; live advisory-lock exclusion, release on death, reopen without advancement, explicit executor re-entry and approval before completion | Step state and transition history are separate writes. A crash after a done checkpoint can permanently omit its transition: re-entry skips done steps. A cutover effect can already be active while the checkpoint remains running. No automatic resume or invented transition repair. |
+| [Runbook checkpoints](../src/munarium-server/src/runbook_crash_tests.rs) | 44 scenarios: effect, uncommitted event/checkpoint and committed boundaries for buildIndex, verify, cutover and retireOld; approval gate and approval-to-running boundaries; live advisory-lock exclusion, release on death, explicit re-entry | New checkpoints and required events commit together. The old split-write gap remains a legacy-data fixture. A cutover effect can already be active while the checkpoint remains running. No automatic resume or invented transition repair. |
 | [Artifact publication](../src/munarium-retrieval/tests/process_recovery.rs) | 28 scenarios across all seven existing BuildPhase markers, with controls and same-node/replacement-node recovery; second-process lease exclusion, manifest-last visibility, catalog/binding checks, opened artifact contents and the unchanged previous serving artifact | Same-node sealed publication resumes only while its lease is fresh and staging exists. A replacement node leaves a live owner alone, then abandons its sealed attempt after lease expiry. Before-catalog running attempts expire; expiration is not evidence of publication or staging cleanup. |
 
 Lease expiry is advanced with tenant/version-scoped test SQL **after** the writer
@@ -594,13 +594,128 @@ database they print `UNAVAILABLE`, which is not recovery evidence. Child entries
 are intentionally ignored by the ordinary runner and invoked only by parents.
 
 The command gap matches the published post-completion retry contract. The
-runbook checkpoint/history gap is now an explicit limitation requiring a recovery
-decision: either commit the checkpoint and transition together, or adopt a durable
-transition identity plus idempotent reconstruction. Either design must preserve
-step details, append-only history, approval semantics, lineage serialization and
-compatibility with existing runs. It must not claim an absent historical event
-was observed. This characterization adds no such protocol, migration or repair;
-fixes require review under §9.2. P01 and D1/D7 remain separate.
+runbook checkpoint/history gap discovered in PR #53 is addressed by the atomic
+implementation below. P01 and D1/D7 remain separate.
+
+#### Runbook recovery contract and implementation (2026-09-24)
+
+**Decision:** commit a step checkpoint and its required ledger transition in one
+PostgreSQL transaction. Missing historical events are not reconstructed. The
+implementation uses `PgStore::append_claims_uncommitted` to retain the existing
+append validation and lineage lock, writes the guarded checkpoint in that same
+transaction, and commits once. No schema migration or backfill is introduced.
+
+The transaction covers the tenant/run/ordinal checkpoint state, its effective
+detail, and, when the run names a version, the corresponding claim, ledger event
+and lineage-head update. Preserve the existing transition payload and the current
+`detail = COALESCE(new_detail, detail)` checkpoint semantics; a transition with no
+new detail must not erase previously persisted step results. Runs without a
+version retain checkpoint-only behavior: absence of a ledger transition is
+expected there, not evidence of corruption.
+
+The PostgreSQL transaction-aware append boundary preserves ordinary
+claim validation, sequence allocation and lineage serialization. Ledger SQL stays
+in the PostgreSQL store; core remains SQLx-free. The guarded update checks tenant,
+run, ordinal, step identity and version association before commit. A mismatch
+rolls back the entire transaction, including any uncommitted event and head update.
+Lock order is run advisory lock, lineage head, checkpoint row. Approval validates
+its state while holding the run lock, so a stale retry cannot launch another
+executor. Transition-success metrics are emitted only after commit.
+
+| Interruption | Required durable result and recovery |
+|---|---|
+| Before the checkpoint transaction commits, including after its UPDATE or ledger INSERT | Neither new checkpoint nor new transition survives. Retain the previous checkpoint and history. |
+| After commit, before acknowledgement or executor continuation | Both survive. Reopen reads the committed checkpoint; a done step remains skipped. A lost response is not permission to replay its effect. |
+| After a step effect, before the checkpoint transaction | The effect may exist while the checkpoint is still running. Atomic checkpoint/history writes do not close this separate window. |
+| During approval | Approval checkpoint and its required transition commit together or neither does. An uncommitted approval cannot authorize cutover. A committed approval can be used only through the existing authorized continuation path. |
+
+**Effect recovery stays explicit.** Reopening a process does not advance a run or
+start a scheduler. The existing advisory lock must still exclude another executor
+and release on process death. Build, verify, cutover and retirement retain their
+individual re-entry rules; this decision does not make their effects exactly once.
+Before any stronger resume guarantee, qualify each step's persisted outputs and
+preconditions, including a cutover already active while its checkpoint is running.
+Do not infer successful completion from death, lock release, a missing event, or
+the mere existence of an artifact. Ambiguous effects require reconciliation or
+operator investigation rather than blind replay. Approval and artifact-verification
+requirements continue to apply on every supported re-entry path.
+
+**Existing gaps stay historical gaps.** Preserve old checkpoints, details and all
+existing append-only events. Never backdate or synthesize the missing original
+transition, replay a done step to produce an event, or reset its checkpoint to make
+history appear complete. A legacy done checkpoint remains the executor's progress
+record; it does not prove that the corresponding historical event was recorded.
+A current checkpoint also cannot reconstruct every earlier state or approval.
+Treat completeness for pre-contract history as unknown unless independently
+established; absence of a version means ledger history was not required at all.
+Any later diagnostic or operator reconciliation record must identify itself as a
+present observation, distinguish observations from inference, and leave the original
+gap visible. Such tooling and its wire representation are separate work.
+
+**Compatibility and rollout:** retain current state names, JSON detail behavior,
+REST/gRPC responses and explicit continuation semantics. No backfill or schema
+rewrite is needed merely to share the transaction. Old runs may receive future
+atomic transitions without certifying their earlier history. The guarantee begins
+only after every writer of checkpoints and approvals uses the shared boundary;
+drain older writers before advertising it. Mixed-version operation and rollback
+to an older writer can reopen the gap and therefore suspend the guarantee, even
+if old readers remain compatible. Do not delete events during rollback. If the
+implementation needs protocol metadata, design an additive migration and its
+reader compatibility before adding it.
+
+**Qualification:** the child-process tests include controls and kills after
+uncommitted event/head writes, after the checkpoint UPDATE and after commit.
+Independently reopen checkpoint/detail, claim/event and lineage head; require
+all-or-neither persistence, valid sequence ordering and unchanged acknowledged
+history. Retain effect-before-checkpoint cases for buildIndex, verify, cutover and
+retireOld, and approval cases before/after commit. Exercise append failure rollback,
+missing/wrong-tenant steps, concurrent executor/approval attempts, repeated approval,
+no-version runs, detail preservation, and old done checkpoints with absent events.
+Legacy gaps must remain unchanged after repeated reopen/re-entry. Check supported
+old-reader and mixed-writer behavior and document rollback limits. Qualification
+continues to mean application-process death with PostgreSQL running; database
+crashes, power loss, backup restore, v2 ordering and external effects need their own
+evidence. The two additional server regressions cover identity/error rollback, JSON detail
+preservation, no-version runs, unchanged DTO decoding, legacy gaps after repeated
+re-entry, simulated old-writer behavior, and competing approvals across independent
+pools. The PostgreSQL `recovery_two_pools_seeded_batches` test uses fixed seeds 8
+and 24301, racing head-checked batches and checking acknowledged claims against
+ledger events after reconnecting. Existing cluster conformance qualifies separate
+server processes. An old binary is not executed by the simulated old-writer test.
+
+The supported P08 scope is application-process recovery for the ledger,
+REST/typed-gRPC receipts, v1 runbook lifecycle and local artifact publication.
+Exactly-once command/effect execution, automatic resume, database/host failure,
+v2 crash ordering, cloud artifact stores and remote provider submissions are
+separate qualification or contract work; none is claimed by these fixtures.
+
+#### P08 local qualification record
+
+The D3 application-process scope is implemented and locally qualified on Windows
+with a disposable PostgreSQL/pgvector 16 container continuously running. The
+container and live server processes were removed after validation. No remote CI,
+merge, release, deployment or database/power-loss qualification is implied.
+
+Commands below run from `server/`, with `MUNARIUM_TEST_DATABASE_URL` targeting the
+isolated database where applicable:
+
+| Check | Result |
+|---|---|
+| `cargo test --locked --offline -p munarium-server process_recovery -- --nocapture` | 4 parents/regressions passed: 44 runbook crash/control scenarios, 8 receipt scenarios, legacy/rollback and competing-approval regressions |
+| `cargo test --locked --offline -p munarium-store-pg` | 55 passed; ledger parent covers 6 crash/control scenarios, including its explicitly invoked child; seeded two-pool batches passed |
+| `cargo test --locked --offline -p munarium-retrieval --test process_recovery -- --nocapture` | Artifact parent passed all 28 same-node/replacement-node scenarios; ignored child is invoked by the parent |
+| `cargo test --locked --offline -p munarium-server -- --skip process_recovery` | 212 passed, 6 ignored in this invocation; includes the 6 documentation-coverage tests |
+| Existing `runbooks_api::json_persistence_tests::json_feature_pg_runbook_result_reopens`, invoked explicitly with `--ignored` in the compiled server test executable | 1 passed; unchanged JSON persistence fixture remains compatible |
+| `cargo clippy --locked --offline -p munarium-store-pg -p munarium-server --all-targets --all-features -- -D warnings` | Passed |
+| `cargo build --locked --offline -p munarium-server -p mmp-conformance`; existing `Invoke-ValidationLiveTier` helpers for PostgreSQL blackbox/platform/cluster | Passed: 8 REST + 8 gRPC + 10 platform + 5 cluster scenarios; owned servers cleaned up |
+| `cargo fmt --all --check`; repository license, client compatibility, root-link and whitespace checks | Passed |
+| `scripts/private_material_scan.py` | Failed on 350 pre-existing local scratch findings; none outside scratch. Not waived or reported as passed |
+
+The first competing-approval test run exposed missing source setup in its new
+fixture; after adding fictional source content, the complete server recovery run
+passed. No production behavior was weakened to satisfy the test. The unchanged
+ignored child entries are exercised by their parents; other unselected ignored
+suites are not claimed as executed. These local results supplement automatic CI.
 
 ### 9.2 Strengthen command recovery only where the contract supports it
 
@@ -612,7 +727,10 @@ For workflows spanning a provider, object store, and database, persist enough in
 
 Retain existing request-hash mismatch behavior, tenant isolation, REST/gRPC plane distinctions, stored-response encoding, and TTL semantics. Do not expire the only receipt for an unresolved operation solely because a successful-response replay TTL elapsed. Migrate old completed receipts readably; do not reinterpret them as durable pre-dispatch evidence. Old writers that bypass a new in-flight claim protocol must be drained or excluded before the stronger guarantee is advertised.
 
-For runbooks, decide whether step state and ledger transition should commit atomically, or whether a documented reconciliation can reconstruct one from the other. Test build-index re-entry, verification, approval, cutover, and retirement individually. Do not “recover” a step by marking it done merely because its process died. Keep explicit resume semantics until a separately designed scheduler is adopted.
+For runbooks, §9.1 implements the atomic checkpoint/transition contract. Preserve legacy history gaps rather than reconstructing unobserved events.
+Test build-index re-entry, verification, approval, cutover, and retirement
+individually. Do not “recover” a step by marking it done merely because its process
+died. Keep explicit resume semantics until a separately designed scheduler is adopted.
 
 For datastore publication, reuse existing reconciliation and jobs rather than add a second recovery daemon. Verify orphan handling, manifest-last publication, binding validation, and previous-generation availability after crashes. Preserve old artifacts until pins and retention permit cleanup.
 
@@ -860,4 +978,4 @@ This planning task is complete when this document is indexed, its current-source
 
 An implementation slice is complete only when its behavior, compatibility, migration/rollback constraints, tests, and documentation meet its exit criteria. A research slice can complete with rejection or inconclusive evidence if that is an allowed preregistered outcome. An unavailable environment or accepted waiver can permit a separately recorded release decision, but cannot manufacture qualification evidence.
 
-P02–P04 are merged in PR #46. The remaining actionable work includes P01 reconciliation/reporting, D1/D7 decisions for broader P05 changes, and P08 recovery-contract decisions and remaining qualification after the ledger baseline in PR #52 and the broader characterization in §9.1. Their outputs should refine the estimates and contracts for later slices before additional architecture is committed.
+P02–P04 are merged in PR #46. The remaining actionable work includes P01 reconciliation/reporting, D1/D7 decisions for broader P05 changes, and any separately adopted stronger recovery guarantees beyond the P08 application-process scope in §9.1. Their outputs should refine the estimates and contracts for later slices before additional architecture is committed.
