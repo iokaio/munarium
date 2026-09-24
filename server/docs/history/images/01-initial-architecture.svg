@@ -1,0 +1,136 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1010" viewBox="0 0 1500 1010" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+  <defs>
+    <marker id="a2b6cb0" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#2b6cb0" />
+    </marker>
+    <marker id="s2b6cb0" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#2b6cb0" />
+    </marker>
+    <marker id="a2f855a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#2f855a" />
+    </marker>
+    <marker id="s2f855a" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#2f855a" />
+    </marker>
+    <marker id="ab7791f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#b7791f" />
+    </marker>
+    <marker id="sb7791f" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#b7791f" />
+    </marker>
+  </defs>
+  <rect width="100%" height="100%" fill="#ffffff" />
+  <text x="32" y="44" font-size="24" font-weight="700" fill="#1f2933" text-anchor="start">Munarium 1.0.0 as imported (PR #1)</text>
+  <text x="32" y="72" font-size="14" font-weight="400" fill="#52606d" text-anchor="start">One Apache-2.0 repository, three components; the Server is the governance authority.</text>
+  <rect x="70" y="100" width="440" height="64" rx="10" fill="#ffffff" stroke="#7b8794" stroke-width="1.6" stroke-dasharray="6 5" />
+  <text x="290.0" y="128.43" font-size="15" font-weight="700" fill="#1f2933" text-anchor="middle">Model providers</text>
+  <text x="290.0" y="151.75" font-size="13" font-weight="400" fill="#52606d" text-anchor="middle">bring-your-own-key; called only by Server</text>
+  <rect x="990" y="100" width="440" height="64" rx="10" fill="#ffffff" stroke="#7b8794" stroke-width="1.6" stroke-dasharray="6 5" />
+  <text x="1210.0" y="128.43" font-size="15" font-weight="700" fill="#1f2933" text-anchor="middle">Customer data sources</text>
+  <text x="1210.0" y="151.75" font-size="13" font-weight="400" fill="#52606d" text-anchor="middle">read through declared adapter capabilities</text>
+  <rect x="50" y="200" width="680" height="470" rx="14" fill="#f5f8fe" stroke="#2b6cb0" stroke-width="1.6" />
+  <text x="70" y="232" font-size="16" font-weight="700" fill="#1f2933" text-anchor="start">server/  —  governed-memory service (Rust, static musl, distroless)</text>
+  <rect x="70" y="250" width="640" height="58" rx="10" fill="#e8f0fe" stroke="#2b6cb0" stroke-width="1.6" />
+  <text x="390.0" y="275.76" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">munarium-server</text>
+  <text x="390.0" y="297.7" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">REST + gRPC (Munarium Memory Protocol), sessions, dashboard</text>
+  <rect x="70" y="318" width="310" height="94" rx="10" fill="#e8f0fe" stroke="#2b6cb0" stroke-width="1.6" />
+  <text x="225.0" y="345.2" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">Ledger &amp; governance</text>
+  <text x="225.0" y="367.14" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">core, access, store-pg / mem / objects</text>
+  <text x="225.0" y="383.7" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">append-only facts, supersession;</text>
+  <text x="225.0" y="400.26" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">blocked claim → disputed, not dropped</text>
+  <rect x="400" y="318" width="310" height="94" rx="10" fill="#e8f0fe" stroke="#2b6cb0" stroke-width="1.6" />
+  <text x="555.0" y="345.2" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">Retrieval</text>
+  <text x="555.0" y="367.14" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">retrieval, retrieval-pg, datastore</text>
+  <text x="555.0" y="383.7" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">hybrid search; provenance</text>
+  <text x="555.0" y="400.26" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">envelope on every answer</text>
+  <rect x="70" y="422" width="310" height="76" rx="10" fill="#e8f0fe" stroke="#2b6cb0" stroke-width="1.6" />
+  <text x="225.0" y="448.47999999999996" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">Authoring &amp; ingest</text>
+  <text x="225.0" y="470.41999999999996" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">shapes, runbooks, authoring,</text>
+  <text x="225.0" y="486.97999999999996" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">extract, docintel-az</text>
+  <rect x="400" y="422" width="310" height="76" rx="10" fill="#e8f0fe" stroke="#2b6cb0" stroke-width="1.6" />
+  <text x="555.0" y="448.47999999999996" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">Providers</text>
+  <text x="555.0" y="470.41999999999996" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">munarium-providers</text>
+  <text x="555.0" y="486.97999999999996" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">BYOK model adapters</text>
+  <rect x="70" y="508" width="640" height="64" rx="10" fill="#e8f0fe" stroke="#2b6cb0" stroke-width="1.6" />
+  <text x="390.0" y="536.76" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">Contract</text>
+  <text x="390.0" y="558.7" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">proto (MMP), api-types, api-conv; server/contract/matrix vendored with contract.lock</text>
+  <text x="70" y="600.0" font-size="13" font-weight="400" fill="#52606d" text-anchor="start">Commitments: additive-only migrations · wire N/N−1 policy · MUNARIUM_* config contract</text>
+  <text x="70" y="624.0" font-size="13" font-weight="400" fill="#52606d" text-anchor="start">Deploy assets: Dockerfile, Helm chart, Terraform samples, runbooks</text>
+  <rect x="790" y="200" width="660" height="470" rx="14" fill="#f4faf6" stroke="#2f855a" stroke-width="1.6" />
+  <text x="810" y="232" font-size="16" font-weight="700" fill="#1f2933" text-anchor="start">matrix/  —  structured-evidence plane (separate service)</text>
+  <rect x="810" y="250" width="620" height="58" rx="10" fill="#e6f4ea" stroke="#2f855a" stroke-width="1.6" />
+  <text x="1120.0" y="275.76" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">munarium-matrix-server</text>
+  <text x="1120.0" y="297.7" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">source registry, governed record collections, verified query contracts</text>
+  <rect x="810" y="318" width="300" height="94" rx="10" fill="#e6f4ea" stroke="#2f855a" stroke-width="1.6" />
+  <text x="960.0" y="345.2" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">Core adapters</text>
+  <text x="960.0" y="367.14" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">postgres, mysql, sqlserver,</text>
+  <text x="960.0" y="383.7" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">landing; unsupported combination</text>
+  <text x="960.0" y="400.26" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">→ typed refusal</text>
+  <rect x="1130" y="318" width="300" height="94" rx="10" fill="#e6f4ea" stroke="#2f855a" stroke-width="1.6" />
+  <text x="1280.0" y="345.2" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">Runtime</text>
+  <text x="1280.0" y="367.14" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">workers, store, core, types</text>
+  <text x="1280.0" y="383.7" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">materialization and</text>
+  <text x="1280.0" y="400.26" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">typed observations</text>
+  <rect x="810" y="422" width="620" height="76" rx="10" fill="#e6f4ea" stroke="#2f855a" stroke-width="1.6" />
+  <text x="1120.0" y="456.76" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">munarium-matrix-server-client</text>
+  <text x="1120.0" y="478.7" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">seals the exact typed evidence an answer used into the Server</text>
+  <rect x="810" y="508" width="620" height="64" rx="10" fill="#e6f4ea" stroke="#2f855a" stroke-width="1.6" />
+  <text x="1120.0" y="536.76" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">Contract publisher</text>
+  <text x="1120.0" y="558.7" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">matrix/contract/publish.py cuts the contract the Server vendors</text>
+  <text x="810" y="600.0" font-size="13" font-weight="400" fill="#52606d" text-anchor="start">Never calls a model provider · never writes a Server table ·</text>
+  <text x="810" y="618.85" font-size="13" font-weight="400" fill="#52606d" text-anchor="start">never issues DDL/DML against a customer source. Analytics adapters = Enterprise.</text>
+  <path d="M 290 200 L 290 166" fill="none" stroke="#2b6cb0" stroke-width="1.8" marker-end="url(#a2b6cb0)" />
+  <rect x="296.4" y="176" width="247.20000000000002" height="20" rx="4" fill="#ffffff" opacity="0.92" />
+  <text x="420" y="189" font-size="12" font-weight="600" fill="#52606d" text-anchor="middle">providers: completions / embeddings</text>
+  <path d="M 1210 200 L 1210 166" fill="none" stroke="#2f855a" stroke-width="1.8" marker-end="url(#a2f855a)" />
+  <rect x="1230.0" y="176" width="180.00000000000003" height="20" rx="4" fill="#ffffff" opacity="0.92" />
+  <text x="1320" y="189" font-size="12" font-weight="600" fill="#52606d" text-anchor="middle">adapters: read-only calls</text>
+  <path d="M 810 460 L 730 460" fill="none" stroke="#2f855a" stroke-width="1.8" marker-end="url(#a2f855a)" />
+  <rect x="713.6" y="438" width="112.80000000000001" height="20" rx="4" fill="#ffffff" opacity="0.92" />
+  <text x="770" y="451" font-size="12" font-weight="600" fill="#52606d" text-anchor="middle">sealed evidence</text>
+  <path d="M 810 540 L 730 540" fill="none" stroke="#2f855a" stroke-width="1.8" stroke-dasharray="6 5" marker-end="url(#a2f855a)" />
+  <rect x="706.88" y="518" width="126.24000000000001" height="20" rx="4" fill="#ffffff" opacity="0.92" />
+  <text x="770" y="531" font-size="12" font-weight="600" fill="#52606d" text-anchor="middle">vendored contract</text>
+  <rect x="50" y="710" width="1400" height="120" rx="14" fill="#fffaf0" stroke="#b7791f" stroke-width="1.6" />
+  <text x="70" y="742" font-size="16" font-weight="700" fill="#1f2933" text-anchor="start">clients/  —  official Server and Matrix libraries, with product-specific contracts</text>
+  <rect x="70" y="760" width="108" height="30" rx="15.0" fill="#fdf3e1" stroke="#b7791f" stroke-width="1.3" />
+  <text x="124.0" y="779.32" font-size="12" font-weight="600" fill="#1f2933" text-anchor="middle">Server · Rust</text>
+  <rect x="188" y="760" width="108" height="30" rx="15.0" fill="#fdf3e1" stroke="#b7791f" stroke-width="1.3" />
+  <text x="242.0" y="779.32" font-size="12" font-weight="600" fill="#1f2933" text-anchor="middle">Server · Python</text>
+  <rect x="306" y="760" width="108" height="30" rx="15.0" fill="#fdf3e1" stroke="#b7791f" stroke-width="1.3" />
+  <text x="360.0" y="779.32" font-size="12" font-weight="600" fill="#1f2933" text-anchor="middle">Server · .NET</text>
+  <rect x="424" y="760" width="108" height="30" rx="15.0" fill="#fdf3e1" stroke="#b7791f" stroke-width="1.3" />
+  <text x="478.0" y="779.32" font-size="12" font-weight="600" fill="#1f2933" text-anchor="middle">Server · Java</text>
+  <rect x="580" y="760" width="118" height="30" rx="15.0" fill="#fdf3e1" stroke="#b7791f" stroke-width="1.3" />
+  <text x="639.0" y="779.32" font-size="12" font-weight="600" fill="#1f2933" text-anchor="middle">Matrix · Python</text>
+  <rect x="708" y="760" width="118" height="30" rx="15.0" fill="#fdf3e1" stroke="#b7791f" stroke-width="1.3" />
+  <text x="767.0" y="779.32" font-size="12" font-weight="600" fill="#1f2933" text-anchor="middle">Matrix · .NET</text>
+  <rect x="836" y="760" width="118" height="30" rx="15.0" fill="#fdf3e1" stroke="#b7791f" stroke-width="1.3" />
+  <text x="895.0" y="779.32" font-size="12" font-weight="600" fill="#1f2933" text-anchor="middle">Matrix · Java</text>
+  <rect x="990" y="752" width="440" height="64" rx="10" fill="#fdf3e1" stroke="#b7791f" stroke-width="1.6" />
+  <text x="1210.0" y="780.76" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">compatibility.json</text>
+  <text x="1210.0" y="802.7" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">versions, package identities, support</text>
+  <text x="70" y="814.0" font-size="13" font-weight="400" fill="#52606d" text-anchor="start">Client conformance targets each product; compatibility.json records supported product versions.</text>
+  <path d="M 390 710 L 390 670" fill="none" stroke="#b7791f" stroke-width="1.8" marker-end="url(#ab7791f)" />
+  <rect x="347.04" y="682" width="85.92" height="20" rx="4" fill="#ffffff" opacity="0.92" />
+  <text x="390" y="695" font-size="12" font-weight="600" fill="#52606d" text-anchor="middle">REST / gRPC</text>
+  <path d="M 1120 710 L 1120 670" fill="none" stroke="#b7791f" stroke-width="1.8" marker-end="url(#ab7791f)" />
+  <rect x="1100.56" y="682" width="38.88" height="20" rx="4" fill="#ffffff" opacity="0.92" />
+  <text x="1120" y="695" font-size="12" font-weight="600" fill="#52606d" text-anchor="middle">REST</text>
+  <rect x="50" y="860" width="1400" height="120" rx="14" fill="#f8f5fd" stroke="#6b46c1" stroke-width="1.6" />
+  <text x="70" y="892" font-size="16" font-weight="700" fill="#1f2933" text-anchor="start">Automatic gates with workflow/path filters (hosted runners, no cloud live tiers)</text>
+  <rect x="70" y="908" width="186" height="30" rx="15.0" fill="#f0ebfb" stroke="#6b46c1" stroke-width="1.3" />
+  <text x="163.0" y="927.32" font-size="12" font-weight="600" fill="#1f2933" text-anchor="middle">repo-hygiene</text>
+  <rect x="270" y="908" width="186" height="30" rx="15.0" fill="#f0ebfb" stroke="#6b46c1" stroke-width="1.3" />
+  <text x="363.0" y="927.32" font-size="12" font-weight="600" fill="#1f2933" text-anchor="middle">server-ci</text>
+  <rect x="470" y="908" width="186" height="30" rx="15.0" fill="#f0ebfb" stroke="#6b46c1" stroke-width="1.3" />
+  <text x="563.0" y="927.32" font-size="12" font-weight="600" fill="#1f2933" text-anchor="middle">matrix-ci</text>
+  <rect x="670" y="908" width="186" height="30" rx="15.0" fill="#f0ebfb" stroke="#6b46c1" stroke-width="1.3" />
+  <text x="763.0" y="927.32" font-size="12" font-weight="600" fill="#1f2933" text-anchor="middle">matrix-server-contract</text>
+  <rect x="870" y="908" width="186" height="30" rx="15.0" fill="#f0ebfb" stroke="#6b46c1" stroke-width="1.3" />
+  <text x="963.0" y="927.32" font-size="12" font-weight="600" fill="#1f2933" text-anchor="middle">clients-ci</text>
+  <rect x="1070" y="908" width="186" height="30" rx="15.0" fill="#f0ebfb" stroke="#6b46c1" stroke-width="1.3" />
+  <text x="1163.0" y="927.32" font-size="12" font-weight="600" fill="#1f2933" text-anchor="middle">dco</text>
+  <text x="70" y="966.0" font-size="13" font-weight="400" fill="#52606d" text-anchor="start">check_license.py (source + built artifacts) · gitleaks · private-material scan · generated-copy and notices drift checks</text>
+</svg>

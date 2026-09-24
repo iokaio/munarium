@@ -24,6 +24,7 @@ and API references when applying them to a new deployment.
 | [security-posture.md](security-posture.md) | Why the API-management layer is the security boundary; the uid contract, capability JWTs, and credential posture |
 | [lessons-from-vcp.md](lessons-from-vcp.md) | Public engineering recommendations prompted by downstream use, grounded in Server sources and mapped to the implementation plan |
 | [lessons-from-vcp-impl.md](lessons-from-vcp-impl.md) | Proposed Server improvements from the VCP lessons: source analysis, implementation slices, compatibility constraints, regression coverage, and rollout criteria |
+| [history/](history/README.md) | Dated pull-request history, editable diagrams, and separately labeled open follow-up work |
 
 ## API reference
 

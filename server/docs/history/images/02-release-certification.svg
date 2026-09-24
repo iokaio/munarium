@@ -1,0 +1,67 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="600" viewBox="0 0 1500 600" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+  <defs>
+    <marker id="a52606d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#52606d" />
+    </marker>
+    <marker id="s52606d" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#52606d" />
+    </marker>
+  </defs>
+  <rect width="100%" height="100%" fill="#ffffff" />
+  <text x="32" y="44" font-size="24" font-weight="700" fill="#1f2933" text-anchor="start">Server image release path (PRs #16, #20, #26, #28, #29)</text>
+  <text x="32" y="72" font-size="14" font-weight="400" fill="#52606d" text-anchor="start">A candidate becomes a release only after every gate passes; documentation records it afterwards.</text>
+  <rect x="40" y="120" width="250" height="104" rx="10" fill="#e8f0fe" stroke="#2b6cb0" stroke-width="1.6" />
+  <text x="165.0" y="160.48" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">1. Merged source</text>
+  <text x="165.0" y="182.42" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">exact main commit;</text>
+  <text x="165.0" y="198.98" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">pin the tested source</text>
+  <path d="M 290 172.0 L 326 172.0" fill="none" stroke="#52606d" stroke-width="1.8" marker-end="url(#a52606d)" />
+  <rect x="326" y="120" width="250" height="104" rx="10" fill="#e8f0fe" stroke="#2b6cb0" stroke-width="1.6" />
+  <text x="451.0" y="160.48" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">2. Multi-arch build</text>
+  <text x="451.0" y="182.42" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">amd64 + arm64, Rust 1.98.0,</text>
+  <text x="451.0" y="198.98" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">locked deps, static musl check</text>
+  <path d="M 576 172.0 L 612 172.0" fill="none" stroke="#52606d" stroke-width="1.8" marker-end="url(#a52606d)" />
+  <rect x="612" y="120" width="250" height="104" rx="10" fill="#e8f0fe" stroke="#2b6cb0" stroke-width="1.6" />
+  <text x="737.0" y="160.48" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">3. Distroless image</text>
+  <text x="737.0" y="182.42" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">nonroot; LICENSE, NOTICE,</text>
+  <text x="737.0" y="198.98" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">notices; OCI labels; SBOM</text>
+  <path d="M 862 172.0 L 898 172.0" fill="none" stroke="#52606d" stroke-width="1.8" marker-end="url(#a52606d)" />
+  <rect x="898" y="120" width="250" height="104" rx="10" fill="#e8f0fe" stroke="#2b6cb0" stroke-width="1.6" />
+  <text x="1023.0" y="160.48" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">4. Immutable candidate</text>
+  <text x="1023.0" y="182.42" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">e.g. 1.2.1-rc.1</text>
+  <text x="1023.0" y="198.98" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">pushed, not promoted</text>
+  <path d="M 1148 172.0 L 1184 172.0" fill="none" stroke="#52606d" stroke-width="1.8" marker-end="url(#a52606d)" />
+  <rect x="1184" y="120" width="250" height="104" rx="10" fill="#e8f0fe" stroke="#2b6cb0" stroke-width="1.6" />
+  <text x="1309.0" y="160.48" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">5. Sign and verify</text>
+  <text x="1309.0" y="182.42" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">public signature check;</text>
+  <text x="1309.0" y="198.98" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">digests recorded</text>
+  <rect x="40" y="320" width="250" height="104" rx="10" fill="#fff4e0" stroke="#c05621" stroke-width="1.6" />
+  <text x="165.0" y="360.47999999999996" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">6. Exact-image tests</text>
+  <text x="165.0" y="382.41999999999996" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">pulled image; Ollama suite</text>
+  <text x="165.0" y="398.97999999999996" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">native amd64 + emulated arm64</text>
+  <path d="M 290 372.0 L 326 372.0" fill="none" stroke="#52606d" stroke-width="1.8" marker-end="url(#a52606d)" />
+  <rect x="326" y="320" width="250" height="104" rx="10" fill="#fff4e0" stroke="#c05621" stroke-width="1.6" />
+  <text x="451.0" y="360.47999999999996" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">7. Upgrade / rollback</text>
+  <text x="451.0" y="382.41999999999996" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">N−1 → N → restored-backup</text>
+  <text x="451.0" y="398.97999999999996" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">N−1 on disposable data</text>
+  <path d="M 576 372.0 L 612 372.0" fill="none" stroke="#52606d" stroke-width="1.8" marker-end="url(#a52606d)" />
+  <rect x="612" y="320" width="250" height="104" rx="10" fill="#fff4e0" stroke="#c05621" stroke-width="1.6" />
+  <text x="737.0" y="360.47999999999996" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">8. Owner acceptance</text>
+  <text x="737.0" y="382.41999999999996" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">manual app acceptance;</text>
+  <text x="737.0" y="398.97999999999996" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">stopped checks not ‘passed’</text>
+  <path d="M 862 372.0 L 898 372.0" fill="none" stroke="#52606d" stroke-width="1.8" marker-end="url(#a52606d)" />
+  <rect x="898" y="320" width="250" height="104" rx="10" fill="#e6f4ea" stroke="#2f855a" stroke-width="1.6" />
+  <text x="1023.0" y="360.47999999999996" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">9. Promote manifest</text>
+  <text x="1023.0" y="382.41999999999996" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">same digest → x.y.z, x.y,</text>
+  <text x="1023.0" y="398.97999999999996" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">latest; old tags kept</text>
+  <path d="M 1148 372.0 L 1184 372.0" fill="none" stroke="#52606d" stroke-width="1.8" marker-end="url(#a52606d)" />
+  <rect x="1184" y="320" width="250" height="104" rx="10" fill="#e6f4ea" stroke="#2f855a" stroke-width="1.6" />
+  <text x="1309.0" y="360.47999999999996" font-size="14" font-weight="700" fill="#1f2933" text-anchor="middle">10. Record in docs</text>
+  <text x="1309.0" y="382.41999999999996" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">digests, signer, rollback</text>
+  <text x="1309.0" y="398.97999999999996" font-size="12" font-weight="400" fill="#52606d" text-anchor="middle">(#26 for 1.2.0, #29 for 1.2.1)</text>
+  <path d="M 1309.0 224 L 1309.0 272 L 165.0 272 L 165.0 320" fill="none" stroke="#52606d" stroke-width="1.8" marker-end="url(#a52606d)" />
+  <text x="40" y="470.0" font-size="14" font-weight="400" fill="#52606d" text-anchor="start">#16 moved from amd64-only to amd64+arm64, pinned the toolchain, and added labels, notices and SBOM inputs.</text>
+  <text x="40" y="490.3" font-size="14" font-weight="400" fill="#52606d" text-anchor="start">#20 set out the release-phase gates: build the merged source, inspect, publish an immutable candidate, then promote the same manifest.</text>
+  <text x="40" y="510.6" font-size="14" font-weight="400" fill="#52606d" text-anchor="start">#28 made it explicit that an unqualified candidate must not be presented as a release; #29 recorded the 1.2.0 → 1.2.1 → 1.2.0 rollback.</text>
+  <text x="40" y="530.9" font-size="14" font-weight="400" fill="#52606d" text-anchor="start">Rollback to an older Server after a migration needs the pre-upgrade database backup (migrations are additive, not reversible).</text>
+</svg>
