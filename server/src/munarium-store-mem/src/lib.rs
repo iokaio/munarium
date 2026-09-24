@@ -6,6 +6,7 @@
 //! lineage counting domain so one pin bounds everything.
 
 pub mod budget;
+pub mod determinism;
 pub mod evidence;
 pub mod sources;
 pub use budget::MemBudgetStore;
@@ -46,14 +47,29 @@ struct CounterRow {
     seq: Seq,
 }
 
-#[derive(Default)]
 pub struct MemStore {
     state: RwLock<State>,
+    ids: determinism::IdGenerator,
+}
+
+impl Default for MemStore {
+    fn default() -> Self {
+        Self::with_id_generator(determinism::random_ids())
+    }
 }
 
 impl MemStore {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Inject identity generation; callers must supply unique IDs per store.
+    /// Timestamps already supplied by callers retain their existing semantics.
+    pub fn with_id_generator(ids: determinism::IdGenerator) -> Self {
+        Self {
+            state: RwLock::new(State::default()),
+            ids,
+        }
     }
 }
 
@@ -123,7 +139,7 @@ impl StorageBackend for MemStore {
                 });
             }
         }
-        let id = format!("memv-{}", uuid::Uuid::new_v4().simple());
+        let id = format!("memv-{}", (self.ids)());
         s.versions.insert(id.clone(), parent_id.map(String::from));
         if let Some(m) = metadata {
             s.version_meta.insert(id.clone(), m);
@@ -166,7 +182,7 @@ impl StorageBackend for MemStore {
             }
         }
         let stored = Claim {
-            id: format!("claim-{}", uuid::Uuid::new_v4().simple()),
+            id: format!("claim-{}", (self.ids)()),
             version_id: version_id.to_string(),
             seq: head + 1,
             claim_type: claim.claim_type,
@@ -229,7 +245,7 @@ impl StorageBackend for MemStore {
         let mut out = Vec::new();
         for (i, claim) in claims.into_iter().enumerate() {
             let stored = Claim {
-                id: format!("claim-{}", uuid::Uuid::new_v4().simple()),
+                id: format!("claim-{}", (self.ids)()),
                 version_id: version_id.to_string(),
                 seq: head + 1 + i as Seq,
                 claim_type: claim.claim_type,
@@ -292,7 +308,7 @@ impl StorageBackend for MemStore {
         let mut s = self.state.write().await;
         let seq = s.head_of(version_id)? + 1;
         let anchor = Anchor {
-            id: format!("anchor-{}", uuid::Uuid::new_v4().simple()),
+            id: format!("anchor-{}", (self.ids)()),
             version_id: version_id.to_string(),
             detail_key: format!("{subject}.{key}"),
             locked_value: value.to_string(),
@@ -346,7 +362,7 @@ impl StorageBackend for MemStore {
         // other seq-stamped store, so registrations stay orderable under a pin.
         let seq = s.head_of(version_id)? + 1;
         let p = Promise {
-            id: format!("prom-{}", uuid::Uuid::new_v4().simple()),
+            id: format!("prom-{}", (self.ids)()),
             version_id: version_id.to_string(),
             key: key.to_string(),
             kind: kind.to_string(),

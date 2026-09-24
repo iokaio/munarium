@@ -6,12 +6,12 @@
 //! store is one mutex, so the reserve check-and-insert is trivially atomic —
 //! the property the Postgres side needs an advisory lock to get.
 
+use crate::determinism::{random_ids, system_clock, Clock, IdGenerator};
 use async_trait::async_trait;
 use munarium_core::budget::{
     BudgetEvidence, BudgetLedgerRow, BudgetOutcome, BudgetReservation, BudgetStore,
 };
 use munarium_core::Result;
-use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 
 #[derive(Debug, Clone)]
@@ -25,7 +25,7 @@ struct Row {
     original_units: u64,
     usage: Option<munarium_core::provider::UsageEvidence>,
     state: RowState,
-    created_unix: u64,
+    created_unix: i64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,26 +35,33 @@ enum RowState {
     Released,
 }
 
-#[derive(Default)]
 pub struct MemBudgetStore {
     rows: Mutex<Vec<Row>>,
+    clock: Clock,
+    ids: IdGenerator,
+}
+
+impl Default for MemBudgetStore {
+    fn default() -> Self {
+        Self::with_dependencies(system_clock(), random_ids())
+    }
 }
 
 impl MemBudgetStore {
     pub fn new() -> Self {
         Self::default()
     }
-}
 
-fn today_utc() -> String {
-    chrono::Utc::now().format("%Y-%m-%d").to_string()
-}
-
-fn now_unix() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+    /// Inject UTC wall time and unique IDs. Sweeps retain whole-second age
+    /// semantics. A backward clock delays expiry until wall time catches up;
+    /// settlement always retains the reservation's original calendar day.
+    pub fn with_dependencies(clock: Clock, ids: IdGenerator) -> Self {
+        Self {
+            rows: Mutex::new(Vec::new()),
+            clock,
+            ids,
+        }
+    }
 }
 
 #[async_trait]
@@ -71,7 +78,8 @@ impl BudgetStore for MemBudgetStore {
             return Ok(BudgetOutcome::Unlimited);
         };
         let mut rows = self.rows.lock().await;
-        let day = today_utc();
+        let now = (self.clock)();
+        let day = now.format("%Y-%m-%d").to_string();
         let active = rows
             .iter()
             .filter(|r| {
@@ -93,7 +101,7 @@ impl BudgetStore for MemBudgetStore {
             });
         }
         let reservation = BudgetReservation {
-            id: uuid::Uuid::new_v4().simple().to_string(),
+            id: (self.ids)(),
             tenant: tenant.to_string(),
             config: config.to_string(),
             tier: tier.to_string(),
@@ -110,7 +118,7 @@ impl BudgetStore for MemBudgetStore {
             original_units: units,
             usage: None,
             state: RowState::Held,
-            created_unix: now_unix(),
+            created_unix: now.timestamp(),
         });
         Ok(BudgetOutcome::Granted(reservation))
     }
@@ -177,7 +185,9 @@ impl BudgetStore for MemBudgetStore {
     }
 
     async fn sweep_stale(&self, older_than_secs: u64) -> Result<u64> {
-        let cutoff = now_unix().saturating_sub(older_than_secs);
+        let cutoff = (self.clock)()
+            .timestamp()
+            .saturating_sub(i64::try_from(older_than_secs).unwrap_or(i64::MAX));
         let mut rows = self.rows.lock().await;
         let mut swept = 0;
         // `<=`, not `<`: this clock is whole seconds, so a row created this
@@ -195,7 +205,7 @@ impl BudgetStore for MemBudgetStore {
 
     async fn ledger(&self, tenant: &str) -> Result<Vec<BudgetLedgerRow>> {
         let rows = self.rows.lock().await;
-        let day = today_utc();
+        let day = (self.clock)().format("%Y-%m-%d").to_string();
         let mut grouped: std::collections::BTreeMap<(String, String), BudgetLedgerRow> =
             std::collections::BTreeMap::new();
         for r in rows
