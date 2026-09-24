@@ -11,35 +11,7 @@ async fn turn_model_routing_calls_selected_provider_and_rejects_before_spending(
         eprintln!("skipped: requires MUNARIUM_TEST_DATABASE_URL (server/gates.ps1)");
         return;
     };
-    let state = AppState::new(Config {
-        http_addr: "127.0.0.1:0".into(),
-        grpc_addr: None,
-        ops_addr: "127.0.0.1:0".into(),
-        store: StoreKind::Postgres,
-        database_url: Some(database_url),
-        auth: AuthMode::Disabled,
-        shutdown_grace_secs: 1,
-        token_secret: None,
-        token_ttl_secs: 3600,
-        require_uid: false,
-        interaction_body_max: 32768,
-        token_revocation_check: false,
-        matrix_base_url: None,
-        matrix_admin_url: None,
-        max_concurrency: 4,
-        db_max_conns: 4,
-        idempotency_ttl_secs: 86400,
-        replica_count: 1,
-        registry_ttl_secs: 15,
-        session_idle_ttl_secs: 0,
-        evidence_purge_interval_secs: 0,
-        max_tokens: dto::MaxTokensBudgets::default(),
-        instance_id: "routing-test".into(),
-        source_store: SourceStoreConfig::Pg,
-        doc_intel: DocIntelConfig::None,
-    })
-    .await
-    .unwrap();
+    let state = model_test_state(database_url).await;
     let tenant = format!("routing-{}", uuid::Uuid::new_v4().simple());
     let calls = Arc::new(Mutex::new(Vec::<Value>::new()));
     let capture = calls.clone();
@@ -176,4 +148,141 @@ spec:
         assert_eq!(seen[0]["model"], "baseline-fast");
     }
     provider_task.abort();
+}
+
+async fn model_test_state(database_url: String) -> Arc<AppState> {
+    AppState::new(Config {
+        http_addr: "127.0.0.1:0".into(),
+        grpc_addr: None,
+        ops_addr: "127.0.0.1:0".into(),
+        store: StoreKind::Postgres,
+        database_url: Some(database_url),
+        auth: AuthMode::Disabled,
+        shutdown_grace_secs: 1,
+        token_secret: None,
+        token_ttl_secs: 3600,
+        require_uid: false,
+        interaction_body_max: 32768,
+        token_revocation_check: false,
+        matrix_base_url: None,
+        matrix_admin_url: None,
+        max_concurrency: 4,
+        db_max_conns: 4,
+        idempotency_ttl_secs: 86400,
+        replica_count: 1,
+        registry_ttl_secs: 15,
+        session_idle_ttl_secs: 0,
+        evidence_purge_interval_secs: 0,
+        max_tokens: dto::MaxTokensBudgets::default(),
+        instance_id: "routing-test".into(),
+        source_store: SourceStoreConfig::Pg,
+        doc_intel: DocIntelConfig::None,
+    })
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn turn_retry_attempts_and_ceiling_are_bounded() {
+    let Ok(url) = std::env::var("MUNARIUM_TEST_DATABASE_URL") else {
+        eprintln!("PostgreSQL session retry tests NOT RUN: test database unset");
+        return;
+    };
+    let state = model_test_state(url).await;
+    for (truncated, ceiling) in [(false, 64u32), (true, 64), (true, u32::MAX)] {
+        let tenant = format!("retry-{}", uuid::Uuid::new_v4().simple());
+        let calls = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let capture = calls.clone();
+        let app = axum::Router::new().route("/api/chat", axum::routing::post(move |Json(body): Json<Value>| {
+            let capture = capture.clone();
+            async move {
+                let index = { let mut calls = capture.lock().unwrap(); let n = calls.len(); calls.push(body); n };
+                let stop = if truncated && index == 0 { "length" } else { "stop" };
+                let text = if index <= usize::from(truncated) { "A fabricated \"quotation not in evidence\"." } else { "No quotation." };
+                Json(json!({"done":true,"done_reason":stop,"message":{"role":"assistant","content":text},
+                    "prompt_eval_count":2,"eval_count":1}))
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        struct Abort(tokio::task::JoinHandle<()>);
+        impl Drop for Abort {
+            fn drop(&mut self) {
+                self.0.abort();
+            }
+        }
+        let _task = Abort(task);
+        state.providers.apply(&state, &tenant, &format!(
+            "apiVersion: munarium.ioka.io/v1\nkind: ProviderConfig\nmetadata: {{ name: fixture }}\nspec:\n  provider: ollama\n  endpoint: {endpoint}\n  models: {{ capable: fixture }}\n"
+        )).await.unwrap();
+        let yaml = format!(
+            r#"
+apiVersion: munarium.ioka.io/v1
+kind: Runbook
+metadata: {{ name: retry, version: 1 }}
+spec:
+  collections: [{{ name: articles, shape: article@1 }}]
+  models:
+    tasks:
+      completion: {{ provider: fixture, tier: capable }}
+  completion:
+    promptTemplate: "{{query}}\n{{context}}"
+    maxTokens: {ceiling}
+    verification: {{ quotes: true, maxRetries: 1 }}
+  steps: [{{ buildIndex: {{}} }}]
+"#
+        );
+        state
+            .retrieval_for(&tenant)
+            .unwrap()
+            .ensure_collection("articles", "article@1", 0, &[], None)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO runbooks (tenant_id, runbook_ref, yaml) VALUES ($1,'retry@1',$2)")
+            .bind(&tenant)
+            .bind(&yaml)
+            .execute(state.pg_pool().unwrap())
+            .await
+            .unwrap();
+        let access = AccessCtx::unrestricted("tester", &tenant);
+        let session = op_create_session(&state, &access, "retry").await.unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let request =
+            serde_json::from_value(json!({"query":"What is known?", "complete":true})).unwrap();
+        let result = op_turn(&state, &access, &session.session_id, request, Some(tx)).await;
+        let captured = calls.lock().unwrap();
+        if ceiling == u32::MAX {
+            assert!(
+                matches!(result, Err(ApiError::Mesh(KernelError::InvalidInput(_)))),
+                "{result:?}"
+            );
+            assert_eq!(
+                captured.len(),
+                1,
+                "overflow must fail before retry dispatch"
+            );
+        } else {
+            let (response, _) = result.unwrap();
+            assert_eq!(
+                response.completion.unwrap().input_tokens,
+                if truncated { 6 } else { 4 }
+            );
+            let expected = if truncated { vec![0, 1, 2] } else { vec![0, 1] };
+            let mut attempts = Vec::new();
+            while let Ok(event) = rx.try_recv() {
+                if let dto::TurnProgressEvent::Completion { attempt, .. } = event {
+                    attempts.push(attempt);
+                }
+            }
+            assert_eq!(attempts, expected);
+            assert_eq!(captured.len(), expected.len());
+            for (i, body) in captured.iter().enumerate() {
+                assert_eq!(
+                    body["options"]["num_predict"],
+                    if truncated && i > 0 { 256 } else { 64 }
+                );
+            }
+        }
+    }
 }

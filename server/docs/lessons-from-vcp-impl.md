@@ -111,7 +111,7 @@ Each row is a coherent implementation slice; it may require more than one PR whe
 | P02 | Merged in PR #46: Check outcomes, receipts, checker controls | None; parallel with P01 | Medium | Pass/fail/missing/interrupted fixtures and correct exit precedence |
 | P03 | Merged in PR #46: JSON feature/persistence characterization | None; parallel with P01 | Small–medium | Default and feature-enabled round trips through actual persistence paths |
 | P04 | Merged in PR #46: Verified documentation corrections | Current-source recheck | Small | Current references corrected; historical examples preserved; documentation gates |
-| P05 | Provider path inventory, attempts, caps, retry diagnostics | P01; D1/D7 for policy changes | Medium–large | Every dispatch has an explicit accounting policy; concurrent/retry/cancellation tests |
+| P05 | Dispatch inventory and retry diagnostics implemented; broader admission and diagnostics pending | P01; D1/D7 for policy changes | Medium–large | Every dispatch has an explicit accounting policy; concurrent/retry/cancellation tests |
 | P06 | Clock/ID seams and governance baseline | Existing conformance; P02 receipts | Medium | Existing constructors unchanged; reproducible traces and separated timings |
 | P07 | Sparse-scope retrieval characterization and measured fix | P06 baseline where relevant | Medium | Exact-oracle comparisons, authorization parity, bounded-work evidence |
 | P08 | Crash tier and first recovery fixes | D3; P02; existing mirror fault hooks | Large | Named barriers, process termination, reopened-state assertions, reviewed recovery contracts |
@@ -190,6 +190,8 @@ The existing `settle` operation is intentionally a no-op after a reservation lea
 **Acceptance tests:** extend [provider contract fixtures](../src/munarium-providers/tests/contract.rs) and [Ollama fixtures](../src/munarium-providers/tests/ollama_contract.rs). Cover absent object, absent one field, null, string, negative, overflow, explicit zero, reasoning truncation, refusal, error-in-200, empty choices, and tool-only output. Exercise the gateway with a real memory budget store, then PostgreSQL parity. Assert the stored accounted amount and quality, returned answer, metrics, and provenance. Verify duplicate settlement, settlement failure, stale sweep, late correction, and integer conversion bounds. A parser-only test is insufficient.
 
 ### 4.2 P05: make the admission coverage explicit — R15 and R14
+
+**Implemented slice:** [dispatch inventory](tokenbudgets.md#dispatch-accounting-inventory), sequential session completion ordinals, checked truncation retry ceiling, and scripted retry/cancellation tests. New cap policies, physical-attempt accounting and diagnostic audience changes remain subject to D1/D7.
 
 **Change locations:** `providers_api.rs::complete_with_schema`, `models.rs`, `sessions_api.rs`, `sessions_model_tests.rs`, `runbooks_api.rs`, `authoring_api.rs`, `evidence_hierarchy.rs`, `answers_api.rs`, `vocabulary_api.rs`, and the existing budget-store implementations.
 
