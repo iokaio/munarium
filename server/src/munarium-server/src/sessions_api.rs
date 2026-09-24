@@ -1172,13 +1172,14 @@ pub async fn op_turn(
             }
         };
         let mut budget = base_budget;
+        let mut completion_attempt = 0;
         let mut resp = complete(prompt.clone(), budget).await?;
         let mut total_in = resp.input_tokens;
         let mut total_out = resp.output_tokens;
         emit(
             &progress,
             dto::TurnProgressEvent::Completion {
-                attempt: 0,
+                attempt: completion_attempt,
                 provider: resp.provider.clone(),
                 model: resp.model.clone(),
                 input_tokens: resp.input_tokens,
@@ -1198,14 +1199,17 @@ pub async fn op_turn(
         let truncated = matches!(resp.stop_reason.as_str(), "max_tokens" | "length")
             || resp.text.trim().is_empty();
         if truncated {
-            budget = base_budget * 4;
+            budget = base_budget.checked_mul(4).ok_or_else(|| {
+                KernelError::InvalidInput("completion retry token ceiling exceeds u32".into())
+            })?;
             let retry = complete(prompt.clone(), budget).await?;
+            completion_attempt += 1;
             total_in += retry.input_tokens;
             total_out += retry.output_tokens;
             emit(
                 &progress,
                 dto::TurnProgressEvent::Completion {
-                    attempt: 0,
+                    attempt: completion_attempt,
                     provider: retry.provider.clone(),
                     model: retry.model.clone(),
                     input_tokens: retry.input_tokens,
@@ -1325,12 +1329,13 @@ pub async fn op_turn(
                     budget,
                 )
                 .await?;
+                completion_attempt += 1;
                 total_in += retry.input_tokens;
                 total_out += retry.output_tokens;
                 emit(
                     &progress,
                     dto::TurnProgressEvent::Completion {
-                        attempt: retries,
+                        attempt: completion_attempt,
                         provider: retry.provider.clone(),
                         model: retry.model.clone(),
                         input_tokens: retry.input_tokens,

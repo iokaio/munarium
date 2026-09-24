@@ -2,6 +2,7 @@
 //! Scripted provider -> shared gateway -> real budget ledger regression tests.
 use super::*;
 use crate::config::{AuthMode, Config, DocIntelConfig, SourceStoreConfig, StoreKind};
+use axum::http::StatusCode;
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -203,5 +204,126 @@ async fn usage_settlement_memory_and_postgres() {
         eprintln!(
             "PostgreSQL usage settlement NOT RUN: MUNARIUM_TEST_DATABASE_URL unset; memory only"
         );
+    }
+}
+
+// A logical gateway call can contain multiple physical HTTP submissions. These
+// tests pin today's policy without claiming earlier failed attempts are measured.
+#[tokio::test]
+async fn dispatch_retries_cancellation_and_uncapped_policy() {
+    let mut databases = vec![None];
+    if let Ok(url) = std::env::var("MUNARIUM_TEST_DATABASE_URL") {
+        databases.push(Some(url));
+    } else {
+        eprintln!("PostgreSQL dispatch tests NOT RUN: test database unset");
+    }
+    for database in databases {
+        let state = test_state(database).await;
+        for scenario in [
+            "retry-success",
+            "exhausted",
+            "cancel",
+            "denied",
+            "unpolled",
+            "uncapped",
+        ] {
+            let calls = Arc::new(AtomicUsize::new(0));
+            let observed = calls.clone();
+            let arrived = Arc::new(tokio::sync::Notify::new());
+            let signal = arrived.clone();
+            let app = axum::Router::new().route("/api/chat", axum::routing::post(move || {
+                let attempt = observed.fetch_add(1, Ordering::SeqCst);
+                let signal = signal.clone();
+                async move {
+                    signal.notify_one();
+                    if scenario == "cancel" {
+                        std::future::pending::<()>().await;
+                    }
+                    let status = if scenario == "exhausted" { StatusCode::TOO_MANY_REQUESTS }
+                        else if scenario == "retry-success" && attempt == 0 { StatusCode::SERVICE_UNAVAILABLE }
+                        else { StatusCode::OK };
+                    (status, [("retry-after", "0")], Json(json!({
+                        "done":true, "done_reason":"stop", "message":{"role":"assistant", "content":"fixture"},
+                        "prompt_eval_count":2, "eval_count":1
+                    })))
+                }
+            }));
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let endpoint = format!("http://{}", listener.local_addr().unwrap());
+            let _task = Abort(tokio::spawn(async move {
+                axum::serve(listener, app).await.unwrap()
+            }));
+            let tenant = format!("dispatch-{}", uuid::Uuid::new_v4().simple());
+            state.providers.apply(&state, &tenant, &format!(
+                "apiVersion: munarium.ioka.io/v1\nkind: ProviderConfig\nmetadata: {{ name: fixture }}\nspec:\n  provider: ollama\n  endpoint: {endpoint}\n  models: {{ fast: fixture, complete: [fixture] }}\n  budgets:\n    dailyTokens: {{ fast: 10 }}\n"
+            )).await.unwrap();
+            let store = state.store_for(&tenant).await.unwrap();
+            let request = serde_json::from_value(json!({"prompt":"test", "max_tokens":9,
+                "tier": if scenario == "uncapped" { Value::Null } else { json!("fast") },
+                "model": if scenario == "uncapped" { json!("fixture") } else { Value::Null }
+            }))
+            .unwrap();
+            if scenario == "denied" {
+                state
+                    .budgets()
+                    .reserve(&tenant, "fixture", "fast", 10, Some(10))
+                    .await
+                    .unwrap();
+            }
+            let future =
+                complete_with_schema(&state, &tenant, store.as_ref(), "fixture", request, None);
+            if scenario == "unpolled" {
+                drop(future);
+            } else if scenario == "cancel" {
+                // Drop after the physical server observed a submission; never
+                // infer zero work or refund this held reservation.
+                let mut future = Box::pin(future);
+                tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                    tokio::select! {
+                        _ = arrived.notified() => {},
+                        result = &mut future => panic!("unexpected result: {result:?}"),
+                    }
+                })
+                .await
+                .unwrap();
+                drop(future);
+            } else {
+                let result = future.await;
+                if matches!(scenario, "exhausted" | "denied") {
+                    assert!(matches!(result, Err(KernelError::RateLimited(_))));
+                } else {
+                    assert!(result.is_ok(), "{scenario}: {result:?}");
+                }
+            }
+            let physical = calls.load(Ordering::SeqCst);
+            let ledger = state.budgets().ledger(&tenant).await.unwrap();
+            match scenario {
+                "unpolled" => {
+                    assert_eq!(physical, 0);
+                    assert!(ledger.is_empty());
+                }
+                "uncapped" => {
+                    assert_eq!(physical, 1);
+                    assert!(ledger.is_empty());
+                }
+                "denied" => {
+                    assert_eq!(physical, 0);
+                    assert_eq!(ledger[0].held_units, 10);
+                }
+                "cancel" => {
+                    assert_eq!(physical, 1);
+                    assert_eq!(ledger[0].held_units, 10);
+                    assert_eq!(ledger[0].settled_units, 0);
+                }
+                "exhausted" => {
+                    assert_eq!(physical, 3);
+                    assert_eq!(ledger[0].settled_units, 10);
+                }
+                _ => {
+                    assert_eq!(physical, 2);
+                    assert_eq!(ledger[0].settled_units, 3);
+                }
+            }
+        }
     }
 }

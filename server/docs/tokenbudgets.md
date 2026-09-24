@@ -198,3 +198,54 @@ plus per-field withers (`withTurnCompletion(long)` …) do the same.
   that; history-revolution declares 4,096 in its runbook. See
   [guides/retrieval-sizing.md](guides/retrieval-sizing.md) for the runbook
   side and the measurements.
+
+## Dispatch accounting inventory
+
+The following describes the implemented policy, including uncapped paths. It is
+not a claim that every physical provider submission has its own reservation.
+The [implementation roadmap](lessons-from-vcp-impl.md#42-p05-make-the-admission-coverage-explicit--r15-and-r14)
+keeps broader admission changes under D1 and diagnostic access changes under D7.
+
+| Dispatch path | Accounting and retry policy |
+|---|---|
+| REST and native gRPC direct completion | Both use `providers_api::op_complete`. The gateway checks the provider config's rate budget, then reserves daily capacity only when a tier and its daily cap resolve. |
+| Structured completion | `op_complete_structured` uses the same gateway, reservation and settlement rules; schema handling does not create another dispatch. |
+| Session answer, truncation re-ask, corrective re-asks | Each completion re-enters the gateway with the resolved config/model/tier. One truncation re-ask permits four times the base output ceiling; checked multiplication rejects overflow before that re-ask. Corrective re-asks retain the current ceiling and the existing maximum of two. |
+| Session query expansion | `sessions_api` uses the gateway with the separately resolved expansion task. An optional failed expansion does not refund dispatched work. |
+| Evidence hierarchy classifier and semantic intent | `evidence_hierarchy` calls the gateway with the resolved intent task; each helper is independently admitted. |
+| Runbook advisory and authoring assist | `runbooks_api` and `authoring_api` call the gateway with their resolved model task. Response parsing happens after provider accounting. |
+| Checked answers and collection queries | `answers_api` uses structured completion with an explicit tier; collection query processing reaches this same answer path. |
+| Vocabulary generation | `vocabulary_api` uses structured completion with its configured tier. A later vocabulary-validation failure does not refund the completion. |
+| Explicit model or fallback without a tier | The gateway still checks rate limits, but no daily reservation is created. Naming an explicit model together with a tier still permits tier-cap enforcement. |
+| API embeddings | `op_embed` checks the rate estimate before looking in its cache. A miss submits embedding work; a hit reuses vectors. Neither has a daily token reservation. Provider-call metrics count misses; existing invocation token projections are zero, not measured embedding usage. |
+| Index construction | Uses the local embedder independently of API provider embeddings; no hosted completion charge is inferred. |
+| `/healthai` | Authenticated any-role paid diagnostic. Calls default providers directly with `healthai_probe` output ceilings, bypassing rate and daily budgets. No new cap or audience restriction is introduced here. |
+| Provider health and provider listing | Health calls model-list endpoints directly (Ollama uses its local health endpoint); it has no token reservation. Listing is disclosure without a provider call. |
+
+Hosted and Ollama HTTP adapters retry 429 and 5xx responses at most twice (three
+physical submissions) inside a single logical call, honoring a bounded
+`Retry-After`. Transport errors are not retried by this loop. The gateway has one
+reservation for the logical call and settles using the final successful response's
+usage. Earlier failed submissions may have performed work, but their usage is
+unknown and is not separately charged. An exhausted call retains its estimate.
+This limitation needs a separate admission/accounting design before changing caps.
+
+Cancelling an unpolled request submits no work. Cancellation after reservation
+may leave it held even if no response arrives; stale sweeping settles the original
+estimate. The reservation is not refunded merely because the future was dropped.
+This also covers uncertainty between reserving and sending. Complete observed
+usage may settle below the estimate; missing/partial usage follows the conservative
+rules in [invocation provenance](architecture.md#93-invocation-provenance).
+
+Session `completion` progress events use a zero-based sequence across the initial
+answer, truncation re-ask and corrective re-asks: `0, 1, 2, ...`. These are logical
+successful completion events, not physical HTTP retry counters. `verify` events
+retain their separate zero-based verification-pass sequence. Expansion and hierarchy
+events retain their own task meaning; this slice does not introduce global attempt
+IDs or a durable record of every physical submission.
+
+The scripted `dispatch_retries_cancellation_and_uncapped_policy` test counts actual
+loopback HTTP arrivals for 5xx-then-success, exhausted 429, cancellation after send,
+unpolled cancellation, admission denial and an uncapped explicit model, against
+memory and PostgreSQL. `turn_retry_attempts_and_ceiling_are_bounded` exercises real
+session turns and validates event ordinals, ceilings and overflow before retry.
