@@ -361,29 +361,40 @@ impl ShapeRegistry {
         shape_ref: &str,
         body: &serde_json::Value,
     ) -> Result<(), String> {
+        self.validate_with_revision(tenant, shape_ref, body).1
+    }
+
+    /// Validate and return the exact shape content identity from the same Arc.
+    /// Cache by content hash so distinct definitions cannot reuse a decision.
+    pub fn validate_with_revision(
+        &self,
+        tenant: &str,
+        shape_ref: &str,
+        body: &serde_json::Value,
+    ) -> (Option<String>, Result<(), String>) {
         let Some(shape) = self.get(tenant, shape_ref) else {
-            return Err(format!(
-                "shape '{shape_ref}' is not published for this tenant"
-            ));
+            return (
+                None,
+                Err(format!(
+                    "shape '{shape_ref}' is not published for this tenant"
+                )),
+            );
         };
+        let revision = Some(shape.yaml_hash.clone());
         let Some(validator) = &shape.validator else {
-            return Ok(()); // shape with no fact schema constrains nothing
+            return (revision, Ok(()));
         };
-        let body_text = body.to_string();
-        let body_hash = hex::encode(sha2::Sha256::digest(body_text.as_bytes()));
-        let cache_key = (shape_ref.to_string(), body_hash);
+        let body_hash = hex::encode(sha2::Sha256::digest(body.to_string().as_bytes()));
+        let cache_key = (shape.yaml_hash.clone(), body_hash);
         if let Some(hit) = self.cache.lock().expect("cache lock").get(&cache_key) {
-            return hit.clone();
+            return (revision, hit.clone());
         }
-        let outcome = match validator.validate(body) {
-            Ok(()) => Ok(()),
-            Err(err) => Err(format!("{err}")),
-        };
+        let outcome = validator.validate(body).map_err(|err| format!("{err}"));
         self.cache
             .lock()
             .expect("cache lock")
             .insert(cache_key, outcome.clone());
-        outcome
+        (revision, outcome)
     }
 }
 
@@ -456,6 +467,22 @@ spec:
                 &claim_body("contract-a", "k", "v", None)
             )
             .is_err());
+    }
+
+    #[test]
+    fn validation_receipt_matches_the_content_that_was_evaluated() {
+        let reg = ShapeRegistry::default();
+        let a = reg.apply("a", SHAPE).unwrap();
+        let b = reg
+            .apply("b", &SHAPE.replace("minLength: 1", "minLength: 2"))
+            .unwrap();
+        let body = claim_body("contract-a", "term", "x", None);
+        let (revision, outcome) = reg.validate_with_revision("a", "contract-clauses@1", &body);
+        assert_eq!(revision.as_deref(), Some(a.yaml_hash.as_str()));
+        assert!(outcome.is_ok());
+        let (revision, outcome) = reg.validate_with_revision("b", "contract-clauses@1", &body);
+        assert_eq!(revision.as_deref(), Some(b.yaml_hash.as_str()));
+        assert!(outcome.is_err());
     }
 
     #[test]

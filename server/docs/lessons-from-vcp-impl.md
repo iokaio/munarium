@@ -97,7 +97,7 @@ Discovery and tests can proceed before these decisions; dependent behavior chang
 | D5: Are embedded crates supported public Rust APIs? | Preserve existing constructors and minimize source breakage while documenting the decision | R31 MSRV/support tier; API shape for R01/R07/R08 |
 | D6: What makes governance useful for a target workload? | Freeze task population, minimum useful effect, cost/latency constraints, and mandatory authorization checks before the final evaluation | R25 quality claims and any paid campaign |
 | D7: Who may trigger paid diagnostics and view credential aliases? | Keep diagnostics free of credential references; review a separately permissioned operator surface | R28 and health-probe admission policy |
-| D8: How is comparison policy selected and pinned? | Existing histories use the existing text policy; exact comparison is explicit and versioned | R08 writes, replay, exports, and mixed-version operation |
+| D8: How is comparison policy selected and pinned? | Immutable profiles; legacy default; existing histories transition explicitly to a child revision | R08 writes, replay, exports, and mixed-version operation |
 
 Record decisions with stable identifiers in the existing engineering record. If a release accepts incomplete evidence, use a numbered known-gap entry with the missing gate, risk, owner decision, and follow-up. Do not mark the gate passed.
 
@@ -115,7 +115,7 @@ Each row is a coherent implementation slice; it may require more than one PR whe
 | P06 | Injectable clocks/IDs and separated governance baseline implemented | Existing conformance; P02 receipts | Medium | Existing constructors unchanged; reproducible traces and separated timings |
 | P07 | Characterization merged in PR #51; fixes require demonstrated gaps | P06 baseline where relevant | Medium | Exact-oracle comparisons, authorization parity, bounded-work evidence |
 | P08 | Implemented and locally qualified for the D3 application-process scope; atomic runbook checkpoints and retained legacy gaps, §9.1 | D3; P02; existing mirror fault hooks | Large | Named barriers, process termination, reopened-state assertions, reviewed recovery contracts |
-| P09 | Versioned value comparison | D5/D8; P06; contract design | Medium–large | Historical replay unchanged; exact-policy cross-backend/transport tests |
+| P09 | Durable profiles, explicit transitions and Server evaluation locally qualified, §7.3 | D5/D8; P06; contract design | Medium–large | Historical replay unchanged; exact-policy cross-backend/transport tests |
 | P10 | Authority/evidence audit and retention inventory | D4 for retention changes | Medium | Access-path matrix, effect-denial tests, declared derived-content treatment |
 | P11 | Integer/unknown-field protocol characterization | Existing contract publisher/client suites | Medium | N/N−1 fixtures; exact integer tests; no unversioned field-type change |
 | P12 | Restricted-filesystem qualification | Existing datastore build/reopen fixtures | Medium | Supported Linux permissions documented; separate Windows results |
@@ -358,27 +358,56 @@ If profiling justifies a lookup index, prefer immutable per-snapshot indexes for
 
 `service::append_events` already pins the observed head and re-snapshots/re-gates on conflicts. Preserve that behavior. A cached gate result cannot survive a changed head just because its candidate is unchanged. Differential tests should compare findings, ordering where contracted, disputed claims, correction behavior, and pin-visible digests against the existing implementation on generated histories.
 
-### 7.3 P09: opt-in exact values with historical policy identity — R08
+### 7.3 P09: durable governance profiles and exact values — R08
 
-`ledger::values_equivalent` currently collapses whitespace and lowercases. Both anchor consistency and ledger-conflict gates call it. This is the legacy text policy, and changing it globally would alter which claims conflict and potentially historical answers.
+D8 is decided: versioned governance profiles persist alongside claim history;
+existing keys may adopt new semantics through an explicit child-version transition.
+Rebuilding collections is acceptable and documented as an upgrade operation.
 
-Introduce a pure policy-aware comparison/evaluation entry point while keeping current `run_gates` and `values_equivalent` behavior as legacy wrappers. The policy should be an immutable, versioned value selected from a versioned shape/claim definition; policy resolution belongs outside core I/O. Start with legacy text and exact string comparison. Defer domain-specific path/identifier normalization until its semantics have a separate specification.
+Schema 1 provides `legacy-text-v1` and `exact-string-v1` bindings. The immutable
+profile has a content-derived revision; claims/anchors reference their original
+memory version, PostgreSQL stamps the revision in their projections, and new
+events preserve original values and profile identity. Missing legacy metadata is
+the named legacy policy; unknown explicit semantics fail closed. The old pure-core
+entrypoints keep legacy behavior and public struct constructors remain compatible.
 
-`ProposedClaim`/`Candidate` do not currently carry the same shape metadata as stored `Claim`/`NewClaim`. The shared append service constructs candidates and performs shape validation separately. Either supply an immutable per-claim-key comparison-policy map to the new evaluator, or introduce a versioned companion candidate type. Reject conflicting policies for repeated keys in one batch, or key policy bindings by a stable candidate identity as well. Derive the effective policy from trusted version/shape configuration; a caller must not select a weaker comparison merely by supplying a policy label. Do not simply look up the latest mutable shape while replaying old claims.
+Both transports use the same profile-aware append service. Governed evaluations
+record the observed head, revision, actual shape content hashes, chronology input,
+and findings in the same commit as the claims. A shape validation cache is keyed
+by content identity, so distinct definitions cannot share a stale outcome.
+Profiles are version configuration, not caller-selected labels on individual claims.
 
-Before writing exact-policy claims, define and persist enough information to answer:
+A changed child profile requires the parent's revision, expected head and reason.
+Creation assesses current accepted facts against peer canon and anchors while
+holding the store's write lock. The profile receipt includes this assessment;
+original statuses and findings remain untouched. This is explicitly a comparison
+assessment, not a full historical replay. Descendants inherit profiles. Existing
+live-lineage behavior remains: operators stop ancestor writers during migration
+review, and an assessment never claims coverage beyond its recorded head.
 
-- Which policy and version governed each accepted/disputed claim and anchor comparison?
-- What happens when an incoming exact claim meets a legacy-text claim for the same subject/key?
-- How do corrections and supersession cross policy versions without reinterpreting prior findings?
-- Is normalization applied at validation, comparison, or storage, and what original value is retained?
-- How do exports, snapshots, migration, and old readers identify unsupported policy data?
+Migration 0036 is additive. Its guards prevent old writers from silently adding
+legacy-folded decisions to governed versions and protect immutable policy metadata.
+The existing findings API exposes companion profile/evaluation records on both
+transports, with a server-owned `governance.` namespace. Exports must include those
+records and version metadata; a bare legacy claim DTO is not a complete export.
+Current authorization remains independent of historical policy.
 
-For the first release, reject an ambiguous mixed-policy write unless an explicit transition is declared; do not choose a comparison direction based on iteration order. Existing rows default to a named legacy policy without rewriting their values or outcomes. Exact comparison should state that case, whitespace, and Unicode normalization are significant unless the chosen policy explicitly says otherwise.
+The [release upgrade guide](ops/governance-policy-upgrade.md) covers reader/writer
+rollout, profile adoption, transitions, assessment review, re-extraction, rebuilding
+collections, publication pins, fresh sessions, retention and rollback. Retrieval
+profiles remain separate. Future policy dimensions require explicit supported
+schema/algorithm versions and new assessment kinds rather than silent reinterpretation.
 
-Add a new migration only if needed for the chosen durable identity. Deploy readers first, then enable exact writes per version/shape after all affected writers understand the policy. An old binary that would silently apply text folding cannot be an allowed writer to an exact-policy lineage. Disable new writes on rollback; continue serving with a compatible reader or explicitly reject unsupported state. Rolling back a feature flag does not erase exact-policy events already appended.
-
-**Acceptance:** golden legacy replay; case-sensitive identifiers and paths; leading/repeated whitespace; composed/decomposed Unicode; anchor disagreement; corrections/supersession; mixed-policy refusal/transition; rejected shape data; current and pinned reads; restart; memory/PG parity; REST/gRPC parity. Keep the legacy policy as the default until a separate product decision changes it.
+**Local validation:** 165 core/store/shape tests passed (one ignored benchmark
+not executed), two memory/PostgreSQL policy integration tests and six documentation
+tests passed. REST and native gRPC each passed nine live scenarios, including the
+new policy-write scenario. Relevant all-target/all-feature Clippy with warnings
+denied, formatting, license, compatibility and root-link checks passed. The
+private-material scan reports 350 pre-existing findings in ignored scratch files,
+none outside scratch. The final compatibility pass also passed with unsupported future-profile read
+checks and efficient transition assessment. A separate 0035-to-0036 migration test
+preserved legacy claim values/statuses and anchors and allowed legacy writes.
+No remote CI or production upgrade is claimed.
 
 ## 8. Retrieval performance and restricted filesystems
 

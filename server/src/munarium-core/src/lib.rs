@@ -25,6 +25,7 @@ pub mod docintel;
 pub mod error;
 pub mod evidence;
 pub mod gates;
+pub mod governance;
 pub mod hierarchy;
 pub mod ledger;
 pub mod promises;

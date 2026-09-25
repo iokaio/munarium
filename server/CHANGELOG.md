@@ -3,6 +3,21 @@
 These are source release notes. See the [container publication record](CONTAINER.md#versions-and-verification)
 for registry availability, digests and public signing instructions.
 
+## Unreleased
+
+- Add immutable governance profiles for memory versions, opt-in exact string
+  comparison, explicit existing-history transitions and retained assessments.
+  Governed claim evaluations commit with their findings; original decisions remain
+  unchanged. PostgreSQL migration 0036 retains legacy defaults and rejects old
+  writers on governed versions.
+- **Upgrade action:** upgrade all writers before adopting a profile, transition
+  existing memory versions explicitly, review assessments, and rebuild affected
+  collections (or all collections in a small deployment). Re-extraction, publication
+  pins and fresh sessions may also need updating. Follow the
+  [governance-policy upgrade guide](docs/ops/governance-policy-upgrade.md), including
+  rollback and retention steps. Installing the migration alone does not adopt
+  exact semantics or rebuild existing collections.
+
 ## 1.2.1
 
 - Update rustls to 0.23.45 and refresh dependency notices for the patched build.

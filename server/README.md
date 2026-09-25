@@ -30,6 +30,8 @@ deterministically rebuilt under a pin; every retrieval answer carries a provenan
 The published Server version is **1.2.1**. It includes automatic, configurable
 [collection vocabularies and checked narrative answers](docs/guides/collection-vocabularies.md),
 pinned file locations, and a [complete REST/gRPC API and four SDKs](../clients/docs/guides/server-1.2.md).
+For the next release, follow the [governance-policy upgrade steps](docs/ops/governance-policy-upgrade.md), including collection rebuilds.
+
 See [release changes](CHANGELOG.md) and [published artifacts](CONTAINER.md#versions-and-verification).
 Version 1.2.1 adds Server-owned collection queries, publication governance and
 original-reference authorization. The application displays the model's explanation

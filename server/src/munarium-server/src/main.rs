@@ -33,6 +33,8 @@ mod evidence_routes;
 mod governance_api;
 #[cfg(test)]
 mod governance_baseline;
+#[cfg(test)]
+mod governance_policy_tests;
 mod grpc;
 mod grpc_api;
 mod grpc_data;

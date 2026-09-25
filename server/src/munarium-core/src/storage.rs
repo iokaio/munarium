@@ -120,6 +120,20 @@ pub trait StorageBackend: Send + Sync {
         Ok(out)
     }
 
+    /// Atomically append claims and their evaluation findings. The default fails
+    /// closed: a backend must not acknowledge a partially recorded decision.
+    async fn append_evaluated_claims(
+        &self,
+        _version_id: &str,
+        _claims: Vec<NewClaim>,
+        _expected_head: Seq,
+        _findings: &[GateFinding],
+    ) -> Result<Vec<Claim>> {
+        Err(crate::KernelError::Storage(
+            "atomic evaluation persistence is unsupported".into(),
+        ))
+    }
+
     /// Lineage read with pin-aware supersession resolution
     /// (`ledger::resolve_slice` is the reference semantics).
     async fn slice_facts(&self, version_id: &str, q: &FactQuery) -> Result<Vec<Claim>>;

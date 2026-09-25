@@ -175,6 +175,19 @@ impl PgStore {
             }
         }
 
+        let policy_meta: Option<sqlx::types::Json<munarium_api_types::json::LiteralValue>> =
+            sqlx::query_scalar(
+                "SELECT metadata FROM memory_versions WHERE tenant_id = $1 AND id = $2",
+            )
+            .bind(&self.tenant_id)
+            .bind(version_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(storage_err)?;
+        let policy = munarium_core::governance::GovernancePolicy::from_stored_metadata(
+            policy_meta.as_ref().map(|m| &m.0 .0),
+        )?;
+        let revision = policy.revision()?;
         let mut out = Vec::with_capacity(claims.len());
         let mut seq = head as i64;
         for claim in claims {
@@ -199,6 +212,19 @@ impl PgStore {
                 "claim_id": id,
                 "claim_type": claim_type_str(claim.claim_type),
                 "normalized": normalized,
+                "event_schema_version": 2,
+                "subject": claim.subject,
+                "key": claim.key,
+                "value": claim.value,
+                "governance_revision": revision,
+                "governance_policy": policy,
+                "observed_head": head,
+                "scope_path": claim.scope_path,
+                "provenance": provenance_str(claim.provenance),
+                "entity_id": claim.entity_id,
+                "evidence": claim.evidence,
+                "confidence": claim.confidence,
+                "shape_ref": claim.shape_ref,
                 "status": status_str(claim.status),
                 "supersedes_id": claim.supersedes_id,
                 "origin": origin_json,
@@ -267,20 +293,35 @@ impl PgStore {
         Ok((tx, out))
     }
 
+    async fn findings_tx(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        version_id: &str,
+        seq: Seq,
+        findings: &[GateFinding],
+    ) -> Result<()> {
+        for f in findings {
+            sqlx::query("INSERT INTO gate_findings (tenant_id, version_id, seq, rule_id, severity, message, scope_path, detail) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)")
+                .bind(&self.tenant_id).bind(version_id).bind(seq as i64).bind(&f.rule_id).bind(severity_text(f.severity))
+                .bind(&f.message).bind(&f.scope_path).bind(&f.detail).execute(&mut **tx).await.map_err(storage_err)?;
+        }
+        Ok(())
+    }
+
     /// Version chain root -> leaf for `version_id` (recursive parent walk).
     async fn lineage_chain(&self, version_id: &str) -> Result<Vec<(String, String)>> {
         let rows = sqlx::query(
             r#"
             WITH RECURSIVE chain AS (
-                SELECT id, parent_id, lineage_root_id, 0 AS depth
+                SELECT id, parent_id, lineage_root_id, metadata, 0 AS depth
                   FROM memory_versions
                  WHERE tenant_id = $1 AND id = $2
                 UNION ALL
-                SELECT v.id, v.parent_id, v.lineage_root_id, chain.depth + 1
+                SELECT v.id, v.parent_id, v.lineage_root_id, v.metadata, chain.depth + 1
                   FROM memory_versions v
                   JOIN chain ON v.id = chain.parent_id AND v.tenant_id = $1
             )
-            SELECT id, lineage_root_id FROM chain ORDER BY depth DESC
+            SELECT id, lineage_root_id, metadata FROM chain ORDER BY depth DESC
             "#,
         )
         .bind(&self.tenant_id)
@@ -294,15 +335,16 @@ impl PgStore {
                 id: version_id.to_string(),
             });
         }
-        Ok(rows
-            .into_iter()
-            .map(|r| {
-                (
-                    r.get::<String, _>("id"),
-                    r.get::<String, _>("lineage_root_id"),
-                )
-            })
-            .collect())
+        let mut chain = Vec::with_capacity(rows.len());
+        for r in rows {
+            let meta: Option<sqlx::types::Json<munarium_api_types::json::LiteralValue>> =
+                r.get("metadata");
+            munarium_core::governance::GovernancePolicy::from_stored_metadata(
+                meta.as_ref().map(|m| &m.0 .0),
+            )?;
+            chain.push((r.get("id"), r.get("lineage_root_id")));
+        }
+        Ok(chain)
     }
 
     async fn chain_claims(&self, chain: &[String]) -> Result<Vec<Claim>> {
@@ -370,6 +412,10 @@ impl PgStore {
         .await
         .map_err(storage_err)?;
         let head = Self::chain_head_tx(&mut tx, &self.tenant_id, &chain).await?;
+        sqlx::query("SELECT set_config('munarium.governance_writer', '1', true)")
+            .execute(&mut *tx)
+            .await
+            .map_err(storage_err)?;
         Ok((tx, chain, root, head))
     }
 }
@@ -468,14 +514,83 @@ impl StorageBackend for PgStore {
         metadata: Option<serde_json::Value>,
     ) -> Result<String> {
         let id = format!("memv-{}", uuid::Uuid::new_v4().simple());
-        let root = match parent_id {
-            Some(p) => {
-                let chain = self.lineage_chain(p).await?; // errors if parent missing
-                chain[0].1.clone()
-            }
-            None => id.clone(),
+        let assess = metadata
+            .as_ref()
+            .is_some_and(|m| m.get("governance_transition").is_some());
+        let (mut tx, root, parent_metadata, parent_snapshot) = if let Some(p) = parent_id {
+            let (mut tx, chain, root, head) = self.locked_head(p).await?;
+            let row = sqlx::query(
+                "SELECT metadata FROM memory_versions WHERE tenant_id = $1 AND id = $2",
+            )
+            .bind(&self.tenant_id)
+            .bind(p)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(storage_err)?;
+            let meta: Option<sqlx::types::Json<munarium_api_types::json::LiteralValue>> =
+                row.get("metadata");
+            let (facts, anchors) = if assess {
+                let rows = sqlx::query(
+                    "SELECT * FROM claims WHERE tenant_id = $1 AND version_id = ANY($2)",
+                )
+                .bind(&self.tenant_id)
+                .bind(&chain)
+                .fetch_all(&mut *tx)
+                .await
+                .map_err(storage_err)?;
+                let facts = resolve_slice(
+                    rows.iter().map(row_to_claim).collect::<Result<Vec<_>>>()?,
+                    &FactQuery::default(),
+                );
+                let rows = sqlx::query("SELECT * FROM anchors WHERE tenant_id = $1 AND version_id = ANY($2) AND status = 'locked' ORDER BY array_position($2, version_id), seq")
+                .bind(&self.tenant_id).bind(&chain).fetch_all(&mut *tx).await.map_err(storage_err)?;
+                let mut anchors = BTreeMap::new();
+                for r in rows {
+                    let a = Anchor {
+                        id: r.get("id"),
+                        version_id: r.get("version_id"),
+                        detail_key: r.get("detail_key"),
+                        locked_value: r.get("locked_value"),
+                        locked_at_scope: r.get("locked_at_scope"),
+                        status: AnchorStatus::Locked,
+                        seq: r.get::<i64, _>("seq") as Seq,
+                        evidence: r.get("evidence"),
+                    };
+                    anchors.insert(a.detail_key.clone(), a);
+                }
+                (facts, anchors)
+            } else {
+                (Vec::new(), BTreeMap::new())
+            };
+            (
+                tx,
+                root,
+                meta.map(|m| m.0 .0),
+                Some(MeshSnapshot {
+                    version_id: p.into(),
+                    as_of_seq: Some(head),
+                    facts,
+                    anchors,
+                    ..Default::default()
+                }),
+            )
+        } else {
+            (
+                self.pool.begin().await.map_err(storage_err)?,
+                id.clone(),
+                None,
+                None,
+            )
         };
-        let mut tx = self.pool.begin().await.map_err(storage_err)?;
+        let metadata = munarium_core::governance::prepare_version_metadata(
+            metadata,
+            parent_metadata.as_ref(),
+            parent_snapshot.as_ref(),
+        )?;
+        sqlx::query("SELECT set_config('munarium.governance_writer', '1', true)")
+            .execute(&mut *tx)
+            .await
+            .map_err(storage_err)?;
         sqlx::query(
             "INSERT INTO memory_versions (tenant_id, id, parent_id, lineage_root_id, metadata)
              VALUES ($1, $2, $3, $4, $5)",
@@ -484,7 +599,7 @@ impl StorageBackend for PgStore {
         .bind(&id)
         .bind(parent_id)
         .bind(&root)
-        .bind(metadata)
+        .bind(&metadata)
         .execute(&mut *tx)
         .await
         .map_err(storage_err)?;
@@ -497,6 +612,18 @@ impl StorageBackend for PgStore {
         .execute(&mut *tx)
         .await
         .map_err(storage_err)?;
+        if let Some(finding) = munarium_core::governance::policy_finding(&id, metadata.as_ref()) {
+            self.findings_tx(
+                &mut tx,
+                &id,
+                parent_snapshot
+                    .as_ref()
+                    .and_then(|s| s.as_of_seq)
+                    .unwrap_or(0),
+                &[finding],
+            )
+            .await?;
+        }
         tx.commit().await.map_err(storage_err)?;
         Ok(id)
     }
@@ -552,6 +679,24 @@ impl StorageBackend for PgStore {
         Ok(out)
     }
 
+    async fn append_evaluated_claims(
+        &self,
+        version_id: &str,
+        claims: Vec<NewClaim>,
+        expected_head: Seq,
+        findings: &[GateFinding],
+    ) -> Result<Vec<Claim>> {
+        let (mut tx, out) = self
+            .append_claims_uncommitted(version_id, claims, Some(expected_head))
+            .await?;
+        if let Some(last) = out.last() {
+            self.findings_tx(&mut tx, version_id, last.seq, findings)
+                .await?;
+        }
+        tx.commit().await.map_err(storage_err)?;
+        Ok(out)
+    }
+
     async fn slice_facts(&self, version_id: &str, q: &FactQuery) -> Result<Vec<Claim>> {
         let chain = self.lineage(version_id).await?;
         let claims = self.chain_claims(&chain).await?;
@@ -565,7 +710,11 @@ impl StorageBackend for PgStore {
             .fetch_optional(&self.pool)
             .await
             .map_err(storage_err)?;
-        row.as_ref().map(row_to_claim).transpose()
+        let claim = row.as_ref().map(row_to_claim).transpose()?;
+        if let Some(c) = &claim {
+            self.lineage_chain(&c.version_id).await?;
+        }
+        Ok(claim)
     }
 
     async fn superseded_by(&self, claim_id: &str) -> Result<Option<String>> {
@@ -610,6 +759,23 @@ impl StorageBackend for PgStore {
         .execute(&mut *tx)
         .await
         .map_err(storage_err)?;
+        let meta: Option<sqlx::types::Json<munarium_api_types::json::LiteralValue>> =
+            sqlx::query_scalar(
+                "SELECT metadata FROM memory_versions WHERE tenant_id = $1 AND id = $2",
+            )
+            .bind(&self.tenant_id)
+            .bind(version_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(storage_err)?;
+        let policy = munarium_core::governance::GovernancePolicy::from_stored_metadata(
+            meta.as_ref().map(|m| &m.0 .0),
+        )?;
+        sqlx::query("INSERT INTO ledger_events (tenant_id, version_id, seq, event_type, body) VALUES ($1,$2,$3,'anchor.locked',$4)")
+            .bind(&self.tenant_id).bind(version_id).bind(seq).bind(serde_json::json!({"event_schema_version": 2,
+                "anchor_id": id, "subject": subject, "key": key, "value": value, "scope_path": scope_path,
+                "evidence": evidence, "governance_revision": policy.revision()?, "governance_policy": policy}))
+            .execute(&mut *tx).await.map_err(storage_err)?;
         tx.commit().await.map_err(storage_err)?;
         Ok(Anchor {
             id,

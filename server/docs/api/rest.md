@@ -268,3 +268,13 @@ All documented REST operations also have named native RPCs on "mmp.v1.ServerApiS
 | `GET /v1.2/collections/{id}/publications/{publication_id}` | `query`, with collection clearance | Authorize an original's identity for the optional `effective_on` date; never serve bytes (1.2.1) |
 
 See [collection vocabularies and file references](../guides/collection-vocabularies.md) for request schemas, defaults, authorization and upgrade requirements.
+
+## Durable governance policies
+
+Memory-version metadata can pin an immutable governance profile; omitted legacy
+configuration retains legacy text comparison. See the
+[policy and upgrade contract](../ops/governance-policy-upgrade.md) for creation,
+explicit transitions, companion findings, exports and collection rebuilds.
+Unknown profiles, undeclared transitions and external `governance.` findings are
+`invalid-input`; a stale transition head is `head-conflict`. REST and native gRPC
+share the same version creation and command evaluation behavior.

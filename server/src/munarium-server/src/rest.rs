@@ -677,6 +677,11 @@ pub(crate) async fn record_findings(
     }
     let mut incoming: Vec<GateFinding> = Vec::with_capacity(req.findings.len());
     for f in req.findings {
+        if f.rule_id.starts_with("governance.") {
+            return Err(ApiError::Mesh(KernelError::InvalidInput(
+                "governance findings are server-owned".into(),
+            )));
+        }
         if f.rule_id.trim().is_empty() {
             return Err(ApiError::Mesh(KernelError::InvalidInput(
                 "rule_id is required on every finding".into(),

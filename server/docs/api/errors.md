@@ -119,3 +119,13 @@ The gates' dotted rule vocabulary:
 
 Backfill mode (`mode: backfill`) downgrades blocks to warns — conflicts in an existing corpus are
 surfaced (claims disputed, findings filed) but never block.
+
+## Durable governance policies
+
+Memory-version metadata can pin an immutable governance profile; omitted legacy
+configuration retains legacy text comparison. See the
+[policy and upgrade contract](../ops/governance-policy-upgrade.md) for creation,
+explicit transitions, companion findings, exports and collection rebuilds.
+Unknown profiles, undeclared transitions and external `governance.` findings are
+`invalid-input`; a stale transition head is `head-conflict`. REST and native gRPC
+share the same version creation and command evaluation behavior.

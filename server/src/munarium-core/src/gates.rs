@@ -10,11 +10,47 @@
 //! decision lives with the caller (`accept` paths), not here.
 
 use crate::chrono_gate::{evaluate, parse_when, ChronoEvent, ChronologyRules};
-use crate::ledger::values_equivalent;
+use crate::ledger::{values_equivalent_with_policy, ComparisonPolicy};
 use crate::similarity::similarity_ratio;
 use crate::types::{Candidate, GateFinding, MeshSnapshot, Severity};
 use serde_json::json;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
+
+/// Effective policies for the existing canonical `subject.key` identities.
+/// Missing bindings retain legacy semantics. Construction rejects conflicting
+/// bindings rather than allowing input order to choose the comparison.
+///
+/// This is a trusted in-process evaluation input, not a deserializable request
+/// or durable policy registry. Before supplying a binding, the caller must
+/// resolve immutable policy identities for the candidate, compared claims and
+/// anchors, and reject unsupported history or undeclared transitions. Server
+/// resolves these bindings from immutable governance metadata on memory versions.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ComparisonPolicies {
+    bindings: BTreeMap<String, ComparisonPolicy>,
+}
+
+impl ComparisonPolicies {
+    pub fn try_from_bindings(
+        bindings: impl IntoIterator<Item = (String, ComparisonPolicy)>,
+    ) -> crate::Result<Self> {
+        let mut resolved = BTreeMap::new();
+        for (key, policy) in bindings {
+            if let Some(previous) = resolved.insert(key.clone(), policy) {
+                if previous != policy {
+                    return Err(crate::KernelError::InvalidInput(format!(
+                        "conflicting comparison policies for '{key}'"
+                    )));
+                }
+            }
+        }
+        Ok(Self { bindings: resolved })
+    }
+
+    pub fn policy_for(&self, claim_key: &str) -> ComparisonPolicy {
+        self.bindings.get(claim_key).copied().unwrap_or_default()
+    }
+}
 
 pub const RULE_ANCHOR: &str = "gate.anchor-consistency";
 pub const RULE_LEDGER: &str = "gate.ledger-conflict";
@@ -39,11 +75,24 @@ pub fn check_anchor_consistency(
     snapshot: &MeshSnapshot,
     candidate: &Candidate,
 ) -> Vec<GateFinding> {
+    check_anchor_consistency_with_policies(snapshot, candidate, &ComparisonPolicies::default())
+}
+
+/// Anchor gate with trusted, already-resolved comparison policy bindings.
+pub fn check_anchor_consistency_with_policies(
+    snapshot: &MeshSnapshot,
+    candidate: &Candidate,
+    policies: &ComparisonPolicies,
+) -> Vec<GateFinding> {
     let mut findings = Vec::new();
     for proposed in candidate.claims.iter().chain(candidate.corrections.iter()) {
         let key = proposed.claim_key();
         if let Some(anchor) = snapshot.anchors.get(&key) {
-            if !values_equivalent(&proposed.value, &anchor.locked_value) {
+            if !values_equivalent_with_policy(
+                &proposed.value,
+                &anchor.locked_value,
+                policies.policy_for(&key),
+            ) {
                 findings.push(GateFinding {
                     rule_id: RULE_ANCHOR.into(),
                     severity: Severity::Block,
@@ -69,6 +118,15 @@ pub fn check_anchor_consistency(
 /// claim_key. Declared supersessions (corrections, and any claim naming
 /// `supersedes_id`) are exempt — they are how values legitimately change.
 pub fn check_ledger_conflict(snapshot: &MeshSnapshot, candidate: &Candidate) -> Vec<GateFinding> {
+    check_ledger_conflict_with_policies(snapshot, candidate, &ComparisonPolicies::default())
+}
+
+/// Ledger gate with trusted, already-resolved comparison policy bindings.
+pub fn check_ledger_conflict_with_policies(
+    snapshot: &MeshSnapshot,
+    candidate: &Candidate,
+    policies: &ComparisonPolicies,
+) -> Vec<GateFinding> {
     let mut findings = Vec::new();
     for proposed in &candidate.claims {
         if proposed.supersedes_id.is_some() {
@@ -77,7 +135,11 @@ pub fn check_ledger_conflict(snapshot: &MeshSnapshot, candidate: &Candidate) -> 
         let key = proposed.claim_key();
         // facts are seq-ascending resolved-current; last one wins
         if let Some(existing) = snapshot.facts.iter().rev().find(|f| f.claim_key() == key) {
-            if !values_equivalent(&proposed.value, &existing.value) {
+            if !values_equivalent_with_policy(
+                &proposed.value,
+                &existing.value,
+                policies.policy_for(&key),
+            ) {
                 findings.push(GateFinding {
                     rule_id: RULE_LEDGER.into(),
                     severity: Severity::Block,
@@ -295,7 +357,19 @@ pub fn check_chronology(
 /// already drew an anchor-consistency finding is dropped (the anchor finding
 /// subsumes it).
 pub fn run_gates(snapshot: &MeshSnapshot, candidate: &Candidate) -> Vec<GateFinding> {
-    let mut findings = check_anchor_consistency(snapshot, candidate);
+    run_gates_with_policies(snapshot, candidate, &ComparisonPolicies::default())
+}
+
+/// Evaluate gates with immutable effective policies. Only anchor and ledger
+/// value comparison changes; finding shape/order, deduplication, supersession
+/// exemptions and the other gates retain their existing semantics. See
+/// `ComparisonPolicies` for the caller's history-resolution obligation.
+pub fn run_gates_with_policies(
+    snapshot: &MeshSnapshot,
+    candidate: &Candidate,
+    policies: &ComparisonPolicies,
+) -> Vec<GateFinding> {
+    let mut findings = check_anchor_consistency_with_policies(snapshot, candidate, policies);
 
     let anchored_keys: HashSet<String> = findings
         .iter()
@@ -305,7 +379,7 @@ pub fn run_gates(snapshot: &MeshSnapshot, candidate: &Candidate) -> Vec<GateFind
         .collect();
 
     findings.extend(
-        check_ledger_conflict(snapshot, candidate)
+        check_ledger_conflict_with_policies(snapshot, candidate, policies)
             .into_iter()
             .filter(|f| {
                 f.detail
@@ -594,5 +668,140 @@ mod tests {
         let mut findings = run_gates(&snap, &cand);
         downgrade_blocks(&mut findings);
         assert!(findings.iter().all(|f| f.severity != Severity::Block));
+    }
+    #[test]
+    fn legacy_findings_match_golden_output_with_policy_wrappers() {
+        let snap = snapshot_with(
+            vec![
+                fact("c1", 1, "hero", "eyes", "green"),
+                fact("c2", 2, "hero", "role", "pilot"),
+            ],
+            vec![anchor("hero.eyes", "green")],
+        );
+        let candidate = Candidate {
+            scope_path: Some("ch2".into()),
+            text: "As an AI".into(),
+            claims: vec![
+                proposed(ClaimType::Fact, "hero", "eyes", "blue"),
+                proposed(ClaimType::Fact, "hero", "role", "doctor"),
+            ],
+            ..Default::default()
+        };
+        let expected = vec![
+            GateFinding {
+                rule_id: RULE_ANCHOR.into(), severity: Severity::Block,
+                message: "claim 'hero.eyes=blue' contradicts locked anchor value 'green'".into(),
+                scope_path: Some("ch2".into()),
+                detail: Some(json!({"claim_key":"hero.eyes", "proposed_value":"blue", "locked_value":"green", "anchor_id":"anchor-hero.eyes"})),
+            },
+            GateFinding {
+                rule_id: RULE_LEDGER.into(), severity: Severity::Block,
+                message: "claim 'hero.role=doctor' conflicts with accepted canon 'hero.role=pilot' (use a correction to supersede)".into(),
+                scope_path: Some("ch2".into()),
+                detail: Some(json!({"claim_key":"hero.role", "proposed_value":"doctor", "canon_value":"pilot", "canon_claim_id":"c2", "canon_seq":2})),
+            },
+            GateFinding {
+                rule_id: RULE_META.into(), severity: Severity::Warn,
+                message: "output contains meta-leakage marker 'as an ai'".into(),
+                scope_path: Some("ch2".into()), detail: Some(json!({"marker":"as an ai"})),
+            },
+        ];
+        assert_eq!(run_gates(&snap, &candidate), expected);
+        let explicit = ComparisonPolicies::try_from_bindings([
+            ("hero.eyes".into(), ComparisonPolicy::LegacyTextV1),
+            ("hero.role".into(), ComparisonPolicy::LegacyTextV1),
+        ])
+        .unwrap();
+        assert_eq!(
+            run_gates_with_policies(&snap, &candidate, &explicit),
+            expected
+        );
+    }
+
+    #[test]
+    fn exact_bindings_are_per_key_and_preserve_anchor_dedup() {
+        let snap = snapshot_with(
+            vec![
+                fact("c1", 1, "file", "path", "/Data/A"),
+                fact("c2", 2, "file", "label", "A B"),
+            ],
+            vec![anchor("file.path", "/Data/A")],
+        );
+        let candidate = Candidate {
+            claims: vec![
+                proposed(ClaimType::Fact, "file", "path", "/data/a"),
+                proposed(ClaimType::Fact, "file", "label", " a  b "),
+            ],
+            ..Default::default()
+        };
+        assert!(run_gates(&snap, &candidate).is_empty());
+        let policies = ComparisonPolicies::try_from_bindings([(
+            "file.path".into(),
+            ComparisonPolicy::ExactStringV1,
+        )])
+        .unwrap();
+        let findings = run_gates_with_policies(&snap, &candidate, &policies);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].rule_id, RULE_ANCHOR);
+        assert_eq!(
+            findings[0].detail.as_ref().unwrap()["claim_key"],
+            "file.path"
+        );
+        assert_eq!(
+            blocked_claim_keys(&findings),
+            HashSet::from(["file.path".to_string()])
+        );
+        // Without the anchor the same exact mismatch is a ledger block.
+        let mut no_anchor = snap.clone();
+        no_anchor.anchors.clear();
+        let findings = run_gates_with_policies(&no_anchor, &candidate, &policies);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].rule_id, RULE_LEDGER);
+    }
+
+    #[test]
+    fn conflicting_policy_bindings_fail_independently_of_order() {
+        let bindings = [
+            ("file.path".into(), ComparisonPolicy::ExactStringV1),
+            ("file.path".into(), ComparisonPolicy::LegacyTextV1),
+        ];
+        assert!(ComparisonPolicies::try_from_bindings(bindings.clone()).is_err());
+        assert!(ComparisonPolicies::try_from_bindings(bindings.into_iter().rev()).is_err());
+        assert!(ComparisonPolicies::try_from_bindings([
+            ("file.path".into(), ComparisonPolicy::ExactStringV1),
+            ("file.path".into(), ComparisonPolicy::ExactStringV1),
+        ])
+        .is_ok());
+    }
+
+    #[test]
+    fn exact_corrections_keep_ledger_exemption_but_cannot_override_anchors() {
+        let snap = snapshot_with(
+            vec![fact("c1", 1, "file", "path", "/Data/A")],
+            vec![anchor("file.path", "/Data/A")],
+        );
+        let policies = ComparisonPolicies::try_from_bindings([(
+            "file.path".into(),
+            ComparisonPolicy::ExactStringV1,
+        )])
+        .unwrap();
+        let mut correction = proposed(ClaimType::Correction, "file", "path", "/data/a");
+        correction.supersedes_id = Some("c1".into());
+        for candidate in [
+            Candidate {
+                claims: vec![correction.clone()],
+                ..Default::default()
+            },
+            Candidate {
+                corrections: vec![correction],
+                ..Default::default()
+            },
+        ] {
+            assert!(check_ledger_conflict_with_policies(&snap, &candidate, &policies).is_empty());
+            let findings = run_gates_with_policies(&snap, &candidate, &policies);
+            assert_eq!(findings.len(), 1);
+            assert_eq!(findings[0].rule_id, RULE_ANCHOR);
+            assert_eq!(findings[0].severity, Severity::Block);
+        }
     }
 }

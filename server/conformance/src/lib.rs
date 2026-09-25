@@ -547,3 +547,35 @@ async fn digests_rebuilt_under_pin(store: &dyn StorageBackend) -> ScenarioResult
     );
     Ok(())
 }
+
+/// Server-only qualification: storage primitives intentionally do not run gates.
+/// Run over both transports, where append_claim enters the shared command service.
+pub async fn governance_policy_writes(store: &dyn StorageBackend) -> ScenarioResult {
+    let result: munarium_core::Result<()> = async {
+        let root = store.create_version(None, None).await?;
+        store.append_claim(&root, NewClaim::fact("file", "path", "/Docs/Readme"), None).await?;
+        let legacy = store.append_claim(&root, NewClaim::fact("file", "path", "/docs/readme"), None).await?;
+        if legacy.status != ClaimStatus::Accepted { return Err(KernelError::InvalidInput("legacy changed".into())); }
+        store.lock_anchor(&root,"file","path","/Docs/Readme",None,None).await?;
+        let policy = serde_json::json!({"schema_version":1,"values":[{"subject":"file","key":"path","comparison":"exact-string-v1"}]});
+        if store.create_version(Some(&root),Some(serde_json::json!({"governance_policy":policy}))).await.is_ok() {
+            return Err(KernelError::InvalidInput("undeclared transition accepted".into()));
+        }
+        let head = store.head(&root).await?;
+        let child = store.create_version(Some(&root),Some(serde_json::json!({"governance_policy":policy,"governance_transition":{
+            "from_revision":munarium_core::governance::GovernancePolicy::default().revision()?,"expected_head":head,"reason":"conformance"
+        }}))).await?;
+        let disputed = store.append_claim(&child,NewClaim::fact("file","path","/docs/readme"),Some(head)).await?;
+        if disputed.status != ClaimStatus::Disputed { return Err(KernelError::InvalidInput("exact anchor not enforced".into())); }
+        let descendant = store.create_version(Some(&child),None).await?;
+        let inherited = store.append_claim(&descendant,NewClaim::fact("file","path"," /Docs/Readme "),None).await?;
+        if inherited.status != ClaimStatus::Disputed || inherited.value != " /Docs/Readme " {
+            return Err(KernelError::InvalidInput("policy inheritance/value preservation failed".into()));
+        }
+        if store.slice_facts(&descendant,&FactQuery {as_of_seq:Some(head),..Default::default()}).await?.len()!=2 {
+            return Err(KernelError::InvalidInput("original pinned history changed".into()));
+        }
+        Ok(())
+    }.await;
+    result.map_err(|e| e.to_string())
+}

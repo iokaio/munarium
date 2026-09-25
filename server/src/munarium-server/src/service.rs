@@ -10,7 +10,7 @@
 use munarium_api_conv::{convert, Convert};
 use munarium_api_types as dto;
 use munarium_core::composer::compose;
-use munarium_core::gates::{blocked_claim_keys, run_gates};
+use munarium_core::gates::{blocked_claim_keys, run_gates_with_policies};
 use munarium_core::ledger::FactQuery;
 use munarium_core::storage::{load_snapshot, NewClaim, StorageBackend};
 use munarium_core::types::*;
@@ -49,6 +49,7 @@ fn shape_findings(
     tenant: &str,
     claims: &[dto::ProposeClaimRequest],
     scope: Option<&str>,
+    revisions: &mut Vec<serde_json::Value>,
 ) -> Vec<GateFinding> {
     let mut findings = Vec::new();
     for c in claims {
@@ -56,7 +57,9 @@ fn shape_findings(
             continue;
         };
         let body = munarium_shapes::claim_body(&c.subject, &c.key, &c.value, c.evidence.as_ref());
-        if let Err(citation) = shapes.validate(tenant, shape_ref, &body) {
+        let (revision, outcome) = shapes.validate_with_revision(tenant, shape_ref, &body);
+        revisions.push(serde_json::json!({"ref": shape_ref, "yaml_hash": revision}));
+        if let Err(citation) = outcome {
             findings.push(GateFinding {
                 rule_id: "shape.schema-violation".into(),
                 severity: Severity::Block,
@@ -113,7 +116,11 @@ pub async fn append_events(
         }
 
         let scope = claims.iter().find_map(|c| c.scope_path.clone());
-        let snapshot = load_snapshot(store, version_id, None, None, None).await?;
+        let snapshot = load_snapshot(store, version_id, None, None, Some(head_now)).await?;
+        let metadata = store.version_metadata(version_id).await?;
+        let policy =
+            munarium_core::governance::GovernancePolicy::from_stored_metadata(metadata.as_ref())?;
+        let comparisons = policy.comparisons()?;
         let mut candidate = Candidate {
             scope_path: scope,
             text: candidate_text.unwrap_or_default().to_string(),
@@ -133,7 +140,7 @@ pub async fn append_events(
             }
         }
 
-        let mut findings = run_gates(&snapshot, &candidate);
+        let mut findings = run_gates_with_policies(&snapshot, &candidate, &comparisons);
         // The sixth gate (2026-08-17, §13 entry 13): runs only when the
         // version arms a rules asset, right after the five always-on gates,
         // merging into the same block/dispute lifecycle. `now: None`
@@ -146,11 +153,13 @@ pub async fn append_events(
                 &snapshot, &candidate, rules, None,
             ));
         }
+        let mut shape_revisions = Vec::new();
         findings.extend(shape_findings(
             shapes,
             tenant,
             claims,
             candidate.scope_path.as_deref(),
+            &mut shape_revisions,
         ));
         let blocked = blocked_claim_keys(&findings);
 
@@ -177,10 +186,25 @@ pub async fn append_events(
             });
         }
 
-        match store.append_claims(version_id, batch, Some(head_now)).await {
+        let mut recorded_findings = findings.clone();
+        if metadata
+            .as_ref()
+            .is_some_and(|m| m.get("governance_policy").is_some())
+        {
+            recorded_findings.push(GateFinding { rule_id: "governance.command-evaluation".into(), severity: Severity::Info,
+                message: "Command evaluated under an immutable governance profile".into(), scope_path: candidate.scope_path.clone(),
+                detail: Some(serde_json::json!({"schema_version": 1, "version_id": version_id,
+                    "snapshot_seq": head_now, "governance_revision": policy.revision()?,
+                    "claim_count": batch.len(), "candidate_text": candidate_text, "findings": findings,
+                    "shape_revisions": shape_revisions, "chronology_rules": chronology
+                })) });
+        }
+        match store
+            .append_evaluated_claims(version_id, batch, head_now, &recorded_findings)
+            .await
+        {
             Ok(stored) => {
                 let head_seq = stored.last().map(|c| c.seq).unwrap_or(head_now);
-                persist_findings(store, version_id, head_seq, &findings).await;
                 return Ok(CommandOutcome {
                     claims: stored,
                     findings,
@@ -197,11 +221,8 @@ pub async fn append_events(
     }
 }
 
-/// Persist a write's findings (2026-08-17, §13 entry 12) — best-effort
-/// RELATIVE TO THE WRITE, deliberately: the claims are already appended, so
-/// failing the request here would push clients into a retry that re-appends.
-/// The write response remains the authoritative carrier; the store is the
-/// queryable record, and a persistence failure is a loud warn.
+/// Text-only findings retain the legacy best-effort behavior. Claim commands
+/// instead persist their findings atomically through append_evaluated_claims.
 async fn persist_findings(
     store: &dyn StorageBackend,
     version_id: &str,

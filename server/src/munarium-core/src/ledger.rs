@@ -31,7 +31,47 @@ pub fn split_normalized(text: &str) -> (String, String, String) {
 
 /// Case- and whitespace-insensitive value comparison, as the gates use.
 pub fn values_equivalent(a: &str, b: &str) -> bool {
-    fold(a) == fold(b)
+    values_equivalent_with_policy(a, b, ComparisonPolicy::LegacyTextV1)
+}
+
+/// Immutable comparison semantics. These identifiers describe algorithms, not
+/// permission to select a policy for a stored claim. No storage normalization
+/// is performed: callers retain the original value.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ComparisonPolicy {
+    /// Existing Unicode whitespace collapse followed by Unicode lowercase.
+    #[default]
+    LegacyTextV1,
+    /// String equality: case, whitespace and Unicode normalization matter.
+    ExactStringV1,
+}
+
+impl ComparisonPolicy {
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::LegacyTextV1 => "legacy-text-v1",
+            Self::ExactStringV1 => "exact-string-v1",
+        }
+    }
+
+    /// Unknown versions fail closed; never interpret them as the legacy policy.
+    pub fn from_id(id: &str) -> crate::Result<Self> {
+        match id {
+            "legacy-text-v1" => Ok(Self::LegacyTextV1),
+            "exact-string-v1" => Ok(Self::ExactStringV1),
+            _ => Err(crate::KernelError::InvalidInput(format!(
+                "unsupported comparison policy '{id}'"
+            ))),
+        }
+    }
+}
+
+/// Compare without modifying either original value.
+pub fn values_equivalent_with_policy(a: &str, b: &str, policy: ComparisonPolicy) -> bool {
+    match policy {
+        ComparisonPolicy::LegacyTextV1 => fold(a) == fold(b),
+        ComparisonPolicy::ExactStringV1 => a == b,
+    }
 }
 
 fn fold(s: &str) -> String {
@@ -245,5 +285,35 @@ mod tests {
             },
         );
         assert_eq!(out.len(), 1);
+    }
+    #[test]
+    fn versioned_comparison_semantics() {
+        use ComparisonPolicy::{ExactStringV1, LegacyTextV1};
+        // Expected outcomes are literal semantic examples, not another call to
+        // the implementation under test. Rust lowercase is not Unicode casefold.
+        for (a, b, legacy, exact) in [
+            ("", "", true, true),
+            (" ", "", true, false),
+            ("Customer-ID", "customer-id", true, false),
+            ("/Data/Item", "/data/item", true, false),
+            ("alpha  beta", "alpha beta", true, false),
+            ("\talpha\n", "alpha", true, false),
+            ("alpha\u{00a0}beta", "alpha beta", true, false),
+            ("caf\u{00e9}", "cafe\u{0301}", false, false),
+            ("Stra\u{00df}e", "STRASSE", false, false),
+            ("same", "same", true, true),
+            ("01", "1", false, false),
+        ] {
+            assert_eq!(values_equivalent(a, b), legacy, "legacy {a:?}/{b:?}");
+            assert_eq!(values_equivalent_with_policy(a, b, LegacyTextV1), legacy);
+            assert_eq!(values_equivalent_with_policy(a, b, ExactStringV1), exact);
+            assert_eq!(values_equivalent_with_policy(b, a, ExactStringV1), exact);
+        }
+        for policy in [LegacyTextV1, ExactStringV1] {
+            assert_eq!(ComparisonPolicy::from_id(policy.id()).unwrap(), policy);
+        }
+        for unsupported in ["", "exact", "exact-string-v2", "Legacy-Text-V1"] {
+            assert!(ComparisonPolicy::from_id(unsupported).is_err());
+        }
     }
 }
