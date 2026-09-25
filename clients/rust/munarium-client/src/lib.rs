@@ -43,6 +43,9 @@ pub(crate) mod sse;
 
 pub(crate) mod retry;
 
+#[cfg(test)]
+mod wire_compat;
+
 pub use error::{MunariumError, Result};
 pub use planes::{
     chunks_from_bytes, chunks_from_vec, put_source_bytes, AuditQuery, AuthoringPlane, ChunkSource,

@@ -392,6 +392,13 @@ impl pb::command_service_server::CommandService for CommandSvc {
                 let d = inner
                     .digest
                     .ok_or_else(|| Status::invalid_argument("digest is required"))?;
+                // REST's tier is u8. Validate before the shared DTO conversion
+                // so a wider protobuf integer cannot wrap to another tier.
+                u8::try_from(d.tier).map_err(|_| {
+                    to_status(&KernelError::InvalidInput(
+                        "digest tier must be between 0 and 255".into(),
+                    ))
+                })?;
                 ctx.store
                     .upsert_digest(&dto::DigestDto::from(d).convert())
                     .await

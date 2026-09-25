@@ -37,6 +37,8 @@ pub const DEFAULT_TENANT: &str = "tenant-default";
 
 #[cfg(test)]
 mod crash_recovery;
+#[cfg(test)]
+mod integer_boundaries;
 
 pub mod artifacts;
 pub mod attempts;
@@ -57,6 +59,33 @@ pub use sources::PgSourceStore;
 
 pub(crate) fn storage_err(e: sqlx::Error) -> KernelError {
     KernelError::Storage(e.to_string())
+}
+
+/// Persisted unsigned fields are bounded by PostgreSQL's signed BIGINT.
+/// Keep the existing storage-error mapping used for token reservations.
+pub(crate) fn pg_bigint(value: impl TryInto<i64>, field: &str) -> Result<i64> {
+    value.try_into().map_err(|_| bigint_range_error(field))
+}
+
+fn bigint_range_error(field: &str) -> KernelError {
+    KernelError::Storage(format!("{field} exceeds PostgreSQL BIGINT"))
+}
+
+fn unsigned_bigint(value: i64, field: &str) -> Result<u64> {
+    u64::try_from(value)
+        .map_err(|_| KernelError::Storage(format!("negative {field} in PostgreSQL BIGINT")))
+}
+
+fn next_seq(head: Seq) -> Result<i64> {
+    pg_bigint(head, "seq")?
+        .checked_add(1)
+        .ok_or_else(|| bigint_range_error("seq"))
+}
+
+/// A pin is an inclusive upper bound, not a value to persist. Values above
+/// BIGINT::MAX include every storable sequence, matching the in-memory store.
+fn pg_pin(pin: Option<Seq>) -> Option<i64> {
+    pin.map(|value| i64::try_from(value).unwrap_or(i64::MAX))
 }
 
 #[derive(Clone)]
@@ -152,6 +181,11 @@ impl PgStore {
                 });
             }
         }
+        // Reject the entire batch before writing, including the case where
+        // its first sequence fits but its final sequence would overflow.
+        let mut seq = pg_bigint(head, "seq")?;
+        seq.checked_add(pg_bigint(claims.len(), "seq")?)
+            .ok_or_else(|| bigint_range_error("seq"))?;
         // Validate every supersedes_id up front — a mid-batch failure must
         // reject the batch before any row is written.
         for claim in &claims {
@@ -189,9 +223,10 @@ impl PgStore {
         )?;
         let revision = policy.revision()?;
         let mut out = Vec::with_capacity(claims.len());
-        let mut seq = head as i64;
         for claim in claims {
-            seq += 1;
+            seq = seq
+                .checked_add(1)
+                .ok_or_else(|| bigint_range_error("seq"))?;
             let id = format!("claim-{}", uuid::Uuid::new_v4().simple());
             let normalized =
                 munarium_core::ledger::normalize_claim(&claim.subject, &claim.key, &claim.value);
@@ -263,7 +298,7 @@ impl PgStore {
             out.push(Claim {
                 id,
                 version_id: version_id.to_string(),
-                seq: seq as Seq,
+                seq: unsigned_bigint(seq, "seq")?,
                 claim_type: claim.claim_type,
                 subject: claim.subject,
                 key: claim.key,
@@ -300,9 +335,10 @@ impl PgStore {
         seq: Seq,
         findings: &[GateFinding],
     ) -> Result<()> {
+        let seq = pg_bigint(seq, "seq")?;
         for f in findings {
             sqlx::query("INSERT INTO gate_findings (tenant_id, version_id, seq, rule_id, severity, message, scope_path, detail) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)")
-                .bind(&self.tenant_id).bind(version_id).bind(seq as i64).bind(&f.rule_id).bind(severity_text(f.severity))
+                .bind(&self.tenant_id).bind(version_id).bind(seq).bind(&f.rule_id).bind(severity_text(f.severity))
                 .bind(&f.message).bind(&f.scope_path).bind(&f.detail).execute(&mut **tx).await.map_err(storage_err)?;
         }
         Ok(())
@@ -385,7 +421,7 @@ impl PgStore {
         .fetch_one(&mut **tx)
         .await
         .map_err(storage_err)?;
-        Ok(row.get::<i64, _>("head") as Seq)
+        unsigned_bigint(row.get("head"), "head")
     }
 
     /// Opens a transaction holding the lineage_heads FOR UPDATE lock and
@@ -451,7 +487,7 @@ fn row_to_claim(row: &sqlx::postgres::PgRow) -> Result<Claim> {
     Ok(Claim {
         id: row.get("id"),
         version_id: row.get("version_id"),
-        seq: row.get::<i64, _>("seq") as Seq,
+        seq: unsigned_bigint(row.get("seq"), "seq")?,
         claim_type,
         subject: row.get("subject"),
         key: row.get("key"),
@@ -553,7 +589,7 @@ impl StorageBackend for PgStore {
                         locked_value: r.get("locked_value"),
                         locked_at_scope: r.get("locked_at_scope"),
                         status: AnchorStatus::Locked,
-                        seq: r.get::<i64, _>("seq") as Seq,
+                        seq: unsigned_bigint(r.get("seq"), "seq")?,
                         evidence: r.get("evidence"),
                     };
                     anchors.insert(a.detail_key.clone(), a);
@@ -740,7 +776,7 @@ impl StorageBackend for PgStore {
         evidence: Option<serde_json::Value>,
     ) -> Result<Anchor> {
         let (mut tx, _chain, _root, head) = self.locked_head(version_id).await?;
-        let seq = (head + 1) as i64;
+        let seq = next_seq(head)?;
         let id = format!("anchor-{}", uuid::Uuid::new_v4().simple());
         let detail_key = format!("{subject}.{key}");
         sqlx::query(
@@ -784,7 +820,7 @@ impl StorageBackend for PgStore {
             locked_value: value.to_string(),
             locked_at_scope: scope_path.map(String::from),
             status: AnchorStatus::Locked,
-            seq: seq as Seq,
+            seq: unsigned_bigint(seq, "seq")?,
             evidence,
         })
     }
@@ -809,7 +845,7 @@ impl StorageBackend for PgStore {
         )
         .bind(&self.tenant_id)
         .bind(&chain)
-        .bind(as_of_seq.map(|s| s as i64))
+        .bind(pg_pin(as_of_seq))
         .fetch_all(&self.pool)
         .await
         .map_err(storage_err)?;
@@ -821,7 +857,7 @@ impl StorageBackend for PgStore {
                 locked_value: r.get("locked_value"),
                 locked_at_scope: r.get("locked_at_scope"),
                 status: AnchorStatus::Locked,
-                seq: r.get::<i64, _>("seq") as Seq,
+                seq: unsigned_bigint(r.get("seq"), "seq")?,
                 evidence: r.get("evidence"),
             };
             out.insert(a.detail_key.clone(), a);
@@ -841,7 +877,7 @@ impl StorageBackend for PgStore {
         let (mut tx, _chain, _root, head) = self.locked_head(version_id).await?;
         // Registration advances the ledger clock like every other store
         // (head + 1) so consecutive registrations stay orderable under a pin.
-        let seq = head + 1;
+        let seq = next_seq(head)?;
         let id = format!("prom-{}", uuid::Uuid::new_v4().simple());
         sqlx::query(
             "INSERT INTO promises (tenant_id, id, version_id, key, kind, description,
@@ -856,7 +892,7 @@ impl StorageBackend for PgStore {
         .bind(description)
         .bind(origin_scope)
         .bind(due_scope)
-        .bind(seq as i64)
+        .bind(seq)
         .execute(&mut *tx)
         .await
         .map_err(storage_err)?;
@@ -870,7 +906,7 @@ impl StorageBackend for PgStore {
             origin_scope: origin_scope.map(String::from),
             due_scope: due_scope.map(String::from),
             status: PromiseStatus::Open,
-            seq,
+            seq: unsigned_bigint(seq, "seq")?,
             fulfilled_seq: None,
         })
     }
@@ -888,7 +924,7 @@ impl StorageBackend for PgStore {
         .map_err(storage_err)?;
         let mut out = Vec::new();
         for r in rows {
-            let seq = r.get::<i64, _>("seq") as Seq;
+            let seq = unsigned_bigint(r.get("seq"), "seq")?;
             if let Some(pin) = as_of_seq {
                 if seq > pin {
                     continue; // post-pin registration hidden
@@ -910,7 +946,10 @@ impl StorageBackend for PgStore {
                 due_scope: r.get("due_scope"),
                 status,
                 seq,
-                fulfilled_seq: r.get::<Option<i64>, _>("fulfilled_seq").map(|s| s as Seq),
+                fulfilled_seq: r
+                    .get::<Option<i64>, _>("fulfilled_seq")
+                    .map(|s| unsigned_bigint(s, "fulfilled_seq"))
+                    .transpose()?,
             };
             p.status = status_as_of(&p, as_of_seq); // post-pin fulfillment reads open
             if p.status == PromiseStatus::Open {
@@ -936,7 +975,7 @@ impl StorageBackend for PgStore {
         .bind(&chain)
         // Fulfillment is a ledger event at head + 1: a pin taken at the
         // current head must still read the promise as open.
-        .bind((head + 1) as i64)
+        .bind(next_seq(head)?)
         .execute(&mut *tx)
         .await
         .map_err(storage_err)?;
@@ -952,6 +991,8 @@ impl StorageBackend for PgStore {
         count: u64,
         budget: Option<u64>,
     ) -> Result<()> {
+        let count = pg_bigint(count, "count")?;
+        let budget = budget.map(|value| pg_bigint(value, "budget")).transpose()?;
         let (mut tx, _chain, _root, head) = self.locked_head(version_id).await?;
         // The upsert re-stamps seq: an updated count is a new observation at
         // the current head. Keeping the original stamp leaked future values
@@ -968,9 +1009,9 @@ impl StorageBackend for PgStore {
         .bind(version_id)
         .bind(key)
         .bind(scope_path)
-        .bind(count as i64)
-        .bind(budget.map(|b| b as i64))
-        .bind((head + 1) as i64)
+        .bind(count)
+        .bind(budget)
+        .bind(next_seq(head)?)
         .execute(&mut *tx)
         .await
         .map_err(storage_err)?;
@@ -993,21 +1034,26 @@ impl StorageBackend for PgStore {
         )
         .bind(&self.tenant_id)
         .bind(&chain)
-        .bind(as_of_seq.map(|s| s as i64))
+        .bind(pg_pin(as_of_seq))
         .fetch_all(&self.pool)
         .await
         .map_err(storage_err)?;
-        Ok(rows
-            .into_iter()
-            .map(|r| CounterTotal {
-                key: r.get("key"),
-                total: r.get::<i64, _>("total") as u64,
-                budget: r.get::<Option<i64>, _>("budget").map(|b| b as u64),
+        rows.into_iter()
+            .map(|r| {
+                Ok(CounterTotal {
+                    key: r.get("key"),
+                    total: unsigned_bigint(r.get("total"), "total")?,
+                    budget: r
+                        .get::<Option<i64>, _>("budget")
+                        .map(|b| unsigned_bigint(b, "budget"))
+                        .transpose()?,
+                })
             })
-            .collect())
+            .collect()
     }
 
     async fn upsert_digest(&self, digest: &Digest) -> Result<()> {
+        let built_from_seq = pg_bigint(digest.built_from_seq, "built_from_seq")?;
         sqlx::query(
             "INSERT INTO digests (tenant_id, version_id, tier, scope_path, content,
                                   content_hash, built_from_seq)
@@ -1023,7 +1069,7 @@ impl StorageBackend for PgStore {
         .bind(&digest.scope_path)
         .bind(&digest.content)
         .bind(&digest.content_hash)
-        .bind(digest.built_from_seq as i64)
+        .bind(built_from_seq)
         .execute(&self.pool)
         .await
         .map_err(storage_err)?;
@@ -1041,17 +1087,18 @@ impl StorageBackend for PgStore {
         .fetch_all(&self.pool)
         .await
         .map_err(storage_err)?;
-        Ok(rows
-            .into_iter()
-            .map(|r| Digest {
-                version_id: r.get("version_id"),
-                tier: r.get::<i16, _>("tier") as u8,
-                scope_path: r.get("scope_path"),
-                content: r.get("content"),
-                content_hash: r.get("content_hash"),
-                built_from_seq: r.get::<i64, _>("built_from_seq") as Seq,
+        rows.into_iter()
+            .map(|r| {
+                Ok(Digest {
+                    version_id: r.get("version_id"),
+                    tier: r.get::<i16, _>("tier") as u8,
+                    scope_path: r.get("scope_path"),
+                    content: r.get("content"),
+                    content_hash: r.get("content_hash"),
+                    built_from_seq: unsigned_bigint(r.get("built_from_seq"), "built_from_seq")?,
+                })
             })
-            .collect())
+            .collect()
     }
 
     async fn version_metadata(&self, version_id: &str) -> Result<Option<serde_json::Value>> {
@@ -1077,6 +1124,7 @@ impl StorageBackend for PgStore {
         seq: Seq,
         findings: &[munarium_core::types::GateFinding],
     ) -> Result<()> {
+        let seq = pg_bigint(seq, "seq")?;
         // One transaction, and the version checked first — the memory store
         // does both. Without the transaction a failure at finding k left
         // 1..k-1 persisted behind an error, and the caller's retry double-
@@ -1106,7 +1154,7 @@ impl StorageBackend for PgStore {
             )
             .bind(&self.tenant_id)
             .bind(version_id)
-            .bind(seq as i64)
+            .bind(seq)
             .bind(&f.rule_id)
             .bind(severity_text(f.severity))
             .bind(&f.message)
@@ -1124,6 +1172,7 @@ impl StorageBackend for PgStore {
         version_id: &str,
         q: &munarium_core::storage::FindingsQuery,
     ) -> Result<Vec<munarium_core::storage::StoredFinding>> {
+        let limit = pg_bigint(q.limit.unwrap_or(1000), "limit")?;
         let chain = self.lineage(version_id).await?;
         let rows = sqlx::query(
             "SELECT seq, rule_id, severity, message, scope_path, detail
@@ -1138,27 +1187,28 @@ impl StorageBackend for PgStore {
         )
         .bind(&self.tenant_id)
         .bind(&chain)
-        .bind(q.as_of_seq.map(|s| s as i64))
+        .bind(pg_pin(q.as_of_seq))
         .bind(q.severity.map(severity_text))
         .bind(&q.rule_id)
         .bind(q.rule_prefix.as_deref().map(escape_like))
-        .bind(q.limit.map(|l| l as i64).unwrap_or(1000))
+        .bind(limit)
         .fetch_all(&self.pool)
         .await
         .map_err(storage_err)?;
-        Ok(rows
-            .into_iter()
-            .map(|r| munarium_core::storage::StoredFinding {
-                seq: r.get::<i64, _>("seq") as Seq,
-                finding: munarium_core::types::GateFinding {
-                    rule_id: r.get("rule_id"),
-                    severity: severity_from_text(&r.get::<String, _>("severity")),
-                    message: r.get("message"),
-                    scope_path: r.get("scope_path"),
-                    detail: r.get("detail"),
-                },
+        rows.into_iter()
+            .map(|r| {
+                Ok(munarium_core::storage::StoredFinding {
+                    seq: unsigned_bigint(r.get("seq"), "seq")?,
+                    finding: munarium_core::types::GateFinding {
+                        rule_id: r.get("rule_id"),
+                        severity: severity_from_text(&r.get::<String, _>("severity")),
+                        message: r.get("message"),
+                        scope_path: r.get("scope_path"),
+                        detail: r.get("detail"),
+                    },
+                })
             })
-            .collect())
+            .collect()
     }
 }
 

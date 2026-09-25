@@ -466,13 +466,17 @@ pub async fn op_get_rows(
     limit: usize,
 ) -> ApiResult<munarium_api_types::EvidenceRowsResponse> {
     let limit = limit.clamp(1, MAX_ROW_LIMIT);
+    let row_from = i64::try_from(from)
+        .map_err(|_| KernelError::InvalidInput("row from exceeds signed-64 range".into()))?;
+    let row_limit = i64::try_from(limit)
+        .map_err(|_| KernelError::InvalidInput("row limit exceeds signed-64 range".into()))?;
     let artifact = resolve_readable(
         state,
         access,
         evidence_id,
         "rows",
-        Some(from as i64),
-        Some(limit as i64),
+        Some(row_from),
+        Some(row_limit),
     )
     .await?;
 

@@ -553,7 +553,10 @@ impl StorageBackend for MemStore {
                     }
                 }
                 let entry = agg.entry(r.key.clone()).or_insert((0, None));
-                entry.0 += r.count;
+                entry.0 = entry
+                    .0
+                    .checked_add(r.count)
+                    .ok_or_else(|| KernelError::Storage("counter total exceeds u64".into()))?;
                 entry.1 = match (entry.1, r.budget) {
                     (Some(a), Some(b)) => Some(a.max(b)),
                     (a, b) => a.or(b),
@@ -655,6 +658,58 @@ mod tests {
         let store = MemStore::new();
         let v = store.create_version(None, None).await.unwrap();
         (store, v)
+    }
+
+    #[tokio::test]
+    async fn counter_totals_preserve_exact_boundaries_and_pins() {
+        for total in [
+            (1u64 << 53) - 1,
+            1u64 << 53,
+            (1u64 << 53) + 1,
+            i64::MAX as u64,
+            u64::MAX,
+        ] {
+            let (store, version) = store_with_version().await;
+            store
+                .record_counts(&version, "fixture", "first", total - 1, None)
+                .await
+                .unwrap();
+            store
+                .record_counts(&version, "fixture", "second", 1, None)
+                .await
+                .unwrap();
+            assert_eq!(
+                store.counter_totals(&version, Some(1)).await.unwrap()[0].total,
+                total - 1
+            );
+            assert_eq!(
+                store.counter_totals(&version, None).await.unwrap()[0].total,
+                total
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn counter_totals_reject_overflow_across_scopes() {
+        let (store, version) = store_with_version().await;
+        store
+            .record_counts(&version, "fixture", "first", u64::MAX, None)
+            .await
+            .unwrap();
+        store
+            .record_counts(&version, "fixture", "second", 1, None)
+            .await
+            .unwrap();
+        assert!(matches!(
+            store.counter_totals(&version, None).await,
+            Err(KernelError::Storage(_))
+        ));
+        // The failure is a read failure, not permission to corrupt the ledger.
+        assert_eq!(
+            store.counter_totals(&version, Some(1)).await.unwrap()[0].total,
+            u64::MAX
+        );
+        assert_eq!(store.head(&version).await.unwrap(), 2);
     }
 
     #[tokio::test]

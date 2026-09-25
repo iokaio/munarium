@@ -151,7 +151,8 @@ impl PgRetrieval {
                     source_id: s.source_id.clone(),
                     source_path: s.filename.clone(),
                     source_content_hash: s.content_hash.clone(),
-                    ordinal: ordinal as u32,
+                    ordinal: u32::try_from(ordinal)
+                        .map_err(|_| KernelError::Storage("chunk ordinal exceeds uint32".into()))?,
                     text: chunk.clone(),
                     embedding: local_embed(chunk),
                     metadata: locations[ordinal].clone(),
@@ -183,6 +184,14 @@ impl PgRetrieval {
         watermark_seq: u64,
         build: &PreparedBuild,
     ) -> Result<bool> {
+        let watermark_seq = crate::pg_watermark(watermark_seq)?;
+        // Validate before publishing any rows, including an otherwise replayed
+        // build. A caller-supplied ordinal cannot wrap into a negative INTEGER.
+        for chunk in &build.chunks {
+            i32::try_from(chunk.ordinal).map_err(|_| {
+                KernelError::Storage("chunk ordinal exceeds PostgreSQL INTEGER".into())
+            })?;
+        }
         let mut tx = self.pool().begin().await.map_err(storage_err)?;
         // The existence check IS the insert: `ON CONFLICT DO NOTHING` makes
         // two builders racing on one identity converge — the loser sees zero
@@ -200,7 +209,7 @@ impl PgRetrieval {
         .bind(&build.info.shape_ref)
         .bind(collection_id)
         .bind(manifest)
-        .bind(watermark_seq as i64)
+        .bind(watermark_seq)
         .execute(&mut *tx)
         .await
         .map_err(storage_err)?
@@ -235,7 +244,9 @@ impl PgRetrieval {
                 c.chunk_id.clone(),
                 &c.source_id,
                 &c.source_content_hash,
-                c.ordinal as i32,
+                i32::try_from(c.ordinal).map_err(|_| {
+                    KernelError::Storage("chunk ordinal exceeds PostgreSQL INTEGER".into())
+                })?,
                 &c.text,
                 Vector::from(c.embedding.clone()),
             );

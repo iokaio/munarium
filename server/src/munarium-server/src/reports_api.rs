@@ -468,16 +468,21 @@ pub async fn op_budgets(state: &AppState, tenant: &str) -> Result<Vec<dto::Budge
         let key = (row.config.clone(), row.tier.clone());
         let limit = limits.get(&key).copied();
         seen.insert(key);
-        let used = row.held_units + row.settled_units;
+        let used = row
+            .held_units
+            .checked_add(row.settled_units)
+            .ok_or_else(|| KernelError::Storage("budget report total exceeds u64".into()))?;
         rows.push(dto::BudgetRow {
             config: row.config,
             tier: row.tier,
             day: row.day,
-            held_tokens: row.held_units as i64,
-            settled_tokens: row.settled_units as i64,
-            reservations: row.reservations as i64,
-            limit: limit.map(|l| l as i64),
-            remaining: limit.map(|l| l.saturating_sub(used) as i64),
+            held_tokens: budget_report_integer(row.held_units)?,
+            settled_tokens: budget_report_integer(row.settled_units)?,
+            reservations: budget_report_integer(row.reservations)?,
+            limit: limit.map(budget_report_integer).transpose()?,
+            remaining: limit
+                .map(|l| budget_report_integer(l.saturating_sub(used)))
+                .transpose()?,
         });
     }
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
@@ -490,13 +495,21 @@ pub async fn op_budgets(state: &AppState, tenant: &str) -> Result<Vec<dto::Budge
                 held_tokens: 0,
                 settled_tokens: 0,
                 reservations: 0,
-                limit: Some(*limit as i64),
-                remaining: Some(*limit as i64),
+                limit: Some(budget_report_integer(*limit)?),
+                remaining: Some(budget_report_integer(*limit)?),
             });
         }
     }
     rows.sort_by(|a, b| (&a.config, &a.tier).cmp(&(&b.config, &b.tier)));
     Ok(rows)
+}
+
+// v1 reports use signed integer fields even though the budget trait uses u64.
+// Unrepresentable persisted/configured values are storage errors, never negative
+// usage or silently saturated totals.
+fn budget_report_integer(value: u64) -> Result<i64> {
+    i64::try_from(value)
+        .map_err(|_| KernelError::Storage("budget report value exceeds signed-64 range".into()))
 }
 
 /// GET /v1/reports/budgets — today's spending-cap ledger per provider config

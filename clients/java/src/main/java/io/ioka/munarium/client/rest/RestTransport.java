@@ -507,9 +507,14 @@ public final class RestTransport implements Transport {
 
     @Override
     public long head(String versionId) {
-        return run(RetryClass.READ, request("/v1/versions/" + seg(versionId) + "/head", null, false),
+        var value = run(RetryClass.READ, request("/v1/versions/" + seg(versionId) + "/head", null, false),
                 "GET", null, null, null)
-                .path("head_seq").asLong();
+                .path("head_seq");
+        if (!value.isIntegralNumber() || !value.canConvertToLong() || value.longValue() < 0) {
+            throw new UnexpectedServerException(
+                    "head_seq must be an integer from 0 through Long.MAX_VALUE", null);
+        }
+        return value.longValue();
     }
 
     @Override

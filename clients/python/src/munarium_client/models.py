@@ -5,9 +5,14 @@ additive server fields."""
 
 from __future__ import annotations
 
-from typing import Any, Literal, TypeVar
+from typing import Annotated, Any, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
+
+# Sequence, watermark, byte-size and counter DTOs use uint64 on both wires.
+# Reject float/string/bool coercion before an already-rounded number can become
+# an apparently exact pin; Python's int retains the entire unsigned range.
+UInt64 = Annotated[int, Field(strict=True, ge=0, le=2**64 - 1)]
 
 ClaimType = Literal["fact", "update", "correction"]
 
@@ -54,7 +59,7 @@ class ClaimOrigin(_Model):
 class Claim(_Model):
     id: str
     version_id: str
-    seq: int
+    seq: UInt64
     claim_type: ClaimType
     subject: str
     key: str
@@ -94,7 +99,7 @@ class ClaimOutcome(_Model):
 
     claim: Claim
     findings: list[GateFinding]
-    head_seq: int
+    head_seq: UInt64
 
     @property
     def is_disputed(self) -> bool:
@@ -104,7 +109,7 @@ class ClaimOutcome(_Model):
 class EventsOutcome(_Model):
     claims: list[Claim]
     findings: list[GateFinding]
-    head_seq: int
+    head_seq: UInt64
 
     @property
     def is_disputed(self) -> bool:
@@ -119,8 +124,8 @@ class ClaimLookup(_Model):
 
 class FactsPage(_Model):
     facts: list[Claim]
-    as_of_seq: int
-    head_seq: int
+    as_of_seq: UInt64
+    head_seq: UInt64
 
 
 class Anchor(_Model):
@@ -130,7 +135,7 @@ class Anchor(_Model):
     locked_value: str
     locked_at_scope: str | None = None
     status: str
-    seq: int
+    seq: UInt64
 
 
 class Promise(_Model):
@@ -142,14 +147,14 @@ class Promise(_Model):
     origin_scope: str | None = None
     due_scope: str | None = None
     status: str
-    seq: int
-    fulfilled_seq: int | None = None
+    seq: UInt64
+    fulfilled_seq: UInt64 | None = None
 
 
 class Counter(_Model):
     key: str
-    total: int
-    budget: int | None = None
+    total: UInt64
+    budget: UInt64 | None = None
 
 
 class Digest(_Model):
@@ -158,7 +163,7 @@ class Digest(_Model):
     scope_path: str
     content: str
     content_hash: str
-    built_from_seq: int
+    built_from_seq: UInt64
 
 
 class Section(_Model):
@@ -171,7 +176,7 @@ class ComposedContext(_Model):
     text: str
     estimated_tokens: int
     content_hash: str
-    as_of_seq: int
+    as_of_seq: UInt64
 
 
 class PutSourceResult(_Model):
@@ -179,7 +184,7 @@ class PutSourceResult(_Model):
     source_id: str
     #: hex sha-256 — integrity of the stored bytes.
     content_hash: str
-    bytes_len: int
+    bytes_len: UInt64
     #: True only when this path already held these exact bytes. Re-uploading a
     #: path with NEW content is an update and reports False.
     already_existed: bool
@@ -187,13 +192,13 @@ class PutSourceResult(_Model):
 
 class RecordIngestResult(_Model):
     event_id: str
-    seq: int
+    seq: UInt64
 
 
 class IndexStatus(_Model):
     index_version: str
     shape_ref: str
-    event_watermark: int
+    event_watermark: UInt64
     active: bool
     manifest: Any = None
 
@@ -226,7 +231,7 @@ class ProvenanceEnvelope(_Model):
     source_paths: list[str]
     source_content_hashes: list[str]
     index_version: str
-    event_watermark: int
+    event_watermark: UInt64
     provider_fingerprint: str | None = None
 
 
@@ -745,7 +750,7 @@ class BulkManifestEntry(_Model):
     #: Declared content hash (hex), verified against every received chunk
     #: file — an identical re-run needs no bytes at all.
     sha256: str
-    bytes_len: int
+    bytes_len: UInt64
     media_type: str
 
 
@@ -814,7 +819,7 @@ class SourceInfo(_Model):
     filename: str
     media_type: str
     content_hash: str
-    bytes_len: int
+    bytes_len: UInt64
     #: az | pg | mem.
     storage_backend: str
     blob_uri: str | None = None
@@ -950,7 +955,7 @@ class StoredFinding(_Model):
     """One persisted gate finding plus the head seq its write settled at,
     so pinned reads bound this store like every other."""
 
-    seq: int
+    seq: UInt64
     finding: GateFinding
 
 
