@@ -2196,6 +2196,7 @@ dependencies = [
  "serde_yaml",
  "sha2",
  "sqlx",
+ "syn 2.0.119",
  "tokio",
  "tokio-stream",
  "tonic",

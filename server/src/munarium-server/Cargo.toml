@@ -70,3 +70,6 @@ utoipa = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 async-trait = { workspace = true }
+
+[dev-dependencies]
+syn = { version = "2", features = ["full"] }

@@ -89,16 +89,46 @@ mod tests {
     }
 
     /// True when `source` carries the policy attribute: a crate-level
-    /// `cfg_attr(not(test), deny(...))` naming all six lints. Whitespace is
-    /// ignored so rustfmt's layout does not matter.
+    /// `cfg_attr(not(test), deny(...))` naming all six lints. Parse Rust so
+    /// comments, strings and attributes on nested items cannot satisfy it.
     fn declares_policy(source: &str) -> bool {
-        let compact: String = source.chars().filter(|c| !c.is_whitespace()).collect();
-        let Some(start) = compact.find("#![cfg_attr(not(test),deny(") else {
+        use syn::{punctuated::Punctuated, Meta, Token};
+
+        fn args(list: &syn::MetaList) -> Option<Punctuated<Meta, Token![,]>> {
+            list.parse_args_with(Punctuated::parse_terminated).ok()
+        }
+
+        let Ok(file) = syn::parse_file(source) else {
             return false;
         };
-        let attr = &compact[start..];
-        let attr = &attr[..attr.find(")]").map_or(attr.len(), |end| end + 2)];
-        LINTS.iter().all(|lint| attr.contains(lint))
+        file.attrs.iter().any(|attr| {
+            if !matches!(attr.style, syn::AttrStyle::Inner(_)) {
+                return false;
+            }
+            let Meta::List(cfg) = &attr.meta else { return false };
+            if !cfg.path.is_ident("cfg_attr") { return false; }
+            let Some(cfg_args) = args(cfg) else { return false };
+            let mut cfg_args = cfg_args.iter();
+            let Some(Meta::List(condition)) = cfg_args.next() else { return false };
+            if !condition.path.is_ident("not") { return false; }
+            let Some(condition_args) = args(condition) else { return false };
+            if condition_args.len() != 1
+                || !matches!(condition_args.first(), Some(Meta::Path(path)) if path.is_ident("test"))
+            {
+                return false;
+            }
+            let Some(Meta::List(deny)) = cfg_args.next() else { return false };
+            if !deny.path.is_ident("deny") || cfg_args.next().is_some() { return false; }
+            let Some(lints) = args(deny) else { return false };
+            LINTS.iter().all(|lint| {
+                let expected: syn::Path = syn::parse_str(lint).expect("fixed lint path");
+                lints.iter().any(|meta| matches!(meta, Meta::Path(path)
+                    if path.leading_colon.is_none()
+                        && path.segments.len() == expected.segments.len()
+                        && path.segments.iter().zip(&expected.segments).all(|(a, b)|
+                            a.ident == b.ident && matches!(a.arguments, syn::PathArguments::None))))
+            })
+        })
     }
 
     #[test]
@@ -144,6 +174,21 @@ mod tests {
         assert!(!declares_policy(&policy.replace("not(test)", "test")));
         assert!(!declares_policy(&policy.replace("#![", "#[")));
         assert!(!declares_policy("#![deny(clippy::unwrap_used)]"));
+        assert!(!declares_policy(&format!("/* {policy} */")));
+        assert!(!declares_policy(&format!(
+            "// {}",
+            policy.replace('\n', " ")
+        )));
+        assert!(!declares_policy(&format!(
+            "const TEXT: &str = r###\"{policy}\"###;"
+        )));
+        assert!(!declares_policy(&format!("mod nested {{ {policy} }}")));
+        assert!(!declares_policy(
+            &policy.replace("clippy::panic,", "clippy::panic_extra,")
+        ));
+        assert!(declares_policy(
+            &policy.replace("deny(", "deny(/* documented policy */")
+        ));
         assert_eq!(
             members("members = [\n    \"src/a\",\n    \"conformance\",\n]\n"),
             ["src/a", "conformance"]

@@ -40,6 +40,9 @@ root without the attribute fails
 [`panic_policy`](../src/munarium-server/src/panic_policy.rs), a test that reads
 the workspace members and asserts the attribute in each root. It also checks
 that at least 23 roots were found, so broken discovery cannot pass vacuously.
+The matcher parses actual Rust crate attributes: policy text in comments,
+string literals or nested modules does not satisfy the gate. Lint paths must
+match exactly.
 
 ### Exemptions
 
@@ -57,6 +60,7 @@ The register has two entries.
 | Category | Rule |
 |---|---|
 | Untrusted bytes (artifact components) | Read through the bounds-checked readers in [`bytes.rs`](../src/munarium-datastore/src/bytes.rs): every range end is `checked_add`ed and a miss is `Error::Integrity`. Size an allocation from bytes already taken, never from a declared count. |
+| Embedded DiskANN build inputs | Validate dimensions and finite vector values before allocating. Check the vector-count product and use fallible reservations for vector, ID and centroid buffers; invalid inputs return `Error::Invalid`, and reservation failures return `Error::Limit`. |
 | Startup and process I/O | One `startup error:` line on stderr and exit status 1. Configuration errors keep exit 2. Tools print to stderr and exit non-zero. |
 | Lock poisoning | Chosen per lock (table below). Recover the guard only when every critical section is one operation that cannot unwind part-way. Otherwise, where the enclosing function is already fallible, return a typed error. |
 | Dates | Checked chrono arithmetic (`checked_add_days`, `Duration::try_days`, `checked_add_signed`), as in the chronology deadline code. |
