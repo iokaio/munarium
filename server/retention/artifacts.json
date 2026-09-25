@@ -1,0 +1,123 @@
+{
+  "version": 1,
+  "artifacts": {
+    "runtime_ledger_partitions": {
+      "description": "Runtime ledger_events range partitions inherit parent columns/content; detached archives retain copies.",
+      "origins": [
+        "src/munarium-store-pg/src/partitions.rs"
+      ]
+    },
+    "runtime_collection_partitions": {
+      "description": "Runtime collection_chunks partitions and GIN/HNSW indexes inherit parent content/cleanup policy.",
+      "origins": [
+        "src/munarium-retrieval-pg/src/collections.rs"
+      ]
+    },
+    "source_objects": {
+      "description": "Logical-path source bytes in Azure/S3/GCS/file/memory, including separately retained object versions/replicas.",
+      "origins": [
+        "src/munarium-core/src/sources.rs",
+        "src/munarium-store-objects/src/lib.rs"
+      ]
+    },
+    "evidence_objects": {
+      "description": "Sealed typed result bytes in reserved evidence paths through SourceStore, including pg fallback.",
+      "origins": [
+        "src/munarium-server/src/evidence_api.rs"
+      ]
+    },
+    "datastore_manifest": {
+      "description": "Canonical manifest.json with component metadata, counts, engines and content-derived diagnostic probe queries.",
+      "origins": [
+        "src/munarium-datastore/src/model.rs",
+        "src/munarium-datastore/src/verify.rs"
+      ]
+    },
+    "datastore_archive": {
+      "description": "L2 archives/components and build-spec/plan sidecars retain source paths, citation text, lexemes, vectors and indexes.",
+      "origins": [
+        "src/munarium-store-objects/src/artifacts.rs",
+        "src/munarium-retrieval/src/mirror.rs"
+      ]
+    },
+    "l0_handles": {
+      "description": "Process-local open shards/readers and memory-mapped records/lexical/vector data; eviction does not delete L2.",
+      "origins": [
+        "src/munarium-retrieval/src/serving.rs",
+        "src/munarium-datastore/src/shard.rs"
+      ]
+    },
+    "l1_hydrated_files": {
+      "description": "Local hydrated artifacts, quarantine/residue and staging retain text/embeddings separately from eligibility.",
+      "origins": [
+        "src/munarium-datastore/src/hydrate.rs",
+        "src/munarium-retrieval/src/serving.rs"
+      ]
+    },
+    "build_staging": {
+      "description": "Attempt directories, extracted chunks, embeddings and index work files before sealing; failed-attempt cleanup is not all-residue erasure.",
+      "origins": [
+        "src/munarium-retrieval/src/direct.rs",
+        "src/munarium-retrieval/src/mirror.rs"
+      ]
+    },
+    "vocabulary_generation": {
+      "description": "Sampled document text/provider prompts/completions and derived term groups; persisted vocabulary and provider copies are independent.",
+      "origins": [
+        "src/munarium-server/src/vocabulary_api.rs"
+      ]
+    },
+    "checked_answers": {
+      "description": "Validated completion/quotes/source/evidence data returned to callers; no dedicated Server checked-answer persistence cache.",
+      "origins": [
+        "src/munarium-server/src/answers_api.rs"
+      ]
+    },
+    "exports_downloads": {
+      "description": "Original/evidence downloads, authoring YAML/ZIP, audit/report JSON/CSV and caller response caches leave Server control.",
+      "origins": [
+        "src/munarium-server/src/authoring_api.rs",
+        "src/munarium-server/src/reports_api.rs",
+        "src/munarium-server/src/evidence_routes.rs"
+      ]
+    },
+    "index_exports": {
+      "description": "PG export streams into mirror/rebuild artifacts include selected text, source metadata and embeddings.",
+      "origins": [
+        "src/munarium-retrieval-pg/src/export.rs"
+      ]
+    },
+    "database_backups": {
+      "description": "PostgreSQL base backups/dumps/WAL and detached partition archives contain all SQL surfaces and pg source bytes.",
+      "origins": [
+        "docs/ops/backup-restore.md",
+        "docs/ops/index-deletion-runbook.md"
+      ]
+    },
+    "object_backups": {
+      "description": "Object versions/soft delete, filesystem snapshots and source/evidence/datastore backups are independent of DB restore.",
+      "origins": [
+        "docs/ops/backup-restore.md"
+      ]
+    },
+    "provider_copies": {
+      "description": "Submitted source samples, prompts, embeddings input, answer context and completions; provider retention/logs need separate policy.",
+      "origins": [
+        "src/munarium-providers/src/lib.rs",
+        "src/munarium-server/src/answers_api.rs"
+      ]
+    },
+    "operational_logs": {
+      "description": "Operator diagnostic sinks may contain errors/identifiers; do not presume logs are content-free or erased with SQL.",
+      "origins": [
+        "src/munarium-server/src/main.rs"
+      ]
+    },
+    "memory_backend": {
+      "description": "In-process ledger/source/evidence/configuration/idempotency/budget maps and transient audit channel; persistent sessions require PostgreSQL. With no pool the audit writer drops records after debug logging. Process exit does not erase host snapshots/dumps.",
+      "origins": [
+        "src/munarium-store-mem/src/lib.rs"
+      ]
+    }
+  }
+}

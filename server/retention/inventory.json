@@ -1,0 +1,2069 @@
+{
+  "version": 1,
+  "scope": "Migration columns, declared artifacts and ComponentPurpose variants; no arbitrary JSON/data-flow discovery.",
+  "policies": {
+    "retained": {
+      "retrieval_exclusion": {
+        "read": "Current eligible retrieval excludes content; independently authorized history/audit copies may remain.",
+        "cleanup": "No physical deletion implied.",
+        "holds": "No general source hold API; pins and other collection owners can require content.",
+        "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
+        "coverage": "Gap: no universal exclusion fixture across all surfaces."
+      },
+      "access_revocation": {
+        "read": "Current endpoint authority applies; already delivered copies cannot be recalled.",
+        "cleanup": "Expiry/revocation does not erase bytes.",
+        "holds": "Retention/hold grants no authority.",
+        "restore": "Reconcile restored deny-list, grants and policies before serving.",
+        "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
+      },
+      "logical_removal": {
+        "read": "No general source tombstone API; surface-specific soft state governs availability.",
+        "cleanup": "Lifecycle state changes do not imply deletion.",
+        "holds": "No new hold mechanism.",
+        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "coverage": "Gap: no general logical-removal/restore conformance suite."
+      },
+      "physical_erasure": {
+        "read": "No general source erasure API or deadline.",
+        "cleanup": "Future erasure must cover this surface and all derived copies.",
+        "holds": "Requires shared-owner/reference and applicable hold review.",
+        "restore": "No durable erasure journal/replay contract; restored state cannot claim general erasure compliance.",
+        "coverage": "Gap: no all-copy erasure, partial-failure or backup-restore closure fixture."
+      },
+      "protected_retention": {
+        "read": "Retained for provenance/operations under current endpoint authority; not a general regulatory retention API.",
+        "cleanup": "No universal retention duration/expiry.",
+        "holds": "Evidence holds are separate; other surfaces have no general legal-hold API.",
+        "restore": "Preserve identities/provenance; reconcile external bytes separately.",
+        "coverage": "History fixtures prove their stated invariants, not general retention deadlines."
+      }
+    },
+    "ledger": {
+      "retrieval_exclusion": {
+        "read": "Append-only history/projections remain at authorized lineage/sequence pins; collection exclusion does not retract claims/digests.",
+        "cleanup": "No physical deletion implied.",
+        "holds": "No general source hold API; pins and other collection owners can require content.",
+        "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
+        "coverage": "Gap: no universal exclusion fixture across all surfaces."
+      },
+      "access_revocation": {
+        "read": "Current endpoint authority applies; already delivered copies cannot be recalled.",
+        "cleanup": "Expiry/revocation does not erase bytes.",
+        "holds": "Retention/hold grants no authority.",
+        "restore": "Reconcile restored deny-list, grants and policies before serving.",
+        "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
+      },
+      "logical_removal": {
+        "read": "No general source tombstone API; surface-specific soft state governs availability.",
+        "cleanup": "Lifecycle state changes do not imply deletion.",
+        "holds": "No new hold mechanism.",
+        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "coverage": "Gap: no general logical-removal/restore conformance suite."
+      },
+      "physical_erasure": {
+        "read": "No general source erasure API or deadline.",
+        "cleanup": "No ledger erasure API. Projection rebuild can recreate content retained in ledger_events.",
+        "holds": "Requires shared-owner/reference and applicable hold review.",
+        "restore": "No durable erasure journal/replay contract; restored state cannot claim general erasure compliance.",
+        "coverage": "Gap: no all-copy erasure, partial-failure or backup-restore closure fixture."
+      },
+      "protected_retention": {
+        "read": "Retained for provenance/operations under current endpoint authority; not a general regulatory retention API.",
+        "cleanup": "No universal retention duration/expiry.",
+        "holds": "Evidence holds are separate; other surfaces have no general legal-hold API.",
+        "restore": "Preserve identities/provenance; reconcile external bytes separately.",
+        "coverage": "History fixtures prove their stated invariants, not general retention deadlines."
+      }
+    },
+    "sources": {
+      "retrieval_exclusion": {
+        "read": "Original bytes remain; collection retirement/exclusion does not delete sources shared by another collection.",
+        "cleanup": "No physical deletion implied.",
+        "holds": "No general source hold API; pins and other collection owners can require content.",
+        "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
+        "coverage": "Gap: no universal exclusion fixture across all surfaces."
+      },
+      "access_revocation": {
+        "read": "Original-reference routes recheck collection authority; raw source/store paths have their own scopes.",
+        "cleanup": "Expiry/revocation does not erase bytes.",
+        "holds": "Retention/hold grants no authority.",
+        "restore": "Reconcile restored deny-list, grants and policies before serving.",
+        "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
+      },
+      "logical_removal": {
+        "read": "No general source tombstone API; surface-specific soft state governs availability.",
+        "cleanup": "Lifecycle state changes do not imply deletion.",
+        "holds": "No new hold mechanism.",
+        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "coverage": "Gap: no general logical-removal/restore conformance suite."
+      },
+      "physical_erasure": {
+        "read": "No general source erasure API or deadline.",
+        "cleanup": "Separately authorized operator removal only; enumerate all collection_sources bindings, derived copies, object versions and backups.",
+        "holds": "Requires shared-owner/reference and applicable hold review.",
+        "restore": "No durable erasure journal/replay contract; restored state cannot claim general erasure compliance.",
+        "coverage": "Gap: no all-copy erasure, partial-failure or backup-restore closure fixture."
+      },
+      "protected_retention": {
+        "read": "Retained for provenance/operations under current endpoint authority; not a general regulatory retention API.",
+        "cleanup": "No universal retention duration/expiry.",
+        "holds": "Evidence holds are separate; other surfaces have no general legal-hold API.",
+        "restore": "Preserve identities/provenance; reconcile external bytes separately.",
+        "coverage": "History fixtures prove their stated invariants, not general retention deadlines."
+      }
+    },
+    "chunks": {
+      "retrieval_exclusion": {
+        "read": "Current search selects eligible collections/versions; exact historical chunks can remain under pins.",
+        "cleanup": "No physical deletion implied.",
+        "holds": "No general source hold API; pins and other collection owners can require content.",
+        "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
+        "coverage": "mirror_integration::retention_rebuild_excludes_old_text_but_preserves_pins_and_shared_sources checks rebuild exclusion, warm/cold retained text and another collection (PostgreSQL required)."
+      },
+      "access_revocation": {
+        "read": "Current endpoint authority applies; already delivered copies cannot be recalled.",
+        "cleanup": "Expiry/revocation does not erase bytes.",
+        "holds": "Retention/hold grants no authority.",
+        "restore": "Reconcile restored deny-list, grants and policies before serving.",
+        "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
+      },
+      "logical_removal": {
+        "read": "No general source tombstone API; surface-specific soft state governs availability.",
+        "cleanup": "Lifecycle state changes do not imply deletion.",
+        "holds": "No new hold mechanism.",
+        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "coverage": "Gap: no general logical-removal/restore conformance suite."
+      },
+      "physical_erasure": {
+        "read": "No general source erasure API or deadline.",
+        "cleanup": "retire_old/retire_old_collection remove selected inactive PostgreSQL chunks and collection lexical summaries. Manifests remain. Manual partition deletion is separate; datastore/provenance/session/original copies remain.",
+        "holds": "Chunk cleanup is not a legal-hold protocol; inspect pins, shared sources and artifact horizons.",
+        "restore": "No durable erasure journal/replay contract; restored state cannot claim general erasure compliance.",
+        "coverage": "The retention_rebuild fixture checks inactive PG chunk removal and retained datastore history, not all-copy erasure."
+      },
+      "protected_retention": {
+        "read": "Retained for provenance/operations under current endpoint authority; not a general regulatory retention API.",
+        "cleanup": "No universal retention duration/expiry.",
+        "holds": "Evidence holds are separate; other surfaces have no general legal-hold API.",
+        "restore": "Preserve identities/provenance; reconcile external bytes separately.",
+        "coverage": "History fixtures prove their stated invariants, not general retention deadlines."
+      }
+    },
+    "catalog": {
+      "retrieval_exclusion": {
+        "read": "Active-pointer changes select current search; catalog/manifests and historical artifacts remain.",
+        "cleanup": "No physical deletion implied.",
+        "holds": "No general source hold API; pins and other collection owners can require content.",
+        "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
+        "coverage": "Gap: no universal exclusion fixture across all surfaces."
+      },
+      "access_revocation": {
+        "read": "Current endpoint authority applies; already delivered copies cannot be recalled.",
+        "cleanup": "Expiry/revocation does not erase bytes.",
+        "holds": "Retention/hold grants no authority.",
+        "restore": "Reconcile restored deny-list, grants and policies before serving.",
+        "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
+      },
+      "logical_removal": {
+        "read": "No general source tombstone API; surface-specific soft state governs availability.",
+        "cleanup": "Lifecycle state changes do not imply deletion.",
+        "holds": "No new hold mechanism.",
+        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "coverage": "Gap: no general logical-removal/restore conformance suite."
+      },
+      "physical_erasure": {
+        "read": "No general source erasure API or deadline.",
+        "cleanup": "Retain catalog/manifests/binding history; no general L2 erasure API.",
+        "holds": "Bindings, retain_until and strict execution references constrain reclamation.",
+        "restore": "No durable erasure journal/replay contract; restored state cannot claim general erasure compliance.",
+        "coverage": "Gap: no all-copy erasure, partial-failure or backup-restore closure fixture."
+      },
+      "protected_retention": {
+        "read": "Retained for provenance/operations under current endpoint authority; not a general regulatory retention API.",
+        "cleanup": "No universal retention duration/expiry.",
+        "holds": "Evidence holds are separate; other surfaces have no general legal-hold API.",
+        "restore": "Preserve identities/provenance; reconcile external bytes separately.",
+        "coverage": "artifacts_integration and process_recovery cover catalog/pin recovery with PostgreSQL."
+      }
+    },
+    "runbooks": {
+      "retrieval_exclusion": {
+        "read": "Current eligible retrieval excludes content; independently authorized history/audit copies may remain.",
+        "cleanup": "No physical deletion implied.",
+        "holds": "No general source hold API; pins and other collection owners can require content.",
+        "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
+        "coverage": "Gap: no universal exclusion fixture across all surfaces."
+      },
+      "access_revocation": {
+        "read": "Current endpoint authority applies; already delivered copies cannot be recalled.",
+        "cleanup": "Expiry/revocation does not erase bytes.",
+        "holds": "Retention/hold grants no authority.",
+        "restore": "Reconcile restored deny-list, grants and policies before serving.",
+        "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
+      },
+      "logical_removal": {
+        "read": "Two-phase removal hides/rejects removed definitions through lifecycle/session paths; YAML, executions, collections and history remain.",
+        "cleanup": "Soft transition only; YAML retained.",
+        "holds": "No new hold mechanism.",
+        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "coverage": "Runbook lifecycle/platform conformance covers soft removal, not erasure."
+      },
+      "physical_erasure": {
+        "read": "No general source erasure API or deadline.",
+        "cleanup": "Future erasure must cover this surface and all derived copies.",
+        "holds": "Requires shared-owner/reference and applicable hold review.",
+        "restore": "No durable erasure journal/replay contract; restored state cannot claim general erasure compliance.",
+        "coverage": "Gap: no all-copy erasure, partial-failure or backup-restore closure fixture."
+      },
+      "protected_retention": {
+        "read": "Retained for provenance/operations under current endpoint authority; not a general regulatory retention API.",
+        "cleanup": "No universal retention duration/expiry.",
+        "holds": "Evidence holds are separate; other surfaces have no general legal-hold API.",
+        "restore": "Preserve identities/provenance; reconcile external bytes separately.",
+        "coverage": "History fixtures prove their stated invariants, not general retention deadlines."
+      }
+    },
+    "sessions": {
+      "retrieval_exclusion": {
+        "read": "New turns resolve eligible collections; stored turns retain old query/hit/completion/envelope/hierarchy content.",
+        "cleanup": "No physical deletion implied.",
+        "holds": "No general source hold API; pins and other collection owners can require content.",
+        "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
+        "coverage": "Gap: no universal exclusion fixture across all surfaces."
+      },
+      "access_revocation": {
+        "read": "Current endpoint authority applies; already delivered copies cannot be recalled.",
+        "cleanup": "Expiry/revocation does not erase bytes.",
+        "holds": "Retention/hold grants no authority.",
+        "restore": "Reconcile restored deny-list, grants and policies before serving.",
+        "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
+      },
+      "logical_removal": {
+        "read": "Closed/expired sessions reject turns; expiry and runbook removal retain historical sessions/turns.",
+        "cleanup": "Idle janitor changes state only.",
+        "holds": "No new hold mechanism.",
+        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "coverage": "Session/platform tests cover unavailable sessions, not erasure."
+      },
+      "physical_erasure": {
+        "read": "No general source erasure API or deadline.",
+        "cleanup": "Future erasure must cover this surface and all derived copies.",
+        "holds": "Requires shared-owner/reference and applicable hold review.",
+        "restore": "No durable erasure journal/replay contract; restored state cannot claim general erasure compliance.",
+        "coverage": "Gap: no all-copy erasure, partial-failure or backup-restore closure fixture."
+      },
+      "protected_retention": {
+        "read": "Retained for provenance/operations under current endpoint authority; not a general regulatory retention API.",
+        "cleanup": "No universal retention duration/expiry.",
+        "holds": "Evidence holds are separate; other surfaces have no general legal-hold API.",
+        "restore": "Preserve identities/provenance; reconcile external bytes separately.",
+        "coverage": "History fixtures prove their stated invariants, not general retention deadlines."
+      }
+    },
+    "interactions": {
+      "retrieval_exclusion": {
+        "read": "Request/response audit copies survive source exclusion.",
+        "cleanup": "No physical deletion implied.",
+        "holds": "No general source hold API; pins and other collection owners can require content.",
+        "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
+        "coverage": "Gap: no universal exclusion fixture across all surfaces."
+      },
+      "access_revocation": {
+        "read": "Current endpoint authority applies; already delivered copies cannot be recalled.",
+        "cleanup": "Expiry/revocation does not erase bytes.",
+        "holds": "Retention/hold grants no authority.",
+        "restore": "Reconcile restored deny-list, grants and policies before serving.",
+        "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
+      },
+      "logical_removal": {
+        "read": "No general source tombstone API; surface-specific soft state governs availability.",
+        "cleanup": "Lifecycle state changes do not imply deletion.",
+        "holds": "No new hold mechanism.",
+        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "coverage": "Gap: no general logical-removal/restore conformance suite."
+      },
+      "physical_erasure": {
+        "read": "No general source erasure API or deadline.",
+        "cleanup": "Future erasure must cover this surface and all derived copies.",
+        "holds": "Requires shared-owner/reference and applicable hold review.",
+        "restore": "No durable erasure journal/replay contract; restored state cannot claim general erasure compliance.",
+        "coverage": "Gap: no all-copy erasure, partial-failure or backup-restore closure fixture."
+      },
+      "protected_retention": {
+        "read": "Audit retains capped JSON bodies or hash/size summaries. Below-cap bodies can contain complete source/answer/evidence text.",
+        "cleanup": "No general audit expiry; a body cap is not erasure.",
+        "holds": "Evidence holds are separate; other surfaces have no general legal-hold API.",
+        "restore": "Preserve identities/provenance; reconcile external bytes separately.",
+        "coverage": "History fixtures prove their stated invariants, not general retention deadlines."
+      }
+    },
+    "drafts": {
+      "retrieval_exclusion": {
+        "read": "Current eligible retrieval excludes content; independently authorized history/audit copies may remain.",
+        "cleanup": "No physical deletion implied.",
+        "holds": "No general source hold API; pins and other collection owners can require content.",
+        "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
+        "coverage": "Gap: no universal exclusion fixture across all surfaces."
+      },
+      "access_revocation": {
+        "read": "Current endpoint authority applies; already delivered copies cannot be recalled.",
+        "cleanup": "Expiry/revocation does not erase bytes.",
+        "holds": "Retention/hold grants no authority.",
+        "restore": "Reconcile restored deny-list, grants and policies before serving.",
+        "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
+      },
+      "logical_removal": {
+        "read": "Deleted status hides draft reads; interview answers, YAML and findings remain.",
+        "cleanup": "Soft deletion; applied definitions and exports are separate copies.",
+        "holds": "No new hold mechanism.",
+        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "coverage": "Gap: no general logical-removal/restore conformance suite."
+      },
+      "physical_erasure": {
+        "read": "No general source erasure API or deadline.",
+        "cleanup": "Future erasure must cover this surface and all derived copies.",
+        "holds": "Requires shared-owner/reference and applicable hold review.",
+        "restore": "No durable erasure journal/replay contract; restored state cannot claim general erasure compliance.",
+        "coverage": "Gap: no all-copy erasure, partial-failure or backup-restore closure fixture."
+      },
+      "protected_retention": {
+        "read": "Retained for provenance/operations under current endpoint authority; not a general regulatory retention API.",
+        "cleanup": "No universal retention duration/expiry.",
+        "holds": "Evidence holds are separate; other surfaces have no general legal-hold API.",
+        "restore": "Preserve identities/provenance; reconcile external bytes separately.",
+        "coverage": "History fixtures prove their stated invariants, not general retention deadlines."
+      }
+    },
+    "evidence": {
+      "retrieval_exclusion": {
+        "read": "Sealed evidence replays independently of source retrieval.",
+        "cleanup": "No physical deletion implied.",
+        "holds": "No general source hold API; pins and other collection owners can require content.",
+        "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
+        "coverage": "evidence_routes::evidence_replays_after_the_source_would_have_changed."
+      },
+      "access_revocation": {
+        "read": "Resolve requires evidence scope, tenant and access-class dominance; hold grants no authority.",
+        "cleanup": "Expiry/revocation does not erase bytes.",
+        "holds": "Retention/hold grants no authority.",
+        "restore": "Reconcile restored deny-list, grants and policies before serving.",
+        "coverage": "evidence_routes scope, tenant and under-cleared fixtures."
+      },
+      "logical_removal": {
+        "read": "Purged metadata remains; resolving manifest/rows reports evidence-expired.",
+        "cleanup": "Lifecycle state changes do not imply deletion.",
+        "holds": "No new hold mechanism.",
+        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "coverage": "evidence_routes::a_purged_artifact_resolves_expired_not_missing."
+      },
+      "physical_erasure": {
+        "read": "Existing evidence-byte purge only; manifests/audit/answer copies remain.",
+        "cleanup": "purge_once/op_purge delete bytes BEFORE mark_purged. Delete failure keeps row retryable; mark failure permits later retry.",
+        "holds": "Due scan excludes legal_hold; operator purge checks hold before byte deletion. Concurrent hold placement and object/SQL deletion are not serialized; no atomic race guarantee.",
+        "restore": "Pre-purge rows/bytes can reappear. Reapply approved purges/holds before serving; no automatic restore journal.",
+        "coverage": "pg_integration::a_purge_is_claimed_once and a_hold_can_be_placed_and_lifted_after_sealing; evidence_routes hold/purge tests. Gaps: injected byte/mark failure, concurrent hold race, restore."
+      },
+      "protected_retention": {
+        "read": "legal_hold preserves bytes past expiry without changing authority. Metadata survives purge; evidence_access excludes row payload.",
+        "cleanup": "No retention block means no scheduled byte purge. Unheld expiry only; audit/grants remain.",
+        "holds": "Evidence-only hold API.",
+        "restore": "Preserve identities/provenance; reconcile external bytes separately.",
+        "coverage": "evidence_routes::a_legal_hold_survives_expiry, a_hold_blocks_deletion_but_never_reading, lifting_a_hold_lets_the_janitor_take_it."
+      }
+    },
+    "vocabulary": {
+      "retrieval_exclusion": {
+        "read": "Generated/authored terms are derived content. Regeneration replaces current JSON; backups/provider/client copies remain.",
+        "cleanup": "No physical deletion implied.",
+        "holds": "No general source hold API; pins and other collection owners can require content.",
+        "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
+        "coverage": "v12_tests vocabulary_scenario covers authorization and revisions, not all-copy erasure."
+      },
+      "access_revocation": {
+        "read": "Management controls term text; query clients receive revision stamps for cache invalidation without term text.",
+        "cleanup": "Expiry/revocation does not erase bytes.",
+        "holds": "Retention/hold grants no authority.",
+        "restore": "Reconcile restored deny-list, grants and policies before serving.",
+        "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
+      },
+      "logical_removal": {
+        "read": "No general source tombstone API; surface-specific soft state governs availability.",
+        "cleanup": "Lifecycle state changes do not imply deletion.",
+        "holds": "No new hold mechanism.",
+        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "coverage": "Gap: no general logical-removal/restore conformance suite."
+      },
+      "physical_erasure": {
+        "read": "No general source erasure API or deadline.",
+        "cleanup": "Future erasure must cover this surface and all derived copies.",
+        "holds": "Requires shared-owner/reference and applicable hold review.",
+        "restore": "No durable erasure journal/replay contract; restored state cannot claim general erasure compliance.",
+        "coverage": "Gap: no all-copy erasure, partial-failure or backup-restore closure fixture."
+      },
+      "protected_retention": {
+        "read": "Retained for provenance/operations under current endpoint authority; not a general regulatory retention API.",
+        "cleanup": "No universal retention duration/expiry.",
+        "holds": "Evidence holds are separate; other surfaces have no general legal-hold API.",
+        "restore": "Preserve identities/provenance; reconcile external bytes separately.",
+        "coverage": "History fixtures prove their stated invariants, not general retention deadlines."
+      }
+    },
+    "idempotency": {
+      "retrieval_exclusion": {
+        "read": "Replay response_body can retain historical content independently of search.",
+        "cleanup": "No physical deletion implied.",
+        "holds": "No general source hold API; pins and other collection owners can require content.",
+        "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
+        "coverage": "Gap: no universal exclusion fixture across all surfaces."
+      },
+      "access_revocation": {
+        "read": "Current endpoint authority applies; already delivered copies cannot be recalled.",
+        "cleanup": "Expiry/revocation does not erase bytes.",
+        "holds": "Retention/hold grants no authority.",
+        "restore": "Reconcile restored deny-list, grants and policies before serving.",
+        "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
+      },
+      "logical_removal": {
+        "read": "No general source tombstone API; surface-specific soft state governs availability.",
+        "cleanup": "Lifecycle state changes do not imply deletion.",
+        "holds": "No new hold mechanism.",
+        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "coverage": "Gap: no general logical-removal/restore conformance suite."
+      },
+      "physical_erasure": {
+        "read": "No general source erasure API or deadline.",
+        "cleanup": "Janitor prunes by MUNARIUM_IDEMPOTENCY_TTL_SECS; zero retains indefinitely. TTL is not source-linked erasure.",
+        "holds": "No per-row hold.",
+        "restore": "No durable erasure journal/replay contract; restored state cannot claim general erasure compliance.",
+        "coverage": "Gap: no all-copy erasure, partial-failure or backup-restore closure fixture."
+      },
+      "protected_retention": {
+        "read": "Retained for provenance/operations under current endpoint authority; not a general regulatory retention API.",
+        "cleanup": "No universal retention duration/expiry.",
+        "holds": "Evidence holds are separate; other surfaces have no general legal-hold API.",
+        "restore": "Preserve identities/provenance; reconcile external bytes separately.",
+        "coverage": "History fixtures prove their stated invariants, not general retention deadlines."
+      }
+    },
+    "datastore_bytes": {
+      "retrieval_exclusion": {
+        "read": "Immutable records retain citation text; lexical/vector/filter components retain derived content. Routing/authority are separate.",
+        "cleanup": "No physical deletion implied.",
+        "holds": "No general source hold API; pins and other collection owners can require content.",
+        "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
+        "coverage": "retention_rebuild mirror fixture covers warm L0, new executor using L1, cold L1 hydration."
+      },
+      "access_revocation": {
+        "read": "Current endpoint authority applies; already delivered copies cannot be recalled.",
+        "cleanup": "Expiry/revocation does not erase bytes.",
+        "holds": "Retention/hold grants no authority.",
+        "restore": "Reconcile restored deny-list, grants and policies before serving.",
+        "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
+      },
+      "logical_removal": {
+        "read": "No general source tombstone API; surface-specific soft state governs availability.",
+        "cleanup": "Lifecycle state changes do not imply deletion.",
+        "holds": "No new hold mechanism.",
+        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "coverage": "Gap: no general logical-removal/restore conformance suite."
+      },
+      "physical_erasure": {
+        "read": "No general source erasure API or deadline.",
+        "cleanup": "ArtifactStore has no delete operation. L2 archives/components need separately reviewed operator cleanup.",
+        "holds": "Respect bindings, execution references and historical pin horizons.",
+        "restore": "No durable erasure journal/replay contract; restored state cannot claim general erasure compliance.",
+        "coverage": "round_trip and process_recovery cover pinned recovery, not erasure."
+      },
+      "protected_retention": {
+        "read": "Retained for provenance/operations under current endpoint authority; not a general regulatory retention API.",
+        "cleanup": "No universal retention duration/expiry.",
+        "holds": "Evidence holds are separate; other surfaces have no general legal-hold API.",
+        "restore": "Verify canonical manifests/component hashes; absent/corrupt bytes fail closed. Rebuild from originals can recreate content unless denial is rechecked.",
+        "coverage": "History fixtures prove their stated invariants, not general retention deadlines."
+      }
+    },
+    "cache": {
+      "retrieval_exclusion": {
+        "read": "L0 handles/L1 files cache content, not authority. Eligibility must apply regardless of warmth.",
+        "cleanup": "No physical deletion implied.",
+        "holds": "No general source hold API; pins and other collection owners can require content.",
+        "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
+        "coverage": "Gap: no universal exclusion fixture across all surfaces."
+      },
+      "access_revocation": {
+        "read": "Current endpoint authority applies; already delivered copies cannot be recalled.",
+        "cleanup": "Expiry/revocation does not erase bytes.",
+        "holds": "Retention/hold grants no authority.",
+        "restore": "Reconcile restored deny-list, grants and policies before serving.",
+        "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
+      },
+      "logical_removal": {
+        "read": "No general source tombstone API; surface-specific soft state governs availability.",
+        "cleanup": "Lifecycle state changes do not imply deletion.",
+        "holds": "No new hold mechanism.",
+        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "coverage": "Gap: no general logical-removal/restore conformance suite."
+      },
+      "physical_erasure": {
+        "read": "No general source erasure API or deadline.",
+        "cleanup": "L0 eviction/process exit, L1 watermark eviction and owned failed-build cleanup reclaim local copies, not L2/provider/backups.",
+        "holds": "In-use handles/pins/serving requirements affect eviction; no content-erasure deadline.",
+        "restore": "No durable erasure journal/replay contract; restored state cannot claim general erasure compliance.",
+        "coverage": "hydrate/round_trip/process_recovery cover integrity/reopen, not all-replica erasure."
+      },
+      "protected_retention": {
+        "read": "Retained for provenance/operations under current endpoint authority; not a general regulatory retention API.",
+        "cleanup": "No universal retention duration/expiry.",
+        "holds": "Evidence holds are separate; other surfaces have no general legal-hold API.",
+        "restore": "Preserve identities/provenance; reconcile external bytes separately.",
+        "coverage": "History fixtures prove their stated invariants, not general retention deadlines."
+      }
+    },
+    "answers": {
+      "retrieval_exclusion": {
+        "read": "Checked answers are responses; no dedicated persisted Server checked-answer cache/table. Interactions/sessions/caller copies are independent.",
+        "cleanup": "No physical deletion implied.",
+        "holds": "No general source hold API; pins and other collection owners can require content.",
+        "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
+        "coverage": "Gap: no universal exclusion fixture across all surfaces."
+      },
+      "access_revocation": {
+        "read": "Generation checks source authority before provider submission; delivered answers cannot be recalled.",
+        "cleanup": "Expiry/revocation does not erase bytes.",
+        "holds": "Retention/hold grants no authority.",
+        "restore": "Reconcile restored deny-list, grants and policies before serving.",
+        "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
+      },
+      "logical_removal": {
+        "read": "No general source tombstone API; surface-specific soft state governs availability.",
+        "cleanup": "Lifecycle state changes do not imply deletion.",
+        "holds": "No new hold mechanism.",
+        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "coverage": "Gap: no general logical-removal/restore conformance suite."
+      },
+      "physical_erasure": {
+        "read": "No general source erasure API or deadline.",
+        "cleanup": "No source-linked answer recall; include interactions, sessions and client downloads in any future contract.",
+        "holds": "Requires shared-owner/reference and applicable hold review.",
+        "restore": "No durable erasure journal/replay contract; restored state cannot claim general erasure compliance.",
+        "coverage": "Gap: no all-copy erasure, partial-failure or backup-restore closure fixture."
+      },
+      "protected_retention": {
+        "read": "Retained for provenance/operations under current endpoint authority; not a general regulatory retention API.",
+        "cleanup": "No universal retention duration/expiry.",
+        "holds": "Evidence holds are separate; other surfaces have no general legal-hold API.",
+        "restore": "Preserve identities/provenance; reconcile external bytes separately.",
+        "coverage": "History fixtures prove their stated invariants, not general retention deadlines."
+      }
+    },
+    "exports": {
+      "retrieval_exclusion": {
+        "read": "Exports/downloads/provider records remain outside Server control after exclusion.",
+        "cleanup": "No physical deletion implied.",
+        "holds": "No general source hold API; pins and other collection owners can require content.",
+        "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
+        "coverage": "Gap: no universal exclusion fixture across all surfaces."
+      },
+      "access_revocation": {
+        "read": "Authority gates export/provider submission; cannot revoke delivered bytes.",
+        "cleanup": "Expiry/revocation does not erase bytes.",
+        "holds": "Retention/hold grants no authority.",
+        "restore": "Reconcile restored deny-list, grants and policies before serving.",
+        "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
+      },
+      "logical_removal": {
+        "read": "No general source tombstone API; surface-specific soft state governs availability.",
+        "cleanup": "Lifecycle state changes do not imply deletion.",
+        "holds": "No new hold mechanism.",
+        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "coverage": "Gap: no general logical-removal/restore conformance suite."
+      },
+      "physical_erasure": {
+        "read": "No general source erasure API or deadline.",
+        "cleanup": "Destination owners need inventory/expiry/deletion evidence. No remote recall journal.",
+        "holds": "Recipient/provider holds are external policy.",
+        "restore": "Reimport can recreate removed content; reconcile denial before ingestion/serving.",
+        "coverage": "Gap: exported/provider-copy erasure and restore closure untested."
+      },
+      "protected_retention": {
+        "read": "Retained for provenance/operations under current endpoint authority; not a general regulatory retention API.",
+        "cleanup": "No universal retention duration/expiry.",
+        "holds": "Evidence holds are separate; other surfaces have no general legal-hold API.",
+        "restore": "Preserve identities/provenance; reconcile external bytes separately.",
+        "coverage": "History fixtures prove their stated invariants, not general retention deadlines."
+      }
+    },
+    "backups": {
+      "retrieval_exclusion": {
+        "read": "Dumps/WAL, object versions, snapshots and replicas may retain all content.",
+        "cleanup": "No physical deletion implied.",
+        "holds": "No general source hold API; pins and other collection owners can require content.",
+        "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
+        "coverage": "Gap: no universal exclusion fixture across all surfaces."
+      },
+      "access_revocation": {
+        "read": "Current endpoint authority applies; already delivered copies cannot be recalled.",
+        "cleanup": "Expiry/revocation does not erase bytes.",
+        "holds": "Retention/hold grants no authority.",
+        "restore": "Reconcile restored deny-list, grants and policies before serving.",
+        "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
+      },
+      "logical_removal": {
+        "read": "No general source tombstone API; surface-specific soft state governs availability.",
+        "cleanup": "Lifecycle state changes do not imply deletion.",
+        "holds": "No new hold mechanism.",
+        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "coverage": "Gap: no general logical-removal/restore conformance suite."
+      },
+      "physical_erasure": {
+        "read": "No general source erasure API or deadline.",
+        "cleanup": "Provider/operator backup retention is independent. DB restore omits external source/evidence/L2 bytes.",
+        "holds": "Operators reconcile storage retention with holds; replication is not backup.",
+        "restore": "Restore in isolation; replay exclusions/revocations/removals/holds/purges before traffic. No durable denial journal.",
+        "coverage": "Gap: no end-to-end backup/restore erasure fixture; environment-specific drill required."
+      },
+      "protected_retention": {
+        "read": "Retained for provenance/operations under current endpoint authority; not a general regulatory retention API.",
+        "cleanup": "No universal retention duration/expiry.",
+        "holds": "Evidence holds are separate; other surfaces have no general legal-hold API.",
+        "restore": "Preserve identities/provenance; reconcile external bytes separately.",
+        "coverage": "History fixtures prove their stated invariants, not general retention deadlines."
+      }
+    },
+    "source_and_evidence_bytes": {
+      "retrieval_exclusion": {
+        "read": "Original bytes remain; collection retirement/exclusion does not delete sources shared by another collection.",
+        "cleanup": "No physical deletion implied.",
+        "holds": "No general source hold API; pins and other collection owners can require content.",
+        "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
+        "coverage": "Gap: no universal exclusion fixture across all surfaces."
+      },
+      "access_revocation": {
+        "read": "Original-reference routes recheck collection authority; raw source/store paths have their own scopes.",
+        "cleanup": "Expiry/revocation does not erase bytes.",
+        "holds": "Retention/hold grants no authority.",
+        "restore": "Reconcile restored deny-list, grants and policies before serving.",
+        "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
+      },
+      "logical_removal": {
+        "read": "No general source tombstone API; surface-specific soft state governs availability.",
+        "cleanup": "Lifecycle state changes do not imply deletion.",
+        "holds": "No new hold mechanism.",
+        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "coverage": "Gap: no general logical-removal/restore conformance suite."
+      },
+      "physical_erasure": {
+        "read": "No general source erasure API or deadline.",
+        "cleanup": "Raw source bytes follow separately authorized operator cleanup with shared-owner review. Reserved evidence/<id> bytes also use this table under pg SourceStore and follow existing delete-before-mark evidence purge; manifests/audit remain in their separate tables.",
+        "holds": "No general raw-source hold API. Evidence paths use evidence legal_hold checks with the documented scan/delete race; consult the evidence policy.",
+        "restore": "No durable erasure journal/replay contract; restored state cannot claim general erasure compliance.",
+        "coverage": "Existing source-store deletion and evidence purge fixtures cover their named paths. Gap: no cross-surface source/evidence/backup erasure closure."
+      },
+      "protected_retention": {
+        "read": "Raw source copies remain for every owning collection; reserved evidence bytes remain under the evidence-only retention/hold rules.",
+        "cleanup": "No universal retention duration/expiry.",
+        "holds": "Evidence holds are separate; other surfaces have no general legal-hold API.",
+        "restore": "Preserve identities/provenance; reconcile external bytes separately.",
+        "coverage": "History fixtures prove their stated invariants, not general retention deadlines."
+      }
+    }
+  },
+  "tables": {
+    "tenants": {
+      "columns": {
+        "id": "text",
+        "slug": "text",
+        "created_at": "timestamptz"
+      },
+      "content": "Tenant id and human slug; administrative metadata identifies the owner.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "retained",
+      "origins": [
+        "src/munarium-store-pg/migrations/0001_tenants.sql"
+      ]
+    },
+    "memory_versions": {
+      "columns": {
+        "tenant_id": "text",
+        "id": "text",
+        "parent_id": "text",
+        "lineage_root_id": "text",
+        "status": "text",
+        "metadata": "jsonb",
+        "created_at": "timestamptz"
+      },
+      "content": "Lineage identities/status plus arbitrary caller metadata and immutable governance policy/revision/transition/assessment.",
+      "json_content": {
+        "metadata": "Open caller map including governance_policy, governance_revision, governance_transition and governance_assessment; new nested fields require review."
+      },
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "ledger",
+      "origins": [
+        "src/munarium-store-pg/migrations/0002_ledger.sql"
+      ]
+    },
+    "lineage_heads": {
+      "columns": {
+        "tenant_id": "text",
+        "lineage_root_id": "text",
+        "current_seq": "bigint"
+      },
+      "content": "Lineage identity and sequence watermark; no raw document, but necessary to rebuild history.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "ledger",
+      "origins": [
+        "src/munarium-store-pg/migrations/0002_ledger.sql"
+      ]
+    },
+    "ledger_events": {
+      "columns": {
+        "tenant_seq": "bigint",
+        "tenant_id": "text",
+        "version_id": "text",
+        "seq": "bigint",
+        "event_type": "text",
+        "body": "jsonb",
+        "body_hash": "text",
+        "shape_ref": "text",
+        "recorded_at": "timestamptz"
+      },
+      "content": "Event bodies embed full claims, evidence, proposals and execution/lifecycle detail, not just ids.",
+      "json_content": {
+        "body": "Full event variants: claim values/evidence, proposals, source links and execution detail. Future nested fields need retention review without DDL."
+      },
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "ledger",
+      "origins": [
+        "src/munarium-store-pg/migrations/0002_ledger.sql"
+      ]
+    },
+    "ledger_events_p0": {
+      "columns": {
+        "tenant_seq": "bigint",
+        "tenant_id": "text",
+        "version_id": "text",
+        "seq": "bigint",
+        "event_type": "text",
+        "body": "jsonb",
+        "body_hash": "text",
+        "shape_ref": "text",
+        "recorded_at": "timestamptz"
+      },
+      "content": "Initial partition inherits every ledger_events column and content policy.",
+      "json_content": {
+        "body": "Full event variants: claim values/evidence, proposals, source links and execution detail. Future nested fields need retention review without DDL."
+      },
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "ledger",
+      "origins": [
+        "src/munarium-store-pg/migrations/0002_ledger.sql"
+      ]
+    },
+    "ledger_events_default": {
+      "columns": {
+        "tenant_seq": "bigint",
+        "tenant_id": "text",
+        "version_id": "text",
+        "seq": "bigint",
+        "event_type": "text",
+        "body": "jsonb",
+        "body_hash": "text",
+        "shape_ref": "text",
+        "recorded_at": "timestamptz"
+      },
+      "content": "Fallback partition inherits every ledger_events column and content policy.",
+      "json_content": {
+        "body": "Full event variants: claim values/evidence, proposals, source links and execution detail. Future nested fields need retention review without DDL."
+      },
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "ledger",
+      "origins": [
+        "src/munarium-store-pg/migrations/0002_ledger.sql"
+      ]
+    },
+    "claims": {
+      "columns": {
+        "tenant_id": "text",
+        "id": "text",
+        "version_id": "text",
+        "seq": "bigint",
+        "claim_type": "text",
+        "subject": "text",
+        "key": "text",
+        "value": "text",
+        "scope_path": "text",
+        "status": "text",
+        "provenance": "text",
+        "supersedes_id": "text",
+        "entity_id": "text",
+        "evidence": "jsonb",
+        "confidence": "double precision",
+        "shape_ref": "text",
+        "created_at": "timestamptz",
+        "origin": "jsonb",
+        "governance_revision": "text"
+      },
+      "content": "Subject, key, value, scope, entity, provenance, evidence and origin carry governed content; ledger replay can recreate it.",
+      "json_content": {
+        "evidence": "Cited content and provenance JSON, not merely ids.",
+        "origin": "Source/collection/index/chunk links and locations."
+      },
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "ledger",
+      "origins": [
+        "src/munarium-store-pg/migrations/0003_claims.sql",
+        "src/munarium-store-pg/migrations/0022_claim_origin.sql",
+        "src/munarium-store-pg/migrations/0036_governance_profiles.sql"
+      ]
+    },
+    "anchors": {
+      "columns": {
+        "tenant_id": "text",
+        "id": "text",
+        "version_id": "text",
+        "detail_key": "text",
+        "locked_value": "text",
+        "locked_at_scope": "text",
+        "status": "text",
+        "seq": "bigint",
+        "evidence": "jsonb",
+        "governance_revision": "text"
+      },
+      "content": "Locked values, detail keys, scopes, evidence and governance revision; content survives correction.",
+      "json_content": {
+        "evidence": "Lock evidence/provenance can repeat governed values."
+      },
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "ledger",
+      "origins": [
+        "src/munarium-store-pg/migrations/0004_anchors_promises_counters_digests.sql",
+        "src/munarium-store-pg/migrations/0036_governance_profiles.sql"
+      ]
+    },
+    "promises": {
+      "columns": {
+        "tenant_id": "text",
+        "id": "text",
+        "version_id": "text",
+        "key": "text",
+        "kind": "text",
+        "description": "text",
+        "origin_scope": "text",
+        "due_scope": "text",
+        "status": "text",
+        "seq": "bigint",
+        "fulfilled_seq": "bigint"
+      },
+      "content": "Key/kind/description/scopes and fulfillment state retain obligations as content.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "ledger",
+      "origins": [
+        "src/munarium-store-pg/migrations/0004_anchors_promises_counters_digests.sql"
+      ]
+    },
+    "mesh_counters": {
+      "columns": {
+        "tenant_id": "text",
+        "version_id": "text",
+        "key": "text",
+        "scope_path": "text",
+        "count": "bigint",
+        "budget": "bigint",
+        "seq": "bigint"
+      },
+      "content": "Keys/scopes, counts and budget; identity/usage metadata, not raw documents.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "ledger",
+      "origins": [
+        "src/munarium-store-pg/migrations/0004_anchors_promises_counters_digests.sql"
+      ]
+    },
+    "digests": {
+      "columns": {
+        "tenant_id": "text",
+        "version_id": "text",
+        "tier": "smallint",
+        "scope_path": "text",
+        "content": "text",
+        "content_hash": "text",
+        "built_from_seq": "bigint"
+      },
+      "content": "Derived content text/hash and sequence; pinned reads rebuild from retained pinned facts.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "ledger",
+      "origins": [
+        "src/munarium-store-pg/migrations/0004_anchors_promises_counters_digests.sql"
+      ]
+    },
+    "idempotency_keys": {
+      "columns": {
+        "tenant_id": "text",
+        "key": "text",
+        "request_hash": "text",
+        "response_body": "text",
+        "status_code": "integer",
+        "created_at": "timestamptz"
+      },
+      "content": "Request key/hash and response_body can retain complete serialized responses until TTL pruning.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "idempotency",
+      "origins": [
+        "src/munarium-store-pg/migrations/0005_idempotency.sql"
+      ]
+    },
+    "sources": {
+      "columns": {
+        "tenant_id": "text",
+        "source_id": "text",
+        "filename": "text",
+        "content_hash": "text",
+        "media_type": "text",
+        "shape_ref": "text",
+        "blob_uri": "text",
+        "storage_backend": "text",
+        "extraction_status": "text",
+        "extraction_method": "text",
+        "bytes_len": "bigint",
+        "created_at": "timestamptz"
+      },
+      "content": "Logical filename, source id/hash, blob URI and extraction metadata; multiple collections can share a source.",
+      "json_content": {},
+      "owner": "Tenant source owner and all bound collection owners; backing-store operator owns physical cleanup.",
+      "policy": "sources",
+      "origins": [
+        "src/munarium-store-pg/migrations/0006_retrieval.sql"
+      ]
+    },
+    "source_blobs": {
+      "columns": {
+        "tenant_id": "text",
+        "blob_name": "text",
+        "bytes": "bytea"
+      },
+      "content": "Raw source or reserved evidence BYTEA for pg SourceStore, scoped by tenant/blob name.",
+      "json_content": {},
+      "owner": "Tenant source owner and all bound collection owners; backing-store operator owns physical cleanup.",
+      "policy": "source_and_evidence_bytes",
+      "origins": [
+        "src/munarium-store-pg/migrations/0006_retrieval.sql"
+      ]
+    },
+    "index_versions": {
+      "columns": {
+        "tenant_id": "text",
+        "id": "text",
+        "shape_ref": "text",
+        "manifest": "jsonb",
+        "watermark_seq": "bigint",
+        "active": "boolean",
+        "built_at": "timestamptz",
+        "collection_id": "text",
+        "activated_at": "timestamptz",
+        "deactivated_at": "timestamptz"
+      },
+      "content": "Manifest holds source set/build/provenance data; current pointer differs from immutable history.",
+      "json_content": {
+        "manifest": "Source identities, build settings and provenance; extensible nested structure."
+      },
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0006_retrieval.sql",
+        "src/munarium-store-pg/migrations/0011_collections.sql",
+        "src/munarium-store-pg/migrations/0028_index_version_activation.sql",
+        "src/munarium-store-pg/migrations/0030_index_version_deactivation.sql"
+      ]
+    },
+    "index_chunks": {
+      "columns": {
+        "tenant_id": "text",
+        "index_version_id": "text",
+        "chunk_id": "text",
+        "source_id": "text",
+        "source_hash": "text",
+        "ordinal": "integer",
+        "text": "text",
+        "ts": "tsvector",
+        "embedding": "vector(256)"
+      },
+      "content": "Legacy text, generated tsvector, vector embeddings and source identities; GIN/HNSW indexes duplicate derived data.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "chunks",
+      "origins": [
+        "src/munarium-store-pg/migrations/0006_retrieval.sql"
+      ]
+    },
+    "shapes": {
+      "columns": {
+        "tenant_id": "text",
+        "shape_ref": "text",
+        "yaml": "text",
+        "yaml_hash": "text",
+        "created_at": "timestamptz"
+      },
+      "content": "Complete published YAML including examples, domain vocabulary and rules; versioned append-only definitions.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "retained",
+      "origins": [
+        "src/munarium-store-pg/migrations/0007_shapes.sql"
+      ]
+    },
+    "provider_configs": {
+      "columns": {
+        "tenant_id": "text",
+        "name": "text",
+        "yaml": "text",
+        "created_at": "timestamptz"
+      },
+      "content": "Complete YAML including routing/budgets and credentialRef names, never intended secret values.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "retained",
+      "origins": [
+        "src/munarium-store-pg/migrations/0008_providers.sql"
+      ]
+    },
+    "runbooks": {
+      "columns": {
+        "tenant_id": "text",
+        "runbook_ref": "text",
+        "yaml": "text",
+        "created_at": "timestamptz",
+        "status": "text",
+        "removal_id": "text",
+        "removal_requested_at": "timestamptz",
+        "removal_requested_by": "text",
+        "removed_at": "timestamptz",
+        "updated_at": "timestamptz"
+      },
+      "content": "Complete YAML, reference and lifecycle/removal attribution; soft removal retains definition.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "runbooks",
+      "origins": [
+        "src/munarium-store-pg/migrations/0009_runbooks.sql",
+        "src/munarium-store-pg/migrations/0012_runbook_lifecycle.sql"
+      ]
+    },
+    "runbook_runs": {
+      "columns": {
+        "tenant_id": "text",
+        "id": "text",
+        "runbook_ref": "text",
+        "state": "text",
+        "version_id": "text",
+        "created_at": "timestamptz"
+      },
+      "content": "Run/version/runbook linkage and execution state; no independent corpus body.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "runbooks",
+      "origins": [
+        "src/munarium-store-pg/migrations/0009_runbooks.sql"
+      ]
+    },
+    "runbook_steps": {
+      "columns": {
+        "tenant_id": "text",
+        "run_id": "text",
+        "ordinal": "integer",
+        "name": "text",
+        "state": "text",
+        "detail": "jsonb",
+        "updated_at": "timestamptz"
+      },
+      "content": "Step names/state/detail may hold results, errors, provenance and evidence.",
+      "json_content": {
+        "detail": "Persisted step output/error/result; can copy retrieval/provider content."
+      },
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "runbooks",
+      "origins": [
+        "src/munarium-store-pg/migrations/0009_runbooks.sql"
+      ]
+    },
+    "access_tokens": {
+      "columns": {
+        "tenant_id": "text",
+        "jti": "text",
+        "uid": "text",
+        "access_level": "integer",
+        "compartments": "text[]",
+        "scopes": "text[]",
+        "runbook_refs": "text[]",
+        "issued_by": "text",
+        "issued_at": "timestamptz",
+        "expires_at": "timestamptz",
+        "revoked_at": "timestamptz"
+      },
+      "content": "Uid/jti, level/compartments/scopes/runbooks, issuer, expiry/revocation; no JWT bytes. Issuance audit/deny-list persists.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "interactions",
+      "origins": [
+        "src/munarium-store-pg/migrations/0010_identity_interactions.sql"
+      ]
+    },
+    "interactions": {
+      "columns": {
+        "tenant_id": "text",
+        "id": "text",
+        "uid": "text",
+        "session_id": "text",
+        "request_id": "text",
+        "plane": "text",
+        "method": "text",
+        "runbook_ref": "text",
+        "collection_ids": "text[]",
+        "token_jti": "text",
+        "request": "jsonb",
+        "response": "jsonb",
+        "status": "integer",
+        "latency_ms": "integer",
+        "created_at": "timestamptz",
+        "instance_id": "text"
+      },
+      "content": "Capped request/response or hash/length summaries plus uid/session/token/collection/instance ids/status/latency.",
+      "json_content": {
+        "request": "Inbound DTO/body including queries and source text; oversized capture becomes sha256/bytes_len.",
+        "response": "Outbound DTO/body including quotes/answers/evidence; oversized capture becomes sha256/bytes_len."
+      },
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "interactions",
+      "origins": [
+        "src/munarium-store-pg/migrations/0010_identity_interactions.sql",
+        "src/munarium-store-pg/migrations/0016_interactions_instance.sql"
+      ]
+    },
+    "collections": {
+      "columns": {
+        "tenant_id": "text",
+        "id": "text",
+        "name": "text",
+        "shape_ref": "text",
+        "access_level": "integer",
+        "compartments": "text[]",
+        "status": "text",
+        "description": "text",
+        "created_at": "timestamptz"
+      },
+      "content": "Name/description, shape, access level/compartments and state; retired row remains.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0011_collections.sql"
+      ]
+    },
+    "collection_sources": {
+      "columns": {
+        "tenant_id": "text",
+        "collection_id": "text",
+        "source_id": "text",
+        "bound_by_uid": "text",
+        "bound_at": "timestamptz"
+      },
+      "content": "Many-to-many source bindings and actor; shared ownership must be considered across collections.",
+      "json_content": {},
+      "owner": "Tenant source owner and all bound collection owners; backing-store operator owns physical cleanup.",
+      "policy": "sources",
+      "origins": [
+        "src/munarium-store-pg/migrations/0011_collections.sql"
+      ]
+    },
+    "collection_chunks": {
+      "columns": {
+        "tenant_id": "text",
+        "collection_id": "text",
+        "index_version_id": "text",
+        "chunk_id": "text",
+        "source_id": "text",
+        "source_hash": "text",
+        "ordinal": "integer",
+        "text": "text",
+        "ts": "tsvector",
+        "embedding": "vector(256)"
+      },
+      "content": "Partitioned text, tsvector and vector embeddings; per-partition GIN/HNSW contain derived tokens/vectors.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "chunks",
+      "origins": [
+        "src/munarium-store-pg/migrations/0011_collections.sql"
+      ]
+    },
+    "sessions": {
+      "columns": {
+        "tenant_id": "text",
+        "id": "text",
+        "uid": "text",
+        "runbook_ref": "text",
+        "token_jti": "text",
+        "access_level": "integer",
+        "compartments": "text[]",
+        "state": "text",
+        "created_at": "timestamptz",
+        "last_turn_at": "timestamptz"
+      },
+      "content": "Uid/token id, snapshotted clearance, pinned runbook and state; expiry retains row.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "sessions",
+      "origins": [
+        "src/munarium-store-pg/migrations/0013_sessions.sql"
+      ]
+    },
+    "session_turns": {
+      "columns": {
+        "tenant_id": "text",
+        "session_id": "text",
+        "ordinal": "integer",
+        "uid": "text",
+        "query": "text",
+        "collections_searched": "text[]",
+        "hits": "jsonb",
+        "envelope": "jsonb",
+        "completion": "jsonb",
+        "interaction_id": "text",
+        "created_at": "timestamptz",
+        "hierarchy": "jsonb"
+      },
+      "content": "Query, hits, envelopes, completion and hierarchy may copy source text/generated answers/sealed evidence.",
+      "json_content": {
+        "hits": "Serialized collection hits and citation text.",
+        "envelope": "Collection provenance envelopes, pinned versions and source references.",
+        "completion": "Generated text, model audit and usage.",
+        "hierarchy": "Hierarchy decision, layer, citation and evidence-id metadata; sealed result rows are not stored here today. Completion may copy rendered evidence."
+      },
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "sessions",
+      "origins": [
+        "src/munarium-store-pg/migrations/0013_sessions.sql",
+        "src/munarium-store-pg/migrations/0024_turn_hierarchy.sql"
+      ]
+    },
+    "gate_findings": {
+      "columns": {
+        "tenant_id": "text",
+        "version_id": "text",
+        "seq": "bigint",
+        "rule_id": "text",
+        "severity": "text",
+        "message": "text",
+        "scope_path": "text",
+        "detail": "jsonb",
+        "recorded_at": "timestamptz"
+      },
+      "content": "Rule/severity/message/scope/detail preserve blocked/disputed evidence and may repeat values.",
+      "json_content": {
+        "detail": "Gate-specific conflicts/comparisons may contain original values."
+      },
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "ledger",
+      "origins": [
+        "src/munarium-store-pg/migrations/0017_gate_findings.sql"
+      ]
+    },
+    "chronology_rules": {
+      "columns": {
+        "tenant_id": "text",
+        "name": "text",
+        "yaml": "text",
+        "created_at": "timestamptz"
+      },
+      "content": "Applied YAML with domain keys, rules and potentially identifying examples.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "retained",
+      "origins": [
+        "src/munarium-store-pg/migrations/0018_chronology_rules.sql"
+      ]
+    },
+    "authoring_drafts": {
+      "columns": {
+        "tenant_id": "text",
+        "draft_id": "text",
+        "name": "text",
+        "pattern_id": "text",
+        "state": "text",
+        "answers": "jsonb",
+        "documents": "jsonb",
+        "findings": "jsonb",
+        "assist_note": "text",
+        "created_by": "text",
+        "status": "text",
+        "created_at": "timestamptz",
+        "updated_at": "timestamptz"
+      },
+      "content": "Interview answers, generated YAML, findings and assist note; deleted is soft.",
+      "json_content": {
+        "answers": "Raw interview responses keyed by question.",
+        "documents": "Export path to complete YAML text map.",
+        "findings": "Validation snapshot and referenced draft content."
+      },
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "drafts",
+      "origins": [
+        "src/munarium-store-pg/migrations/0019_authoring_drafts.sql"
+      ]
+    },
+    "bulk_uploads": {
+      "columns": {
+        "tenant_id": "text",
+        "bulk_id": "text",
+        "label": "text",
+        "status": "text",
+        "total": "integer",
+        "created_by": "text",
+        "created_at": "timestamptz",
+        "expires_at": "timestamptz",
+        "completed_at": "timestamptz"
+      },
+      "content": "Upload label/actor/state/expiry/totals; no second source-byte path.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "retained",
+      "origins": [
+        "src/munarium-store-pg/migrations/0020_bulk_uploads.sql"
+      ]
+    },
+    "bulk_upload_files": {
+      "columns": {
+        "tenant_id": "text",
+        "bulk_id": "text",
+        "filename": "text",
+        "sha256": "text",
+        "bytes_len": "bigint",
+        "media_type": "text",
+        "status": "text",
+        "error": "text",
+        "source_id": "text",
+        "updated_at": "timestamptz"
+      },
+      "content": "Logical filename/hash/size/type, source linkage and errors; retained manifest bookkeeping.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "retained",
+      "origins": [
+        "src/munarium-store-pg/migrations/0020_bulk_uploads.sql"
+      ]
+    },
+    "index_lexeme_frequency": {
+      "columns": {
+        "tenant_id": "text",
+        "collection_id": "text",
+        "index_version_id": "text",
+        "lexeme": "text",
+        "ndoc": "integer",
+        "nchunks": "integer"
+      },
+      "content": "Corpus-derived lexemes and document/chunk counts; terms can expose source wording.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "chunks",
+      "origins": [
+        "src/munarium-store-pg/migrations/0021_index_lexeme_frequency.sql"
+      ]
+    },
+    "evidence_artifacts": {
+      "columns": {
+        "tenant_id": "text",
+        "evidence_id": "text",
+        "state": "text",
+        "manifest": "jsonb",
+        "domain_key": "text",
+        "logical_result_hash": "text",
+        "artifact_hash": "text",
+        "bytes_len": "bigint",
+        "media_type": "text",
+        "kind": "text",
+        "access_level": "int",
+        "compartments": "text[]",
+        "expires_at": "timestamptz",
+        "legal_hold": "boolean",
+        "purged_at": "timestamptz",
+        "blob_path": "text",
+        "created_at": "timestamptz",
+        "committed_at": "timestamptz"
+      },
+      "content": "Sealed manifest and authorization/retention fields. Row survives purge; schema/labels/provenance remain.",
+      "json_content": {
+        "manifest": "Full sealed schema/column labels/source provenance/retention/class document; byte purge does not scrub nested metadata."
+      },
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "evidence",
+      "origins": [
+        "src/munarium-store-pg/migrations/0023_evidence.sql"
+      ]
+    },
+    "evidence_grants": {
+      "columns": {
+        "tenant_id": "text",
+        "grant_id": "text",
+        "evidence_id": "text",
+        "expires_at": "timestamptz",
+        "used_at": "timestamptz",
+        "created_at": "timestamptz"
+      },
+      "content": "Grant/evidence ids, expiry and spend timestamp; no evidence row payload.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "evidence",
+      "origins": [
+        "src/munarium-store-pg/migrations/0023_evidence.sql"
+      ]
+    },
+    "evidence_access": {
+      "columns": {
+        "tenant_id": "text",
+        "evidence_id": "text",
+        "uid": "text",
+        "kind": "text",
+        "row_from": "bigint",
+        "row_limit": "bigint",
+        "outcome": "text",
+        "at": "timestamptz"
+      },
+      "content": "Uid/artifact, row range/outcome/time; deliberately excludes sealed row contents.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "evidence",
+      "origins": [
+        "src/munarium-store-pg/migrations/0023_evidence.sql"
+      ]
+    },
+    "index_number_lexemes": {
+      "columns": {
+        "tenant_id": "text",
+        "collection_id": "text",
+        "index_version_id": "text",
+        "digits": "text",
+        "lexeme": "text"
+      },
+      "content": "Source-derived digits and original lexemes per version.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "chunks",
+      "origins": [
+        "src/munarium-store-pg/migrations/0025_number_lexemes.sql"
+      ]
+    },
+    "index_artifacts": {
+      "columns": {
+        "tenant_id": "text",
+        "index_version_id": "text",
+        "artifact_id": "text",
+        "engine_id": "text",
+        "state": "text",
+        "format_version": "int",
+        "artifact_uri": "text",
+        "artifact_plan": "jsonb",
+        "artifact_plan_sha256": "text",
+        "artifact_manifest": "jsonb",
+        "bytes_len": "bigint",
+        "file_count": "int",
+        "built_by": "text",
+        "verified_by": "text",
+        "attempt_id": "text",
+        "failure_code": "text",
+        "failure_detail": "text",
+        "created_at": "timestamptz",
+        "sealed_at": "timestamptz",
+        "verified_at": "timestamptz",
+        "retired_at": "timestamptz",
+        "last_verified_at": "timestamptz"
+      },
+      "content": "Manifest/plan audit JSON, URI, actors and verification/failure metadata; manifest probes can include content-derived queries.",
+      "json_content": {
+        "artifact_plan": "Engine/build settings, decisions and configuration.",
+        "artifact_manifest": "Audit projection of canonical manifest: component names/hashes and probe queries; not reader authority."
+      },
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0026_index_artifacts.sql"
+      ]
+    },
+    "index_artifact_bindings": {
+      "columns": {
+        "tenant_id": "text",
+        "index_version_id": "text",
+        "slot": "text",
+        "artifact_id": "text",
+        "generation": "bigint",
+        "selected_by": "text",
+        "reason": "text",
+        "selected_at": "timestamptz"
+      },
+      "content": "Current slot/artifact/generation and actor/reason; no chunk text.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0026_index_artifacts.sql"
+      ]
+    },
+    "index_artifact_binding_events": {
+      "columns": {
+        "tenant_id": "text",
+        "event_id": "text",
+        "index_version_id": "text",
+        "slot": "text",
+        "from_artifact_id": "text",
+        "to_artifact_id": "text",
+        "from_generation": "bigint",
+        "to_generation": "bigint",
+        "operation": "text",
+        "actor": "text",
+        "reason": "text",
+        "correlation_id": "text",
+        "occurred_at": "timestamptz",
+        "retain_until": "timestamptz"
+      },
+      "content": "Append-only prior/current bindings, actor/reason/correlation and retention horizon.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0026_index_artifacts.sql"
+      ]
+    },
+    "index_execution_artifacts": {
+      "columns": {
+        "tenant_id": "text",
+        "execution_kind": "text",
+        "execution_id": "text",
+        "correlation_id": "text",
+        "index_version_id": "text",
+        "artifact_id": "text",
+        "engine_id": "text",
+        "binding_generation": "bigint",
+        "resolved_at": "timestamptz"
+      },
+      "content": "Strict execution replay links to exact physical artifact/engine/generation.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0026_index_artifacts.sql"
+      ]
+    },
+    "retrieval_rollout": {
+      "columns": {
+        "tenant_id": "text",
+        "scope_kind": "text",
+        "scope_id": "text",
+        "serving": "text",
+        "shadow_sample_rate": "double precision",
+        "prewarm_staged": "boolean",
+        "required_versions_policy": "text",
+        "generation": "bigint",
+        "changed_by": "text",
+        "reason": "text",
+        "changed_at": "timestamptz"
+      },
+      "content": "Tenant/scope selection, shadow policy, generation and actor/reason; changing engine does not erase copies.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0026_index_artifacts.sql"
+      ]
+    },
+    "retrieval_plane_expectations": {
+      "columns": {
+        "environment_id": "text",
+        "plane": "text",
+        "deployment_revision": "text",
+        "minimum_fresh_nodes": "int",
+        "minimum_open_nodes": "int",
+        "minimum_open_fraction": "double precision",
+        "required_mode": "text",
+        "compatibility_policy": "text",
+        "observed_min_replicas": "int",
+        "generation": "bigint",
+        "actor": "text",
+        "reason": "text",
+        "deployment_correlation_id": "text",
+        "changed_at": "timestamptz",
+        "verified_at": "timestamptz",
+        "verification_source": "text"
+      },
+      "content": "Environment/deployment verification metadata; free-form reason/source can identify operations.",
+      "json_content": {},
+      "owner": "Deployment/environment operator; tenant ids in residency rows remain separately scoped.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0026_index_artifacts.sql"
+      ]
+    },
+    "index_build_attempts": {
+      "columns": {
+        "tenant_id": "text",
+        "attempt_id": "text",
+        "index_version_id": "text",
+        "artifact_plan_sha256": "text",
+        "mode": "text",
+        "state": "text",
+        "owner_node_id": "text",
+        "lease_expires_at": "timestamptz",
+        "last_heartbeat_at": "timestamptz",
+        "attempt_no": "int",
+        "l1_staging_path": "text",
+        "l2_staging_prefix": "text",
+        "artifact_id": "text",
+        "failure_code": "text",
+        "failure_detail": "text",
+        "created_at": "timestamptz",
+        "sealed_at": "timestamptz",
+        "finished_at": "timestamptz"
+      },
+      "content": "Lease/owner, staging paths, artifact identities and diagnostics; physical staging separately inventoried.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0026_index_artifacts.sql"
+      ]
+    },
+    "retrieval_node_snapshots": {
+      "columns": {
+        "environment_id": "text",
+        "node_id": "text",
+        "plane": "text",
+        "deployment_revision": "text",
+        "retrieval_mode": "text",
+        "compiled_engines": "text[]",
+        "format_min": "int",
+        "format_max": "int",
+        "rollout_generation": "bigint",
+        "admission_state": "text",
+        "blocking_scope_hashes": "text[]",
+        "l0_used_bytes": "bigint",
+        "l0_budget_bytes": "bigint",
+        "l0_open_handles": "int",
+        "l1_used_bytes": "bigint",
+        "l1_budget_bytes": "bigint",
+        "l1_free_bytes": "bigint",
+        "l1_sealed_shards": "int",
+        "local_root_health": "text",
+        "query_active": "int",
+        "query_queued": "int",
+        "query_rejected": "bigint",
+        "hydrate_active": "int",
+        "hydrate_queued": "int",
+        "build_active": "int",
+        "started_at": "timestamptz",
+        "last_seen_at": "timestamptz"
+      },
+      "content": "Cache/work counters, hashed scope keys and process metadata; no intended source/query text.",
+      "json_content": {},
+      "owner": "Deployment/environment operator; tenant ids in residency rows remain separately scoped.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0026_index_artifacts.sql"
+      ]
+    },
+    "index_artifact_residency_snapshots": {
+      "columns": {
+        "environment_id": "text",
+        "node_id": "text",
+        "tenant_id": "text",
+        "index_version_id": "text",
+        "artifact_id": "text",
+        "engine_id": "text",
+        "residency_state": "text",
+        "local_bytes": "bigint",
+        "open_count": "int",
+        "pin_count": "int",
+        "last_access_at": "timestamptz",
+        "last_verified_at": "timestamptz",
+        "last_seen_at": "timestamptz"
+      },
+      "content": "Lagging node residency/open/pin metadata; dropping it would not delete files.",
+      "json_content": {},
+      "owner": "Deployment/environment operator; tenant ids in residency rows remain separately scoped.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0026_index_artifacts.sql"
+      ]
+    },
+    "index_artifact_parts": {
+      "columns": {
+        "tenant_id": "text",
+        "artifact_id": "text",
+        "object_path": "text",
+        "part_no": "int",
+        "part_sha256": "text",
+        "bytes_len": "bigint",
+        "bytes": "bytea"
+      },
+      "content": "Optional BYTEA component/archive parts. Schema exists; shipped artifact-store factory does not select pg.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "datastore_bytes",
+      "origins": [
+        "src/munarium-store-pg/migrations/0026_index_artifacts.sql"
+      ]
+    },
+    "index_build_jobs": {
+      "columns": {
+        "tenant_id": "text",
+        "job_id": "text",
+        "kind": "text",
+        "scope_kind": "text",
+        "scope_id": "text",
+        "index_version_id": "text",
+        "params": "jsonb",
+        "state": "text",
+        "attempt_ids": "text[]",
+        "correlation_id": "text",
+        "claimed_by": "text",
+        "claimed_at": "timestamptz",
+        "attempts": "int",
+        "result": "jsonb",
+        "error": "text",
+        "requested_by": "text",
+        "created_at": "timestamptz",
+        "updated_at": "timestamptz"
+      },
+      "content": "Durable target, params/result/error, requester and attempt history; retries can rebuild retained content.",
+      "json_content": {
+        "params": "Bounded caller build parameters in extensible map.",
+        "result": "Artifact references/outcome/diagnostics; future fields require review."
+      },
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0027_index_build_jobs.sql"
+      ]
+    },
+    "token_budget_reservations": {
+      "columns": {
+        "id": "text",
+        "tenant_id": "text",
+        "config_name": "text",
+        "tier": "text",
+        "day": "date",
+        "units": "bigint",
+        "state": "text",
+        "created_at": "timestamptz",
+        "settled_at": "timestamptz",
+        "original_units": "bigint",
+        "usage_evidence": "jsonb"
+      },
+      "content": "Accounting day/units/state and observed usage evidence. Stale held reservations settle conservatively, not erased.",
+      "json_content": {
+        "usage_evidence": "Original/observed input/output/total/quality/source accounting; no intended prompt/completion text."
+      },
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "retained",
+      "origins": [
+        "src/munarium-store-pg/migrations/0029_token_budgets.sql",
+        "src/munarium-store-pg/migrations/0035_budget_usage_evidence.sql"
+      ]
+    },
+    "max_tokens_budgets": {
+      "columns": {
+        "tenant_id": "text",
+        "budgets": "jsonb",
+        "updated_at": "timestamptz"
+      },
+      "content": "Output-token ceilings in JSON; no intended corpus text.",
+      "json_content": {
+        "budgets": "Complete numeric per-call output-token ceilings."
+      },
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "retained",
+      "origins": [
+        "src/munarium-store-pg/migrations/0031_max_tokens_budgets.sql"
+      ]
+    },
+    "chunk_provenance": {
+      "columns": {
+        "tenant_id": "text",
+        "index_version_id": "text",
+        "chunk_id": "text",
+        "source_path": "text",
+        "metadata": "jsonb"
+      },
+      "content": "Original source_path and immutable page/section/parser metadata may preserve document labels.",
+      "json_content": {
+        "metadata": "SourceLocation/extraction page/section/parser labels; source_path stored separately."
+      },
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "chunks",
+      "origins": [
+        "src/munarium-store-pg/migrations/0032_chunk_provenance.sql"
+      ]
+    },
+    "vocabulary_settings": {
+      "columns": {
+        "tenant_id": "text",
+        "settings": "jsonb",
+        "revision": "bigint"
+      },
+      "content": "Tenant generation/application defaults and revision; no intended corpus text.",
+      "json_content": {
+        "settings": "Generation/application defaults; numeric/enum configuration today."
+      },
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "retained",
+      "origins": [
+        "src/munarium-store-pg/migrations/0033_collection_vocabularies.sql"
+      ]
+    },
+    "collection_vocabularies": {
+      "columns": {
+        "tenant_id": "text",
+        "collection_id": "text",
+        "vocabulary": "jsonb",
+        "revision": "bigint",
+        "lease_id": "text",
+        "lease_until": "timestamptz",
+        "attempted_at": "timestamptz"
+      },
+      "content": "Authored/generated term groups, generation inputs/revisions/policy/index/source stamps and leases; terms are derived content.",
+      "json_content": {
+        "vocabulary": "Authored/generated term groups, generation source/index/policy/revision stamps."
+      },
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "vocabulary",
+      "origins": [
+        "src/munarium-store-pg/migrations/0033_collection_vocabularies.sql"
+      ]
+    },
+    "collection_governance": {
+      "columns": {
+        "tenant_id": "text",
+        "collection_id": "text",
+        "revision": "bigint",
+        "policy": "jsonb",
+        "actor_uid": "text",
+        "recorded_at": "timestamptz"
+      },
+      "content": "Append-only CollectionGovernance publication/source/index/hash pins, document relations/effective dates, query/model-routing policy, actor and revision.",
+      "json_content": {
+        "policy": "CollectionGovernance publication source/index/hash pins, document relations and effective dates, plus query and model-routing policy; labels and source identifiers are content-linked."
+      },
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "retained",
+      "origins": [
+        "src/munarium-store-pg/migrations/0034_collection_governance.sql"
+      ]
+    }
+  },
+  "artifacts": {
+    "runtime_ledger_partitions": {
+      "content": "Runtime ledger_events range partitions inherit parent columns/content; detached archives retain copies.",
+      "policy": "ledger",
+      "owner": "Tenant/scope data owner and the runtime/storage/export destination operator.",
+      "origins": [
+        "src/munarium-store-pg/src/partitions.rs"
+      ]
+    },
+    "runtime_collection_partitions": {
+      "content": "Runtime collection_chunks partitions and GIN/HNSW indexes inherit parent content/cleanup policy.",
+      "policy": "chunks",
+      "owner": "Tenant/scope data owner and the runtime/storage/export destination operator.",
+      "origins": [
+        "src/munarium-retrieval-pg/src/collections.rs"
+      ]
+    },
+    "source_objects": {
+      "content": "Logical-path source bytes in Azure/S3/GCS/file/memory, including separately retained object versions/replicas.",
+      "policy": "sources",
+      "owner": "Tenant/scope data owner and the runtime/storage/export destination operator.",
+      "origins": [
+        "src/munarium-core/src/sources.rs",
+        "src/munarium-store-objects/src/lib.rs"
+      ]
+    },
+    "evidence_objects": {
+      "content": "Sealed typed result bytes in reserved evidence paths through SourceStore, including pg fallback.",
+      "policy": "evidence",
+      "owner": "Tenant/scope data owner and the runtime/storage/export destination operator.",
+      "origins": [
+        "src/munarium-server/src/evidence_api.rs"
+      ]
+    },
+    "datastore_manifest": {
+      "content": "Canonical manifest.json with component metadata, counts, engines and content-derived diagnostic probe queries.",
+      "policy": "datastore_bytes",
+      "owner": "Tenant/scope data owner and the runtime/storage/export destination operator.",
+      "origins": [
+        "src/munarium-datastore/src/model.rs",
+        "src/munarium-datastore/src/verify.rs"
+      ]
+    },
+    "datastore_archive": {
+      "content": "L2 archives/components and build-spec/plan sidecars retain source paths, citation text, lexemes, vectors and indexes.",
+      "policy": "datastore_bytes",
+      "owner": "Tenant/scope data owner and the runtime/storage/export destination operator.",
+      "origins": [
+        "src/munarium-store-objects/src/artifacts.rs",
+        "src/munarium-retrieval/src/mirror.rs"
+      ]
+    },
+    "l0_handles": {
+      "content": "Process-local open shards/readers and memory-mapped records/lexical/vector data; eviction does not delete L2.",
+      "policy": "cache",
+      "owner": "Tenant/scope data owner and the runtime/storage/export destination operator.",
+      "origins": [
+        "src/munarium-retrieval/src/serving.rs",
+        "src/munarium-datastore/src/shard.rs"
+      ]
+    },
+    "l1_hydrated_files": {
+      "content": "Local hydrated artifacts, quarantine/residue and staging retain text/embeddings separately from eligibility.",
+      "policy": "cache",
+      "owner": "Tenant/scope data owner and the runtime/storage/export destination operator.",
+      "origins": [
+        "src/munarium-datastore/src/hydrate.rs",
+        "src/munarium-retrieval/src/serving.rs"
+      ]
+    },
+    "build_staging": {
+      "content": "Attempt directories, extracted chunks, embeddings and index work files before sealing; failed-attempt cleanup is not all-residue erasure.",
+      "policy": "cache",
+      "owner": "Tenant/scope data owner and the runtime/storage/export destination operator.",
+      "origins": [
+        "src/munarium-retrieval/src/direct.rs",
+        "src/munarium-retrieval/src/mirror.rs"
+      ]
+    },
+    "vocabulary_generation": {
+      "content": "Sampled document text/provider prompts/completions and derived term groups; persisted vocabulary and provider copies are independent.",
+      "policy": "vocabulary",
+      "owner": "Tenant/scope data owner and the runtime/storage/export destination operator.",
+      "origins": [
+        "src/munarium-server/src/vocabulary_api.rs"
+      ]
+    },
+    "checked_answers": {
+      "content": "Validated completion/quotes/source/evidence data returned to callers; no dedicated Server checked-answer persistence cache.",
+      "policy": "answers",
+      "owner": "Tenant/scope data owner and the runtime/storage/export destination operator.",
+      "origins": [
+        "src/munarium-server/src/answers_api.rs"
+      ]
+    },
+    "exports_downloads": {
+      "content": "Original/evidence downloads, authoring YAML/ZIP, audit/report JSON/CSV and caller response caches leave Server control.",
+      "policy": "exports",
+      "owner": "Tenant/scope data owner and the runtime/storage/export destination operator.",
+      "origins": [
+        "src/munarium-server/src/authoring_api.rs",
+        "src/munarium-server/src/reports_api.rs",
+        "src/munarium-server/src/evidence_routes.rs"
+      ]
+    },
+    "index_exports": {
+      "content": "PG export streams into mirror/rebuild artifacts include selected text, source metadata and embeddings.",
+      "policy": "datastore_bytes",
+      "owner": "Tenant/scope data owner and the runtime/storage/export destination operator.",
+      "origins": [
+        "src/munarium-retrieval-pg/src/export.rs"
+      ]
+    },
+    "database_backups": {
+      "content": "PostgreSQL base backups/dumps/WAL and detached partition archives contain all SQL surfaces and pg source bytes.",
+      "policy": "backups",
+      "owner": "Tenant/scope data owner and the runtime/storage/export destination operator.",
+      "origins": [
+        "docs/ops/backup-restore.md",
+        "docs/ops/index-deletion-runbook.md"
+      ]
+    },
+    "object_backups": {
+      "content": "Object versions/soft delete, filesystem snapshots and source/evidence/datastore backups are independent of DB restore.",
+      "policy": "backups",
+      "owner": "Tenant/scope data owner and the runtime/storage/export destination operator.",
+      "origins": [
+        "docs/ops/backup-restore.md"
+      ]
+    },
+    "provider_copies": {
+      "content": "Submitted source samples, prompts, embeddings input, answer context and completions; provider retention/logs need separate policy.",
+      "policy": "exports",
+      "owner": "Tenant/scope data owner and the runtime/storage/export destination operator.",
+      "origins": [
+        "src/munarium-providers/src/lib.rs",
+        "src/munarium-server/src/answers_api.rs"
+      ]
+    },
+    "operational_logs": {
+      "content": "Operator diagnostic sinks may contain errors/identifiers; do not presume logs are content-free or erased with SQL.",
+      "policy": "exports",
+      "owner": "Tenant/scope data owner and the runtime/storage/export destination operator.",
+      "origins": [
+        "src/munarium-server/src/main.rs"
+      ]
+    },
+    "memory_backend": {
+      "content": "In-process ledger/source/evidence/configuration/idempotency/budget maps and transient audit channel; persistent sessions require PostgreSQL. With no pool the audit writer drops records after debug logging. Process exit does not erase host snapshots/dumps.",
+      "policy": "retained",
+      "owner": "Tenant/scope data owner and the runtime/storage/export destination operator.",
+      "origins": [
+        "src/munarium-store-mem/src/lib.rs"
+      ]
+    },
+    "datastore_component:Lexical": {
+      "content": "Tantivy terms/postings/positions/stored fields and segments derived from corpus text.",
+      "policy": "datastore_bytes",
+      "owner": "Tenant/scope artifact owner and backing-store operator.",
+      "origins": [
+        "src/munarium-datastore/src/model.rs"
+      ]
+    },
+    "datastore_component:Filters": {
+      "content": "Filter metadata may contain source/document labels and identifiers.",
+      "policy": "datastore_bytes",
+      "owner": "Tenant/scope artifact owner and backing-store operator.",
+      "origins": [
+        "src/munarium-datastore/src/model.rs"
+      ]
+    },
+    "datastore_component:Records": {
+      "content": "Immutable citation text and record/source metadata survive original-source changes.",
+      "policy": "datastore_bytes",
+      "owner": "Tenant/scope artifact owner and backing-store operator.",
+      "origins": [
+        "src/munarium-datastore/src/model.rs"
+      ]
+    },
+    "datastore_component:ManifestSidecar": {
+      "content": "Build-spec/plan sidecars include source paths, hashes, extraction outcomes and settings.",
+      "policy": "datastore_bytes",
+      "owner": "Tenant/scope artifact owner and backing-store operator.",
+      "origins": [
+        "src/munarium-datastore/src/model.rs"
+      ]
+    },
+    "datastore_component:Vector": {
+      "content": "Exact/DiskANN embeddings, vector ids and graphs derived from corpus text.",
+      "policy": "datastore_bytes",
+      "owner": "Tenant/scope artifact owner and backing-store operator.",
+      "origins": [
+        "src/munarium-datastore/src/model.rs"
+      ]
+    },
+    "datastore_component:RangeMap": {
+      "content": "Block offsets/hashes and component names; no intended raw text, but linked corpus identities.",
+      "policy": "datastore_bytes",
+      "owner": "Tenant/scope artifact owner and backing-store operator.",
+      "origins": [
+        "src/munarium-datastore/src/model.rs"
+      ]
+    }
+  }
+}

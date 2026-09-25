@@ -3,7 +3,8 @@
 **Policy:** no munarium-server API can delete index data — anywhere, under any
 role. Runbook removal is soft (visibility only); `retireOld` reclaims only
 *inactive* index versions' chunks and keeps manifests. This document is the
-**only sanctioned path** to physically remove a collection's data, and it is
+sanctioned procedure to physically remove a collection's PostgreSQL index
+partition, and it is
 a manual PostgreSQL-administrator operation gated by your change-control
 process (ticket + DBA + a second approver recommended).
 
@@ -113,14 +114,23 @@ Two cautions before any of these:
 - **Sources are shared.** A source may feed OTHER collections
   (`SELECT collection_id FROM collection_sources WHERE source_id = …`).
   Deleting its bytes silently breaks every future rebuild of every collection
-  that binds it, not just the one you retired. Verify each path is bound only
+that binds it, not just the one you retired. Verify each path is bound only
   by the retired collection first.
 - **Scope the prefix precisely.** Matching everywhere in this system is a
   literal `starts_with`, so `<tenant>/north` also sweeps
   `<tenant>/northgate-archive/`. Use the trailing slash.
 
-Deleted bytes are recoverable only from your storage-side protections (blob
-soft delete / bucket versioning / backups) — the application keeps no copy.
+Deleting source bytes does not erase every derived copy. Datastore record
+archives and their L0/L1 caches can retain historical passage text after
+PostgreSQL chunks are reclaimed. Vocabulary generations, checked answers,
+session turns, interaction bodies, exports and backups can also retain content.
+See the [retention inventory](retention-inventory.md) for ownership, read policy,
+cleanup and restore treatment of each surface. This procedure is not a complete
+source-erasure contract and does not purge those surfaces.
+
+Storage-side soft delete, bucket versioning and backups can recover deleted
+source bytes. Retained index records may preserve extracted text even when the
+original bytes can no longer be recovered.
 
 ## 7. Verify
 
