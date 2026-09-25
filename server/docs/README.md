@@ -25,6 +25,7 @@ and API references when applying them to a new deployment.
 | [authority-audit.md](authority-audit.md) | Authority construction, transport checks, retained contexts and effect-denial coverage |
 | [model-evidence.md](model-evidence.md) | Model-only evidence envelopes, citation validation and adversarial boundary fixtures |
 | [wire-compatibility.md](wire-compatibility.md) | Integer carriers and store limits, unknown-field/presence policy, SDK boundaries and P11 compatibility evidence |
+| [panic-boundaries.md](panic-boundaries.md) | The production panic policy: the enforced lints and their two exemptions, lock-poisoning decisions, and the P15 inventory of fixed sites and silent defaults |
 | [lessons-from-vcp.md](lessons-from-vcp.md) | Public engineering recommendations prompted by downstream use, grounded in Server sources and mapped to the implementation plan |
 | [lessons-from-vcp-impl.md](lessons-from-vcp-impl.md) | Proposed Server improvements from the VCP lessons: source analysis, implementation slices, compatibility constraints, regression coverage, and rollout criteria |
 | [history/](history/README.md) | Dated pull-request history, editable diagrams, and separately labeled open follow-up work |
