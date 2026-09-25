@@ -80,12 +80,24 @@ impl L0Cache {
         }
     }
 
+    /// The cache state. It is poisoned only if a thread panicked while
+    /// holding it, and no critical section here can unwind part-way (map and
+    /// deque operations only fail by aborting on allocation), so the guard is
+    /// recovered instead of turning every later query into a panic. At worst
+    /// a key would be missing from `order` and so outlive the count cap
+    /// (P15/R32).
+    fn state(&self) -> std::sync::MutexGuard<'_, L0State> {
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     pub fn get(&self, key: &ArtifactCacheKey) -> Option<Arc<SharedShard>> {
-        self.state.lock().unwrap().open.get(key).cloned()
+        self.state().open.get(key).cloned()
     }
 
     pub fn insert(&self, key: ArtifactCacheKey, shard: Arc<SharedShard>) {
-        let mut st = self.state.lock().unwrap();
+        let mut st = self.state();
         if st.open.contains_key(&key) {
             return;
         }
@@ -101,13 +113,13 @@ impl L0Cache {
 
     /// Drop a shard whose bytes were found bad — quarantine reaches L0 too.
     pub fn remove(&self, key: &ArtifactCacheKey) {
-        let mut st = self.state.lock().unwrap();
+        let mut st = self.state();
         st.open.remove(key);
         st.order.retain(|k| k != key);
     }
 
     pub fn len(&self) -> usize {
-        self.state.lock().unwrap().open.len()
+        self.state().open.len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -491,4 +503,28 @@ fn run_blocking(
             total_ms: total.elapsed().as_secs_f64() * 1000.0,
         },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_poisoned_l0_cache_keeps_answering() {
+        // P15/R32: `.lock().unwrap()` turned one panic while the L0 lock was
+        // held into a panic on every later query that consulted the cache.
+        let cache = Arc::new(L0Cache::new(2));
+        let held = cache.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = held.state.lock().unwrap();
+            panic!("poison the L0 cache");
+        })
+        .join();
+        assert!(cache.state.is_poisoned());
+        let key = ArtifactCacheKey::new("domain", "version", "artifact");
+        assert!(cache.get(&key).is_none());
+        cache.remove(&key);
+        assert_eq!(cache.len(), 0);
+        assert!(cache.is_empty());
+    }
 }
