@@ -23,6 +23,21 @@
 //! wired; today reads fetch the lineage's rows and resolve in Rust, which is
 //! correct at demo scale and provably agrees with the reference semantics.
 
+// Production code returns typed errors instead of panicking; tests are exempt.
+// The policy, its two exemptions and the per-site record are in
+// server/docs/panic-boundaries.md (P15/R32).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
 use async_trait::async_trait;
 use munarium_core::ledger::{resolve_slice, FactQuery};
 use munarium_core::promises::status_as_of;
@@ -233,10 +248,16 @@ impl PgStore {
                 munarium_core::ledger::normalize_claim(&claim.subject, &claim.key, &claim.value);
 
             // event + projection in ONE transaction; the projection is regenerable
+            // A serialization failure aborts the append: dropping `tx` rolls
+            // back every claim of this batch rather than storing a null origin.
             let origin_json: Option<serde_json::Value> = claim
                 .origin
                 .as_ref()
-                .map(|o| serde_json::to_value(o).expect("ClaimOrigin serializes"));
+                .map(serde_json::to_value)
+                .transpose()
+                .map_err(|e| {
+                    KernelError::Storage(format!("claim origin did not serialize: {e}"))
+                })?;
             sqlx::query(
                 "INSERT INTO ledger_events (tenant_id, version_id, seq, event_type, body)
                  VALUES ($1, $2, $3, 'claim.appended', $4)",
