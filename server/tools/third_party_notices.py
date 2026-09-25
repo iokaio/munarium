@@ -58,6 +58,11 @@ HERE = Path(__file__).resolve().parent
 # root (clients/) or one level down (server/tools/, matrix/scripts/).
 ROOT = HERE if (HERE / "THIRD_PARTY_NOTICES.md").exists() or (HERE / "LICENSE").exists() or (HERE / "LICENSE.md").exists() else HERE.parent
 OUT = ROOT / "THIRD_PARTY_NOTICES.md"
+# Cargo workspaces that are qualification fixtures, never shipped in any
+# artifact. Their dependencies are not components of the product, and a
+# fixture's path dependency on a first-party crate would otherwise be listed as
+# a third-party row. Paths are relative to ROOT; see docs/embedded-support.md.
+NOT_SHIPPED_WORKSPACES = ("tests/embedded-datastore",)
 
 LICENSE_FILE_RE = re.compile(r"^(LICEN[CS]E|COPYING|NOTICE|UNLICENSE)([-._].*)?$", re.I)
 COPYRIGHT_RE = re.compile(r"copyright\s*(\(c\)|©|\d{4})", re.I)
@@ -397,6 +402,8 @@ def main() -> int:
             if "[workspace]" not in txt:
                 continue
             wroot = manifest.parent
+            if wroot.relative_to(ROOT).as_posix() in NOT_SHIPPED_WORKSPACES:
+                continue
             comps += cargo_components(wroot, args.include_build, args.cargo_target)
             inputs.append(f"`{wroot.relative_to(ROOT).as_posix() or '.'}/Cargo.lock` via `cargo metadata`" + (f" ({args.cargo_target})" if args.cargo_target else ""))
     for v in args.python_venv:

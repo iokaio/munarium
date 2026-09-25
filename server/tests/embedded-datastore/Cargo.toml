@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: Apache-2.0
+# The isolated consumer of munarium-datastore's supported embedded tier (P15/D5).
+#
+# This is deliberately NOT a member of the Server workspace: it resolves its own
+# dependencies against its own committed Cargo.lock, so a build here shows what
+# a consumer that selects only the datastore gets. That means its own feature
+# unification, with no serde_json `raw_value` from munarium-api-types and no
+# other Server crate in the graph. See server/docs/embedded-support.md and
+# server/tools/test-embedded-datastore.ps1.
+[workspace]
+resolver = "2"
+
+[package]
+name = "munarium-datastore-consumer"
+version = "0.0.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+description = "Qualification fixture: builds and tests munarium-datastore as an isolated embedded dependency."
+
+# The same feature names as munarium-datastore, forwarded, so each supported
+# feature set can be selected here and the datastore tests included below see
+# the same `cfg(feature = ...)` values.
+[features]
+default = ["lexical-tantivy", "vector-flat", "artifact-file"]
+lexical-tantivy = ["munarium-datastore/lexical-tantivy"]
+vector-flat = ["munarium-datastore/vector-flat"]
+artifact-file = ["munarium-datastore/artifact-file"]
+vector-diskann = ["munarium-datastore/vector-diskann"]
+json-arbitrary-precision = ["munarium-datastore/json-arbitrary-precision"]
+
+[dependencies]
+# Path plus version, as clients/rust does for the published wire crates: the
+# version is what a consumer pinning this source by tag or revision requires.
+munarium-datastore = { path = "../../src/munarium-datastore", version = "1.2.1", default-features = false }
+
+[dev-dependencies]
+# Plain dependencies with default features only, so this consumer adds no
+# serde_json features of its own to the graph being qualified.
+serde = "1"
+serde_json = "1"
+sha2 = "0.10"
+tempfile = "3"
