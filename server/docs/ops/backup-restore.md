@@ -18,18 +18,21 @@ measured.
   collection-governance snapshots,
   runbook definitions and runs/steps, sessions/turns, access-token audit,
   idempotency keys, interactions, gate findings, and — with
-  `MUNARIUM_SOURCE_STORE=pg` — the document bytes themselves.
-- **NOT in the database**: document BYTES when `MUNARIUM_SOURCE_STORE` is an
-  object-store backend (`az`, `s3`, `gcs`, `file`), sealed evidence bytes,
+  `MUNARIUM_SOURCE_STORE=pg` — document and sealed-evidence bytes.
+- **NOT in the database**: document and sealed-evidence bytes when
+  `MUNARIUM_SOURCE_STORE` is an object-store backend (`az`, `s3`, `gcs`, `file`),
   and datastore search artifacts. Object storage has its own
-  soft-delete/versioning; a point-in-time database restore against a LIVE
-  container is consistent as long as objects are never deleted — which is
-  the shipped posture (no delete API exists; physical deletion is
-  [index-deletion-runbook.md](index-deletion-runbook.md), a DBA
-  change-ticket procedure that must then be replayed after any restore to a
-  point before it). Datastore artifacts are content-addressed and
-  regenerable from ledger + sources: a restored catalog row whose artifact is
-  missing fails verification loudly rather than serving something else.
+  soft-delete/versioning. A database restore needs the matching object bytes or
+  revisions; a live bucket can contain later replacements or lack purged evidence.
+  Source deletion remains the [DBA change-ticket procedure](index-deletion-runbook.md);
+  sealed evidence has its own management-gated retention purge. Reconcile those
+  operations after restoring to a point before them. Datastore artifacts are
+  content-addressed. Rebuilding a historical generation requires the corresponding
+  retained index records or
+  source revision; current source bytes alone cannot reproduce overwritten
+  historical text. A restored catalog row whose artifact is missing fails
+  verification rather than serving a different generation. Back up the artifact
+  store when historical citations must remain readable.
 
 ## Where point-in-time recovery comes from
 
@@ -83,9 +86,21 @@ rolling back the image alone is insufficient, including from 1.2.1 to 1.2.0.
 Restore the matching database backup before starting the older image; do not
 delete migration-history rows. See the [verified rollback record](../../CONTAINER.md#versions-and-verification).
 
-Sessions opened after the restore point are gone (`session-not-open` to
-their clients); capability tokens issued after it are unknown and fail
-verification; runbook applications after it must be re-applied from git,
-which is why `mmctl apply` belongs in your CI rather than in a terminal.
-Anything the [index-deletion runbook](index-deletion-runbook.md) removed
-after the restore point exists again and must be removed again.
+Sessions opened after the restore point are absent. Token issuance and
+revocation records written after that point
+are lost. A signed, unexpired token can still verify: the optional deny-list
+rejects recorded revocations, not unknown token IDs. Restore the required
+revocation state before admitting callers. Runbook applications after the restore
+point must be re-applied from their version-controlled definitions. Database
+rows and partitions removed by the [index-deletion runbook](index-deletion-runbook.md)
+after the restore point may exist again and require the approved removal to be
+reapplied; externally deleted object bytes are not restored by the database.
+
+Keep a restored instance isolated from callers until post-backup access changes,
+token revocations (when deny-list checking is enabled), logical removals and
+authorized deletions have been reconciled. A database restore does not roll back
+or purge object-store artifacts, hydrated caches, exports or external backups.
+Current Server has no general source-erasure journal that automatically reapplies
+denial after a restore; a restore alone therefore cannot establish an erasure
+guarantee. The [retention inventory](retention-inventory.md) separates retained
+history from current eligibility and records the remaining restore coverage.

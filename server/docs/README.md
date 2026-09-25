@@ -22,6 +22,8 @@ and API references when applying them to a new deployment.
 | [governance-baseline.md](governance-baseline.md) | Injectable memory-store dependencies and separate governance, snapshot, serialization and growing-write measurements |
 | [architecture.md](architecture.md) | The architecture of what ships: layers, crate boundaries, the data and retrieval tiers, shapes and runbooks, the deployment shapes, and the design targets the code does not yet reach. Read this before making structural decisions |
 | [security-posture.md](security-posture.md) | Why the API-management layer is the security boundary; the uid contract, capability JWTs, and credential posture |
+| [authority-audit.md](authority-audit.md) | Authority construction, transport checks, retained contexts and effect-denial coverage |
+| [model-evidence.md](model-evidence.md) | Model-only evidence envelopes, citation validation and adversarial boundary fixtures |
 | [lessons-from-vcp.md](lessons-from-vcp.md) | Public engineering recommendations prompted by downstream use, grounded in Server sources and mapped to the implementation plan |
 | [lessons-from-vcp-impl.md](lessons-from-vcp-impl.md) | Proposed Server improvements from the VCP lessons: source analysis, implementation slices, compatibility constraints, regression coverage, and rollout criteria |
 | [history/](history/README.md) | Dated pull-request history, editable diagrams, and separately labeled open follow-up work |
@@ -65,6 +67,7 @@ and API references when applying them to a new deployment.
 |---|---|
 | [ops/mmctl.md](ops/mmctl.md) | The `mmctl` CLI: runbook apply/list/info/validate, token issuance |
 | [ops/index-deletion-runbook.md](ops/index-deletion-runbook.md) | DBA-only physical deletion of a collection's data — partitions **and** the object-store bytes |
+| [ops/retention-inventory.md](ops/retention-inventory.md) | Declared retention by schema and artifact, removal modes, derived content and tested limits |
 | [ops/clustering.md](ops/clustering.md) | Running N instances on one PostgreSQL (2026-08-17): shared-vs-per-instance inventory, pool math, rolling restarts, orphaned-run diagnosis, partition-overflow recovery |
 | [ops/deployment-runbook.md](ops/deployment-runbook.md) | Deploying with what ships: gate → build and push the image → install or upgrade the Helm chart (or the example AKS module) → verify the rollout, not the hostname → roll back → backups |
 | [ops/troubleshooting.md](ops/troubleshooting.md) | Symptom → check → fix: startup exit codes, error slugs, deployed-environment classics, and the look-at-this-first order |

@@ -966,6 +966,162 @@ impl Harness {
     }
 }
 
+/// P10 retention characterization: replacing source bytes excludes the old
+/// text from a rebuilt active generation, but is not physical erasure. Warm
+/// and reopened immutable artifacts retain the historical citation, and a
+/// second collection sharing the source keeps its own generation intact.
+#[tokio::test]
+async fn retention_rebuild_excludes_old_text_but_preserves_pins_and_shared_sources() {
+    guard!();
+    let mut h = harness(&unique("retention"), 1).await;
+    let old_version = h.version_id.clone();
+    let old_artifact = match h.mirror().await.unwrap() {
+        MirrorOutcome::Published { artifact_id, .. } => artifact_id,
+        other => panic!("expected publication, got {other:?}"),
+    };
+    h.promote_to_serving(&old_artifact).await;
+    RolloutSelector::new(h.store.pool().clone(), &h.tenant)
+        .create(
+            "collection",
+            &h.collection_id,
+            RolloutChange {
+                serving: "datastore",
+                prewarm_staged: false,
+                changed_by: "retention-fixture",
+                reason: None,
+            },
+        )
+        .await
+        .unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let warm = h.serving_retrieval(cache.path());
+    let prepared = prepared_for("tea in Boston harbour");
+    let before = warm
+        .search_collection_prepared(&h.collection_id, &prepared, None)
+        .await
+        .unwrap();
+    let citation = before.hits.first().expect("original evidence").clone();
+    let shared =
+        h.pg.ensure_collection("shared", "para", 0, &[], None)
+            .await
+            .unwrap();
+    h.pg.bind_source(&shared.id, &citation.source_id, None)
+        .await
+        .unwrap();
+    let shared_version =
+        h.pg.build_collection_index(&shared.id, 400, 1, true)
+            .await
+            .unwrap();
+
+    let replacement = b"Orchid observatory records describe a violet nebula.";
+    let (source_id, new_hash, _) =
+        h.pg.put_source(
+            "",
+            "text/markdown",
+            &citation.source_path,
+            Some("para"),
+            replacement,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        source_id, citation.source_id,
+        "path identity remains stable"
+    );
+    assert_ne!(new_hash, citation.source_content_hash);
+    let next =
+        h.pg.build_collection_index(&h.collection_id, 400, 2, true)
+            .await
+            .unwrap();
+    assert_ne!(next.id, old_version);
+    h.version_id = next.id;
+    let next_artifact = match h.mirror().await.unwrap() {
+        MirrorOutcome::Published { artifact_id, .. } => artifact_id,
+        other => panic!("expected rebuilt publication, got {other:?}"),
+    };
+    h.promote_to_serving(&next_artifact).await;
+    assert_ne!(next_artifact, old_artifact);
+    let new_query = prepared_for("Orchid violet nebula");
+
+    // Retirement reclaims the inactive PostgreSQL chunks, not source bytes,
+    // manifests, other collections, or immutable datastore artifacts.
+    assert!(
+        h.pg.retire_old_collection(&h.collection_id, 0)
+            .await
+            .unwrap()
+            > 0
+    );
+    assert!(h.pg.index_version_by_id(&old_version).await.is_ok());
+    let old_pg =
+        h.pg.search_collection_prepared(&h.collection_id, &prepared, Some(&old_version))
+            .await
+            .unwrap();
+    assert!(
+        old_pg.hits.is_empty(),
+        "retired PostgreSQL chunks were reclaimed"
+    );
+
+    // Exercise the warm L0, a new executor over the existing L1, and a fresh
+    // cache hydrated from the retained artifact store. This is reopen evidence,
+    // not a backup-restore or application-process crash test.
+    let cold_cache = tempfile::tempdir().unwrap();
+    for retrieval in [
+        warm,
+        h.serving_retrieval(cache.path()),
+        h.serving_retrieval(cold_cache.path()),
+    ] {
+        let current = retrieval
+            .search_collection_prepared(&h.collection_id, &new_query, None)
+            .await
+            .unwrap();
+        assert_eq!(current.envelope.index_version, h.version_id);
+        assert!(!current.hits.is_empty());
+        for hit in &current.hits {
+            assert_eq!(hit.text, std::str::from_utf8(replacement).unwrap());
+            assert_eq!(hit.source_content_hash, new_hash);
+        }
+        let historical = retrieval
+            .search_collection_prepared(&h.collection_id, &prepared, Some(&old_version))
+            .await
+            .unwrap();
+        let retained = historical
+            .hits
+            .iter()
+            .find(|hit| hit.chunk_id == citation.chunk_id)
+            .expect("retained citation");
+        assert_eq!(retained.text, citation.text);
+        assert_eq!(retained.source_content_hash, citation.source_content_hash);
+        assert_eq!(retained.metadata, citation.metadata);
+    }
+    let untouched =
+        h.pg.search_collection_prepared(&shared.id, &prepared, None)
+            .await
+            .unwrap();
+    assert_eq!(untouched.envelope.index_version, shared_version.id);
+    assert!(!untouched.hits.is_empty());
+    assert!(untouched
+        .hits
+        .iter()
+        .all(|hit| hit.source_content_hash == citation.source_content_hash));
+    let rebuilt_shared =
+        h.pg.build_collection_index(&shared.id, 400, 3, true)
+            .await
+            .unwrap();
+    let refreshed =
+        h.pg.search_collection_prepared(&shared.id, &new_query, None)
+            .await
+            .unwrap();
+    assert_eq!(refreshed.envelope.index_version, rebuilt_shared.id);
+    assert!(
+        !refreshed.hits.is_empty(),
+        "shared source bytes remain rebuildable"
+    );
+    assert!(refreshed
+        .hits
+        .iter()
+        .all(|hit| hit.source_content_hash == new_hash));
+}
+
 /// The full stage 6 sequence against real infrastructure: mirror → promote
 /// staged→serving → select the scope → the SAME coordinator call the turn
 /// pipeline makes is answered by the datastore, with provenance enriched from

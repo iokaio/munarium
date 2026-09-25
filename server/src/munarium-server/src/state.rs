@@ -84,13 +84,17 @@ impl Principal {
         }
     }
 
-    /// Resolve the caller to a data-plane AccessCtx carrying `uid` (already
-    /// uid-mismatch-checked by the middleware for JWTs). Static tokens stay
+    /// Resolve the caller to a data-plane AccessCtx carrying `uid`. Check the
+    /// JWT subject here too, so direct service calls cannot omit the transport
+    /// middleware's uid binding. Static tokens stay
     /// valid on the data plane for conformance/dev: rw ⇒ unrestricted,
     /// ro ⇒ query-only, mgmt ⇒ forbidden (management stays off the data path).
     pub fn access_ctx(&self, uid: &str) -> Result<munarium_access::AccessCtx> {
         match self {
-            Principal::Access(a) => Ok(a.clone()),
+            Principal::Access(a) if a.uid == uid => Ok(a.clone()),
+            Principal::Access(_) => Err(KernelError::Forbidden(
+                "asserted uid does not match the access token subject".into(),
+            )),
             Principal::Static(c) => match c.role.as_str() {
                 "rw" => Ok(munarium_access::AccessCtx::unrestricted(uid, &c.tenant_id)),
                 "ro" => {

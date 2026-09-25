@@ -314,6 +314,10 @@ mod tests {
 
     const SECRET: &[u8] = b"evidence-plane-test-secret-32-bytes!!";
 
+    mod authority_tests {
+        include!("authority_tests.rs");
+    }
+
     fn test_config() -> Config {
         Config {
             http_addr: "127.0.0.1:0".into(),

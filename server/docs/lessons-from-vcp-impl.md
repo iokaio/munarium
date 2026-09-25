@@ -116,7 +116,7 @@ Each row is a coherent implementation slice; it may require more than one PR whe
 | P07 | Characterization merged in PR #51; fixes require demonstrated gaps | P06 baseline where relevant | Medium | Exact-oracle comparisons, authorization parity, bounded-work evidence |
 | P08 | Implemented and locally qualified for the D3 application-process scope; atomic runbook checkpoints and retained legacy gaps, §9.1 | D3; P02; existing mirror fault hooks | Large | Named barriers, process termination, reopened-state assertions, reviewed recovery contracts |
 | P09 | Durable profiles, explicit transitions and Server evaluation locally qualified, §7.3 | D5/D8; P06; contract design | Medium–large | Historical replay unchanged; exact-policy cross-backend/transport tests |
-| P10 | Authority/evidence audit and retention inventory | D4 for retention changes | Medium | Access-path matrix, effect-denial tests, declared derived-content treatment |
+| P10 | Authority/evidence audit, model-only envelopes and checked retention inventory implemented; qualification below in §10.4 | D4 for stronger retention changes | Medium | Access-path matrix, effect-denial tests, declared derived-content treatment |
 | P11 | Integer/unknown-field protocol characterization | Existing contract publisher/client suites | Medium | N/N−1 fixtures; exact integer tests; no unversioned field-type change |
 | P12 | Restricted-filesystem qualification | Existing datastore build/reopen fixtures | Medium | Supported Linux permissions documented; separate Windows results |
 | P13 | Frozen evaluation and latency reporting | P02/P06/P07; D6 | Medium–large | Offline pilot, validated graders, immutable manifests/results; calibrated timing reports |
@@ -769,6 +769,16 @@ For datastore publication, reuse existing reconciliation and jobs rather than ad
 
 ### 10.1 P10: audit authority construction, preserve working controls — R19
 
+**Implemented:** the [authority audit](authority-audit.md) records each constructor,
+transport, static role, session snapshot and retained worker context. Production
+JWT conversion was already centralized after verification. `Principal::access_ctx`
+now also binds the uid for direct service callers that omit capture middleware;
+public context constructors and deserializable claims remain compatible. REST,
+typed-service and native gRPC regressions check denials and adjacent valid calls;
+query/original-reference tests observe the provider and evidence tests observe
+durable registration. Existing session snapshot and transcript semantics are
+documented explicitly, without claiming continuous reauthorization.
+
 [`AccessCtx`](../src/munarium-access/src/lib.rs) already lacks `Deserialize`; `state::authenticate_principal` verifies JWT claims before conversion. Public Rust fields, `From<AccessClaims>`, and `unrestricted` are trusted-code API questions, not evidence of a remotely exploitable bypass.
 
 Inventory every production constructor and caller: REST, typed gRPC, native `ServerApiService`, static rw/ro/mgmt roles, disabled development auth, sessions, background work, and in-process tests. Record where signature, expiry, uid, revocation, scope, level, compartments, and tenant are established and rechecked. Include background tasks that retain a context beyond the originating request.
@@ -779,6 +789,14 @@ Extend current transport tests with forged/expired claims, wrong uid, missing sc
 
 ### 10.2 Model evidence remains data — R20
 
+**Implemented:** [model evidence](model-evidence.md) describes shared JSON framing
+for checked answers, session passages and hierarchy/composer context. The framing
+names the source role, available historical identity and citation identifier and
+declares that evidence grants no execution or approval authority. Public source
+IDs, DTOs and brief text remain unchanged. Complete-envelope budget handling and
+adversarial fixtures qualify encoding and protected effects, not general model
+instruction obedience.
+
 [`answers_api.rs`](../src/munarium-server/src/answers_api.rs) already labels passages as data, assigns request-local passage IDs, and validates returned references/quotes. Preserve that implementation and expand the same discipline to session/composer/hierarchy prompt construction where absent.
 
 Use a model-only evidence envelope that makes source role, historical pin, citation identifier, and lack of execution/approval authority explicit. Keep external source IDs and existing wire DTOs stable unless there is a separate contract need. Escape/render content consistently so a passage cannot impersonate another envelope field merely through formatting.
@@ -788,6 +806,16 @@ Use adversarial fictional passages and scripted completions requesting a mutatio
 Keep provenance/citation correctness separate from answer quality and instruction obedience. A valid quote can contain malicious instructions; a passing fixture is evidence for its tested boundary, not general prompt-injection immunity.
 
 ### 10.3 Retention contracts before cleanup changes — R21
+
+**Implemented first slice:** the [retention inventory](ops/retention-inventory.md)
+declares schema and artifact surfaces under all five modes, including content
+inside JSON, archives and caches. Its checker compares migration tables/columns
+and datastore component kinds and requires policies for declared non-SQL artifacts.
+Negative controls exercise missing and malformed declarations. Retrieval tests
+characterize replacement/rebuild, warm and reopened caches, inactive PostgreSQL
+chunk retirement, immutable historical citations and shared-source rebuilding.
+Existing evidence hold and claim-once tests remain in force. No new source-erasure
+API, cleanup journal or restore-denial guarantee is introduced.
 
 The current [platform guide](guides/platform-features.md) describes runbook soft removal that retains underlying history/data. [Immutable datastore records](../src/munarium-datastore/src/records.rs) preserve historical citation text. [Physical deletion](ops/index-deletion-runbook.md) is an explicit operator procedure with retained surfaces. These are deliberate contracts, not accidental omissions to eliminate wholesale.
 
@@ -808,6 +836,46 @@ For a future erasure mode, commit retrieval/read denial and durable pending-clea
 Do not reverse the existing evidence purge ordering casually: it deletes bytes before marking the row purged so a failed delete remains retryable. Marking first without durable pending-cleanup state would lose that retry. Preserve legal holds and qualify hold-versus-purge races. Reuse existing claim-once and hold tests in [PostgreSQL integration coverage](../src/munarium-store-pg/tests/pg_integration.rs).
 
 Test exclusion/removal through warm cache, cold open, active and retired generation, pinned session, background rebuild, restart, restored state, shared-source use by another collection, hold placement, and partial cleanup failure. Record exactly which modes and surfaces each fixture proves. A registry check should fail when a new content-bearing table/artifact lacks a declared policy, while semantic fixtures prove that the declared policy actually works.
+
+### 10.4 P10 local qualification and remaining boundaries
+
+Validation uses fictional fixtures, a loopback scripted provider and a disposable
+PostgreSQL database. The source changes require no database migration, wire DTO
+revision or constructor removal. Model context formatting changes; public brief
+text/hash behavior is retained. A code rollback restores the former prompt format
+and direct-service uid assumption without rewriting persisted data. The inventory
+and its checks neither delete data nor establish an erasure deadline.
+
+Commands run from `server/` unless described otherwise. The PostgreSQL commands
+use `MUNARIUM_TEST_DATABASE_URL` pointing to the owned disposable database.
+
+| Check | Result |
+|---|---|
+| `cargo test --locked --offline -p munarium-server authority_tests -- --nocapture` | 3 passed; REST/native bridge effect denial, direct typed service uid binding and static/development controls |
+| `cargo test --locked --offline -p munarium-core -- --quiet` | 78 passed |
+| `cargo test --locked --offline -p munarium-server -- --skip process_recovery --quiet` | 222 passed, including 6 documentation checks and REST/native gRPC adversarial/provider-observer scenarios; 6 existing ignored tests and 4 process-recovery tests not run. The separate registry integration test passed and executed its 15 Python controls |
+| `cargo test --locked --offline -p munarium-store-pg --test pg_integration` | 27 passed, including hold placement/lifting and claim-once retention tests |
+| `cargo test --locked --offline -p munarium-retrieval --test mirror_integration` | 24 passed, including current-generation exclusion, warm/cold historical retention and shared-source rebuild |
+| `cargo clippy --locked --offline -p munarium-core -p munarium-retrieval -p munarium-server --all-targets --all-features -- -D warnings` | Passed |
+| `cargo fmt --all -- --check`; root `git diff --check` | Passed |
+| Root: `python server/tools/check_retention_inventory.py`; `python -m unittest discover -s server/tools -p test_retention_inventory.py -v` | Registry passed for 55 tables, 525 columns and 24 artifact families; 15 controls passed |
+| Root: `python check_license.py`; `python clients/check_compatibility.py`; `python scripts/docs_linkcheck.py`; `python -m unittest discover -s scripts -p 'test_*.py' -q` | Passed; 7 existing checker/grader tests passed |
+| Root: `python scripts/private_material_scan.py` | Failed on 262 pre-existing scratch findings; none outside scratch. Not waived or reported as passed |
+
+Python commands used the installed Python 3.13 executable because the local `py`
+launcher was unavailable; `RETENTION_PYTHON` selected it for the Rust bridge.
+The initial new adversarial governance fixture sent a response-shaped body and
+received request-validation failure before the role check. Using a valid request
+shape established the intended authorization refusal on both transports; the
+final full Server run passed. The disposable PostgreSQL container and its owned
+volume were removed after validation. No live provider, release or deployment
+was performed.
+
+The registry and semantic fixtures qualify only their declared surfaces and
+modes. Full application restart/backup restore after removal, concurrent
+hold-versus-byte-delete, partial object-delete failure, and continuous session
+reauthorization remain unqualified here. D4 still governs any stronger source
+erasure or restore-denial contract. Existing automatic CI remains unchanged.
 
 ## 11. Wire compatibility
 
