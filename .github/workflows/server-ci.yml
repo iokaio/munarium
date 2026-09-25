@@ -282,6 +282,102 @@ jobs:
             echo "DESTRUCTIVE DDL in migrations"; exit 1
           fi
 
+  # munarium-datastore's supported embedded tier (server/docs/embedded-support.md),
+  # qualified from an isolated consumer. server/tests/embedded-datastore is its
+  # own Cargo workspace with its own committed lock, so these builds see what a
+  # consumer that selects only the datastore gets: its own feature unification,
+  # no Server crate in the graph, and the declared minimum compiler.
+  # Mirrored step for step by server/tools/embedded-datastore.ps1 (run by
+  # gates.ps1) -- change both in the same commit.
+  embedded-datastore:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server/tests/embedded-datastore
+    env:
+      FEATURE_SETS: "no-default default vector-diskann json-arbitrary-precision"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable, 2026-09-03
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: minimum supported compiler (read from munarium-datastore's manifest)
+        run: |
+          msrv=$(sed -n 's/^rust-version = "\(.*\)"$/\1/p' ../../src/munarium-datastore/Cargo.toml)
+          test -n "$msrv"
+          # Cargo reads 1.92 as 1.92.0: test exactly that release, not the latest 1.92.x.
+          case "$msrv" in *.*.*) ;; *) msrv="$msrv.0" ;; esac
+          echo "MSRV=$msrv" >> "$GITHUB_ENV"
+          rustup toolchain install "$msrv" --profile minimal
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: |
+            server/tests/embedded-datastore
+            server
+      - name: fmt
+        run: cargo fmt --check
+      - name: dependency closure (no Server crate, no transport or database)
+        run: |
+          flags() { case "$1" in no-default) echo --no-default-features ;; default) ;; *) echo --features "$1" ;; esac; }
+          rc=0
+          for set in $FEATURE_SETS; do
+            tree=$(cargo tree --locked -e normal --prefix none $(flags "$set"))
+            deps=$(awk '{print $1}' <<<"$tree" | sort -u)
+            test -n "$deps"
+            for dep in $deps; do
+              case "$dep" in
+                munarium-datastore|munarium-datastore-consumer) ;;
+                sqlx|axum|tonic|reqwest|utoipa|openssl-sys|munarium-*)
+                  echo "::error::[$set] the embedded datastore depends on $dep"; rc=1 ;;
+              esac
+            done
+          done
+          exit $rc
+      - name: serde_json features (no raw_value; arbitrary_precision only when selected)
+        run: |
+          flags() { case "$1" in no-default) echo --no-default-features ;; default) ;; *) echo --features "$1" ;; esac; }
+          rc=0
+          for set in $FEATURE_SETS; do
+            graph=$(cargo tree --locked -e features -i serde_json $(flags "$set"))
+            test -n "$graph"
+            if grep -q 'serde_json feature "raw_value"' <<<"$graph"; then
+              echo "::error::[$set] serde_json raw_value leaked into the consumer"; rc=1
+            fi
+            has=no; grep -q 'serde_json feature "arbitrary_precision"' <<<"$graph" && has=yes
+            want=no; [ "$set" = json-arbitrary-precision ] && want=yes
+            if [ "$has" != "$want" ]; then echo "::error::[$set] arbitrary_precision=$has, expected $want"; rc=1; fi
+          done
+          exit $rc
+      - name: tests on the pinned compiler, warnings denied
+        env:
+          RUSTFLAGS: -D warnings
+        run: |
+          flags() { case "$1" in no-default) echo --no-default-features ;; default) ;; *) echo --features "$1" ;; esac; }
+          for set in $FEATURE_SETS; do echo "== $set"; cargo test --locked $(flags "$set"); done
+      - name: tests on the minimum supported compiler
+        run: |
+          flags() { case "$1" in no-default) echo --no-default-features ;; default) ;; *) echo --features "$1" ;; esac; }
+          for set in $FEATURE_SETS; do echo "== $MSRV $set"; cargo +"$MSRV" test --locked --target-dir target/msrv $(flags "$set"); done
+      - name: artifact exchange between the Server workspace and the consumer
+        # Both directions, both JSON configurations. Artifact ids are not
+        # compared: the lexical index is not byte-reproducible.
+        run: |
+          # Each run must execute exactly the one named test: a filter that
+          # matched nothing would otherwise pass.
+          one() {
+            if out=$("$@" 2>&1); then echo "$out"; else echo "$out"; return 1; fi
+            grep -q 'test result: ok. 1 passed' <<<"$out"
+          }
+          dir=$(mktemp -d)
+          for cfg in default arbitrary; do
+            f=(); [ "$cfg" = arbitrary ] && f=(--features json-arbitrary-precision)
+            (cd ../.. && one env MUNARIUM_JSON_ARTIFACT_WRITE="$dir/workspace-$cfg" cargo test --locked -p munarium-datastore --test round_trip "${f[@]}" json_feature_artifact_write)
+            one env MUNARIUM_JSON_ARTIFACT_WRITE="$dir/consumer-$cfg" cargo test --locked --test datastore_suite "${f[@]}" json_feature_artifact_write
+            (cd ../.. && one env MUNARIUM_JSON_ARTIFACT_READ="$dir/consumer-$cfg" cargo test --locked -p munarium-datastore --test round_trip "${f[@]}" json_feature_artifact_read_other_configuration -- --ignored)
+            one env MUNARIUM_JSON_ARTIFACT_READ="$dir/workspace-$cfg" cargo test --locked --test datastore_suite "${f[@]}" json_feature_artifact_read_other_configuration -- --ignored
+          done
+
   cargo-deny:
     runs-on: ubuntu-latest
     steps:
