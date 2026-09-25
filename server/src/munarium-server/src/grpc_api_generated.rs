@@ -201,6 +201,15 @@ impl pb::server_api_service_server::ServerApiService for ServerApiSvc {
     async fn replace_max_tokens(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "POST", "/v1/max-tokens", "application/json").await
     }
+    async fn add_monetary_observation(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "POST", "/v1/monetary/observations", "application/json").await
+    }
+    async fn monetary_prices(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "GET", "/v1/monetary/prices", "application/json").await
+    }
+    async fn add_monetary_price(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "POST", "/v1/monetary/prices", "application/json").await
+    }
     async fn list_providers(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "GET", "/v1/providers", "application/json").await
     }
@@ -233,6 +242,9 @@ impl pb::server_api_service_server::ServerApiService for ServerApiSvc {
     }
     async fn matrix_report(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "GET", "/v1/reports/matrix", "application/json").await
+    }
+    async fn monetary_report(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "GET", "/v1/reports/money", "application/json").await
     }
     async fn runbook_report(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "GET", "/v1/reports/runbooks", "application/json").await

@@ -266,6 +266,18 @@ impl ServerApiClient {
     pub async fn replace_max_tokens(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("ReplaceMaxTokens", "POST", "/v1/max-tokens", "application/json", request).await
     }
+    /// POST /v1/monetary/observations
+    pub async fn add_monetary_observation(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("AddMonetaryObservation", "POST", "/v1/monetary/observations", "application/json", request).await
+    }
+    /// GET /v1/monetary/prices
+    pub async fn monetary_prices(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("MonetaryPrices", "GET", "/v1/monetary/prices", "application/json", request).await
+    }
+    /// POST /v1/monetary/prices
+    pub async fn add_monetary_price(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("AddMonetaryPrice", "POST", "/v1/monetary/prices", "application/json", request).await
+    }
     /// GET /v1/providers
     pub async fn list_providers(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("ListProviders", "GET", "/v1/providers", "application/json", request).await
@@ -309,6 +321,10 @@ impl ServerApiClient {
     /// GET /v1/reports/matrix
     pub async fn matrix_report(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("MatrixReport", "GET", "/v1/reports/matrix", "application/json", request).await
+    }
+    /// GET /v1/reports/money
+    pub async fn monetary_report(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("MonetaryReport", "GET", "/v1/reports/money", "application/json", request).await
     }
     /// GET /v1/reports/runbooks
     pub async fn runbook_report(&self, request: ApiRequest) -> Result<ApiResponse> {

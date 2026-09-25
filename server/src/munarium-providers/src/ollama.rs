@@ -183,6 +183,7 @@ impl ModelProvider for OllamaProvider {
         let hash =
             request_hash(&json!({"ollama": self.endpoint, "operation": "chat", "body": body}));
         let value = self.request("/api/chat", Some(&body)).await?;
+        accounting::finish("ollama", &value, false).await?;
         parse_completion(&value, hash)
     }
 
@@ -221,6 +222,7 @@ impl ModelProvider for OllamaProvider {
         let hash =
             request_hash(&json!({"ollama": self.endpoint, "operation": "embed", "body": body}));
         let value = self.request("/api/embed", Some(&body)).await?;
+        accounting::finish("ollama", &value, true).await?;
         parse_embeddings(&value, count, hash)
     }
 

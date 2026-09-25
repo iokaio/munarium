@@ -866,6 +866,45 @@ class ServerApiClient(BaseServerApi):
             request,
         )
 
+    def add_monetary_observation(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """POST /v1/monetary/observations"""
+        return self._call(
+            "AddMonetaryObservation",
+            "POST",
+            "/v1/monetary/observations",
+            "application/json",
+            request,
+        )
+
+    def monetary_prices(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/monetary/prices"""
+        return self._call(
+            "MonetaryPrices",
+            "GET",
+            "/v1/monetary/prices",
+            "application/json",
+            request,
+        )
+
+    def add_monetary_price(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """POST /v1/monetary/prices"""
+        return self._call(
+            "AddMonetaryPrice",
+            "POST",
+            "/v1/monetary/prices",
+            "application/json",
+            request,
+        )
+
     def list_providers(
         self,
         request: ApiRequest | None = None,
@@ -1005,6 +1044,19 @@ class ServerApiClient(BaseServerApi):
             "MatrixReport",
             "GET",
             "/v1/reports/matrix",
+            "application/json",
+            request,
+        )
+
+    def monetary_report(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/reports/money"""
+        return self._call(
+            "MonetaryReport",
+            "GET",
+            "/v1/reports/money",
             "application/json",
             request,
         )
@@ -2441,6 +2493,45 @@ class AsyncServerApiClient(BaseAsyncServerApi):
             request,
         )
 
+    async def add_monetary_observation(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """POST /v1/monetary/observations"""
+        return await self._call(
+            "AddMonetaryObservation",
+            "POST",
+            "/v1/monetary/observations",
+            "application/json",
+            request,
+        )
+
+    async def monetary_prices(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/monetary/prices"""
+        return await self._call(
+            "MonetaryPrices",
+            "GET",
+            "/v1/monetary/prices",
+            "application/json",
+            request,
+        )
+
+    async def add_monetary_price(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """POST /v1/monetary/prices"""
+        return await self._call(
+            "AddMonetaryPrice",
+            "POST",
+            "/v1/monetary/prices",
+            "application/json",
+            request,
+        )
+
     async def list_providers(
         self,
         request: ApiRequest | None = None,
@@ -2580,6 +2671,19 @@ class AsyncServerApiClient(BaseAsyncServerApi):
             "MatrixReport",
             "GET",
             "/v1/reports/matrix",
+            "application/json",
+            request,
+        )
+
+    async def monetary_report(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/reports/money"""
+        return await self._call(
+            "MonetaryReport",
+            "GET",
+            "/v1/reports/money",
             "application/json",
             request,
         )

@@ -25,7 +25,7 @@ use tonic::{Request, Response, Status};
 
 #[cfg(test)]
 #[path = "providers_usage_tests.rs"]
-mod usage_tests;
+pub(crate) mod usage_tests;
 
 /// Reserved config name engaging the default-provider rule.
 pub const DEFAULT_SELECTOR: &str = "default";
@@ -451,15 +451,19 @@ async fn complete_with_schema(
         temperature: req.temperature,
         tools: None,
     };
-    let result = match schema {
-        Some(schema) => {
-            entry
-                .provider
-                .complete_structured_detailed(input, schema)
-                .await
+    let estimate = (input.prompt.len() / 4) as u64 + u64::from(max_tokens);
+    let result = crate::money_api::capture(state, tenant, &entry, &model, estimate, async {
+        match schema {
+            Some(schema) => {
+                entry
+                    .provider
+                    .complete_structured_detailed(input, schema)
+                    .await
+            }
+            None => entry.provider.complete_detailed(input).await,
         }
-        None => entry.provider.complete_detailed(input).await,
-    };
+    })
+    .await;
     // Settle complete observed counts; incomplete/unverified usage retains at
     // least the estimate and its available subtotal. Failure retains the estimate
     // (the provider may have been reached — spent, never free). A settle
@@ -581,13 +585,18 @@ pub async fn op_embed(
     let (out, cache_hit) = match state.providers.cached_embedding(tenant, &pre_hash).await {
         Some(hit) => (hit, true),
         None => {
-            let result = entry
-                .provider
-                .embed(EmbeddingRequest {
+            let result = crate::money_api::capture(
+                state,
+                tenant,
+                &entry,
+                &model,
+                est,
+                entry.provider.embed(EmbeddingRequest {
                     model: model.clone(),
                     inputs,
-                })
-                .await;
+                }),
+            )
+            .await;
             // Cache hits are free and never counted; only real provider
             // calls reach the metrics.
             let family = entry.doc.spec.provider.as_str();

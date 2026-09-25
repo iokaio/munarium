@@ -47,6 +47,7 @@ mod max_tokens_api;
 mod metrics;
 mod middleware;
 mod models;
+mod money_api;
 mod openapi;
 mod ops;
 mod providers_api;

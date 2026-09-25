@@ -1,5 +1,12 @@
 # munarium-server REST API
 
+Optional monetary accounting uses `GET /v1/reports/money`,
+`GET /v1/monetary/prices`, `POST /v1/monetary/prices` and
+`POST /v1/monetary/observations` (PostgreSQL, management role). The existing
+`GET /v1/reports/cost` remains token-only. See the
+[monetary accounting contract](../guides/monetary-accounting.md) for schemas,
+coverage, tariff semantics and reconciliation.
+
 Server 1.1 accepts `ollama` on the existing provider routes with an explicit base
 endpoint and optional credentials. Named health checks verify configured models;
 `/healthai` continues to cover cloud defaults. See the

@@ -1271,6 +1271,9 @@ no evidence rows appear here.
 | BulkComplete | ServerApiRequest | ServerApiResponse | POST /v1/ingest/bulk/{bulk_id}/complete |
 | GetMaxTokens | ServerApiRequest | ServerApiResponse | GET /v1/max-tokens |
 | ReplaceMaxTokens | ServerApiRequest | ServerApiResponse | POST /v1/max-tokens |
+| AddMonetaryObservation | ServerApiRequest | ServerApiResponse | POST /v1/monetary/observations |
+| MonetaryPrices | ServerApiRequest | ServerApiResponse | GET /v1/monetary/prices |
+| AddMonetaryPrice | ServerApiRequest | ServerApiResponse | POST /v1/monetary/prices |
 | ListProviders | ServerApiRequest | ServerApiResponse | GET /v1/providers |
 | ApplyProvider | ServerApiRequest | ServerApiResponse | POST /v1/providers |
 | ProviderComplete | ServerApiRequest | ServerApiResponse | POST /v1/providers/{name}/complete |
@@ -1282,6 +1285,7 @@ no evidence rows appear here.
 | Endpoints | ServerApiRequest | ServerApiResponse | GET /v1/reports/endpoints |
 | EvidenceReport | ServerApiRequest | ServerApiResponse | GET /v1/reports/evidence |
 | MatrixReport | ServerApiRequest | ServerApiResponse | GET /v1/reports/matrix |
+| MonetaryReport | ServerApiRequest | ServerApiResponse | GET /v1/reports/money |
 | RunbookReport | ServerApiRequest | ServerApiResponse | GET /v1/reports/runbooks |
 | SessionsReport | ServerApiRequest | ServerApiResponse | GET /v1/reports/sessions |
 | Timeseries | ServerApiRequest | ServerApiResponse | GET /v1/reports/timeseries |

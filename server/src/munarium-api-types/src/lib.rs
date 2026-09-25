@@ -10,6 +10,126 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+/// Optional monetary API wire shapes. Inline so the standalone contract crate
+/// carries the same schemas without a dependency on the domain or stores.
+pub mod monetary {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+    #[serde(deny_unknown_fields)]
+    pub struct MonetaryRate {
+        pub micro_units: u64,
+        #[schema(minimum = 1)]
+        pub per_tokens: u64,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+    #[serde(rename_all = "snake_case")]
+    pub enum MonetaryBasis {
+        Inclusive,
+        Partitioned,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+    #[serde(deny_unknown_fields)]
+    pub struct MonetaryPrice {
+        pub id: String,
+        pub provider: String,
+        /// Exact effective route hash, not an endpoint URL.
+        pub route: String,
+        pub model: String,
+        pub currency: String,
+        #[schema(format = DateTime)]
+        pub valid_from: String,
+        #[schema(format = DateTime)]
+        pub valid_until: String,
+        pub basis: MonetaryBasis,
+        pub rates: BTreeMap<String, MonetaryRate>,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+    #[serde(deny_unknown_fields)]
+    pub struct MonetaryUsage {
+        pub input: Option<u64>,
+        pub output: Option<u64>,
+        pub cache_read: Option<u64>,
+        pub cache_write: Option<u64>,
+        pub reasoning: Option<u64>,
+        pub context: Option<u64>,
+        pub unknown_categories: bool,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+    #[serde(deny_unknown_fields)]
+    pub struct MonetaryObservation {
+        pub id: String,
+        pub attempt_id: String,
+        #[schema(minimum = 0)]
+        pub previous_revision: i64,
+        pub usage: MonetaryUsage,
+        pub accounted_units: u64,
+        pub resolved: bool,
+        pub evidence_ref: String,
+        pub price_id: Option<String>,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+    pub struct MonetaryCalculation {
+        pub price_id: Option<String>,
+        pub currency: Option<String>,
+        /// Exact decimal integer string; null means unknown, never zero.
+        pub micro_units: Option<String>,
+        pub missing_price: bool,
+        pub missing_usage: bool,
+        pub unknown_categories: bool,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+    pub struct MonetaryCoverage {
+        pub attempts: u64,
+        pub priced: u64,
+        pub missing_price: u64,
+        pub missing_usage: u64,
+        pub unknown_categories: u64,
+        pub unresolved: u64,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+    pub struct MonetaryAttempt {
+        pub id: String,
+        pub invocation_id: String,
+        pub provider: String,
+        pub route: String,
+        pub model: String,
+        #[schema(format = DateTime)]
+        pub submitted_at: String,
+        pub revision: i64,
+        pub accounted_units: String,
+        pub usage: MonetaryUsage,
+        pub unresolved: bool,
+        pub calculation: MonetaryCalculation,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+    pub struct MonetaryReport {
+        pub scope: String,
+        pub entire_tenant_bill: bool,
+        pub unrecorded_attempts: Option<u64>,
+        pub coverage: MonetaryCoverage,
+        pub known_subtotals_micro_units: BTreeMap<String, String>,
+        pub accounted_units: String,
+        pub observed_input_tokens: String,
+        pub observed_output_tokens: String,
+        pub attempts: Vec<MonetaryAttempt>,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+    pub struct MonetaryPriceReceipt {
+        pub id: String,
+    }
+}
+
 #[cfg(feature = "proto")]
 pub mod wire;
 

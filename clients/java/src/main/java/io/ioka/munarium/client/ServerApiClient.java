@@ -203,6 +203,15 @@ public final class ServerApiClient extends ServerApiTransport {
     /** POST /v1/max-tokens */
     public ApiResponse replaceMaxTokens(ApiRequest request) { return call("ReplaceMaxTokens", "POST", "/v1/max-tokens", "application/json", request); }
     public CompletableFuture<ApiResponse> replaceMaxTokensAsync(ApiRequest request) { return async(() -> replaceMaxTokens(request)); }
+    /** POST /v1/monetary/observations */
+    public ApiResponse addMonetaryObservation(ApiRequest request) { return call("AddMonetaryObservation", "POST", "/v1/monetary/observations", "application/json", request); }
+    public CompletableFuture<ApiResponse> addMonetaryObservationAsync(ApiRequest request) { return async(() -> addMonetaryObservation(request)); }
+    /** GET /v1/monetary/prices */
+    public ApiResponse monetaryPrices(ApiRequest request) { return call("MonetaryPrices", "GET", "/v1/monetary/prices", "application/json", request); }
+    public CompletableFuture<ApiResponse> monetaryPricesAsync(ApiRequest request) { return async(() -> monetaryPrices(request)); }
+    /** POST /v1/monetary/prices */
+    public ApiResponse addMonetaryPrice(ApiRequest request) { return call("AddMonetaryPrice", "POST", "/v1/monetary/prices", "application/json", request); }
+    public CompletableFuture<ApiResponse> addMonetaryPriceAsync(ApiRequest request) { return async(() -> addMonetaryPrice(request)); }
     /** GET /v1/providers */
     public ApiResponse listProviders(ApiRequest request) { return call("ListProviders", "GET", "/v1/providers", "application/json", request); }
     public CompletableFuture<ApiResponse> listProvidersAsync(ApiRequest request) { return async(() -> listProviders(request)); }
@@ -236,6 +245,9 @@ public final class ServerApiClient extends ServerApiTransport {
     /** GET /v1/reports/matrix */
     public ApiResponse matrixReport(ApiRequest request) { return call("MatrixReport", "GET", "/v1/reports/matrix", "application/json", request); }
     public CompletableFuture<ApiResponse> matrixReportAsync(ApiRequest request) { return async(() -> matrixReport(request)); }
+    /** GET /v1/reports/money */
+    public ApiResponse monetaryReport(ApiRequest request) { return call("MonetaryReport", "GET", "/v1/reports/money", "application/json", request); }
+    public CompletableFuture<ApiResponse> monetaryReportAsync(ApiRequest request) { return async(() -> monetaryReport(request)); }
     /** GET /v1/reports/runbooks */
     public ApiResponse runbookReport(ApiRequest request) { return call("RunbookReport", "GET", "/v1/reports/runbooks", "application/json", request); }
     public CompletableFuture<ApiResponse> runbookReportAsync(ApiRequest request) { return async(() -> runbookReport(request)); }

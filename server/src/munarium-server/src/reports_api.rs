@@ -416,8 +416,8 @@ pub async fn op_cost(
 }
 
 /// GET /v1/reports/cost — completion token spend per resolved provider/model,
-/// native vs overridden. Dollar pricing is the platform's concern; the server
-/// reports the token facts.
+/// native vs overridden. Optional money reporting is a separate scope at
+/// /v1/reports/money; this route retains its token-only meaning.
 #[utoipa::path(get, path = "/v1/reports/cost",
     params(("from" = Option<String>, Query), ("to" = Option<String>, Query)),
     responses((status = 200, body = dto::CostResponse)), tag = "reports")]
@@ -514,7 +514,7 @@ fn budget_report_integer(value: u64) -> Result<i64> {
 
 /// GET /v1/reports/budgets — today's spending-cap ledger per provider config
 /// × tier beside each scope's configured daily ceiling. Token facts only,
-/// like /v1/reports/cost: dollar pricing stays the platform's concern.
+/// like /v1/reports/cost: monetary reporting is separate at /v1/reports/money.
 #[utoipa::path(get, path = "/v1/reports/budgets",
     responses((status = 200, body = dto::BudgetReportResponse)), tag = "reports")]
 pub async fn budgets(

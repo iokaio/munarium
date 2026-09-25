@@ -530,6 +530,30 @@
       "streaming": false
     },
     {
+      "name": "add_monetary_observation",
+      "rpc": "AddMonetaryObservation",
+      "method": "POST",
+      "path": "/v1/monetary/observations",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "monetary_prices",
+      "rpc": "MonetaryPrices",
+      "method": "GET",
+      "path": "/v1/monetary/prices",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "add_monetary_price",
+      "rpc": "AddMonetaryPrice",
+      "method": "POST",
+      "path": "/v1/monetary/prices",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
       "name": "list_providers",
       "rpc": "ListProviders",
       "method": "GET",
@@ -614,6 +638,14 @@
       "rpc": "MatrixReport",
       "method": "GET",
       "path": "/v1/reports/matrix",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "monetary_report",
+      "rpc": "MonetaryReport",
+      "method": "GET",
+      "path": "/v1/reports/money",
       "content_type": "application/json",
       "streaming": false
     },

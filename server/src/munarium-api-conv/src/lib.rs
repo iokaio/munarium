@@ -32,6 +32,118 @@ pub fn convert<S: Convert<T>, T>(s: S) -> T {
     s.convert()
 }
 
+impl Convert<munarium_core::Result<munarium_core::money::PriceSnapshot>>
+    for monetary::MonetaryPrice
+{
+    fn convert(self) -> munarium_core::Result<munarium_core::money::PriceSnapshot> {
+        use munarium_core::{money as m, KernelError};
+        Ok(m::PriceSnapshot {
+            id: self.id,
+            provider: self.provider,
+            route: self.route,
+            model: self.model,
+            currency: self.currency,
+            valid_from: self
+                .valid_from
+                .parse()
+                .map_err(|_| KernelError::InvalidInput("valid_from must be RFC 3339".into()))?,
+            valid_until: self
+                .valid_until
+                .parse()
+                .map_err(|_| KernelError::InvalidInput("valid_until must be RFC 3339".into()))?,
+            basis: match self.basis {
+                monetary::MonetaryBasis::Inclusive => m::Basis::Inclusive,
+                monetary::MonetaryBasis::Partitioned => m::Basis::Partitioned,
+            },
+            rates: self
+                .rates
+                .into_iter()
+                .map(|(k, v)| {
+                    (
+                        k,
+                        m::Rate {
+                            micro_units: v.micro_units,
+                            per_tokens: v.per_tokens,
+                        },
+                    )
+                })
+                .collect(),
+        })
+    }
+}
+
+impl Convert<monetary::MonetaryPrice> for munarium_core::money::PriceSnapshot {
+    fn convert(self) -> monetary::MonetaryPrice {
+        monetary::MonetaryPrice {
+            id: self.id,
+            provider: self.provider,
+            route: self.route,
+            model: self.model,
+            currency: self.currency,
+            valid_from: self.valid_from.to_rfc3339(),
+            valid_until: self.valid_until.to_rfc3339(),
+            basis: match self.basis {
+                munarium_core::money::Basis::Inclusive => monetary::MonetaryBasis::Inclusive,
+                munarium_core::money::Basis::Partitioned => monetary::MonetaryBasis::Partitioned,
+            },
+            rates: self
+                .rates
+                .into_iter()
+                .map(|(k, v)| {
+                    (
+                        k,
+                        monetary::MonetaryRate {
+                            micro_units: v.micro_units,
+                            per_tokens: v.per_tokens,
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+}
+
+impl Convert<munarium_core::money::MoneyUsage> for monetary::MonetaryUsage {
+    fn convert(self) -> munarium_core::money::MoneyUsage {
+        munarium_core::money::MoneyUsage {
+            input: self.input,
+            output: self.output,
+            cache_read: self.cache_read,
+            cache_write: self.cache_write,
+            reasoning: self.reasoning,
+            context: self.context,
+            unknown_categories: self.unknown_categories,
+        }
+    }
+}
+
+impl Convert<monetary::MonetaryUsage> for munarium_core::money::MoneyUsage {
+    fn convert(self) -> monetary::MonetaryUsage {
+        monetary::MonetaryUsage {
+            input: self.input,
+            output: self.output,
+            cache_read: self.cache_read,
+            cache_write: self.cache_write,
+            reasoning: self.reasoning,
+            context: self.context,
+            unknown_categories: self.unknown_categories,
+        }
+    }
+}
+
+impl Convert<monetary::MonetaryCalculation> for munarium_core::money::Calculation {
+    fn convert(self) -> monetary::MonetaryCalculation {
+        monetary::MonetaryCalculation {
+            price_id: self.price_id,
+            currency: self.currency,
+            micro_units: self.micro_units,
+            missing_price: self.missing_price,
+            missing_usage: self.missing_usage,
+            unknown_categories: self.unknown_categories,
+        }
+    }
+}
+
 impl Convert<core::ClaimType> for ClaimTypeDto {
     fn convert(self) -> core::ClaimType {
         let v = self;
