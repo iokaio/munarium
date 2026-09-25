@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Munarium frozen evaluation records v1",
+  "description": "Structural schema. frozen_eval.py additionally checks content hashes, case sets, source identity, committed qualification manifests and recomputed grading.",
+  "oneOf": [
+    {"$ref": "#/$defs/manifest"},
+    {"$ref": "#/$defs/raw"},
+    {"$ref": "#/$defs/grading"}
+  ],
+  "$defs": {
+    "identity": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "source": {"type": "object", "minProperties": 1, "additionalProperties": {"$ref": "#/$defs/identity"}},
+    "base": {
+      "type": "object", "required": ["schema_version", "kind", "id", "source"],
+      "properties": {"schema_version": {"const": 1}, "id": {"$ref": "#/$defs/identity"}, "source": {"$ref": "#/$defs/source"}}
+    },
+    "case": {
+      "type": "object", "required": ["id", "history_id", "task_id", "split", "ask", "caller", "expect"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1}, "history_id": {"type": "string", "minLength": 1},
+        "task_id": {"type": "string", "minLength": 1}, "split": {"enum": ["pilot", "held_out"]},
+        "ask": {"type": "string", "minLength": 1}, "caller": {"type": "object"},
+        "expect": {"type": "object", "minProperties": 1}
+      }
+    },
+    "manifest": {
+      "allOf": [{"$ref": "#/$defs/base"}],
+      "required": ["campaign", "revision", "purpose", "build", "corpus_hash", "query_hash", "grader", "cases", "runbook", "retrieval", "model", "thresholds", "failure_treatment", "resource_limits"],
+      "properties": {
+        "kind": {"const": "manifest"}, "campaign": {"type": "string", "minLength": 1},
+        "revision": {"type": "string", "minLength": 1}, "purpose": {"enum": ["pilot", "diagnostic", "qualification"]},
+        "build": {"type": "object", "minProperties": 1}, "corpus_hash": {"$ref": "#/$defs/identity"},
+        "query_hash": {"$ref": "#/$defs/identity"}, "grader": {"$ref": "#/$defs/identity"},
+        "cases": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/case"}},
+        "runbook": {"type": "object", "minProperties": 1}, "retrieval": {"type": "object", "minProperties": 1},
+        "model": {"type": "object", "minProperties": 1}, "resource_limits": {"type": "object", "minProperties": 1},
+        "thresholds": {"const": {"all_checks_pass": true}}, "failure_treatment": {"const": "retain_all"}
+      }
+    },
+    "raw": {
+      "allOf": [{"$ref": "#/$defs/base"}],
+      "required": ["manifest_id", "run_id", "purpose", "rows"],
+      "properties": {
+        "kind": {"const": "raw"}, "manifest_id": {"$ref": "#/$defs/identity"},
+        "run_id": {"type": "string", "minLength": 1}, "purpose": {"enum": ["pilot", "diagnostic", "qualification"]},
+        "rows": {"type": "array", "minItems": 1, "items": {
+          "type": "object", "required": ["id", "status", "reason", "usage"],
+          "properties": {
+            "id": {"type": "string", "minLength": 1}, "reason": {"type": "string", "minLength": 1},
+            "status": {"enum": ["completed", "failed", "abstained", "interrupted", "unexecuted"]},
+            "usage": {"oneOf": [{"type": "null"}, {"type": "object", "required": ["input_tokens", "output_tokens"],
+              "additionalProperties": false, "properties": {
+                "input_tokens": {"type": ["integer", "null"], "minimum": 0},
+                "output_tokens": {"type": ["integer", "null"], "minimum": 0}
+              }}]}, "turn": {"type": ["object", "null"]}
+          }
+        }}
+      }
+    },
+    "grading": {
+      "allOf": [{"$ref": "#/$defs/base"}],
+      "required": ["manifest_id", "raw_id", "grader", "evaluator", "revision", "completed", "exit_code", "scores", "unknown_usage_rows"],
+      "properties": {
+        "kind": {"const": "grading"}, "manifest_id": {"$ref": "#/$defs/identity"}, "raw_id": {"$ref": "#/$defs/identity"},
+        "grader": {"$ref": "#/$defs/identity"}, "evaluator": {"$ref": "#/$defs/identity"},
+        "revision": {"type": "string", "minLength": 1}, "completed": {"type": "boolean"}, "exit_code": {"enum": [0, 1, 3]},
+        "unknown_usage_rows": {"type": "integer", "minimum": 0},
+        "scores": {"type": "array", "minItems": 1, "items": {
+          "type": "object", "required": ["id", "outcome", "reason", "checks"],
+          "properties": {"id": {"type": "string", "minLength": 1}, "outcome": {"enum": ["passed", "failed", "not_run"]},
+            "reason": {"type": "string", "minLength": 1}, "checks": {"type": ["object", "null"]}}
+        }}
+      }
+    }
+  }
+}

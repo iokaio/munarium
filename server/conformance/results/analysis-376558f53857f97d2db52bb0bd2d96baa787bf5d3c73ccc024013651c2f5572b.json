@@ -1,0 +1,318 @@
+{
+  "schema_version": 1,
+  "kind": "live_analysis",
+  "manifest_id": "sha256:937ea650b97058b8fc4f4b0ddc0988185ed817fa3d7727ba722978f43e181760",
+  "raw_id": "sha256:4e15c1de603d2ca926d9aca9ddafb4effa30e8c0e935cbceac6042ba16103391",
+  "grading_id": "sha256:f7b6329a0df0707da950079a7f1a17d6dede06d249735784ce243be63479de89",
+  "source": {
+    "scripts/p13_live.py": "sha256:e7c73d01a50ddc673871bb5b482059fd359738959128c263bd6e9b2d2fc666ff",
+    "scripts/p13_cases.py": "sha256:c8c21c05241a2946f2b00058b3ec1134d9bfd59bd2c7bf65535453b9c898df32",
+    "scripts/p13_local.py": "sha256:8e990945022b818717dbc68ea39c794d1da6816993a60c977121e86833734435",
+    "scripts/frozen_eval.py": "sha256:d15bf88b6b4fed1d6eabc036c8a6dd0ece05b600865ee384d2dccfcec80658e2",
+    "docs/lab/example/grade.py": "sha256:c7302383151e0b248587d5fdefe4c0d15085ca44cf1714d514141784787e29ce",
+    "server/Cargo.lock": "sha256:7447ad7145e30c40c28ba086819afe19794d8f520b2a03c0428d6a50fd7dcd66",
+    "server/build-input-tree": "sha256:43237a5e6ab52ccc54e31e38473fcd2ac9d52069a693a2d1de6be1f4b4a6a54a",
+    "server/Cargo.toml": "sha256:395dcf2730235a85a780974a383692d36fe1851a5a23a68febf43b2e487cb9b8"
+  },
+  "governance": {
+    "d6_verdict": "diagnostic_only",
+    "per_arm": {
+      "no_memory": {
+        "planned": 60,
+        "correct": 20,
+        "unauthorized_disclosures": 0,
+        "abstentions": 60,
+        "incomplete": 0,
+        "authorization_bypasses": 0,
+        "stale_or_conflicting": 0,
+        "citation_failures": 40
+      },
+      "versioned_notes": {
+        "planned": 60,
+        "correct": 60,
+        "unauthorized_disclosures": 0,
+        "abstentions": 20,
+        "incomplete": 0,
+        "authorization_bypasses": 0,
+        "stale_or_conflicting": 0,
+        "citation_failures": 0
+      },
+      "conventional_retrieval": {
+        "planned": 60,
+        "correct": 60,
+        "unauthorized_disclosures": 0,
+        "abstentions": 20,
+        "incomplete": 0,
+        "authorization_bypasses": 0,
+        "stale_or_conflicting": 0,
+        "citation_failures": 0
+      },
+      "munarium": {
+        "planned": 60,
+        "correct": 60,
+        "unauthorized_disclosures": 0,
+        "abstentions": 20,
+        "incomplete": 0,
+        "authorization_bypasses": 0,
+        "stale_or_conflicting": 0,
+        "citation_failures": 0
+      },
+      "governance_ablation": {
+        "planned": 60,
+        "correct": 40,
+        "unauthorized_disclosures": 0,
+        "abstentions": 10,
+        "incomplete": 0,
+        "authorization_bypasses": 0,
+        "stale_or_conflicting": 20,
+        "citation_failures": 0
+      }
+    },
+    "independent_histories": 60,
+    "paired_difference": 0.0,
+    "paired_bootstrap_95": [
+      0.0,
+      0.0
+    ],
+    "model_quality_qualified": false,
+    "paired_history_differences": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "calibration": {
+    "retrieval": {
+      "repetitions": [
+        {
+          "offered": 100,
+          "correct": 100,
+          "goodput_per_second": 58.868213849123876,
+          "p50_ms": 15.055199997732416,
+          "p95_ms": 31.45170002244413,
+          "min_ms": 13.879300007829443,
+          "max_ms": 40.91839998727664,
+          "outcomes": {
+            "passed": 100,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        },
+        {
+          "offered": 100,
+          "correct": 100,
+          "goodput_per_second": 52.81650900470078,
+          "p50_ms": 15.570899995509535,
+          "p95_ms": 33.995999983744696,
+          "min_ms": 14.399100007722154,
+          "max_ms": 41.79469999508001,
+          "outcomes": {
+            "passed": 100,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        },
+        {
+          "offered": 100,
+          "correct": 100,
+          "goodput_per_second": 56.48777965908248,
+          "p50_ms": 15.30640001874417,
+          "p95_ms": 30.845900007989258,
+          "min_ms": 13.85149999987334,
+          "max_ms": 41.950699989683926,
+          "outcomes": {
+            "passed": 100,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        }
+      ],
+      "p95_min_ms": 30.845900007989258,
+      "p95_max_ms": 33.995999983744696,
+      "complete": true,
+      "baseline_workload_id": "sha256:d9d541201aa23490dc4581444f90d327c33eac841a118f1b439c96cda0b26f8d",
+      "proposed_absolute_p95_ms": 51,
+      "proposed_relative_regression": 0.2,
+      "confirmation": "two consecutive complete runs; retain both",
+      "required_ci_gate": false,
+      "scope": "local shared workstation; proposals require baseline review"
+    },
+    "ledger_append": {
+      "repetitions": [
+        {
+          "offered": 100,
+          "correct": 100,
+          "goodput_per_second": 97.27032239629905,
+          "p50_ms": 36.12940001767129,
+          "p95_ms": 57.45609998120926,
+          "min_ms": 32.33710001222789,
+          "max_ms": 60.92310001258738,
+          "outcomes": {
+            "passed": 100,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        },
+        {
+          "offered": 100,
+          "correct": 100,
+          "goodput_per_second": 92.31711149421719,
+          "p50_ms": 36.83730002376251,
+          "p95_ms": 60.58270001085475,
+          "min_ms": 32.027199980802834,
+          "max_ms": 72.2200000018347,
+          "outcomes": {
+            "passed": 100,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        },
+        {
+          "offered": 100,
+          "correct": 100,
+          "goodput_per_second": 102.54810505973091,
+          "p50_ms": 34.939300006954,
+          "p95_ms": 50.76109999208711,
+          "min_ms": 31.25570001429878,
+          "max_ms": 61.77540001226589,
+          "outcomes": {
+            "passed": 100,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        }
+      ],
+      "p95_min_ms": 50.76109999208711,
+      "p95_max_ms": 60.58270001085475,
+      "complete": true,
+      "baseline_workload_id": "sha256:55d69279a7074fb10a1c8ce26c04218d3863cd225f20696b5567eaa6fca665c7",
+      "proposed_absolute_p95_ms": 91,
+      "proposed_relative_regression": 0.2,
+      "confirmation": "two consecutive complete runs; retain both",
+      "required_ci_gate": false,
+      "scope": "local shared workstation; proposals require baseline review"
+    },
+    "cold_readiness": {
+      "repetitions": [
+        {
+          "offered": 10,
+          "correct": 10,
+          "goodput_per_second": 1.9119355963804658,
+          "p50_ms": 517.954999988433,
+          "p95_ms": 533.9959000120871,
+          "min_ms": 507.15029999264516,
+          "max_ms": 533.9959000120871,
+          "outcomes": {
+            "passed": 10,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        },
+        {
+          "offered": 10,
+          "correct": 10,
+          "goodput_per_second": 1.6931542590238093,
+          "p50_ms": 517.826099996455,
+          "p95_ms": 521.4778999798,
+          "min_ms": 507.76670000050217,
+          "max_ms": 521.4778999798,
+          "outcomes": {
+            "passed": 10,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        },
+        {
+          "offered": 10,
+          "correct": 10,
+          "goodput_per_second": 1.915820751986898,
+          "p50_ms": 515.7582999963779,
+          "p95_ms": 536.1255999887362,
+          "min_ms": 506.2618000083603,
+          "max_ms": 536.1255999887362,
+          "outcomes": {
+            "passed": 10,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        }
+      ],
+      "p95_min_ms": 521.4778999798,
+      "p95_max_ms": 536.1255999887362,
+      "complete": true,
+      "baseline_workload_id": "sha256:237c572e14e307adeebf4ca258c53925546f787ce547aea15008f590643238c8",
+      "proposed_absolute_p95_ms": 805,
+      "proposed_relative_regression": 0.2,
+      "confirmation": "two consecutive complete runs; retain both",
+      "required_ci_gate": false,
+      "scope": "local shared workstation; proposals require baseline review"
+    }
+  },
+  "id": "sha256:376558f53857f97d2db52bb0bd2d96baa787bf5d3c73ccc024013651c2f5572b"
+}

@@ -40,6 +40,9 @@ class GraderTests(unittest.TestCase):
             (True, None, [], 2),
             (True, {"text": "insufficient evidence"}, [], 0),
             (True, {"text": "The cause was a pump fault."}, [], 1),
+            (True, {"text": 42}, [], 1),
+            (True, ["malformed"], [], 1),
+            (True, {"text": "   "}, [], 2),
             (False, None, [{"source_path": "halvard/engineering/memo.md"}], 1),
             (True, None, [{"source_path": "halvard/engineering/memo.md"}], 1),
         ]:
@@ -74,6 +77,20 @@ class GraderTests(unittest.TestCase):
             {"facts": [first], "as_of_seq": 1, "head_seq": 3},
             {"findings": [{"seq": 2, "finding": finding}]},
         ]]
+
+    def test_empty_and_duplicate_keys_fail_before_transport(self):
+        for cases, reason in (([], "empty_or_invalid_cases"),
+                              ([self.key["cases"][0]] * 2, "duplicate_case_id")):
+            with self.subTest(reason=reason), tempfile.TemporaryDirectory() as tmp:
+                path = pathlib.Path(tmp) / "key.json"
+                path.write_text(json.dumps({"runbook": "test@1", "cases": cases}), encoding="utf-8")
+                output = io.StringIO()
+                with patch.object(grade, "mint") as mint, contextlib.redirect_stderr(output), \
+                        self.assertRaises(SystemExit) as caught:
+                    grade.main(["--mgmt-token", "test", "--key", str(path)])
+                self.assertEqual(caught.exception.code, 2)
+                self.assertIn(reason, output.getvalue())
+                mint.assert_not_called()
 
     def test_ledger_checks_history_findings_and_exclusive_canon(self):
         for defect in [None, "old canon still accepted", "wrong historical value", "ignored pin",

@@ -1,0 +1,860 @@
+{
+  "schema_version": 1,
+  "kind": "manifest",
+  "campaign": "p13-local-live-v1",
+  "revision": "1",
+  "purpose": "pilot",
+  "source": {
+    "scripts/p13_live.py": "sha256:9993bf0aff4c975618ca90a2e213a28898df41dcbdbdf47a9976b4655e0f0b89",
+    "scripts/p13_cases.py": "sha256:c8c21c05241a2946f2b00058b3ec1134d9bfd59bd2c7bf65535453b9c898df32",
+    "scripts/p13_local.py": "sha256:2ea8f13b5844c0215cac31db97728540102e423fc005a045fb67199774775cf7",
+    "scripts/frozen_eval.py": "sha256:d15bf88b6b4fed1d6eabc036c8a6dd0ece05b600865ee384d2dccfcec80658e2",
+    "docs/lab/example/grade.py": "sha256:c7302383151e0b248587d5fdefe4c0d15085ca44cf1714d514141784787e29ce",
+    "server/Cargo.lock": "sha256:7447ad7145e30c40c28ba086819afe19794d8f520b2a03c0428d6a50fd7dcd66",
+    "server/build-input-tree": "sha256:43237a5e6ab52ccc54e31e38473fcd2ac9d52069a693a2d1de6be1f4b4a6a54a",
+    "server/Cargo.toml": "sha256:395dcf2730235a85a780974a383692d36fe1851a5a23a68febf43b2e487cb9b8"
+  },
+  "build": {
+    "binary_sha256": "sha256:3855752001906a385ddaf03670e74e120f4318d62d06d847dc7f0264e4a080c2",
+    "profile": "release",
+    "python": "3.13.12",
+    "system": "Windows",
+    "architecture": "AMD64",
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+  },
+  "corpus_hash": "sha256:67b6504c6cf9362e5ecaeb88266171e22283025b307af757cccce0710a934703",
+  "query_hash": "sha256:fe7f008406f9b08cdee7843914c57801581e7cd0fabe47015b68fbfb74440407",
+  "grader": "sha256:c7302383151e0b248587d5fdefe4c0d15085ca44cf1714d514141784787e29ce",
+  "cases": [
+    {
+      "id": "pilot-stable-000:no_memory",
+      "history_id": "pilot-stable-000",
+      "task_id": "stable:no_memory",
+      "split": "pilot",
+      "ask": "What is pilot-stable-000's value at time 2?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-stable-000/forbidden/"
+        ],
+        "cite_all": [
+          "pilot-stable-000/0"
+        ],
+        "contains_all": [
+          "amber-000"
+        ]
+      },
+      "arm": "no_memory",
+      "family": "stable"
+    },
+    {
+      "id": "pilot-stable-000:versioned_notes",
+      "history_id": "pilot-stable-000",
+      "task_id": "stable:versioned_notes",
+      "split": "pilot",
+      "ask": "What is pilot-stable-000's value at time 2?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-stable-000/forbidden/"
+        ],
+        "cite_all": [
+          "pilot-stable-000/0"
+        ],
+        "contains_all": [
+          "amber-000"
+        ]
+      },
+      "arm": "versioned_notes",
+      "family": "stable"
+    },
+    {
+      "id": "pilot-stable-000:conventional_retrieval",
+      "history_id": "pilot-stable-000",
+      "task_id": "stable:conventional_retrieval",
+      "split": "pilot",
+      "ask": "What is pilot-stable-000's value at time 2?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-stable-000/forbidden/"
+        ],
+        "cite_all": [
+          "pilot-stable-000/0"
+        ],
+        "contains_all": [
+          "amber-000"
+        ]
+      },
+      "arm": "conventional_retrieval",
+      "family": "stable"
+    },
+    {
+      "id": "pilot-stable-000:munarium",
+      "history_id": "pilot-stable-000",
+      "task_id": "stable:munarium",
+      "split": "pilot",
+      "ask": "What is pilot-stable-000's value at time 2?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-stable-000/forbidden/"
+        ],
+        "cite_all": [
+          "pilot-stable-000/0"
+        ],
+        "contains_all": [
+          "amber-000"
+        ]
+      },
+      "arm": "munarium",
+      "family": "stable"
+    },
+    {
+      "id": "pilot-stable-000:governance_ablation",
+      "history_id": "pilot-stable-000",
+      "task_id": "stable:governance_ablation",
+      "split": "pilot",
+      "ask": "What is pilot-stable-000's value at time 2?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-stable-000/forbidden/"
+        ],
+        "cite_all": [
+          "pilot-stable-000/0"
+        ],
+        "contains_all": [
+          "amber-000"
+        ]
+      },
+      "arm": "governance_ablation",
+      "family": "stable"
+    },
+    {
+      "id": "pilot-correction-000:no_memory",
+      "history_id": "pilot-correction-000",
+      "task_id": "correction:no_memory",
+      "split": "pilot",
+      "ask": "What is pilot-correction-000's value at time 2?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-correction-000/forbidden/",
+          "pilot-correction-000/0"
+        ],
+        "cite_all": [
+          "pilot-correction-000/1"
+        ],
+        "contains_all": [
+          "violet-000"
+        ]
+      },
+      "arm": "no_memory",
+      "family": "correction"
+    },
+    {
+      "id": "pilot-correction-000:versioned_notes",
+      "history_id": "pilot-correction-000",
+      "task_id": "correction:versioned_notes",
+      "split": "pilot",
+      "ask": "What is pilot-correction-000's value at time 2?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-correction-000/forbidden/",
+          "pilot-correction-000/0"
+        ],
+        "cite_all": [
+          "pilot-correction-000/1"
+        ],
+        "contains_all": [
+          "violet-000"
+        ]
+      },
+      "arm": "versioned_notes",
+      "family": "correction"
+    },
+    {
+      "id": "pilot-correction-000:conventional_retrieval",
+      "history_id": "pilot-correction-000",
+      "task_id": "correction:conventional_retrieval",
+      "split": "pilot",
+      "ask": "What is pilot-correction-000's value at time 2?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-correction-000/forbidden/",
+          "pilot-correction-000/0"
+        ],
+        "cite_all": [
+          "pilot-correction-000/1"
+        ],
+        "contains_all": [
+          "violet-000"
+        ]
+      },
+      "arm": "conventional_retrieval",
+      "family": "correction"
+    },
+    {
+      "id": "pilot-correction-000:munarium",
+      "history_id": "pilot-correction-000",
+      "task_id": "correction:munarium",
+      "split": "pilot",
+      "ask": "What is pilot-correction-000's value at time 2?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-correction-000/forbidden/",
+          "pilot-correction-000/0"
+        ],
+        "cite_all": [
+          "pilot-correction-000/1"
+        ],
+        "contains_all": [
+          "violet-000"
+        ]
+      },
+      "arm": "munarium",
+      "family": "correction"
+    },
+    {
+      "id": "pilot-correction-000:governance_ablation",
+      "history_id": "pilot-correction-000",
+      "task_id": "correction:governance_ablation",
+      "split": "pilot",
+      "ask": "What is pilot-correction-000's value at time 2?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-correction-000/forbidden/",
+          "pilot-correction-000/0"
+        ],
+        "cite_all": [
+          "pilot-correction-000/1"
+        ],
+        "contains_all": [
+          "violet-000"
+        ]
+      },
+      "arm": "governance_ablation",
+      "family": "correction"
+    },
+    {
+      "id": "pilot-past-000:no_memory",
+      "history_id": "pilot-past-000",
+      "task_id": "past:no_memory",
+      "split": "pilot",
+      "ask": "What is pilot-past-000's value at time 1?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-past-000/forbidden/",
+          "pilot-past-000/1"
+        ],
+        "cite_all": [
+          "pilot-past-000/0"
+        ],
+        "contains_all": [
+          "amber-000"
+        ]
+      },
+      "arm": "no_memory",
+      "family": "past"
+    },
+    {
+      "id": "pilot-past-000:versioned_notes",
+      "history_id": "pilot-past-000",
+      "task_id": "past:versioned_notes",
+      "split": "pilot",
+      "ask": "What is pilot-past-000's value at time 1?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-past-000/forbidden/",
+          "pilot-past-000/1"
+        ],
+        "cite_all": [
+          "pilot-past-000/0"
+        ],
+        "contains_all": [
+          "amber-000"
+        ]
+      },
+      "arm": "versioned_notes",
+      "family": "past"
+    },
+    {
+      "id": "pilot-past-000:conventional_retrieval",
+      "history_id": "pilot-past-000",
+      "task_id": "past:conventional_retrieval",
+      "split": "pilot",
+      "ask": "What is pilot-past-000's value at time 1?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-past-000/forbidden/",
+          "pilot-past-000/1"
+        ],
+        "cite_all": [
+          "pilot-past-000/0"
+        ],
+        "contains_all": [
+          "amber-000"
+        ]
+      },
+      "arm": "conventional_retrieval",
+      "family": "past"
+    },
+    {
+      "id": "pilot-past-000:munarium",
+      "history_id": "pilot-past-000",
+      "task_id": "past:munarium",
+      "split": "pilot",
+      "ask": "What is pilot-past-000's value at time 1?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-past-000/forbidden/",
+          "pilot-past-000/1"
+        ],
+        "cite_all": [
+          "pilot-past-000/0"
+        ],
+        "contains_all": [
+          "amber-000"
+        ]
+      },
+      "arm": "munarium",
+      "family": "past"
+    },
+    {
+      "id": "pilot-past-000:governance_ablation",
+      "history_id": "pilot-past-000",
+      "task_id": "past:governance_ablation",
+      "split": "pilot",
+      "ask": "What is pilot-past-000's value at time 1?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-past-000/forbidden/",
+          "pilot-past-000/1"
+        ],
+        "cite_all": [
+          "pilot-past-000/0"
+        ],
+        "contains_all": [
+          "amber-000"
+        ]
+      },
+      "arm": "governance_ablation",
+      "family": "past"
+    },
+    {
+      "id": "pilot-conflict-000:no_memory",
+      "history_id": "pilot-conflict-000",
+      "task_id": "conflict:no_memory",
+      "split": "pilot",
+      "ask": "What is pilot-conflict-000's value at time 2?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-conflict-000/forbidden/"
+        ],
+        "cite_all": [
+          "pilot-conflict-000/0",
+          "pilot-conflict-000/1"
+        ],
+        "contains_all": [
+          "amber-000",
+          "violet-000",
+          "conflict"
+        ]
+      },
+      "arm": "no_memory",
+      "family": "conflict"
+    },
+    {
+      "id": "pilot-conflict-000:versioned_notes",
+      "history_id": "pilot-conflict-000",
+      "task_id": "conflict:versioned_notes",
+      "split": "pilot",
+      "ask": "What is pilot-conflict-000's value at time 2?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-conflict-000/forbidden/"
+        ],
+        "cite_all": [
+          "pilot-conflict-000/0",
+          "pilot-conflict-000/1"
+        ],
+        "contains_all": [
+          "amber-000",
+          "violet-000",
+          "conflict"
+        ]
+      },
+      "arm": "versioned_notes",
+      "family": "conflict"
+    },
+    {
+      "id": "pilot-conflict-000:conventional_retrieval",
+      "history_id": "pilot-conflict-000",
+      "task_id": "conflict:conventional_retrieval",
+      "split": "pilot",
+      "ask": "What is pilot-conflict-000's value at time 2?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-conflict-000/forbidden/"
+        ],
+        "cite_all": [
+          "pilot-conflict-000/0",
+          "pilot-conflict-000/1"
+        ],
+        "contains_all": [
+          "amber-000",
+          "violet-000",
+          "conflict"
+        ]
+      },
+      "arm": "conventional_retrieval",
+      "family": "conflict"
+    },
+    {
+      "id": "pilot-conflict-000:munarium",
+      "history_id": "pilot-conflict-000",
+      "task_id": "conflict:munarium",
+      "split": "pilot",
+      "ask": "What is pilot-conflict-000's value at time 2?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-conflict-000/forbidden/"
+        ],
+        "cite_all": [
+          "pilot-conflict-000/0",
+          "pilot-conflict-000/1"
+        ],
+        "contains_all": [
+          "amber-000",
+          "violet-000",
+          "conflict"
+        ]
+      },
+      "arm": "munarium",
+      "family": "conflict"
+    },
+    {
+      "id": "pilot-conflict-000:governance_ablation",
+      "history_id": "pilot-conflict-000",
+      "task_id": "conflict:governance_ablation",
+      "split": "pilot",
+      "ask": "What is pilot-conflict-000's value at time 2?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-conflict-000/forbidden/"
+        ],
+        "cite_all": [
+          "pilot-conflict-000/0",
+          "pilot-conflict-000/1"
+        ],
+        "contains_all": [
+          "amber-000",
+          "violet-000",
+          "conflict"
+        ]
+      },
+      "arm": "governance_ablation",
+      "family": "conflict"
+    },
+    {
+      "id": "pilot-removed-000:no_memory",
+      "history_id": "pilot-removed-000",
+      "task_id": "removed:no_memory",
+      "split": "pilot",
+      "ask": "What is pilot-removed-000's value at time 2?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-removed-000/forbidden/",
+          "pilot-removed-000/"
+        ],
+        "insufficient": true
+      },
+      "arm": "no_memory",
+      "family": "removed"
+    },
+    {
+      "id": "pilot-removed-000:versioned_notes",
+      "history_id": "pilot-removed-000",
+      "task_id": "removed:versioned_notes",
+      "split": "pilot",
+      "ask": "What is pilot-removed-000's value at time 2?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-removed-000/forbidden/",
+          "pilot-removed-000/"
+        ],
+        "insufficient": true
+      },
+      "arm": "versioned_notes",
+      "family": "removed"
+    },
+    {
+      "id": "pilot-removed-000:conventional_retrieval",
+      "history_id": "pilot-removed-000",
+      "task_id": "removed:conventional_retrieval",
+      "split": "pilot",
+      "ask": "What is pilot-removed-000's value at time 2?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-removed-000/forbidden/",
+          "pilot-removed-000/"
+        ],
+        "insufficient": true
+      },
+      "arm": "conventional_retrieval",
+      "family": "removed"
+    },
+    {
+      "id": "pilot-removed-000:munarium",
+      "history_id": "pilot-removed-000",
+      "task_id": "removed:munarium",
+      "split": "pilot",
+      "ask": "What is pilot-removed-000's value at time 2?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-removed-000/forbidden/",
+          "pilot-removed-000/"
+        ],
+        "insufficient": true
+      },
+      "arm": "munarium",
+      "family": "removed"
+    },
+    {
+      "id": "pilot-removed-000:governance_ablation",
+      "history_id": "pilot-removed-000",
+      "task_id": "removed:governance_ablation",
+      "split": "pilot",
+      "ask": "What is pilot-removed-000's value at time 2?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-removed-000/forbidden/",
+          "pilot-removed-000/"
+        ],
+        "insufficient": true
+      },
+      "arm": "governance_ablation",
+      "family": "removed"
+    },
+    {
+      "id": "pilot-revoked-000:no_memory",
+      "history_id": "pilot-revoked-000",
+      "task_id": "revoked:no_memory",
+      "split": "pilot",
+      "ask": "What is pilot-revoked-000's value at time 1?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-revoked-000/forbidden/",
+          "pilot-revoked-000/"
+        ],
+        "insufficient": true
+      },
+      "arm": "no_memory",
+      "family": "revoked"
+    },
+    {
+      "id": "pilot-revoked-000:versioned_notes",
+      "history_id": "pilot-revoked-000",
+      "task_id": "revoked:versioned_notes",
+      "split": "pilot",
+      "ask": "What is pilot-revoked-000's value at time 1?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-revoked-000/forbidden/",
+          "pilot-revoked-000/"
+        ],
+        "insufficient": true
+      },
+      "arm": "versioned_notes",
+      "family": "revoked"
+    },
+    {
+      "id": "pilot-revoked-000:conventional_retrieval",
+      "history_id": "pilot-revoked-000",
+      "task_id": "revoked:conventional_retrieval",
+      "split": "pilot",
+      "ask": "What is pilot-revoked-000's value at time 1?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-revoked-000/forbidden/",
+          "pilot-revoked-000/"
+        ],
+        "insufficient": true
+      },
+      "arm": "conventional_retrieval",
+      "family": "revoked"
+    },
+    {
+      "id": "pilot-revoked-000:munarium",
+      "history_id": "pilot-revoked-000",
+      "task_id": "revoked:munarium",
+      "split": "pilot",
+      "ask": "What is pilot-revoked-000's value at time 1?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-revoked-000/forbidden/",
+          "pilot-revoked-000/"
+        ],
+        "insufficient": true
+      },
+      "arm": "munarium",
+      "family": "revoked"
+    },
+    {
+      "id": "pilot-revoked-000:governance_ablation",
+      "history_id": "pilot-revoked-000",
+      "task_id": "revoked:governance_ablation",
+      "split": "pilot",
+      "ask": "What is pilot-revoked-000's value at time 1?",
+      "caller": {
+        "level": 0,
+        "compartments": []
+      },
+      "expect": {
+        "must_not_cite": [
+          "forbidden/",
+          "pilot-revoked-000/forbidden/",
+          "pilot-revoked-000/"
+        ],
+        "insufficient": true
+      },
+      "arm": "governance_ablation",
+      "family": "revoked"
+    }
+  ],
+  "runbook": {
+    "identity": "p13-live@1",
+    "steps": [
+      "resolveSources",
+      "buildIndex",
+      "verify",
+      "cutover"
+    ]
+  },
+  "retrieval": {
+    "engine": "postgres",
+    "top_k": 10,
+    "context_chars": 4096
+  },
+  "model": {
+    "identity": "deterministic-evidence-renderer-v1",
+    "paid_calls": 0
+  },
+  "thresholds": {
+    "all_checks_pass": true
+  },
+  "failure_treatment": "retain_all",
+  "resource_limits": {
+    "paid_calls": 0,
+    "max_http_calls": 10000,
+    "max_wall_seconds": 900,
+    "max_database_bytes": 536870912,
+    "context_chars": 4096
+  },
+  "decision_d6": {
+    "accepted": "user instruction in session",
+    "population": "fictional fact histories; six families",
+    "minimum_supported_correctness": 0.95,
+    "maximum_unauthorized_disclosures": 0,
+    "minimum_paired_improvement": 0.05,
+    "comparison_arm": "conventional_retrieval",
+    "uncertainty": "paired history bootstrap 95%; 10000 resamples; seed 13013",
+    "model_quality_qualified": false
+  },
+  "latency_workloads": {
+    "retrieval": {
+      "build_profile": "release",
+      "hardware_class": "Windows-AMD64-local-shared",
+      "concurrency": 1,
+      "cache_state": "warm-process-warm-database",
+      "sample_count": 10,
+      "corpus_size": 200,
+      "eligible_fraction": 1.0,
+      "history_depth": 0,
+      "database_bytes": 536870912,
+      "artifact_bytes": 0,
+      "database_bytes_semantics": "upper_bound; exact pg_database_size in raw metadata",
+      "rerun_policy": "three-or-more-fixed-repetitions; retain_all; no_pass_seeking",
+      "repetitions": 3
+    },
+    "ledger_append": {
+      "build_profile": "release",
+      "hardware_class": "Windows-AMD64-local-shared",
+      "concurrency": 4,
+      "cache_state": "warm-process-warm-database",
+      "sample_count": 10,
+      "corpus_size": 0,
+      "eligible_fraction": 1.0,
+      "history_depth": 32,
+      "database_bytes": 536870912,
+      "artifact_bytes": 0,
+      "database_bytes_semantics": "upper_bound; exact pg_database_size in raw metadata",
+      "rerun_policy": "three-or-more-fixed-repetitions; retain_all; no_pass_seeking",
+      "repetitions": 3,
+      "history_growth": "each of four worker histories grows by assigned appends"
+    },
+    "cold_readiness": {
+      "build_profile": "release",
+      "hardware_class": "Windows-AMD64-local-shared",
+      "concurrency": 1,
+      "cache_state": "new-server-process; warm-database-and-OS-cache",
+      "sample_count": 3,
+      "corpus_size": 200,
+      "eligible_fraction": 1.0,
+      "history_depth": 0,
+      "database_bytes": 536870912,
+      "artifact_bytes": 0,
+      "database_bytes_semantics": "upper_bound; exact pg_database_size in raw metadata",
+      "rerun_policy": "three-or-more-fixed-repetitions; retain_all; no_pass_seeking",
+      "repetitions": 3,
+      "boundary": "process_spawn_to_ops_readyz_200; 20ms_polling"
+    }
+  },
+  "runner_settings": {
+    "per_family": 1,
+    "samples": 10,
+    "starts": 3,
+    "repetitions": 3
+  },
+  "id": "sha256:855e378fef98c6e88ad1046277685a281384aa70e3b5e9a4be45c3f9f26f6d25"
+}

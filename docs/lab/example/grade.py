@@ -92,11 +92,27 @@ def run_turn(base: str, token: str, runbook: str, case: dict, complete: bool, ov
 
 def grade_case(case: dict, turn: dict, complete: bool) -> dict:
     expect = case["expect"]
-    paths = [h.get("source_path", "") for h in turn.get("hits", [])]
-    text = (turn.get("completion") or {}).get("text") or ""
+    hits = turn.get("hits")
+    valid_hits = isinstance(hits, list) and all(
+        isinstance(h, dict) and isinstance(h.get("source_path"), str)
+        and bool(h["source_path"]) for h in hits
+    )
+    paths = [h["source_path"] for h in hits] if valid_hits else []
+    completion = turn.get("completion")
+    valid_completion = completion is None or (
+        isinstance(completion, dict) and isinstance(completion.get("text"), str)
+    )
+    text = completion["text"] if valid_completion and completion else ""
     evidence: list[tuple[str, bool, str]] = []
     answer: list[tuple[str, bool | None, str]] = []
     hard_fail = False
+    if not valid_hits:
+        evidence.append(("evidence_shape", False, "missing or malformed hits/source_path"))
+        hard_fail = True
+    if not valid_completion:
+        answer.append(("completion_shape", False, "malformed completion/text"))
+    if complete and not text.strip():
+        answer.append(("completion_present", None, "missing completion text"))
 
     def has_any(wanted): return any(p in paths for p in wanted)
     def has_all(wanted): return all(p in paths for p in wanted)
@@ -118,7 +134,7 @@ def grade_case(case: dict, turn: dict, complete: bool) -> dict:
             evidence.append(("conflict.cite_any", has_any(conflict["cite_any"]), ", ".join(conflict["cite_any"])))
 
     lowered = text.lower()
-    ran = complete and bool(text)
+    ran = complete and bool(text.strip())
     if "contains_all" in expect:
         missing = [t for t in expect["contains_all"] if t.lower() not in lowered]
         answer.append(("contains_all", (not missing) if ran else None, ", ".join(missing) if missing else "all terms present"))
@@ -153,6 +169,8 @@ def verdict(checks, *, allow_none: bool) -> str:
     if not checks:
         return "-"
     values = [c[1] for c in checks]
+    if any(v is False for v in values):
+        return "FAIL"
     if any(v is None for v in values):
         return "n/a" if allow_none else "FAIL"
     return "PASS" if all(values) else "FAIL"
@@ -161,7 +179,7 @@ def verdict(checks, *, allow_none: bool) -> str:
 def grade_ledger(base: str, rw_token: str, key: dict) -> tuple[str, str]:
     """Run lab.py's ledger sequence and compare it with the key's expectations."""
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-    import lab  # noqa: E402
+    import lab
 
     server = lab.Server(base, rw_token, "lab-grader")
     spec = key["ledger"]
@@ -228,6 +246,13 @@ def main(argv: list[str]) -> int:
         parser.error("--ledger needs --rw-token")
 
     key = json.loads(pathlib.Path(args.key).read_text(encoding="utf-8"))
+    cases = key.get("cases")
+    if not isinstance(cases, list) or not cases or any(
+        not isinstance(c, dict) or not isinstance(c.get("id"), str) or not c["id"] for c in cases
+    ):
+        parser.error("empty_or_invalid_cases")
+    if len({c["id"] for c in cases}) != len(cases):
+        parser.error("duplicate_case_id")
     runbook = key["runbook"]
     override = None
     if args.model_override:
@@ -252,7 +277,7 @@ def main(argv: list[str]) -> int:
             continue
         graded = grade_case(case, turn, args.complete)
         results.append(graded)
-        if args.complete and not (turn.get("completion") or {}).get("text"):
+        if args.complete and any(check[1] is None for check in graded["answer"]):
             missing_completion = True
         ev = verdict(graded["evidence"], allow_none=False)
         an = verdict(graded["answer"], allow_none=True)

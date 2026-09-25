@@ -621,6 +621,11 @@ output, environment and dataset identity, and run the application workload as we
 
 ## 12. Publish a performance result someone else can reproduce
 
+Use the [frozen evaluation record format](frozen-evaluation.md) to pin workloads,
+retain every planned outcome, compute auditable latency summaries, and bind
+explicit measured claims to immutable results. The scripted pilot in that guide
+qualifies the recording path only; collect and calibrate product samples separately.
+
 For each candidate/baseline pair, retain:
 
 - Build/image identity, topology, resource limits and complete non-secret settings.

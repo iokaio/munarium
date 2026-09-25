@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "kind": "manifest",
+  "campaign": "scripted-evidence-pilot",
+  "revision": "1",
+  "purpose": "pilot",
+  "source": {
+    "scripts/frozen_eval_pilot.py": "sha256:e48671e7e15ec71c926a7f109e3a7b1d3e142783bc779311d15cc7919137bbd9",
+    "scripts/frozen_eval.py": "sha256:bb778476d3029d2d4531310761c1b5413d3703da1fb82d75226e987b1d39f592",
+    "docs/lab/example/grade.py": "sha256:3aeef8bf99f9c632e26ecddcfef963b5774070ccb7639df8de78e5c149e0d61e",
+    "server/conformance/evaluation/pilot.json": "sha256:aa577a312364cfe7bb659030109453643e7045ef24df4786c4f48aebebe4d92c"
+  },
+  "build": {
+    "runtime": "python-stdlib",
+    "implementation": "CPython",
+    "version": "3.13.12"
+  },
+  "corpus_hash": "sha256:ff5a0a576da6f799f46cbf96471dfa9cd41437c0d9341c02eb93a3a60b976d03",
+  "query_hash": "sha256:07a3f5fb3bfc70e0482f6366a7554571f2cccbcf450522c9d87a61144ed53ee4",
+  "grader": "sha256:3aeef8bf99f9c632e26ecddcfef963b5774070ccb7639df8de78e5c149e0d61e",
+  "cases": [
+    {
+      "id": "opaque:α/01",
+      "history_id": "history-a",
+      "task_id": "current",
+      "split": "pilot",
+      "ask": "When is Aster launch now?",
+      "caller": {
+        "level": 0
+      },
+      "expect": {
+        "cite_all": [
+          "aster/correction"
+        ],
+        "contains_all": [
+          "Friday"
+        ],
+        "must_not_cite": [
+          "restricted/"
+        ]
+      }
+    },
+    {
+      "id": "a-past",
+      "history_id": "history-a",
+      "task_id": "past",
+      "split": "pilot",
+      "ask": "When was Aster launch at time 1?",
+      "caller": {
+        "level": 0
+      },
+      "expect": {
+        "cite_all": [
+          "aster/original"
+        ],
+        "contains_all": [
+          "Tuesday"
+        ]
+      }
+    },
+    {
+      "id": "b-conflict",
+      "history_id": "history-b",
+      "task_id": "conflict",
+      "split": "pilot",
+      "ask": "What color is Birch door?",
+      "caller": {
+        "level": 0
+      },
+      "expect": {
+        "conflict": {
+          "cite_all": [
+            "birch/blue",
+            "birch/green"
+          ],
+          "sides": [
+            [
+              "blue"
+            ],
+            [
+              "green"
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "c-revoked",
+      "history_id": "history-c",
+      "task_id": "past-current-authority",
+      "split": "pilot",
+      "ask": "What was Cedar code at time 1?",
+      "caller": {
+        "level": 0
+      },
+      "expect": {
+        "must_not_cite": [
+          "restricted/"
+        ],
+        "insufficient": true
+      }
+    },
+    {
+      "id": "d-removed",
+      "history_id": "history-d",
+      "task_id": "removed",
+      "split": "pilot",
+      "ask": "When is Dune delivery now?",
+      "caller": {
+        "level": 0
+      },
+      "expect": {
+        "must_not_cite": [
+          "dune/removed"
+        ],
+        "insufficient": true
+      }
+    }
+  ],
+  "runbook": {
+    "identity": "scripted-provider-v1",
+    "server_execution": false
+  },
+  "retrieval": {
+    "mode": "scripted-authorized-evidence",
+    "context_chars": 4096
+  },
+  "model": {
+    "identity": "scripted-v1",
+    "temperature": 0,
+    "network": false
+  },
+  "thresholds": {
+    "all_checks_pass": true
+  },
+  "failure_treatment": "retain_all",
+  "resource_limits": {
+    "paid_calls": 0,
+    "max_rows": 5,
+    "context_chars": 4096
+  },
+  "id": "sha256:0a1f85e9584852268814288e29179886fe77d44b8b7139ca456048a67c84a1e0"
+}

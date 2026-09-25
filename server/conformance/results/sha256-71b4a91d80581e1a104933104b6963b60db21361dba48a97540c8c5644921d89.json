@@ -1,0 +1,258 @@
+{
+  "schema_version": 1,
+  "kind": "grading",
+  "manifest_id": "sha256:0a1f85e9584852268814288e29179886fe77d44b8b7139ca456048a67c84a1e0",
+  "raw_id": "sha256:2d16e13f302d0892a79951cd6a0cd6edf22a9691c46e8b3b71b7b276d247b185",
+  "source": {
+    "scripts/frozen_eval_pilot.py": "sha256:e48671e7e15ec71c926a7f109e3a7b1d3e142783bc779311d15cc7919137bbd9",
+    "scripts/frozen_eval.py": "sha256:bb778476d3029d2d4531310761c1b5413d3703da1fb82d75226e987b1d39f592",
+    "docs/lab/example/grade.py": "sha256:3aeef8bf99f9c632e26ecddcfef963b5774070ccb7639df8de78e5c149e0d61e",
+    "server/conformance/evaluation/pilot.json": "sha256:aa577a312364cfe7bb659030109453643e7045ef24df4786c4f48aebebe4d92c"
+  },
+  "grader": "sha256:4bb17d536401f2d88b0ce967eaf0a31a85c91a878fa478831c90d2a5a171ace4",
+  "evaluator": "sha256:d15bf88b6b4fed1d6eabc036c8a6dd0ece05b600865ee384d2dccfcec80658e2",
+  "revision": "2",
+  "completed": true,
+  "exit_code": 0,
+  "scores": [
+    {
+      "id": "opaque:α/01",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "opaque:α/01",
+        "ask": "When is Aster launch now?",
+        "family": "",
+        "caller": {
+          "level": 0
+        },
+        "evidence": [
+          [
+            "cite_all",
+            true,
+            "aster/correction"
+          ],
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "contains_all",
+            true,
+            "all terms present"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [
+          "aster/correction"
+        ],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "Friday"
+        },
+        "turn": {
+          "hits": [
+            {
+              "source_path": "aster/correction",
+              "text": "Launch corrected to Friday",
+              "evidence_id": "opaque:e/α"
+            }
+          ],
+          "completion": {
+            "text": "Friday"
+          }
+        }
+      }
+    },
+    {
+      "id": "a-past",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "a-past",
+        "ask": "When was Aster launch at time 1?",
+        "family": "",
+        "caller": {
+          "level": 0
+        },
+        "evidence": [
+          [
+            "cite_all",
+            true,
+            "aster/original"
+          ]
+        ],
+        "answer": [
+          [
+            "contains_all",
+            true,
+            "all terms present"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [
+          "aster/original"
+        ],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "Tuesday"
+        },
+        "turn": {
+          "hits": [
+            {
+              "source_path": "aster/original",
+              "text": "Launch Tuesday"
+            }
+          ],
+          "completion": {
+            "text": "Tuesday"
+          }
+        }
+      }
+    },
+    {
+      "id": "b-conflict",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "b-conflict",
+        "ask": "What color is Birch door?",
+        "family": "",
+        "caller": {
+          "level": 0
+        },
+        "evidence": [
+          [
+            "conflict.cite_all",
+            true,
+            "birch/blue, birch/green"
+          ]
+        ],
+        "answer": [
+          [
+            "conflict.sides",
+            true,
+            "2 of 2 sides present"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [
+          "birch/blue",
+          "birch/green"
+        ],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "The evidence conflicts: blue and green."
+        },
+        "turn": {
+          "hits": [
+            {
+              "source_path": "birch/blue",
+              "text": "Blue"
+            },
+            {
+              "source_path": "birch/green",
+              "text": "Green, disputed"
+            }
+          ],
+          "completion": {
+            "text": "The evidence conflicts: blue and green."
+          }
+        }
+      }
+    },
+    {
+      "id": "c-revoked",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "c-revoked",
+        "ask": "What was Cedar code at time 1?",
+        "family": "",
+        "caller": {
+          "level": 0
+        },
+        "evidence": [
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "insufficient",
+            true,
+            "declared"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "Insufficient evidence under current authorization."
+        },
+        "turn": {
+          "hits": [],
+          "completion": {
+            "text": "Insufficient evidence under current authorization."
+          }
+        }
+      }
+    },
+    {
+      "id": "d-removed",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "d-removed",
+        "ask": "When is Dune delivery now?",
+        "family": "",
+        "caller": {
+          "level": 0
+        },
+        "evidence": [
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "insufficient",
+            true,
+            "declared"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "Insufficient evidence."
+        },
+        "turn": {
+          "hits": [],
+          "completion": {
+            "text": "Insufficient evidence."
+          }
+        }
+      }
+    }
+  ],
+  "unknown_usage_rows": 5,
+  "id": "sha256:71b4a91d80581e1a104933104b6963b60db21361dba48a97540c8c5644921d89"
+}
