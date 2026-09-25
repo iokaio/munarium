@@ -97,13 +97,21 @@ async fn main() {
     }
     if let Some(base) = http {
         let store = RestClientStore::new(&base, &token);
-        let results = mmp_conformance::run_all(&store as &dyn StorageBackend).await;
+        let mut results = mmp_conformance::run_all(&store as &dyn StorageBackend).await;
+        results.push((
+            "governance.policy-writes",
+            mmp_conformance::governance_policy_writes(&store).await,
+        ));
         failed += print_report(&format!("REST plane ({base})"), &results);
     }
     if let Some(endpoint) = grpc {
         match GrpcClientStore::connect(&endpoint, &token).await {
             Ok(store) => {
-                let results = mmp_conformance::run_all(&store as &dyn StorageBackend).await;
+                let mut results = mmp_conformance::run_all(&store as &dyn StorageBackend).await;
+                results.push((
+                    "governance.policy-writes",
+                    mmp_conformance::governance_policy_writes(&store).await,
+                ));
                 failed += print_report(&format!("gRPC plane ({endpoint})"), &results);
             }
             Err(e) => {

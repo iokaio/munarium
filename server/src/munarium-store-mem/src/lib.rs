@@ -63,6 +63,83 @@ impl MemStore {
         Self::default()
     }
 
+    async fn append_batch(
+        &self,
+        version_id: &str,
+        claims: Vec<NewClaim>,
+        expected_head: Option<Seq>,
+        findings: &[GateFinding],
+    ) -> Result<Vec<Claim>> {
+        if claims.is_empty() {
+            return Ok(Vec::new());
+        }
+        // One write lock spans the whole batch: all claims land or none does.
+        let mut s = self.state.write().await;
+        let head = s.head_of(version_id)?;
+        if let Some(expected) = expected_head {
+            if expected != head {
+                return Err(KernelError::HeadConflict {
+                    expected,
+                    actual: head,
+                });
+            }
+        }
+        // Validate every supersedes_id BEFORE the first mutation.
+        let existing: std::collections::HashSet<String> = s
+            .lineage_claims(version_id)?
+            .iter()
+            .map(|c| c.id.clone())
+            .collect();
+        for claim in &claims {
+            if let Some(sup) = &claim.supersedes_id {
+                if !existing.contains(sup) {
+                    return Err(KernelError::NotFound {
+                        kind: "claim",
+                        id: sup.clone(),
+                    });
+                }
+            }
+        }
+        let mut out = Vec::new();
+        for (i, claim) in claims.into_iter().enumerate() {
+            let stored = Claim {
+                id: format!("claim-{}", (self.ids)()),
+                version_id: version_id.to_string(),
+                seq: head + 1 + i as Seq,
+                claim_type: claim.claim_type,
+                subject: claim.subject,
+                key: claim.key,
+                value: claim.value,
+                scope_path: claim.scope_path,
+                status: claim.status,
+                provenance: claim.provenance,
+                supersedes_id: claim.supersedes_id,
+                entity_id: claim.entity_id,
+                evidence: claim.evidence,
+                confidence: claim.confidence,
+                shape_ref: claim.shape_ref,
+                origin: claim.origin,
+            };
+            s.claims
+                .entry(version_id.to_string())
+                .or_default()
+                .push(stored.clone());
+            out.push(stored);
+        }
+        if let Some(last) = out.last() {
+            s.findings
+                .entry(version_id.into())
+                .or_default()
+                .extend(findings.iter().cloned().map(|finding| {
+                    munarium_core::storage::StoredFinding {
+                        seq: last.seq,
+                        finding,
+                    }
+                }));
+        }
+        Ok(out)
+    }
+
     /// Inject identity generation; callers must supply unique IDs per store.
     /// Timestamps already supplied by callers retain their existing semantics.
     pub fn with_id_generator(ids: determinism::IdGenerator) -> Self {
@@ -84,6 +161,9 @@ impl State {
                     id: v,
                 });
             }
+            munarium_core::governance::GovernancePolicy::from_stored_metadata(
+                self.version_meta.get(&v),
+            )?;
             chain.push(v.clone());
             cursor = self.versions.get(&v).cloned().flatten();
         }
@@ -139,7 +219,48 @@ impl StorageBackend for MemStore {
                 });
             }
         }
+        let assess = metadata
+            .as_ref()
+            .is_some_and(|m| m.get("governance_transition").is_some());
+        let parent_snapshot = parent_id
+            .map(|p| -> Result<MeshSnapshot> {
+                let mut anchors = BTreeMap::new();
+                for v in if assess { s.lineage_of(p)? } else { Vec::new() } {
+                    for a in s.anchors.get(&v).into_iter().flatten() {
+                        anchors.insert(a.detail_key.clone(), a.clone());
+                    }
+                }
+                Ok(MeshSnapshot {
+                    version_id: p.into(),
+                    as_of_seq: Some(s.head_of(p)?),
+                    facts: if assess {
+                        resolve_slice(s.lineage_claims(p)?, &FactQuery::default())
+                    } else {
+                        Vec::new()
+                    },
+                    anchors,
+                    ..Default::default()
+                })
+            })
+            .transpose()?;
+        let metadata = munarium_core::governance::prepare_version_metadata(
+            metadata,
+            parent_id.and_then(|p| s.version_meta.get(p)),
+            parent_snapshot.as_ref(),
+        )?;
         let id = format!("memv-{}", (self.ids)());
+        if let Some(finding) = munarium_core::governance::policy_finding(&id, metadata.as_ref()) {
+            s.findings
+                .entry(id.clone())
+                .or_default()
+                .push(munarium_core::storage::StoredFinding {
+                    seq: parent_snapshot
+                        .as_ref()
+                        .and_then(|s| s.as_of_seq)
+                        .unwrap_or(0),
+                    finding,
+                });
+        }
         s.versions.insert(id.clone(), parent_id.map(String::from));
         if let Some(m) = metadata {
             s.version_meta.insert(id.clone(), m);
@@ -212,63 +333,18 @@ impl StorageBackend for MemStore {
         claims: Vec<NewClaim>,
         expected_head: Option<Seq>,
     ) -> Result<Vec<Claim>> {
-        if claims.is_empty() {
-            return Ok(Vec::new());
-        }
-        // One write lock spans the whole batch: all claims land or none does.
-        let mut s = self.state.write().await;
-        let head = s.head_of(version_id)?;
-        if let Some(expected) = expected_head {
-            if expected != head {
-                return Err(KernelError::HeadConflict {
-                    expected,
-                    actual: head,
-                });
-            }
-        }
-        // Validate every supersedes_id BEFORE the first mutation.
-        let existing: std::collections::HashSet<String> = s
-            .lineage_claims(version_id)?
-            .iter()
-            .map(|c| c.id.clone())
-            .collect();
-        for claim in &claims {
-            if let Some(sup) = &claim.supersedes_id {
-                if !existing.contains(sup) {
-                    return Err(KernelError::NotFound {
-                        kind: "claim",
-                        id: sup.clone(),
-                    });
-                }
-            }
-        }
-        let mut out = Vec::new();
-        for (i, claim) in claims.into_iter().enumerate() {
-            let stored = Claim {
-                id: format!("claim-{}", (self.ids)()),
-                version_id: version_id.to_string(),
-                seq: head + 1 + i as Seq,
-                claim_type: claim.claim_type,
-                subject: claim.subject,
-                key: claim.key,
-                value: claim.value,
-                scope_path: claim.scope_path,
-                status: claim.status,
-                provenance: claim.provenance,
-                supersedes_id: claim.supersedes_id,
-                entity_id: claim.entity_id,
-                evidence: claim.evidence,
-                confidence: claim.confidence,
-                shape_ref: claim.shape_ref,
-                origin: claim.origin,
-            };
-            s.claims
-                .entry(version_id.to_string())
-                .or_default()
-                .push(stored.clone());
-            out.push(stored);
-        }
-        Ok(out)
+        self.append_batch(version_id, claims, expected_head, &[])
+            .await
+    }
+    async fn append_evaluated_claims(
+        &self,
+        version_id: &str,
+        claims: Vec<NewClaim>,
+        expected_head: Seq,
+        findings: &[GateFinding],
+    ) -> Result<Vec<Claim>> {
+        self.append_batch(version_id, claims, Some(expected_head), findings)
+            .await
     }
 
     async fn slice_facts(&self, version_id: &str, q: &FactQuery) -> Result<Vec<Claim>> {
@@ -278,11 +354,16 @@ impl StorageBackend for MemStore {
 
     async fn get_claim(&self, claim_id: &str) -> Result<Option<Claim>> {
         let s = self.state.read().await;
-        Ok(s.claims
+        let claim = s
+            .claims
             .values()
             .flatten()
             .find(|c| c.id == claim_id)
-            .cloned())
+            .cloned();
+        if let Some(c) = &claim {
+            s.lineage_of(&c.version_id)?;
+        }
+        Ok(claim)
     }
 
     async fn superseded_by(&self, claim_id: &str) -> Result<Option<String>> {

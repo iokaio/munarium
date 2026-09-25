@@ -205,3 +205,10 @@ with the complete event chain.
 This scenario has no wire surface: chronology rules are a declarative asset the kernel
 evaluates client-side of the ledger, never an API call. It is covered by the in-process
 suite and is not part of a client port.
+
+### governance.policy-writes (REST and native gRPC)
+
+Creates legacy claims, rejects an undeclared policy change, migrates through an
+explicit pinned transition, checks exact anchor conflicts, descendant inheritance,
+original whitespace, and unchanged historical pinned reads. Runs only on command
+transports: raw storage primitives deliberately do not evaluate gates.
