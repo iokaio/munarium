@@ -14268,6 +14268,9 @@ route family needs one rule there.
 | `/v1/reports/audit` | GET | reports | §20; rest.md Reports rows |
 | `/v1/reports/budgets` | GET | reports | §20 (spend governance) |
 | `/v1/reports/cost` | GET | reports | §20; rest.md Reports rows |
+| `/v1/reports/money` | GET | reports | [Optional monetary accounting](monetary-accounting.md) |
+| `/v1/monetary/prices` | GET, POST | reports | [Immutable monetary tariffs](monetary-accounting.md) |
+| `/v1/monetary/observations` | POST | reports | [Append-only reconciliation](monetary-accounting.md) |
 | `/v1/reports/endpoints` | GET | reports | §20; rest.md Reports rows |
 | `/v1/reports/evidence` | GET | reports | §20; rest.md Reports rows |
 | `/v1/reports/matrix` | GET | reports | §20; rest.md Reports rows |

@@ -156,6 +156,12 @@ service ServerApiService {
   rpc GetMaxTokens(ServerApiRequest) returns (ServerApiResponse);
   // POST /v1/max-tokens
   rpc ReplaceMaxTokens(ServerApiRequest) returns (ServerApiResponse);
+  // POST /v1/monetary/observations
+  rpc AddMonetaryObservation(ServerApiRequest) returns (ServerApiResponse);
+  // GET /v1/monetary/prices
+  rpc MonetaryPrices(ServerApiRequest) returns (ServerApiResponse);
+  // POST /v1/monetary/prices
+  rpc AddMonetaryPrice(ServerApiRequest) returns (ServerApiResponse);
   // GET /v1/providers
   rpc ListProviders(ServerApiRequest) returns (ServerApiResponse);
   // POST /v1/providers
@@ -178,6 +184,8 @@ service ServerApiService {
   rpc EvidenceReport(ServerApiRequest) returns (ServerApiResponse);
   // GET /v1/reports/matrix
   rpc MatrixReport(ServerApiRequest) returns (ServerApiResponse);
+  // GET /v1/reports/money
+  rpc MonetaryReport(ServerApiRequest) returns (ServerApiResponse);
   // GET /v1/reports/runbooks
   rpc RunbookReport(ServerApiRequest) returns (ServerApiResponse);
   // GET /v1/reports/sessions

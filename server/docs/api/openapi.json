@@ -2960,6 +2960,109 @@
         }
       }
     },
+    "/v1/monetary/observations": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on every /v1 request (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "add_monetary_observation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MonetaryObservation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonetaryCalculation"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/monetary/prices": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on every /v1 request (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "monetary_prices",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MonetaryPrice"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "add_monetary_price",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MonetaryPrice"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonetaryPriceReceipt"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/providers": {
       "parameters": [
         {
@@ -3285,7 +3388,7 @@
         "tags": [
           "reports"
         ],
-        "summary": "GET /v1/reports/budgets — today's spending-cap ledger per provider config\n× tier beside each scope's configured daily ceiling. Token facts only,\nlike /v1/reports/cost: dollar pricing stays the platform's concern.",
+        "summary": "GET /v1/reports/budgets — today's spending-cap ledger per provider config\n× tier beside each scope's configured daily ceiling. Token facts only,\nlike /v1/reports/cost: monetary reporting is separate at /v1/reports/money.",
         "operationId": "budgets",
         "responses": {
           "200": {
@@ -3317,7 +3420,7 @@
         "tags": [
           "reports"
         ],
-        "summary": "GET /v1/reports/cost — completion token spend per resolved provider/model,\nnative vs overridden. Dollar pricing is the platform's concern; the server\nreports the token facts.",
+        "summary": "GET /v1/reports/cost — completion token spend per resolved provider/model,\nnative vs overridden. Optional money reporting is a separate scope at\n/v1/reports/money; this route retains its token-only meaning.",
         "operationId": "cost",
         "parameters": [
           {
@@ -3470,6 +3573,57 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MatrixReportResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/reports/money": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on every /v1 request (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "monetary_report",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Required RFC 3339 inclusive submission bound",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Required RFC 3339 exclusive submission bound",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonetaryReport"
                 }
               }
             }
@@ -9334,6 +9488,393 @@
             "description": "fast | capable | frontier"
           }
         }
+      },
+      "MonetaryAttempt": {
+        "type": "object",
+        "required": [
+          "id",
+          "invocation_id",
+          "provider",
+          "route",
+          "model",
+          "submitted_at",
+          "revision",
+          "accounted_units",
+          "usage",
+          "unresolved",
+          "calculation"
+        ],
+        "properties": {
+          "accounted_units": {
+            "type": "string"
+          },
+          "calculation": {
+            "$ref": "#/components/schemas/MonetaryCalculation"
+          },
+          "id": {
+            "type": "string"
+          },
+          "invocation_id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "route": {
+            "type": "string"
+          },
+          "submitted_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "unresolved": {
+            "type": "boolean"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/MonetaryUsage"
+          }
+        }
+      },
+      "MonetaryBasis": {
+        "type": "string",
+        "enum": [
+          "inclusive",
+          "partitioned"
+        ]
+      },
+      "MonetaryCalculation": {
+        "type": "object",
+        "required": [
+          "missing_price",
+          "missing_usage",
+          "unknown_categories"
+        ],
+        "properties": {
+          "currency": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "micro_units": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Exact decimal integer string; null means unknown, never zero."
+          },
+          "missing_price": {
+            "type": "boolean"
+          },
+          "missing_usage": {
+            "type": "boolean"
+          },
+          "price_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unknown_categories": {
+            "type": "boolean"
+          }
+        }
+      },
+      "MonetaryCoverage": {
+        "type": "object",
+        "required": [
+          "attempts",
+          "priced",
+          "missing_price",
+          "missing_usage",
+          "unknown_categories",
+          "unresolved"
+        ],
+        "properties": {
+          "attempts": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "missing_price": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "missing_usage": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "priced": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "unknown_categories": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "unresolved": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "MonetaryObservation": {
+        "type": "object",
+        "required": [
+          "id",
+          "attempt_id",
+          "previous_revision",
+          "usage",
+          "accounted_units",
+          "resolved",
+          "evidence_ref"
+        ],
+        "properties": {
+          "accounted_units": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "attempt_id": {
+            "type": "string"
+          },
+          "evidence_ref": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "previous_revision": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "price_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resolved": {
+            "type": "boolean"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/MonetaryUsage"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MonetaryPrice": {
+        "type": "object",
+        "required": [
+          "id",
+          "provider",
+          "route",
+          "model",
+          "currency",
+          "valid_from",
+          "valid_until",
+          "basis",
+          "rates"
+        ],
+        "properties": {
+          "basis": {
+            "$ref": "#/components/schemas/MonetaryBasis"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "rates": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MonetaryRate"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "route": {
+            "type": "string",
+            "description": "Exact effective route hash, not an endpoint URL."
+          },
+          "valid_from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "valid_until": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MonetaryPriceReceipt": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "MonetaryRate": {
+        "type": "object",
+        "required": [
+          "micro_units",
+          "per_tokens"
+        ],
+        "properties": {
+          "micro_units": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "per_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "MonetaryReport": {
+        "type": "object",
+        "required": [
+          "scope",
+          "entire_tenant_bill",
+          "coverage",
+          "known_subtotals_micro_units",
+          "accounted_units",
+          "observed_input_tokens",
+          "observed_output_tokens",
+          "attempts"
+        ],
+        "properties": {
+          "accounted_units": {
+            "type": "string"
+          },
+          "attempts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MonetaryAttempt"
+            }
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/MonetaryCoverage"
+          },
+          "entire_tenant_bill": {
+            "type": "boolean"
+          },
+          "known_subtotals_micro_units": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "observed_input_tokens": {
+            "type": "string"
+          },
+          "observed_output_tokens": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "unrecorded_attempts": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "MonetaryUsage": {
+        "type": "object",
+        "required": [
+          "unknown_categories"
+        ],
+        "properties": {
+          "cache_read": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "cache_write": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "context": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "input": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "output": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "reasoning": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "unknown_categories": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
       },
       "NamedYamlDto": {
         "type": "object",

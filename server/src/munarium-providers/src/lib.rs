@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use sha2::Digest as _;
 use std::time::{Duration, Instant};
 
+pub mod accounting;
 mod ollama;
 pub use ollama::OllamaProvider;
 
@@ -432,7 +433,14 @@ async fn send_with_retry_impl(
 ) -> Result<reqwest::Response> {
     let mut attempt = 0;
     loop {
-        let resp = builder()
+        let request = builder();
+        let url = request
+            .try_clone()
+            .and_then(|r| r.build().ok())
+            .map(|r| r.url().to_string())
+            .ok_or_else(|| KernelError::Provider("cannot prepare provider request".into()))?;
+        accounting::begin(&url).await?;
+        let resp = request
             .send()
             .await
             .map_err(|e| KernelError::Provider(format!("request failed: {e}")))?;
@@ -633,6 +641,7 @@ impl ModelProvider for AnthropicProvider {
             .await
             .map_err(|e| KernelError::Provider(format!("bad response: {e}")))?;
         let usage = usage_evidence(&v, "input_tokens", "output_tokens");
+        accounting::finish("anthropic", &v, false).await?;
         Ok(DetailedCompletionResponse {
             usage,
             response: CompletionResponse {
@@ -864,6 +873,7 @@ impl ModelProvider for OpenAiProvider {
             .json()
             .await
             .map_err(|e| KernelError::Provider(format!("bad response: {e}")))?;
+        accounting::finish("openai", &v, false).await?;
         parse_openai_completion(&v, hash)
     }
 
@@ -878,6 +888,7 @@ impl ModelProvider for OpenAiProvider {
             .json()
             .await
             .map_err(|e| KernelError::Provider(format!("bad response: {e}")))?;
+        accounting::finish("openai", &v, true).await?;
         let vectors: Vec<Vec<f32>> = v["data"]
             .as_array()
             .unwrap_or(&Vec::new())

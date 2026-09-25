@@ -1860,6 +1860,66 @@
       "origins": [
         "src/munarium-store-pg/migrations/0034_collection_governance.sql"
       ]
+    },
+    "monetary_prices": {
+      "columns": {
+        "tenant_id": "text",
+        "id": "text",
+        "snapshot": "jsonb"
+      },
+      "owner": "Server monetary accounting",
+      "content": "Immutable operator tariffs and route hashes, no credential material.",
+      "policy": "ledger",
+      "origins": [
+        "src/munarium-store-pg/migrations/0037_monetary_accounting.sql",
+        "src/munarium-store-pg/src/money.rs"
+      ],
+      "json_content": {
+        "snapshot": "Provider, exact route hash, model, currency, dated validity, category semantics and rational micro-unit rates."
+      }
+    },
+    "monetary_attempts": {
+      "columns": {
+        "tenant_id": "text",
+        "id": "text",
+        "invocation_id": "text",
+        "provider": "text",
+        "route": "text",
+        "model": "text",
+        "submitted_at": "timestamptz",
+        "accounted_units": "numeric(20,0)",
+        "price_id": "text"
+      },
+      "owner": "Server monetary accounting",
+      "content": "Pre-send invocation and attempt identities, provider/model/route hash, submission time, conservative units and price pin.",
+      "policy": "ledger",
+      "origins": [
+        "src/munarium-store-pg/migrations/0037_monetary_accounting.sql",
+        "src/munarium-store-pg/src/money.rs"
+      ],
+      "json_content": {}
+    },
+    "monetary_observations": {
+      "columns": {
+        "tenant_id": "text",
+        "id": "text",
+        "attempt_id": "text",
+        "revision": "bigint",
+        "observed_at": "timestamptz",
+        "observation": "jsonb",
+        "calculation": "jsonb"
+      },
+      "owner": "Server monetary accounting",
+      "content": "Append-only numeric usage and monetary calculations with reconciliation evidence references.",
+      "policy": "ledger",
+      "origins": [
+        "src/munarium-store-pg/migrations/0037_monetary_accounting.sql",
+        "src/munarium-store-pg/src/money.rs"
+      ],
+      "json_content": {
+        "observation": "Numeric usage, resolution state, conservative units, previous revision, safe operator evidence reference and optional initial price selection.",
+        "calculation": "Pinned price identity, currency, decimal micro-unit amount or explicit unknown coverage flags."
+      }
     }
   },
   "artifacts": {

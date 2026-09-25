@@ -2258,6 +2258,7 @@ dependencies = [
  "munarium-api-types",
  "munarium-core",
  "munarium-store-mem",
+ "serde",
  "serde_json",
  "sqlx",
  "tokio",

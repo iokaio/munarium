@@ -7,6 +7,12 @@ reference is [grpc-reference.md](grpc-reference.md) — regenerate with
 
 ## Services
 
+Optional monetary accounting is available through `ServerApiService`:
+`MonetaryPrices`, `AddMonetaryPrice`, `AddMonetaryObservation`, and
+`MonetaryReport`. They use the same management authorization, tenant isolation,
+JSON bodies and handlers as REST. See the
+[monetary accounting guide](../guides/monetary-accounting.md).
+
 | Service | Purpose |
 |---|---|
 | `mmp.v1.ServerApiService` | Server 1.2 complete named API: every documented REST operation, including vocabulary, answers, reports, authoring, source metadata, bulk ingest and server-streaming turns. Same handlers, authorization and audit as REST. See the [complete API guide](../../../clients/docs/guides/server-1.2.md). |

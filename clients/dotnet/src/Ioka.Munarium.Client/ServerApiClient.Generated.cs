@@ -135,6 +135,12 @@ public sealed partial class ServerApiClient {
     public Task<ApiResponse> GetMaxTokensAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("GetMaxTokens", "GET", "/v1/max-tokens", "application/json", request ?? new(), ct);
     /// <summary>POST /v1/max-tokens</summary>
     public Task<ApiResponse> ReplaceMaxTokensAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("ReplaceMaxTokens", "POST", "/v1/max-tokens", "application/json", request ?? new(), ct);
+    /// <summary>POST /v1/monetary/observations</summary>
+    public Task<ApiResponse> AddMonetaryObservationAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("AddMonetaryObservation", "POST", "/v1/monetary/observations", "application/json", request ?? new(), ct);
+    /// <summary>GET /v1/monetary/prices</summary>
+    public Task<ApiResponse> MonetaryPricesAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("MonetaryPrices", "GET", "/v1/monetary/prices", "application/json", request ?? new(), ct);
+    /// <summary>POST /v1/monetary/prices</summary>
+    public Task<ApiResponse> AddMonetaryPriceAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("AddMonetaryPrice", "POST", "/v1/monetary/prices", "application/json", request ?? new(), ct);
     /// <summary>GET /v1/providers</summary>
     public Task<ApiResponse> ListProvidersAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("ListProviders", "GET", "/v1/providers", "application/json", request ?? new(), ct);
     /// <summary>POST /v1/providers</summary>
@@ -157,6 +163,8 @@ public sealed partial class ServerApiClient {
     public Task<ApiResponse> EvidenceReportAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("EvidenceReport", "GET", "/v1/reports/evidence", "application/json", request ?? new(), ct);
     /// <summary>GET /v1/reports/matrix</summary>
     public Task<ApiResponse> MatrixReportAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("MatrixReport", "GET", "/v1/reports/matrix", "application/json", request ?? new(), ct);
+    /// <summary>GET /v1/reports/money</summary>
+    public Task<ApiResponse> MonetaryReportAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("MonetaryReport", "GET", "/v1/reports/money", "application/json", request ?? new(), ct);
     /// <summary>GET /v1/reports/runbooks</summary>
     public Task<ApiResponse> RunbookReportAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("RunbookReport", "GET", "/v1/reports/runbooks", "application/json", request ?? new(), ct);
     /// <summary>GET /v1/reports/sessions</summary>

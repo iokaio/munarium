@@ -1523,6 +1523,15 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/v1/reports/usage", get(crate::reports_api::usage))
         .route("/v1/reports/audit", get(crate::reports_api::audit))
         .route("/v1/reports/cost", get(crate::reports_api::cost))
+        .route("/v1/reports/money", get(crate::money_api::monetary_report))
+        .route(
+            "/v1/monetary/prices",
+            get(crate::money_api::monetary_prices).post(crate::money_api::add_monetary_price),
+        )
+        .route(
+            "/v1/monetary/observations",
+            post(crate::money_api::add_monetary_observation),
+        )
         .route("/v1/reports/budgets", get(crate::reports_api::budgets))
         .route(
             "/v1/max-tokens",

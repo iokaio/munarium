@@ -7,6 +7,13 @@ use serde_json::{json, Value};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 async fn test_state(database_url: Option<String>) -> Arc<AppState> {
+    test_state_with_auth(database_url, AuthMode::Disabled).await
+}
+
+pub(crate) async fn test_state_with_auth(
+    database_url: Option<String>,
+    auth: AuthMode,
+) -> Arc<AppState> {
     AppState::new(Config {
         http_addr: "127.0.0.1:0".into(),
         grpc_addr: None,
@@ -18,7 +25,7 @@ async fn test_state(database_url: Option<String>) -> Arc<AppState> {
         },
         source_store: SourceStoreConfig::Mem,
         database_url,
-        auth: AuthMode::Disabled,
+        auth,
         shutdown_grace_secs: 1,
         token_secret: None,
         token_ttl_secs: 3600,
@@ -208,7 +215,7 @@ async fn usage_settlement_memory_and_postgres() {
 }
 
 // A logical gateway call can contain multiple physical HTTP submissions. These
-// tests pin today's policy without claiming earlier failed attempts are measured.
+// tests pin token admission separately from durable monetary attempt coverage.
 #[tokio::test]
 async fn dispatch_retries_cancellation_and_uncapped_policy() {
     let mut databases = vec![None];
@@ -257,6 +264,20 @@ async fn dispatch_retries_cancellation_and_uncapped_policy() {
             state.providers.apply(&state, &tenant, &format!(
                 "apiVersion: munarium.ioka.io/v1\nkind: ProviderConfig\nmetadata: {{ name: fixture }}\nspec:\n  provider: ollama\n  endpoint: {endpoint}\n  models: {{ fast: fixture, complete: [fixture] }}\n  budgets:\n    dailyTokens: {{ fast: 10 }}\n"
             )).await.unwrap();
+            if matches!(scenario, "uncapped" | "retry-success") {
+                if let Some(pool) = state.pg_pool() {
+                    let price = serde_json::from_value(json!({
+                        "id":"fictional-p14","provider":"ollama","model":"fixture","currency":"USD",
+                        "route":munarium_providers::accounting::route_identity(&format!("{endpoint}/api/chat"),None).unwrap(),
+                        "valid_from":"2020-01-01T00:00:00Z","valid_until":"2090-01-01T00:00:00Z","basis":"inclusive",
+                        "rates":{"input":{"micro_units":1,"per_tokens":3},"output":{"micro_units":0,"per_tokens":1}}
+                    })).unwrap();
+                    munarium_store_pg::money::MoneyStore(pool.clone())
+                        .add_price(&tenant, &price)
+                        .await
+                        .unwrap();
+                }
+            }
             let store = state.store_for(&tenant).await.unwrap();
             let request = serde_json::from_value(json!({"prompt":"test", "max_tokens":9,
                 "tier": if scenario == "uncapped" { Value::Null } else { json!("fast") },
@@ -296,6 +317,38 @@ async fn dispatch_retries_cancellation_and_uncapped_policy() {
                 }
             }
             let physical = calls.load(Ordering::SeqCst);
+            if let Some(pool) = state.pg_pool() {
+                let report = munarium_store_pg::money::MoneyStore(pool.clone())
+                    .report(
+                        &tenant,
+                        chrono::Utc::now() - chrono::Duration::hours(1),
+                        chrono::Utc::now() + chrono::Duration::hours(1),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(report.coverage.attempts, physical as u64, "{scenario}");
+                let unresolved = match scenario {
+                    "retry-success" => 1,
+                    "exhausted" => 3,
+                    "cancel" => 1,
+                    _ => 0,
+                };
+                assert_eq!(report.coverage.unresolved, unresolved, "{scenario}");
+                if matches!(scenario, "uncapped" | "retry-success") {
+                    assert_eq!(report.coverage.missing_price, 0);
+                    assert_eq!(report.coverage.priced, 1);
+                    assert_eq!(report.known_subtotals_micro_units["USD"], "1");
+                } else {
+                    assert_eq!(report.coverage.missing_price, physical as u64);
+                }
+                if !report.attempts.is_empty() {
+                    let invocation = &report.attempts[0].invocation_id;
+                    assert!(report
+                        .attempts
+                        .iter()
+                        .all(|a| &a.invocation_id == invocation));
+                }
+            }
             let ledger = state.budgets().ledger(&tenant).await.unwrap();
             match scenario {
                 "unpolled" => {
@@ -326,4 +379,51 @@ async fn dispatch_retries_cancellation_and_uncapped_policy() {
             }
         }
     }
+}
+
+#[tokio::test]
+async fn monetary_embeddings_capture_only_cache_misses() {
+    let Ok(url) = std::env::var("MUNARIUM_TEST_DATABASE_URL") else {
+        eprintln!("unavailable: isolated PostgreSQL not configured");
+        return;
+    };
+    let state = test_state(Some(url)).await;
+    let calls = Arc::new(AtomicUsize::new(0));
+    let count = calls.clone();
+    let app = axum::Router::new().route(
+        "/api/embed",
+        axum::routing::post(move || {
+            count.fetch_add(1, Ordering::SeqCst);
+            async { Json(json!({"embeddings":[[1.0,2.0]],"prompt_eval_count":2})) }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    let _server = Abort(tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap()
+    }));
+    let tenant = format!("embed-money-{}", uuid::Uuid::new_v4());
+    state.providers.apply(&state,&tenant,&format!("apiVersion: munarium.ioka.io/v1\nkind: ProviderConfig\nmetadata: {{name: fixture}}\nspec:\n  provider: ollama\n  endpoint: {endpoint}\n  models: {{embed: [fixture]}}\n")).await.unwrap();
+    let ledger = state.store_for(&tenant).await.unwrap();
+    for _ in 0..2 {
+        let req = serde_json::from_value(json!({"inputs":["fictional input"],"model":"fixture"}))
+            .unwrap();
+        op_embed(&state, &tenant, ledger.as_ref(), "fixture", req)
+            .await
+            .unwrap();
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    let report = munarium_store_pg::money::MoneyStore(state.pg_pool().unwrap().clone())
+        .report(
+            &tenant,
+            chrono::Utc::now() - chrono::Duration::hours(1),
+            chrono::Utc::now() + chrono::Duration::hours(1),
+        )
+        .await
+        .unwrap();
+    assert_eq!(report.coverage.attempts, 1);
+    assert_eq!(report.observed_input_tokens, "2");
+    assert_eq!(report.observed_output_tokens, "0");
+    assert_eq!(report.coverage.missing_price, 1);
+    assert_eq!(report.coverage.missing_usage, 0);
 }

@@ -46,6 +46,7 @@ pub mod budget;
 pub mod evidence;
 pub mod jobs;
 pub mod max_tokens;
+pub mod money;
 pub mod partitions;
 pub mod rollout;
 pub mod sources;

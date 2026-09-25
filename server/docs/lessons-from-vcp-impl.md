@@ -91,7 +91,7 @@ Discovery and tests can proceed before these decisions; dependent behavior chang
 | Decision | Recommended starting position | Work that depends on it |
 |---|---|---|
 | D1: What is capped when no tier resolves? | Keep existing routing/cap behavior while explicitly reporting the scope. Design an opt-in config-wide cap or explicit missing-tier policy | Broader R15 enforcement; never silently assign a tier to an explicit model |
-| D2: Is money a Server reporting feature? | Defer prices until token evidence and invocation coverage are trustworthy | R16 schema, price maintenance, report API |
+| D2: Is money a Server reporting feature? | Adopted for explicitly scoped PostgreSQL gateway attempts in P14; unrecorded work remains unknown | R16 immutable tariffs, reconciliation and coverage-qualified report; §4.4 |
 | D3: Which fault guarantees are supported? | P08 scope: kill/restart the application while PostgreSQL stays running. Database crashes and power loss need separate qualification; stronger recovery contracts remain open | R13 acceptance and required CI coverage |
 | D4: What does deletion mean? | Preserve current soft-removal and audit retention; design each stronger mode explicitly | R21 cleanup, tombstones, restore behavior |
 | D5: Are embedded crates supported public Rust APIs? | Preserve existing constructors and minimize source breakage while documenting the decision | R31 MSRV/support tier; API shape for R01/R07/R08 |
@@ -232,6 +232,14 @@ Add a narrowly scoped per-config/model capability override for parameters the Se
 `GET /v1/providers` already discloses configuration source and credential validity without returning the credential reference. Extend diagnostics only after checking the route's actual audience. An optional operator-defined alias plus source kind (`env`, `file`, `none`) is sufficient; environment-variable names, filesystem paths, key suffixes, and hashes of secret material are not safe substitutes. Audit provider error details and logs as well as success DTOs, because resolution failures and upstream response excerpts can carry metadata. Use synthetic sentinel values to test redaction on REST/gRPC and logs. Do not inspect real credentials for this work.
 
 ### 4.4 P14: optional money, after evidence coverage — R16
+
+**Implemented scope:** D2 adopts optional PostgreSQL monetary reporting through
+`/v1/reports/money`, separate from the existing token report. Gateway HTTP
+attempts, immutable tariffs, checked category arithmetic and append-only
+reconciliation are described in the [P14 guide](guides/monetary-accounting.md).
+The report explicitly excludes unrecorded legacy/custom/probe work and never
+claims to be an entire tenant bill. No price catalog is required for token-only
+operation. The requirements below remain the rationale and acceptance contract.
 
 [`reports_api.rs::op_cost`](../src/munarium-server/src/reports_api.rs) aggregates `session_turns.completion`. Its current turn counts and provider/model totals must retain their meaning. Broadening that same aggregation to all helper calls would change the metric even if the route and field names stayed unchanged.
 
