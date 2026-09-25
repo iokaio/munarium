@@ -19,6 +19,10 @@ use munarium_datastore::verify::{Limits, ReaderCapabilities};
 use munarium_datastore::PreparedChunk;
 use sha2::{Digest, Sha256};
 
+#[cfg(all(target_os = "linux", feature = "lexical-tantivy"))]
+#[path = "support/restricted_filesystem.rs"]
+mod restricted_filesystem;
+
 fn chunk(
     id: &str,
     source: &str,
