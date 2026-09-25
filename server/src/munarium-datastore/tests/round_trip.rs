@@ -931,6 +931,25 @@ fn concurrent_generation_build_does_not_change_an_open_pin() {
     thread.join().unwrap();
 }
 
+#[cfg(feature = "vector-diskann")]
+#[test]
+fn diskann_build_rejects_invalid_dimensions_before_allocating() {
+    use munarium_datastore::vector::VectorIndex;
+    use munarium_datastore::vector_diskann::{DiskAnnVectorIndex, GraphParams};
+
+    let entries = vec![("one".into(), vec![1.0]), ("two".into(), vec![2.0])];
+    // One row used to panic on capacity overflow; two also overflowed the
+    // count * dims multiplication. Neither requires a large input allocation.
+    for count in [1, 2] {
+        for dims in [usize::MAX, usize::MAX / 2, 2, 0] {
+            let result = DiskAnnVectorIndex::build(dims, &entries[..count], GraphParams::default());
+            assert!(matches!(result, Err(munarium_datastore::Error::Invalid(_))));
+        }
+    }
+    let index = DiskAnnVectorIndex::build(1, &entries, GraphParams::default()).unwrap();
+    assert_eq!(index.len(), 2);
+}
+
 /// A build without the lexical engine cannot seal: every plan names a lexical
 /// engine, and the seal refuses rather than publish an artifact that claims an
 /// engine it does not carry (shard.rs `lexical_component`). Such a build is a

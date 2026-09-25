@@ -597,9 +597,9 @@ impl DiskAnnVectorIndex {
             )));
         }
         let count = entries.len();
-        let mut data = Vec::with_capacity(count * dims);
-        let mut chunk_ids = Vec::with_capacity(count);
-        let mut start = vec![0.0f64; dims];
+        // Validate caller-supplied dimensions against actual vectors before
+        // using them as allocation sizes. Even a tiny invalid input must
+        // return an error rather than panic on capacity or product overflow.
         for (chunk_id, embedding) in entries {
             if embedding.len() != dims {
                 return Err(Error::Invalid(format!(
@@ -612,6 +612,23 @@ impl DiskAnnVectorIndex {
                     "embedding for {chunk_id:?} holds a non-finite value"
                 )));
             }
+        }
+        let values = count.checked_mul(dims).ok_or_else(|| {
+            Error::Limit("diskann vector count times dimensions overflows".into())
+        })?;
+        let mut data = Vec::new();
+        data.try_reserve_exact(values)
+            .map_err(|e| Error::Limit(format!("diskann vector allocation: {e}")))?;
+        let mut chunk_ids = Vec::new();
+        chunk_ids
+            .try_reserve_exact(count)
+            .map_err(|e| Error::Limit(format!("diskann id allocation: {e}")))?;
+        let mut start = Vec::new();
+        start
+            .try_reserve_exact(dims)
+            .map_err(|e| Error::Limit(format!("diskann centroid allocation: {e}")))?;
+        start.resize(dims, 0.0f64);
+        for (chunk_id, embedding) in entries {
             for (acc, v) in start.iter_mut().zip(embedding) {
                 *acc += *v as f64;
             }
