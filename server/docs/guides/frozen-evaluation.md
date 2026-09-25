@@ -154,7 +154,12 @@ The runner has no remote-target or hosted-model option. It strips inherited
 The manifest pins the executable, runtime, source inputs, CPU identity/count and
 PostgreSQL image. HTTP request counts and wall time are capped; database size is
 checked against a frozen upper bound. It checks source and binary identity again
-before completion. Every case and latency sample has a planned slot. An exclusive
+before completion. Before creating resources or output records, it compares the
+observed Python version, operating system, architecture, processor identity and
+logical CPU count with the manifest; a mismatch refuses execution. Baseline
+selection compares those same dimensions. These checks establish agreement on
+the recorded host class, not identical physical hardware or background load.
+Every case and latency sample has a planned slot. An exclusive
 journal persists completed case observations with `fsync`; caught interruptions
 retain unexecuted rows and incomplete latency samples in the final raw record.
 An uncatchable process/host termination can leave a journal without a finalized
@@ -165,7 +170,9 @@ at least 95% supported correctness, and a minimum five percentage-point paired
 improvement over conventional retrieval. A 95% history-bootstrap lower bound
 must clear that improvement to qualify; an upper bound below it rejects the
 usefulness claim, and overlapping uncertainty is inconclusive. Any missing run
-coverage is incomplete. This is an empirical acceptance rule for the declared
+coverage, caught run-level error or unconfirmed resource cleanup makes the
+qualification incomplete, even if every case finished. Completed case scores
+remain available. This is an empirical acceptance rule for the declared
 fictional population, not an assurance about arbitrary real-world histories.
 
 The six history families are stable facts, explicit corrections, historical

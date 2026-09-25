@@ -26,6 +26,17 @@ ROOT = ev.ROOT
 MAX_DATABASE_BYTES = 512 * 1024 * 1024
 
 
+def host_identity():
+    """Observable runtime/host dimensions used for local latency comparisons."""
+    return {
+        "python": platform.python_version(),
+        "system": platform.system(),
+        "architecture": platform.machine(),
+        "processor": platform.processor(),
+        "logical_cpus": os.cpu_count(),
+    }
+
+
 def sources():
     paths = [
         Path(__file__),
@@ -107,11 +118,7 @@ def freeze(binary, phase, per_family, samples, starts, repetitions, baseline_raw
         build={
             "binary_sha256": binary_hash(binary),
             "profile": "release",
-            "python": platform.python_version(),
-            "system": platform.system(),
-            "architecture": platform.machine(),
-            "processor": platform.processor(),
-            "logical_cpus": os.cpu_count(),
+            **host_identity(),
             "database_image": subprocess.check_output(
                 [
                     "docker",
@@ -170,7 +177,7 @@ def freeze(binary, phase, per_family, samples, starts, repetitions, baseline_raw
             baseline_manifest["latency_workloads"] == workloads,
             "baseline_workload_mismatch",
         )
-        for field in ("binary_sha256", "processor", "logical_cpus", "database_image"):
+        for field in ("binary_sha256", "database_image", *host_identity()):
             ev.require(
                 baseline_manifest["build"][field] == manifest["build"][field],
                 "baseline_environment_mismatch",
@@ -682,8 +689,13 @@ def paired_summary(manifest, raw, grading):
         and current["correct"] / current["planned"]
         >= d6["minimum_supported_correctness"]
     )
-    incomplete = any(
-        r["status"] in ("failed", "interrupted", "unexecuted") for r in raw["rows"]
+    metadata = raw.get("metadata", {})
+    incomplete = (
+        bool(metadata.get("runner_error"))
+        or metadata.get("cleanup_completed") is not True
+        or any(
+            r["status"] in ("failed", "interrupted", "unexecuted") for r in raw["rows"]
+        )
     )
     verdict = (
         "incomplete"
@@ -771,6 +783,12 @@ def run(manifest, binary, directory, run_id, frozen_commit=None):
     ev.require(
         manifest["build"]["binary_sha256"] == binary_hash(binary), "live_binary_changed"
     )
+    observed_host = host_identity()
+    for field, value in observed_host.items():
+        ev.require(
+            field in manifest["build"] and manifest["build"][field] == value,
+            f"live_host_mismatch:{field}",
+        )
     settings = manifest["runner_settings"]
     fixture = cases.fixture(
         "held_out" if manifest["purpose"] == "qualification" else "pilot",
@@ -808,7 +826,8 @@ def run(manifest, binary, directory, run_id, frozen_commit=None):
     rig = LocalRig(binary, owned_dir)
     rig.client.deadline = deadline
     rig.client.limit = manifest["resource_limits"]["max_http_calls"]
-    metadata, measurements = {}, measurement_plan(manifest)
+    metadata = {"build": {**manifest["build"], **observed_host}}
+    measurements = measurement_plan(manifest)
     with journal.open("x", encoding="utf-8") as log:
         log.write(
             json.dumps({"manifest_id": manifest["id"], "planned_rows": rows}) + "\n"
@@ -826,15 +845,16 @@ def run(manifest, binary, directory, run_id, frozen_commit=None):
                     flush=True,
                 )
                 states, token, maintenance = apply_fixture(rig, fixture)
-                metadata = {
-                    "database_image": rig.image_id,
-                    "database_bytes_before": rig.database_bytes(),
-                    "maintenance": maintenance,
-                    "build": manifest["build"],
-                    "host_class": manifest["latency_workloads"]["retrieval"][
-                        "hardware_class"
-                    ],
-                }
+                metadata.update(
+                    {
+                        "database_image": rig.image_id,
+                        "database_bytes_before": rig.database_bytes(),
+                        "maintenance": maintenance,
+                        "host_class": manifest["latency_workloads"]["retrieval"][
+                            "hardware_class"
+                        ],
+                    }
+                )
                 ev.require(
                     metadata["database_bytes_before"] <= MAX_DATABASE_BYTES,
                     "database_budget_exceeded",

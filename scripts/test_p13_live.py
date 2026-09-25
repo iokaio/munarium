@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Live campaign controls: fair baselines, held-out criteria, failures and ownership."""
 
+import copy
 import tempfile
 import unittest
 from pathlib import Path
@@ -107,6 +108,7 @@ class CampaignTests(unittest.TestCase):
             },
         }
         raw = {
+            "metadata": {"cleanup_completed": True},
             "rows": [
                 {
                     "id": c["id"],
@@ -114,7 +116,7 @@ class CampaignTests(unittest.TestCase):
                     "observations": {"unauthorized_disclosures": 0},
                 }
                 for c in data["cases"]
-            ]
+            ],
         }
         grading = {
             "scores": [
@@ -153,6 +155,51 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual(
             live.paired_summary(manifest, raw, grading)["d6_verdict"], "incomplete"
         )
+
+    def test_run_level_failure_overrides_positive_and_negative_verdicts(self):
+        for correct_baseline in (True, False):
+            for metadata in (
+                {"runner_error": "ValueError", "cleanup_completed": True},
+                {"runner_error": "KeyboardInterrupt", "cleanup_completed": True},
+                {"cleanup_completed": False},
+                {},
+            ):
+                with self.subTest(baseline=correct_baseline, metadata=metadata):
+                    manifest, raw, grading = self.summary_fixture(correct_baseline)
+                    completed = live.paired_summary(manifest, raw, grading)
+                    raw["metadata"] = metadata
+                    original = copy.deepcopy((raw, grading))
+                    report = live.paired_summary(manifest, raw, grading)
+                    self.assertEqual(report["d6_verdict"], "incomplete")
+                    self.assertEqual(report["per_arm"], completed["per_arm"])
+                    self.assertEqual((raw, grading), original)
+
+    def test_host_drift_refuses_before_creating_resources_or_outputs(self):
+        host = live.host_identity()
+        manifest = frozen_eval_pilot.freeze()
+        manifest["build"] = {"binary_sha256": "expected", **host}
+        manifest = ev.seal(
+            "manifest",
+            **{
+                k: v
+                for k, v in manifest.items()
+                if k not in ("kind", "schema_version", "id")
+            },
+        )
+        for field in host:
+            changed = {**host, field: "different"}
+            with (
+                self.subTest(field=field),
+                tempfile.TemporaryDirectory() as tmp,
+                patch.object(live, "sources", return_value=manifest["source"]),
+                patch.object(live, "binary_hash", return_value="expected"),
+                patch.object(live, "host_identity", return_value=changed),
+                patch.object(live, "LocalRig") as rig,
+            ):
+                with self.assertRaisesRegex(ValueError, f"live_host_mismatch:{field}"):
+                    live.run(manifest, "unused", Path(tmp) / "results", "control")
+                rig.assert_not_called()
+                self.assertEqual(list(Path(tmp).iterdir()), [])
 
     def test_http_budget_fails_before_request(self):
         client = Client("http://127.0.0.1:1", "test", limit=0)
@@ -260,7 +307,7 @@ class CampaignTests(unittest.TestCase):
             corpus_hash=ev.digest(fixture["histories"]),
             decision_d6={"selected": True},
             runner_settings={"per_family": 1},
-            build={"binary_sha256": "expected"},
+            build={"binary_sha256": "expected", **live.host_identity()},
         )
         manifest = ev.seal(
             "manifest",

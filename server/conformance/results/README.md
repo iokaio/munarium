@@ -128,6 +128,16 @@ and its source identities remain retained.
 
 ## Retained diagnostic history and final checks
 
+The recorded campaigns predate two subsequent runner fixes: run-level errors or
+unconfirmed cleanup now make qualification incomplete without changing case
+scores, and execution checks the observed runtime/host dimensions against the
+frozen manifest before starting resources. The records below are unchanged;
+they do not constitute a live qualification of the corrected runner. Qualification
+001 recorded no runner error and successful cleanup, so its rejected usefulness
+result remains applicable to that recorded run. Its copied host metadata cannot
+retrospectively demonstrate the new execution-time host check. A new live
+qualification requires a new preregistered manifest and campaign.
+
 | Run | Outcome |
 |---|---|
 | [Live pilot 001](analysis-2d3c1b57e7cc56a3474de0acfa85f0aa7d6f0c2ff0a857eb5b48231c9fe18f75.json) | Six histories; completed initial setup/scoring/timing checks |
@@ -139,7 +149,7 @@ now waits for its final TCP listener before starting Server. Diagnostic reruns
 have distinct run IDs and manifest identities. Their raw records and journals
 remain in this index; no run was overwritten or discarded to obtain success.
 
-Final local checks: 44 Python tests, six Server documentation tests, Python lint
+Final local checks after the runner fixes: 46 Python tests, six Server documentation tests, Python lint
 and formatting, record/analysis validators, JSON Schemas, license and client
 compatibility checks passed. A simulated shallow checkout validates the Git
 inclusion proof and rejects missing/tampered proofs. The full private-material
