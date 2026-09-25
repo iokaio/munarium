@@ -4,6 +4,13 @@ name = "munarium-datastore"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# The supported embedded tier is consumed as pinned source, not from a
+# registry (docs/embedded-support.md). Publication is a separate decision.
+publish = false
+# The supported tier's minimum compiler, measured from the isolated consumer
+# (tests/embedded-datastore) in every supported feature set; vector-diskann's
+# `diskann` 0.56 is what needs 1.92 (docs/embedded-support.md).
+rust-version = "1.92"
 description = "Immutable, content-verified Munarium search artifacts: build, seal, verify, open, query. Independently usable — no Axum, tonic, SQLx, PostgreSQL, server config, auth or runbooks anywhere in its graph."
 
 [features]
@@ -14,6 +21,7 @@ default = ["lexical-tantivy", "vector-flat", "artifact-file"]
 lexical-tantivy = ["dep:tantivy", "dep:tempfile", "dep:rust-stemmers"]
 # Exact cosine: the correctness oracle every approximate engine is measured
 # against, and the deployable fast path below the graph threshold.
+# A marker: flat vectors always compile, and no code checks this feature.
 vector-flat = []
 # Approximate vectors through Microsoft's first-party pure-Rust `diskann`
 # crate. NOT default: compiling it in is a deliberate approval, and the plan
@@ -25,6 +33,7 @@ vector-flat = []
 vector-diskann = ["dep:diskann", "dep:diskann-vector"]
 # The local-filesystem ArtifactStore. Cloud object stores are supplied by a
 # thin adapter or by Server, so credential policy stays out of this crate.
+# A marker: `LocalFileStore` always compiles, and no code checks this feature.
 artifact-file = []
 
 [dependencies]

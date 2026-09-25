@@ -265,13 +265,15 @@ pub async fn answer(
                 && h.source_content_hash == source.source_content_hash
                 && h.text.contains(&source.text)
         });
-        if result.envelope.index_version != source.index_version || hit.is_none() {
-            return Err(KernelError::InvalidInput(
-                "source passage does not match its pinned index".into(),
-            )
-            .into());
-        }
-        let hit = hit.expect("validated hit");
+        let hit = match hit {
+            Some(hit) if result.envelope.index_version == source.index_version => hit,
+            _ => {
+                return Err(KernelError::InvalidInput(
+                    "source passage does not match its pinned index".into(),
+                )
+                .into())
+            }
+        };
         verified.insert(
             source.id.clone(),
             SourceReference {

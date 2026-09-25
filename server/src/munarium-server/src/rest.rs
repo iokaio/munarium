@@ -206,8 +206,10 @@ where
     Ok(Json(value).into_response())
 }
 
-fn json_value<T: serde::Serialize>(v: &T) -> serde_json::Value {
-    serde_json::to_value(v).expect("DTO serialization is infallible")
+/// A command response body. See `error::to_json`: an impossible
+/// serialization failure is a 500, never a request-path panic.
+fn json_value<T: serde::Serialize>(v: &T) -> ApiResult<serde_json::Value> {
+    Ok(crate::error::to_json(v, "response")?)
 }
 
 /// Idempotency body hash for a command request. DTO serialization is
@@ -236,7 +238,7 @@ async fn create_version(
         let id = store
             .create_version(req.parent_version_id.as_deref(), req.metadata.clone())
             .await?;
-        Ok(json_value(&dto::CreateVersionResponse { version_id: id }))
+        json_value(&dto::CreateVersionResponse { version_id: id })
     })
     .await
 }
@@ -277,11 +279,11 @@ async fn propose_claim(
                 "append returned no claim for a one-claim propose".into(),
             ))
         })?;
-        Ok(json_value(&dto::ProposeClaimResponse {
+        json_value(&dto::ProposeClaimResponse {
             claim: claim.convert(),
             findings: out.findings.into_iter().map(convert).collect(),
             head_seq: out.head_seq,
-        }))
+        })
     })
     .await
 }
@@ -315,11 +317,11 @@ async fn append_events(
             chronology.as_ref(),
         )
         .await?;
-        Ok(json_value(&dto::AppendEventsResponse {
+        json_value(&dto::AppendEventsResponse {
             claims: out.claims.into_iter().map(convert).collect(),
             findings: out.findings.into_iter().map(convert).collect(),
             head_seq: out.head_seq,
-        }))
+        })
     })
     .await
 }
@@ -346,7 +348,7 @@ async fn open_promise(
                 req.due_scope.as_deref(),
             )
             .await?;
-        Ok(json_value(&convert(p)))
+        json_value(&convert(p))
     })
     .await
 }
@@ -362,7 +364,7 @@ async fn fulfill_promise(
     let hash = request_hash(format!("fulfill:{version_id}:{key}").as_bytes());
     with_idempotency(&state, &ctx, &headers, hash, || async move {
         let fulfilled = store.fulfill_promise(&version_id, &key).await?;
-        Ok(json_value(&dto::FulfillPromiseResponse { fulfilled }))
+        json_value(&dto::FulfillPromiseResponse { fulfilled })
     })
     .await
 }
@@ -389,7 +391,7 @@ async fn lock_anchor(
                 req.evidence.clone(),
             )
             .await?;
-        Ok(json_value(&convert(a)))
+        json_value(&convert(a))
     })
     .await
 }
@@ -1229,8 +1231,11 @@ async fn version_info() -> Json<dto::VersionInfo> {
 }
 
 #[utoipa::path(get, path = "/openapi.json", responses((status = 200, body = serde_json::Value)), tag = "meta")]
-async fn openapi_json() -> Json<serde_json::Value> {
-    Json(serde_json::to_value(crate::openapi::doc()).expect("openapi serializes"))
+async fn openapi_json() -> ApiResult<Json<serde_json::Value>> {
+    Ok(Json(crate::error::to_json(
+        &crate::openapi::doc(),
+        "OpenAPI document",
+    )?))
 }
 
 /// A self-contained API landing page (upgraded 2026-08-17 from a Redoc

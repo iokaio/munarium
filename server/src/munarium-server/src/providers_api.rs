@@ -660,8 +660,6 @@ pub async fn op_healthai(probe_max_tokens: u32) -> dto::HealthAiResponse {
                 .unwrap_or_default()
                 .to_string();
             handles.push(tokio::spawn(async move {
-                let doc = default_config_doc(family).expect("known family");
-                let env = default_env_var(family).expect("known family");
                 let mut check = dto::HealthAiCheck {
                     provider: family.to_string(),
                     tier: tier.as_str().to_string(),
@@ -670,6 +668,14 @@ pub async fn op_healthai(probe_max_tokens: u32) -> dto::HealthAiResponse {
                     skipped: false,
                     latency_ms: None,
                     detail: String::new(),
+                };
+                // Every priority family has a built-in config and credential
+                // variable; one that did not would report a failed check
+                // rather than panic its probe task (P15/R32).
+                let (Some(doc), Some(env)) = (default_config_doc(family), default_env_var(family))
+                else {
+                    check.detail = format!("no built-in configuration for provider '{family}'");
+                    return check;
                 };
                 if resolve_config_credential(&doc.spec).is_err() {
                     check.skipped = true;

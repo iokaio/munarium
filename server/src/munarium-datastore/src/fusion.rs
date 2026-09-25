@@ -309,10 +309,15 @@ fn fuse_pools_with_domain_policy(
                     Leg::Vector => c.vector.as_ref(),
                 }
             }
-            let members: Vec<usize> = (0..candidates.len())
-                .filter(|&i| {
-                    is_probe(&candidates[i]) == probe_stratum && pick(&candidates[i], leg).is_some()
-                })
+            // Each member pairs a candidate index with this leg's measure, so
+            // "every member has this leg" is carried by the type rather than
+            // re-asserted with an unwrap at each use (P15/R32). Index order is
+            // unchanged from the historical merge.
+            let members: Vec<(usize, &Measure)> = candidates
+                .iter()
+                .enumerate()
+                .filter(|(_, c)| is_probe(c) == probe_stratum)
+                .filter_map(|(i, c)| pick(c, leg).map(|m| (i, m)))
                 .collect();
             if members.is_empty() {
                 continue;
@@ -321,16 +326,13 @@ fn fuse_pools_with_domain_policy(
                 Leg::Lexical => &mut lexical_domains,
                 Leg::Vector => &mut vector_domains,
             };
-            for &i in &members {
-                let d = &pick(&candidates[i], leg).unwrap().domain;
-                if !seen.contains(d) {
-                    seen.push(d.clone());
+            for (_, m) in &members {
+                if !seen.contains(&m.domain) {
+                    seen.push(m.domain.clone());
                 }
             }
-            let mut stratum_domains: Vec<&str> = members
-                .iter()
-                .map(|&i| pick(&candidates[i], leg).unwrap().domain.as_str())
-                .collect();
+            let mut stratum_domains: Vec<&str> =
+                members.iter().map(|(_, m)| m.domain.as_str()).collect();
             stratum_domains.sort_unstable();
             stratum_domains.dedup();
 
@@ -348,40 +350,39 @@ fn fuse_pools_with_domain_policy(
             let ordered: Vec<usize> = if stratum_domains.len() <= 1 {
                 // The single-domain path: raw values order the leg globally.
                 // Operation-identical to the historical merge.
-                let mut m = members;
+                let mut m: Vec<usize> = members.iter().map(|&(i, _)| i).collect();
                 m.sort_by(by_value);
                 m
             } else {
                 // Two or more domains in one stratum-leg: refuse the numeric
                 // comparison, interleave by per-domain rank.
                 mixed = true;
-                let mut with_rank: Vec<(usize, usize)> = Vec::with_capacity(members.len());
+                let mut with_rank: Vec<(usize, usize, &str)> = Vec::with_capacity(members.len());
                 for domain in &stratum_domains {
                     let mut own: Vec<usize> = members
                         .iter()
-                        .copied()
-                        .filter(|&i| pick(&candidates[i], leg).unwrap().domain == *domain)
+                        .filter(|(_, m)| m.domain == *domain)
+                        .map(|&(i, _)| i)
                         .collect();
                     own.sort_by(by_value);
-                    with_rank.extend(own.into_iter().enumerate());
+                    with_rank.extend(
+                        own.into_iter()
+                            .enumerate()
+                            .map(|(rank, i)| (rank, i, *domain)),
+                    );
                 }
                 if partial_domains {
-                    for (rank, i) in with_rank {
+                    for (rank, i, _) in with_rank {
                         fused[i] += stratum_weight * leg_weight / (k + rank as f64 + 1.0);
                     }
                     continue;
                 }
-                with_rank.sort_by(|&(ra, a), &(rb, b)| {
+                with_rank.sort_by(|&(ra, a, da), &(rb, b, db)| {
                     ra.cmp(&rb)
-                        .then_with(|| {
-                            pick(&candidates[a], leg)
-                                .unwrap()
-                                .domain
-                                .cmp(&pick(&candidates[b], leg).unwrap().domain)
-                        })
+                        .then_with(|| da.cmp(db))
                         .then(candidates[a].chunk_id.cmp(&candidates[b].chunk_id))
                 });
-                with_rank.into_iter().map(|(_, i)| i).collect()
+                with_rank.into_iter().map(|(_, i, _)| i).collect()
             };
 
             for (rank, &i) in ordered.iter().enumerate() {

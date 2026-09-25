@@ -138,7 +138,8 @@ points. R22 adds latency reporting before any calibrated performance gate.
 
 Embedded library support (R31), optional monetary reporting (R16), and stronger
 recovery or erasure guarantees are decisions, not consequences of publishing this
-agenda. The public [capability table](../README.md#what-is-built-and-what-is-not)
+agenda. P15 took the first: only the datastore is a supported embedded library
+([embedded-support.md](embedded-support.md)). The public [capability table](../README.md#what-is-built-and-what-is-not)
 remains the starting point for what Server supports.
 
 ## Recommendation index
@@ -178,8 +179,8 @@ assigns each recommendation to a slice and acceptance criteria.
 | R28 | Review visibility before adding operator credential aliases |
 | R29 | Audit release inputs in the workflow that owns releases |
 | R30 | Include unresolved liability in separately authorized campaign budgets |
-| R31 | Decide embedded library support and qualify the selected API/MSRV |
-| R32 | Audit production panic boundaries before tightening lints |
+| R31 | Decide embedded library support and qualify the selected API/MSRV; decided in P15 (datastore only, [embedded-support.md](embedded-support.md)) |
+| R32 | Audit production panic boundaries before tightening lints; completed in P15 ([panic-boundaries.md](panic-boundaries.md)) |
 | R33 | Record waivers separately from successful qualification |
 | R34 | Check environment availability before dependent qualification |
 

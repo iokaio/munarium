@@ -6,7 +6,14 @@ use async_trait::async_trait;
 use munarium_core::sources::{SourceKey, SourceStore};
 use munarium_core::{KernelError, Result};
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::sync::{PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
+
+/// The blob map's lock is poisoned only if a thread panicked while holding it.
+/// The trait's callers get a storage error rather than a second panic, and the
+/// blobs stay untouched until the process restarts (P15/R32).
+fn poisoned<T>(_: PoisonError<T>) -> KernelError {
+    KernelError::Storage("in-memory source store lock is poisoned".into())
+}
 
 #[derive(Default)]
 pub struct MemSourceStore {
@@ -18,8 +25,23 @@ impl MemSourceStore {
         Self::default()
     }
 
+    /// The number of stored blobs. A count is a diagnostic, not a storage
+    /// outcome, so it still answers after the lock is poisoned: every critical
+    /// section here is a single map operation, so the map is never left half
+    /// updated.
     pub fn len(&self) -> usize {
-        self.blobs.read().expect("blob lock").len()
+        self.blobs
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .len()
+    }
+
+    fn read(&self) -> Result<RwLockReadGuard<'_, HashMap<String, Vec<u8>>>> {
+        self.blobs.read().map_err(poisoned)
+    }
+
+    fn write(&self) -> Result<RwLockWriteGuard<'_, HashMap<String, Vec<u8>>>> {
+        self.blobs.write().map_err(poisoned)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -31,17 +53,12 @@ impl MemSourceStore {
 impl SourceStore for MemSourceStore {
     async fn put(&self, key: &SourceKey, _media_type: &str, bytes: &[u8]) -> Result<String> {
         let name = key.blob_name();
-        self.blobs
-            .write()
-            .expect("blob lock")
-            .insert(name.clone(), bytes.to_vec());
+        self.write()?.insert(name.clone(), bytes.to_vec());
         Ok(format!("mem://{name}"))
     }
 
     async fn get(&self, key: &SourceKey) -> Result<Vec<u8>> {
-        self.blobs
-            .read()
-            .expect("blob lock")
+        self.read()?
             .get(&key.blob_name())
             .cloned()
             .ok_or_else(|| KernelError::NotFound {
@@ -51,18 +68,11 @@ impl SourceStore for MemSourceStore {
     }
 
     async fn exists(&self, key: &SourceKey) -> Result<bool> {
-        Ok(self
-            .blobs
-            .read()
-            .expect("blob lock")
-            .contains_key(&key.blob_name()))
+        Ok(self.read()?.contains_key(&key.blob_name()))
     }
 
     async fn delete(&self, key: &SourceKey) -> Result<()> {
-        self.blobs
-            .write()
-            .expect("blob lock")
-            .remove(&key.blob_name());
+        self.write()?.remove(&key.blob_name());
         Ok(())
     }
 
@@ -99,6 +109,35 @@ mod tests {
         // Deleting an absent blob is not an error.
         store.delete(&k).await.expect("idempotent delete");
         assert!(store.get(&k).await.is_err());
+    }
+
+    fn poisoned() -> MemSourceStore {
+        let store = std::sync::Arc::new(MemSourceStore::new());
+        let held = store.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = held.blobs.write().unwrap();
+            panic!("poison the blob lock");
+        })
+        .join();
+        assert!(store.blobs.is_poisoned());
+        std::sync::Arc::into_inner(store).expect("sole owner")
+    }
+
+    #[tokio::test]
+    async fn a_poisoned_blob_lock_is_a_storage_error_not_a_panic() {
+        // P15/R32: every trait method used `.expect("blob lock")`, so one
+        // panic while a guard was held turned each later call into a panic.
+        let store = poisoned();
+        let k = key("a/b.md");
+        let storage = |r: Result<()>| matches!(r, Err(KernelError::Storage(_)));
+        assert!(storage(
+            store.put(&k, "text/markdown", b"x").await.map(|_| ())
+        ));
+        assert!(storage(store.get(&k).await.map(|_| ())));
+        assert!(storage(store.exists(&k).await.map(|_| ())));
+        assert!(storage(store.delete(&k).await));
+        // The count is a diagnostic, not a storage outcome: it still answers.
+        assert_eq!(store.len(), 0);
     }
 
     #[tokio::test]

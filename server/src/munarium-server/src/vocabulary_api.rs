@@ -530,9 +530,15 @@ async fn generate(
     let result: Result<Vocabulary> = async {
         let retrieval=state.retrieval_for(tenant)?;
         let mut documents=Vec::new();
+        // (source id, content hash) of each sampled document, kept typed so the
+        // change check below needs no `as_str().unwrap()` on JSON built here.
+        let mut sampled:Vec<(String,String)>=Vec::new();
         for id in &chosen {
             let (hash,text)=retrieval.source_sample(id,sampling.characters_per_document).await?;
-            if !text.trim().is_empty() {documents.push(serde_json::json!({"source_id":id,"hash":hash,"text":text}));}
+            if !text.trim().is_empty() {
+                documents.push(serde_json::json!({"source_id":id,"hash":hash,"text":text}));
+                sampled.push((id.clone(),hash));
+            }
         }
         if documents.is_empty() {return Err(invalid("sampled sources contained no extractable text"));}
         let store=state.store_for(tenant).await?;
@@ -554,16 +560,16 @@ async fn generate(
         if crate::governance_api::load(state,tenant,collection).await?.map(|g|g.revision) != governance.as_ref().map(|g|g.revision) {
             return Err(invalid("collection governance changed during generation"));
         }
-        for d in &documents {
-            let source=retrieval.source_info(d["source_id"].as_str().unwrap()).await?;
-            if source.content_hash!=d["hash"].as_str().unwrap() {return Err(invalid("sampled source changed during generation"));}
+        for (source_id,hash) in &sampled {
+            let source=retrieval.source_info(source_id).await?;
+            if &source.content_hash!=hash {return Err(invalid("sampled source changed during generation"));}
         }
         if retrieval.collection_by_id(collection).await?.status != "active" {return Err(invalid("collection retired during generation"));}
         if corpus_fingerprint(state,tenant,collection).await?!=fingerprint {return Err(invalid("collection sources changed during generation"));}
         value.groups=generated.groups;value.origin="generated".into();value.status="ready".into();value.sampled_sources=chosen.clone();value.corpus_fingerprint=fingerprint;
         let next:Option<i64>=sqlx::query_scalar("UPDATE collection_vocabularies SET vocabulary=$4,revision=revision+1,lease_id=NULL,lease_until=NULL
             WHERE tenant_id=$1 AND collection_id=$2 AND revision=$3 AND lease_id=$5 RETURNING revision")
-            .bind(tenant).bind(collection).bind(revision).bind(serde_json::to_value(&value).unwrap()).bind(&lease)
+            .bind(tenant).bind(collection).bind(revision).bind(crate::error::to_json(&value,"collection vocabulary")?).bind(&lease)
             .fetch_optional(crate::runbooks_api::pool(state)?).await.map_err(storage)?;
         value.revision=next.ok_or_else(|| invalid("vocabulary changed during generation; result discarded"))?;
         Ok(value)

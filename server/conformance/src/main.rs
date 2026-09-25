@@ -22,6 +22,21 @@
 //! Passing BOTH --http and --grpc is the cross-plane parity check: the same
 //! scenario set must go green on each plane.
 
+// Production code returns typed errors instead of panicking; tests are exempt.
+// The policy, its two exemptions and the per-site record are in
+// server/docs/panic-boundaries.md (P15/R32).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
 use mmp_conformance::clients::{GrpcClientStore, RestClientStore};
 use munarium_core::storage::StorageBackend;
 use munarium_store_mem::MemStore;
@@ -147,12 +162,9 @@ async fn main() {
     }
 }
 
+/// A fresh, time-ordered tenant suffix. A UUIDv7 keeps the ordering the
+/// previous nanosecond-clock suffix gave, without its `unwrap` on a clock set
+/// before the epoch (P15/R32).
 fn uuid_like() -> String {
-    format!(
-        "{:x}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    )
+    uuid::Uuid::now_v7().simple().to_string()
 }

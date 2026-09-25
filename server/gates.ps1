@@ -6,9 +6,10 @@ param([string]$ReceiptPath)
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot/tools/validation.ps1"
 . "$PSScriptRoot/tools/validation-tiers.ps1"
+. "$PSScriptRoot/tools/embedded-datastore.ps1"
 Push-Location $PSScriptRoot
 try {
-    New-ValidationRun 'gates' (Split-Path $PSScriptRoot) $ReceiptPath -Inputs @('server/tools/validation.ps1','server/tools/validation-tiers.ps1')
+    New-ValidationRun 'gates' (Split-Path $PSScriptRoot) $ReceiptPath -Inputs @('server/tools/validation.ps1','server/tools/validation-tiers.ps1','server/tools/embedded-datastore.ps1')
     Add-ValidationStep 'runner.regression' { Invoke-ValidationCommand py @('-m','unittest','discover','-s','tools','-p','test_validation.py') } -Requires @('py','pwsh')
     Add-ValidationStep 'format' { Invoke-ValidationCommand cargo @('fmt','--all','--check') } -Requires cargo
     Add-ValidationStep 'clippy.default' { Invoke-ValidationCommand cargo @('clippy','--workspace','--all-targets','--','-D','warnings') } -Requires cargo
@@ -74,6 +75,10 @@ try {
             Select-String -Pattern '^\s*(drop\s+(table|column)|alter\s+table\s+\S+\s+drop)'
         if ($bad) { throw 'destructive_ddl' }
     }
+    # The supported embedded datastore tier, from its isolated consumer. A
+    # missing minimum toolchain is incomplete required coverage (3); CI's
+    # embedded-datastore job mirrors these steps.
+    Add-EmbeddedDatastoreSteps
     # Missing local cargo-deny is incomplete required coverage (3); CI still enforces it.
     Add-ValidationStep 'dependencies.deny' { Invoke-ValidationCommand cargo @('deny','check') } -Requires @('cargo','cargo-deny')
     $code = Invoke-ValidationRun

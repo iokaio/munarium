@@ -33,7 +33,7 @@ fn client() -> reqwest::blocking::Client {
     reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(600))
         .build()
-        .expect("client")
+        .unwrap_or_else(|e| die(&format!("could not build the HTTP client: {e}")))
 }
 
 fn auth(rb: reqwest::blocking::RequestBuilder) -> reqwest::blocking::RequestBuilder {
@@ -124,8 +124,12 @@ fn get(path: &str) -> serde_json::Value {
     )
 }
 
+/// Print a response body. A rendering failure exits with an error rather than
+/// printing an empty line that reads as an empty answer (P15/R32).
 fn print(v: &serde_json::Value) {
-    println!("{}", serde_json::to_string_pretty(v).unwrap_or_default());
+    let text = serde_json::to_string_pretty(v)
+        .unwrap_or_else(|e| die(&format!("could not render the response: {e}")));
+    println!("{text}");
 }
 
 fn name_arg(args: &[String], what: &str) -> String {

@@ -7,6 +7,21 @@
 //! `munarium-core` domain types live in `munarium-api-conv` (`ToDto` / `ToCore`),
 //! moved there on 2026-09-02 so the DTOs can ship in the public contract bundle.
 
+// Production code returns typed errors instead of panicking; tests are exempt.
+// The policy, its two exemptions and the per-site record are in
+// server/docs/panic-boundaries.md (P15/R32).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 

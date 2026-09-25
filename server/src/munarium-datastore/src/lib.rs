@@ -20,6 +20,18 @@
 //! which is what keeps those responsibilities out: a crate that cannot see a
 //! provider cannot acquire a provider concern.
 //!
+//! ## Support
+//!
+//! This is the one Server crate supported as an embedded Rust library (P15,
+//! decision D5). A declared public surface follows semantic versioning,
+//! consumed as pinned source, with minimum supported Rust 1.92 in every
+//! supported feature set. An isolated consumer at
+//! `server/tests/embedded-datastore` qualifies the promise outside the Server
+//! workspace. The surface, feature sets and the exact claim are in
+//! `server/docs/embedded-support.md`. Without the `lexical-tantivy` feature
+//! the crate can verify manifests and use its contract types, flat vectors
+//! and fusion, but it refuses to seal or open artifacts.
+//!
 //! ## Identity
 //!
 //! - `index_version_id` = `idx2-` + sha256(canonical `BuildSpec`) — LOGICAL,
@@ -33,6 +45,22 @@
 //! residency, hydration, eviction and quarantine all key on the full
 //! [`ArtifactCacheKey`], and durable catalog keys carry the tenant separately.
 
+// Production code returns typed errors instead of panicking; tests are exempt.
+// The policy, its two exemptions and the per-site record are in
+// server/docs/panic-boundaries.md (P15/R32).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
+mod bytes;
 pub mod canonical;
 pub mod diagnostics;
 pub mod fusion;
@@ -61,7 +89,11 @@ use std::fmt;
 /// reader cannot serve it but a newer one might, `Limit` means the artifact is
 /// bigger than this node was configured to accept. A single opaque error would
 /// collapse three different operator responses into one.
+// Non-exhaustive from the embedded tier's first API baseline (P15/D5): a new
+// refusal class must not be a breaking change for consumers that match on
+// this enum, so a match outside this crate needs a wildcard arm.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     /// A hash or a declared length did not match the bytes. Quarantine.
     #[error("integrity: {0}")]

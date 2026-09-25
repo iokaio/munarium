@@ -87,11 +87,14 @@ fn month_num(name: &str) -> Option<u32> {
     })
 }
 
-fn month_end(year: i32, month: u32) -> NaiveDate {
+/// The last day of `month`, or `None` when that day is outside chrono's
+/// calendar range. Callers are all inside `parse_when`, so an unrepresentable
+/// date is "not a date this grammar covers", never a panic.
+fn month_end(year: i32, month: u32) -> Option<NaiveDate> {
     if month == 12 {
-        NaiveDate::from_ymd_opt(year, 12, 31).unwrap()
+        NaiveDate::from_ymd_opt(year, 12, 31)
     } else {
-        NaiveDate::from_ymd_opt(year, month + 1, 1).unwrap() - Duration::days(1)
+        NaiveDate::from_ymd_opt(year, month.checked_add(1)?, 1)?.pred_opt()
     }
 }
 
@@ -111,29 +114,37 @@ struct Parsers {
     season: Regex,
 }
 
+/// Compile one of the grammar's fixed patterns. Every pattern is a constant
+/// of this module (some assembled from the constants above), so a failure is a
+/// programming error that the first `parse_when` test exposes, not a runtime
+/// condition a caller could handle.
+#[expect(
+    clippy::unwrap_used,
+    reason = "constant patterns; the parse_when tests compile every one"
+)]
+fn constant_regex(pattern: &str) -> Regex {
+    Regex::new(pattern).unwrap()
+}
+
 fn parsers() -> &'static Parsers {
     static P: OnceLock<Parsers> = OnceLock::new();
     P.get_or_init(|| Parsers {
-        circa: Regex::new(r"(?i)^(?:circa|ca\.?|c\.|~|approx(?:\.|imately)?|around|about)\s*")
-            .unwrap(),
-        iso_day: Regex::new(r"^(\d{4})-(\d{2})-(\d{2})$").unwrap(),
-        iso_month: Regex::new(r"^(\d{4})-(\d{2})$").unwrap(),
-        year: Regex::new(r"^(\d{4})$").unwrap(),
-        year_range: Regex::new(&format!(r"^(\d{{4}}){RANGE_SEP}(\d{{4}})$")).unwrap(),
-        month_year: Regex::new(&format!(r"(?i)^({MONTH_RE})\.?\s+(\d{{4}})$")).unwrap(),
-        month_range: Regex::new(&format!(
+        circa: constant_regex(r"(?i)^(?:circa|ca\.?|c\.|~|approx(?:\.|imately)?|around|about)\s*"),
+        iso_day: constant_regex(r"^(\d{4})-(\d{2})-(\d{2})$"),
+        iso_month: constant_regex(r"^(\d{4})-(\d{2})$"),
+        year: constant_regex(r"^(\d{4})$"),
+        year_range: constant_regex(&format!(r"^(\d{{4}}){RANGE_SEP}(\d{{4}})$")),
+        month_year: constant_regex(&format!(r"(?i)^({MONTH_RE})\.?\s+(\d{{4}})$")),
+        month_range: constant_regex(&format!(
             r"(?i)^({MONTH_RE})\.?{RANGE_SEP}({MONTH_RE})\.?\s+(\d{{4}})$"
-        ))
-        .unwrap(),
-        month_day_year: Regex::new(&format!(
+        )),
+        month_day_year: constant_regex(&format!(
             r"(?i)^({MONTH_RE})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?(?:,\s*|\s+)(\d{{4}})$"
-        ))
-        .unwrap(),
-        day_month_year: Regex::new(&format!(
+        )),
+        day_month_year: constant_regex(&format!(
             r"(?i)^(\d{{1,2}})(?:st|nd|rd|th)?\s+({MONTH_RE})\.?,?\s+(\d{{4}})$"
-        ))
-        .unwrap(),
-        season: Regex::new(r"(?i)^(spring|summer|autumn|fall|winter)\s+(\d{4})$").unwrap(),
+        )),
+        season: constant_regex(r"(?i)^(spring|summer|autumn|fall|winter)\s+(\d{4})$"),
     })
 }
 
@@ -175,7 +186,7 @@ pub fn parse_when(text: &str) -> Option<When> {
         }
         return Some(When {
             start: NaiveDate::from_ymd_opt(year, month, 1)?,
-            end: month_end(year, month),
+            end: month_end(year, month)?,
             precision: PRECISION_MONTH,
             uncertain,
         });
@@ -212,7 +223,7 @@ pub fn parse_when(text: &str) -> Option<When> {
         }
         return Some(When {
             start: NaiveDate::from_ymd_opt(year, m1, 1)?,
-            end: month_end(year, m2),
+            end: month_end(year, m2)?,
             precision: PRECISION_MONTH,
             uncertain,
         });
@@ -244,7 +255,7 @@ pub fn parse_when(text: &str) -> Option<When> {
         let (month, year): (u32, i32) = (month_num(&m[1])?, m[2].parse().ok()?);
         return Some(When {
             start: NaiveDate::from_ymd_opt(year, month, 1)?,
-            end: month_end(year, month),
+            end: month_end(year, month)?,
             precision: PRECISION_MONTH,
             uncertain,
         });
@@ -260,14 +271,14 @@ pub fn parse_when(text: &str) -> Option<When> {
         };
         let year: i32 = m[2].parse().ok()?;
         let end_year = if end_month < start_month {
-            year + 1
+            year.checked_add(1)?
         } else {
             year
         };
         // A season is inherently hedged: uncertain regardless of a circa marker.
         return Some(When {
             start: NaiveDate::from_ymd_opt(year, start_month, 1)?,
-            end: month_end(end_year, end_month),
+            end: month_end(end_year, end_month)?,
             precision: PRECISION_MONTH,
             uncertain: true,
         });
@@ -708,19 +719,15 @@ pub fn evaluate(
             // The possible elapsed-days range given both intervals.
             let gap_min = (to_ev.when.start - from_ev.when.end).num_days();
             let gap_max = (to_ev.when.end - from_ev.when.start).num_days();
-            let problem = if rule.max_days.map(|m| gap_min > m).unwrap_or(false) {
-                Some(format!(
-                    "definitely exceeds max_days={}",
-                    rule.max_days.unwrap()
-                ))
-            } else if rule.min_days.map(|m| gap_max < m).unwrap_or(false) {
-                Some(format!(
-                    "definitely under min_days={}",
-                    rule.min_days.unwrap()
-                ))
-            } else {
-                None
-            };
+            let problem = rule
+                .max_days
+                .filter(|m| gap_min > *m)
+                .map(|max| format!("definitely exceeds max_days={max}"))
+                .or_else(|| {
+                    rule.min_days
+                        .filter(|m| gap_max < *m)
+                        .map(|min| format!("definitely under min_days={min}"))
+                });
             if let Some(problem) = problem {
                 let mut extras = serde_json::Map::new();
                 extras.insert("gap_days_min".into(), gap_min.into());
@@ -747,6 +754,30 @@ pub fn evaluate(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn month_end_is_none_outside_the_calendar_instead_of_panicking() {
+        // P15/R32: this panicked (`from_ymd_opt(..).unwrap()`) before
+        // month_end returned Option. parse_when's 4-digit grammar cannot reach
+        // it today; the helper must still not be a panic boundary.
+        assert_eq!(month_end(i32::MAX, 1), None);
+        assert_eq!(month_end(2024, 13), None);
+        assert_eq!(month_end(2024, u32::MAX), None);
+    }
+
+    #[test]
+    fn month_end_keeps_calendar_month_lengths() {
+        let d = |y, m, day| NaiveDate::from_ymd_opt(y, m, day);
+        assert_eq!(month_end(2024, 2), d(2024, 2, 29));
+        assert_eq!(month_end(2023, 2), d(2023, 2, 28));
+        assert_eq!(month_end(2024, 12), d(2024, 12, 31));
+        assert_eq!(month_end(2024, 4), d(2024, 4, 30));
+        assert_eq!(
+            parse_when("winter 2023").map(|w| w.end),
+            d(2024, 2, 29),
+            "a season that crosses a year still ends on its last month"
+        );
+    }
 
     fn d(s: &str) -> NaiveDate {
         s.parse().unwrap()

@@ -94,7 +94,7 @@ Discovery and tests can proceed before these decisions; dependent behavior chang
 | D2: Is money a Server reporting feature? | Adopted for explicitly scoped PostgreSQL gateway attempts in P14; unrecorded work remains unknown | R16 immutable tariffs, reconciliation and coverage-qualified report; §4.4 |
 | D3: Which fault guarantees are supported? | P08 scope: kill/restart the application while PostgreSQL stays running. Database crashes and power loss need separate qualification; stronger recovery contracts remain open | R13 acceptance and required CI coverage |
 | D4: What does deletion mean? | Preserve current soft-removal and audit retention; design each stronger mode explicitly | R21 cleanup, tombstones, restore behavior |
-| D5: Are embedded crates supported public Rust APIs? | Preserve existing constructors and minimize source breakage while documenting the decision | R31 MSRV/support tier; API shape for R01/R07/R08 |
+| D5: Are embedded crates supported public Rust APIs? | Decided in P15 (2026-09-25): only `munarium-datastore`, as a supported embedded library. It has a declared surface under semantic versioning, is consumed as pinned source, and has minimum Rust 1.92 measured from an isolated consumer. Every other crate is internal ([embedded-support.md](embedded-support.md)) | R31 MSRV/support tier; API shape for R01/R07/R08 |
 | D6: What makes governance useful for a target workload? | Freeze task population, minimum useful effect, cost/latency constraints, and mandatory authorization checks before the final evaluation | R25 quality claims and any paid campaign |
 | D7: Who may trigger paid diagnostics and view credential aliases? | Keep diagnostics free of credential references; review a separately permissioned operator surface | R28 and health-probe admission policy |
 | D8: How is comparison policy selected and pinned? | Immutable profiles; legacy default; existing histories transition explicitly to a child revision | R08 writes, replay, exports, and mixed-version operation |
@@ -121,7 +121,7 @@ Each row is a coherent implementation slice; it may require more than one PR whe
 | P12 | Restricted-filesystem qualification | Existing datastore build/reopen fixtures | Medium | Supported Linux permissions documented; separate Windows results |
 | P13 | Frozen evaluation implemented; preregistered local D6 usefulness claim rejected, local latency budgets confirmed; §12.1 | P02/P06/P07; D6 | Medium–large | Offline/live pilots, validated graders, immutable manifests/results, retained rejection and calibrated local timing reports |
 | P14 | Optional monetary accounting | P05/P11; D2 | Medium–large | Unknown-price/usage semantics, immutable prices, checked arithmetic, coverage-qualified reports |
-| P15 | Library support and lint tightening | D5; measured audit | Medium | Isolated consumer builds/MSRV if adopted; targeted production failure handling |
+| P15 | Implemented: panic-boundary policy in every production crate (R32) and the datastore-only embedded tier (D5/R31); locally qualified, §13.4 | D5; measured audit | Medium | Isolated consumer builds/MSRV if adopted; targeted production failure handling |
 | P16 | Shared gate definitions and policy follow-ups | P02 stabilized; maintainer-owned workflow changes | Medium | Same required coverage before/after, automatic CI retained, checker self-tests |
 
 P02–P06 diagnostics and baseline slices are merged; broader P05 admission and diagnostic access still await D1/D7. P07 retrieval instrumentation and characterization merged in PR #51. P08 ledger characterization merged in PR #52 and broader characterization in PR #53; atomic runbook recovery and local qualification complete the supported D3 scope (§9.1). Keep the outstanding P01 late reconciliation, estimator revisions, and usage-quality reporting separate. Characterization establishes whether retrieval and recovery fixes are needed. A failing authorization, persistence, or compatibility reproduction discovered in any slice takes priority over optimization. Money and embedded support are conditional product work, not prerequisites for fixing shared-code defects.
@@ -1049,6 +1049,30 @@ Retain raw samples or an auditable summary sufficient to check percentile comput
 
 ### 13.1 P15: choose the embedded support contract — R31
 
+**Implemented:** D5 adopted a datastore-only tier.
+
+- **Declared surface.** `munarium-datastore`'s declared public surface follows
+  semantic versioning. It is named in the isolated consumer's `src/lib.rs`, so a
+  removal fails that build.
+- **API baseline.** `Error` is now `#[non_exhaustive]` and the crate is
+  `publish = false`.
+- **Minimum compiler.** `rust-version = "1.92"` was measured in four feature
+  sets from a consumer at `server/tests/embedded-datastore`. That consumer
+  resolves its own committed lock outside the workspace. The source and the
+  lexical sets need 1.88; `diskann` 0.56 needs 1.92, and `rust-version` cannot
+  vary by feature.
+- **No-default build.** It now compiles without warnings and, as before,
+  refuses to seal or open artifacts.
+- **Internal crates.** `munarium-core`, `munarium-access`, `munarium-store-mem`
+  and every other crate are documented as internal.
+- **Checks.** A runner (`tools/test-embedded-datastore.ps1`, also in
+  `gates.ps1`) and a mirrored `embedded-datastore` CI job check the closure,
+  `serde_json` features, pinned and minimum-compiler tests, and cross-resolution
+  artifact exchange.
+
+The record is in [embedded-support.md](embedded-support.md), and the
+qualification in §13.4. The requirements below remain the rationale.
+
 Core, datastore, and memory-store manifests inherit workspace metadata and do not declare an MSRV. Datastore already emphasizes independent usability and has optional engine/artifact features. A repository compiler pin is not evidence of the minimum supported compiler.
 
 If D5 adopts a supported embedded tier, document the selected crates, features, public API/versioning promise, required public fixtures/contracts, and dependency boundaries. Create an isolated consumer fixture outside the Server workspace with its own dependency resolution; a build inside the original workspace cannot demonstrate standalone selection. Test minimal/default/selected engine features, serializer feature unification, and the agreed dependency closure on the pinned compiler and an empirically selected MSRV. Set `rust-version` only after those builds establish it.
@@ -1056,6 +1080,23 @@ If D5 adopts a supported embedded tier, document the selected crates, features, 
 Preserve `new()`/`Default()` and legacy gate/provider seams introduced in earlier slices. Registry publication, a lower compiler requirement, and support for Windows AppContainer are separate decisions. If these crates remain internal, document that consumers pin source and that wire compatibility does not imply stable Rust APIs. Shared-code Server defects still need correction regardless of that policy.
 
 ### 13.2 Incremental panic-boundary audit — R32
+
+**Implemented:** all 146 production `unwrap`/`expect`/`panic!`/`unreachable!`
+sites were fixed by category: 103 in service and library crates, 43 in tooling.
+Every production crate root now denies those shortcuts outside test code. A
+`panic_policy` test keeps the attribute on every root. The register holds two
+reasoned `#[expect]` exemptions.
+
+The audit also fixed defects the lint cannot see:
+
+- two crafted-artifact panics in datastore parsers;
+- rate-budget and token-lifetime overflows;
+- a `verifyDataViews` false pass on a malformed 200 (dev-guide §13 entry 29).
+
+It replaced silent `null`/`{}` defaults with errors. Startup bind failures now
+exit 1 instead of panicking. A serving plane that fails after startup is
+recorded as open gap 30. See [panic-boundaries.md](panic-boundaries.md) and
+§13.4.
 
 Inventory production `unwrap`/`expect` sites by category: untrusted input, database/I/O, lock poisoning, date arithmetic, guarded invariants, and constant initialization. Existing chronology/date/regex handling and store lock/serialization paths need different remedies.
 
@@ -1070,6 +1111,111 @@ Record release input identities and intentional compiler/build overrides in the 
 Before scheduling a qualification milestone, list its environments, owner, availability check, cost authority, and expiry constraints. A build under emulation is not native runtime qualification. A validation-only infrastructure example is not a completed deployment/backup drill. Size any separately authorized paid campaign to include unresolved liability, without treating that planning number as permission to spend.
 
 Use the existing [numbered gaps record](guides/dev-guide.md) for missing evidence and owner waivers. Preserve the original failed/unrun outcomes and attach a revisit condition. Milestone closure, qualification success, elapsed time, human effort, and tool cost are different facts and should be recorded separately.
+
+### 13.4 P15 implementation and local qualification
+
+P15 implements R32 and D5/R31 on branch `feat/p15-library-support`, starting from
+`4e79d69` (P14). Every source result below was taken at `4a0ac6f`, the last code
+and documentation commit before this record. No migration, wire change or
+configuration variable was added. The records are
+[panic-boundaries.md](panic-boundaries.md) and
+[embedded-support.md](embedded-support.md).
+
+**R32.** Clippy with the policy enabled found 146 production sites: 103 in
+service and library crates and 43 in tooling. Tests were written before fixes and
+recorded failing on the pre-fix code:
+
+- crafted lexical length: overflow panic in debug, slice panic in release;
+- crafted DiskANN header: capacity-overflow panic in both builds;
+- poisoned locks: panics in the memory source store, the Azure token cache,
+  shapes, the L0 and L1 caches, metrics and readiness;
+- provider rate budget: an overflow panic in debug, while release **admitted**
+  `check(u64::MAX)` under a tpm limit;
+- Azure token lifetime: overflow panic;
+- `verifyDataViews`: a `{}` 200 returned `verified: 1`;
+- occupied REST and gRPC ports: exit 101 with a `main` panic.
+
+Three sites were not executed pre-fix, and their pre-fix behaviour is read from
+the code: the new serialization and midnight helpers, which did not exist before,
+and `month_end`, which a probe showed panicking but the grammar cannot reach.
+
+Seven seeded negative controls were run and reverted, with a clean tree
+afterwards:
+
+- a non-test `unwrap` in core fails clippy;
+- the same line under `#[cfg(test)]` or in `tests/` passes;
+- an `expect` in `main.rs` fails;
+- removing the `constant_regex` exemption fails;
+- a spurious `#[expect]` fails as unfulfilled;
+- removing one lint from the shapes crate root fails `panic_policy`.
+
+The first seed for the `tests/` case used a literal `Some(..).unwrap()`, which the
+default `unnecessary_literal_unwrap` lint rejects. It was re-seeded with a
+non-literal value.
+
+**D5/R31.** Building `munarium-datastore` with no default features for the first
+time showed that it did not compile under `-D warnings`: a no-lexical `seal` made
+its tail unreachable code. Its seal tests also failed (lib 11, round trip 13),
+because every plan names a lexical engine. The refusal moved into a helper with
+unchanged behaviour. Seal-dependent tests are gated, and a new test pins the
+refusal.
+
+The minimum compiler was measured from the isolated consumer's lock, resolved
+fresh against crates.io on 2026-09-25:
+
+- source floor 1.88 (`as_chunks`);
+- dependency floor 1.88.0 (`time`) for the lexical sets and 1.77 for no-default;
+- on 1.88.0, the no-default, default and `json-arbitrary-precision` sets pass,
+  and `vector-diskann` fails in `diskann-wide` (unstable AVX-512);
+- on 1.89.0, 1.90.0 and 1.91.0, `diskann` 0.56 fails to compile;
+- on 1.92.0, all four sets pass, and 1.91.0 is then refused by `rust-version`.
+
+The notices generator run over a snapshot of tracked and new server files shows
+21 added rows without the not-shipped exclusion, and a current table with it.
+
+Local environment: Windows 11 x86_64, Rust 1.98.0 (pinned) and 1.92.0 (minimum),
+PowerShell 7, Python 3.11 through `py`, and Docker 29.8 with the pinned pgvector
+16 image. Commands run from `server/` unless marked "Root:".
+
+| Check | Result |
+|---|---|
+| `pwsh gates.ps1` (receipt `selected_profile_passed`, source unchanged at `4a0ac6f`, 38 min) | 48 of 48 steps passed: runner regression; fmt; clippy default and all-features; owned PostgreSQL; workspace tests 880 passed, 10 ignored; JSON PostgreSQL 3; conformance memory, PostgreSQL, black-box, platform and cluster; OpenAPI, gRPC and contract drift; license; notices; crate, retrieval and migration boundaries; all 25 embedded-datastore steps; `cargo deny check`. Owned container and servers cleaned up |
+| Embedded steps within that run | Per set, pinned with `-D warnings` and on 1.92.0: no-default 12, default 25 (1 ignored), vector-diskann 27 (1 ignored), json-arbitrary-precision 25 (1 ignored). Closure and `serde_json` feature checks passed for all four. Eight exchange runs, workspace and consumer in both directions and both JSON configurations, 1 test each |
+| `cargo clippy --locked --offline -p munarium-datastore -p munarium-retrieval -p munarium-server --features vector-diskann --all-targets -- -D warnings` | Passed |
+| `cargo test --locked --offline -p munarium-datastore -p munarium-retrieval --features vector-diskann` without a database | 217 passed, 4 ignored. Retrieval's PostgreSQL paths returned early here and are not counted as PostgreSQL coverage for this feature |
+| Linux (`rust:1.98.0-bookworm` container, repository mounted read-only): workspace clippy `-D warnings`, `startup_failures`, `panic_policy`, `munarium-datastore` tests, consumer default tests with `-D warnings` | Passed: clippy clean (compiles the `cfg(unix)` shutdown path); 3, 2, 117 and 25 (3 ignored) tests |
+| `vector_crossover` release, `4e79d69` vs `4a0ac6f` | Flat and graph p50 within noise at 1k–64k (for example 64k: 25.81/0.151 ms vs 25.50/0.151 ms); recall identical (1.000 clustered, 0.297 adversarial). No threshold is claimed |
+| `benchmark_baseline` release, disposable PostgreSQL, base vs head | PostgreSQL p50/p95/p99 14.32/20.58/22.89 vs 13.31/19.60/20.46 ms; datastore 3.05/3.75/4.01 vs 2.90/3.60/4.02 ms; cold open 53.8 vs 55.9 ms |
+| Root: `py scripts/private_material_scan.py` from a clean worktree of `4a0ac6f` | Clean across 1,173 files |
+| Root: `py check_license.py`, `py clients/check_compatibility.py`, `py scripts/docs_linkcheck.py`, `git diff --check main..HEAD` | Passed |
+
+Deviations:
+
+- The first embedded-runner run exposed two runner defects: closures created
+  inside a function lost the receipt directory, and `rust-version = "1.92"`
+  was not matched to the installed `1.92.0` toolchain. Both were fixed before
+  the recorded run.
+- A second run passed all 25 steps but reported incomplete coverage, because a
+  commit landed mid-run. It is not counted.
+- The planned comparison of artifact ids across resolutions was dropped. The
+  lexical index is not byte-reproducible, so the exchange asserts reading
+  instead.
+- No production behaviour was weakened to make a test pass.
+- The DiskANN adjacency recovery has no poisoning test (see
+  [panic-boundaries.md](panic-boundaries.md#remaining-boundaries)), and a serving
+  plane that fails after startup remains open gap 30.
+
+Unavailable or not claimed:
+
+- the hosted CI run of the new `embedded-datastore` job, which is pending
+  maintainer approval of the protected workflow change;
+- the minimum-compiler check on Linux (measured on Windows only);
+- `vector-diskann` retrieval against PostgreSQL;
+- `mmctl` against a live server.
+
+No paid provider, deployment, publication or release was performed. Automatic
+CI remains unchanged apart from the added job, and these local results
+supplement it.
 
 ## 14. Regression matrix and validation commands
 
@@ -1124,7 +1270,7 @@ The database-dependent commands require a configured, isolated test database and
 
 For grader/checker changes, run `py -m unittest discover -s scripts -p "test_*.py"` from root, plus the new focused harness tests once implemented. For contract/SDK work, run the current publisher/re-vendoring, generation/drift, and per-language checks documented in contributor/client guidance. For migrations, qualify a fresh database and an upgrade of the preceding supported schema with realistic fictional data. Preserve checksum validation; never reset a database to conceal an upgrade defect.
 
-The detailed provider methods exist after PR #44. A `-Fault` tier, result-schema validator, or isolated consumer runner does not exist merely because this plan names it. Add exact commands to the relevant documentation when those slices land. No live provider, deployment, infrastructure, or paid test is required to validate this plan.
+The detailed provider methods exist after PR #44. A `-Fault` tier or result-schema validator does not exist merely because this plan names it. The isolated consumer runner exists since P15: `pwsh tools/test-embedded-datastore.ps1` from `server/` ([embedded-support.md](embedded-support.md)). Add exact commands to the relevant documentation when those slices land. No live provider, deployment, infrastructure, or paid test is required to validate this plan.
 
 ### 14.3 Acceptance and rollback checklist for each implementation slice
 
@@ -1170,8 +1316,8 @@ Rollback must be described at the level of state and semantics. Switching an eng
 | R28 | Safe permissioned diagnostic aliases after audience review | P05, §4.3; D7 |
 | R29 | Release input audit belongs to the release-owning workflow | Coordination only, §13.3 |
 | R30 | Paid campaign planning includes unresolved exposure | Coordination only, §13.3; no spending authorization |
-| R31 | Conditional supported embedded tier/MSRV/selection fixture | P15, §13.1; D5 |
-| R32 | Targeted production panic audit and incremental lint | P15, §13.2 |
+| R31 | Datastore-only embedded tier adopted: declared semver surface, MSRV 1.92, isolated consumer fixture and CI job | P15, §13.1 and §13.4; D5 |
+| R32 | Production panic audit complete; non-test panic lints enforced in every crate | P15, §13.2 and §13.4 |
 | R33 | Waivers remain known gaps with original outcomes retained | P02/P16, §2.2 and §13.3 |
 | R34 | Environment availability before dependent qualification | Coordination only, §13.3 |
 

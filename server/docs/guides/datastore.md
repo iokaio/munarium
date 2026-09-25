@@ -129,6 +129,11 @@ are not mounted into the serving containers. Containers and the uniquely tagged
 test image are removed; Docker build caches and the ignored local receipt remain.
 
 This qualifies the standalone reader's default Tantivy/flat-vector configuration.
+"Standalone" here means the datastore's own round-trip fixture, which runs with no
+Server or database but is built inside the Server workspace. Qualification as a
+separately resolved embedded library, in four feature sets, is recorded in
+[embedded-support.md](../embedded-support.md); this permission record remains
+specific to Linux and the default configuration.
 Server's hydration cache, catalog and builder have additional writable paths
 described above; the fixture does not qualify a read-only Server local root or
 DiskANN. No new constructor or Server configuration is needed for `TMPDIR`.

@@ -230,7 +230,9 @@ pub fn prepare_version_metadata(
         .ok_or_else(|| invalid("governed version metadata must be an object"))?;
     object.insert(
         "governance_policy".into(),
-        serde_json::to_value(&next).expect("profile serializes"),
+        serde_json::to_value(&next).map_err(|e| {
+            KernelError::Storage(format!("governance profile did not serialize: {e}"))
+        })?,
     );
     object.insert("governance_revision".into(), json!(next.revision()?));
     if let Some(a) = assessment {

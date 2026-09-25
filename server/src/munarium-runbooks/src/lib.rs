@@ -11,6 +11,21 @@
 //!   source bindings, retrieval knobs, per-task-level model defaults, and an
 //!   optional RAG completion step for session turns.
 
+// Production code returns typed errors instead of panicking; tests are exempt.
+// The policy, its two exemptions and the per-site record are in
+// server/docs/panic-boundaries.md (P15/R32).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -829,11 +844,12 @@ pub fn parse_runbook(yaml: &str) -> Result<RunbookDoc, String> {
 }
 
 fn step_from_value(v: &serde_yaml::Value) -> Result<StepSpec, String> {
+    let not_single = || "each step must be a single-key map like `- buildIndex: {}`".to_string();
     let map = v
         .as_mapping()
         .filter(|m| m.len() == 1)
-        .ok_or_else(|| "each step must be a single-key map like `- buildIndex: {}`".to_string())?;
-    let (key, body) = map.iter().next().expect("len checked");
+        .ok_or_else(not_single)?;
+    let (key, body) = map.iter().next().ok_or_else(not_single)?;
     let key = key.as_str().unwrap_or_default();
     let get_field = |field: &str| -> Option<&serde_yaml::Value> {
         body.as_mapping()
@@ -1372,6 +1388,18 @@ spec:
         );
         let err = parse_runbook(&bad).expect_err("must refuse");
         assert!(err.contains("nope"), "{err}");
+    }
+
+    #[test]
+    fn a_step_must_be_a_single_key_map() {
+        let single = "each step must be a single-key map like `- buildIndex: {}`";
+        let two: serde_yaml::Value =
+            serde_yaml::from_str("{ buildIndex: {}, verify: {} }").expect("yaml");
+        assert_eq!(step_from_value(&two).err().as_deref(), Some(single));
+        let empty: serde_yaml::Value = serde_yaml::from_str("{}").expect("yaml");
+        assert_eq!(step_from_value(&empty).err().as_deref(), Some(single));
+        let one: serde_yaml::Value = serde_yaml::from_str("{ verify: {} }").expect("yaml");
+        assert!(matches!(step_from_value(&one), Ok(StepSpec::Verify {})));
     }
 
     #[test]

@@ -208,10 +208,13 @@ impl BudgetStore for MemBudgetStore {
         let day = (self.clock)().format("%Y-%m-%d").to_string();
         let mut grouped: std::collections::BTreeMap<(String, String), BudgetLedgerRow> =
             std::collections::BTreeMap::new();
-        for r in rows
-            .iter()
-            .filter(|r| r.tenant == tenant && r.day == day && r.state != RowState::Released)
-        {
+        for r in rows.iter().filter(|r| r.tenant == tenant && r.day == day) {
+            // Released rows neither hold nor settle, and create no group.
+            let settled = match r.state {
+                RowState::Held => false,
+                RowState::Settled => true,
+                RowState::Released => continue,
+            };
             let entry = grouped
                 .entry((r.config.clone(), r.tier.clone()))
                 .or_insert_with(|| BudgetLedgerRow {
@@ -222,20 +225,14 @@ impl BudgetStore for MemBudgetStore {
                     settled_units: 0,
                     reservations: 0,
                 });
-            match r.state {
-                RowState::Held => {
-                    entry.held_units = entry.held_units.checked_add(r.units).ok_or_else(|| {
-                        munarium_core::KernelError::Storage("budget total exceeds u64".into())
-                    })?;
-                }
-                RowState::Settled => {
-                    entry.settled_units =
-                        entry.settled_units.checked_add(r.units).ok_or_else(|| {
-                            munarium_core::KernelError::Storage("budget total exceeds u64".into())
-                        })?;
-                }
-                RowState::Released => unreachable!("released rows are filtered above"),
-            }
+            let total = if settled {
+                &mut entry.settled_units
+            } else {
+                &mut entry.held_units
+            };
+            *total = total.checked_add(r.units).ok_or_else(|| {
+                munarium_core::KernelError::Storage("budget total exceeds u64".into())
+            })?;
             entry.reservations += 1;
         }
         Ok(grouped.into_values().collect())
@@ -403,6 +400,32 @@ mod tests {
             BudgetOutcome::Exhausted { remaining, .. } => assert_eq!(remaining, 300),
             other => panic!("expected Exhausted, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn ledger_omits_released_reservations_and_their_groups() {
+        // Control for the P15 restructure of `ledger`: released rows neither
+        // count nor create a group, exactly as when they were filtered out.
+        let store = MemBudgetStore::new();
+        let mut granted = Vec::new();
+        for (tier, units) in [("fast", 10), ("fast", 20), ("frontier", 5)] {
+            let BudgetOutcome::Granted(r) = store
+                .reserve("t", "cfg", tier, units, Some(1000))
+                .await
+                .unwrap()
+            else {
+                panic!("expected grant");
+            };
+            granted.push(r);
+        }
+        store.release(&granted[0]).await.unwrap();
+        store.release(&granted[2]).await.unwrap();
+        let rows = store.ledger("t").await.unwrap();
+        assert_eq!(rows.len(), 1, "the released-only frontier group is absent");
+        assert_eq!(rows[0].tier, "fast");
+        assert_eq!(rows[0].held_units, 20);
+        assert_eq!(rows[0].settled_units, 0);
+        assert_eq!(rows[0].reservations, 1);
     }
 
     #[tokio::test]

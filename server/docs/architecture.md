@@ -77,6 +77,9 @@ The system is four layers plus one cross-cutting gateway. Each layer scales by a
 ## 3. Rust Workspace
 
 A single Cargo workspace, library-first. The server is a thin shell; the library is the product and the canonical SDK.
+The Rust API promise is narrower than that phrase: `munarium-datastore` is the one supported embedded library,
+with a declared surface under semantic versioning and a measured minimum compiler. Every other crate is internal,
+and applications integrate through the wire contract and the client libraries ([embedded-support.md](embedded-support.md)).
 
 ```
 server/
@@ -117,13 +120,13 @@ Key crate boundaries:
 
 | Crate | Depends on | Must never depend on |
 |---|---|---|
-| `munarium-core` | std, serde, thiserror | tokio-postgres/sqlx, axum, reqwest |
+| `munarium-core` | serde, serde_json, thiserror, uuid, sha2, hex, chrono, regex, async-trait | tokio-postgres/sqlx, axum, reqwest |
 | `munarium-store-pg` | munarium-core, sqlx | provider crates |
 | `munarium-store-objects` | munarium-core, object_store | sqlx, axum, provider crates |
 | `munarium-extract` | munarium-core + pure-Rust parsers (zip/quick-xml/pdf-extract; ocrs behind `ocr`) | network clients, sqlx, axum — no C natives, ever (the musl static link is the enforcement) |
 | `munarium-azure-auth` | munarium-core, reqwest | sqlx, axum, storage crates |
 | `munarium-docintel-az` | munarium-core (DocumentIntelligence trait), munarium-azure-auth, reqwest | storage crates |
-| `munarium-datastore` | munarium-core | axum, tonic, sqlx — independently usable |
+| `munarium-datastore` | serde, serde_json, sha2, hex, thiserror; optional tantivy, rust-stemmers and tempfile (lexical) and diskann (approximate vectors) | munarium-core, axum, tonic, sqlx, reqwest, utoipa — independently usable, and qualified as such from an isolated consumer |
 | `munarium-providers` | munarium-core (types only), reqwest | storage crates |
 | `munarium-server` | everything above | any `matrix/` crate (ground rule 1); scorers, judges, experiment harnesses |
 

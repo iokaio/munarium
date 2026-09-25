@@ -168,15 +168,14 @@ pub async fn capture(
         // uid — use it so the require_uid=false rollout bridge works on the
         // JWT path (a missing header there is not ambiguous). Otherwise fall
         // back per policy.
-        None => match &principal {
-            Some(Principal::Access(a)) => a.uid.clone(),
+        None => match (&principal, authenticated) {
+            (Some(Principal::Access(a)), _) => a.uid.clone(),
             // A bearer that FAILED authentication (expired, invalid) with no
             // uid header: the caller's real problem is the credential, and
             // answering `uid-required` (400) would send them to add a header
             // and only then learn the token is dead. Every /v1 handler
             // rejects this case anyway; this just says so first.
-            _ if bearer.is_some() && authenticated.is_err() => {
-                let e = authenticated.expect_err("checked is_err");
+            (_, Err(e)) if bearer.is_some() => {
                 let r = ApiError::from(e).into_response();
                 record_http_metrics(
                     &state,

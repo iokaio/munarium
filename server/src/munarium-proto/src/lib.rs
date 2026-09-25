@@ -6,6 +6,21 @@
 //! `munarium-api-types` / `munarium-core` domain types at the boundary and never let
 //! prost types travel further in.
 
+// Production code returns typed errors instead of panicking; tests are exempt.
+// The policy, its two exemptions and the per-site record are in
+// server/docs/panic-boundaries.md (P15/R32).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
 pub mod mmp {
     // Generated code: tonic's service stubs return Result<_, tonic::Status>
     // (~176 bytes), which clippy 1.98's result_large_err flags. The shape is

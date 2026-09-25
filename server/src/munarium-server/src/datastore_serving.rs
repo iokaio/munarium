@@ -152,7 +152,17 @@ impl DatastoreReadiness {
     }
 
     pub fn blocking(&self) -> Vec<String> {
-        self.blocking.lock().unwrap().clone()
+        self.blocking_list().clone()
+    }
+
+    /// The diagnostics list. It is replaced whole under the lock, so it is
+    /// never half updated, and the admission bit lives in atomics: a
+    /// poisoned guard is recovered rather than making /readyz and every
+    /// later sweep panic (P15/R32).
+    fn blocking_list(&self) -> std::sync::MutexGuard<'_, Vec<String>> {
+        self.blocking
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Permanent not-ready for a datastore-mode replica with no
@@ -164,7 +174,7 @@ impl DatastoreReadiness {
     fn record(&self, selected: i64, blocking: Vec<String>) {
         self.selected_scopes.store(selected, Ordering::Relaxed);
         self.ready.store(blocking.is_empty(), Ordering::Relaxed);
-        *self.blocking.lock().unwrap() = blocking;
+        *self.blocking_list() = blocking;
     }
 }
 
@@ -790,6 +800,31 @@ pub async fn rollout_set(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_poisoned_readiness_diagnostic_still_records_and_reports() {
+        // P15/R32: `.lock().unwrap()` made /readyz and every warmer sweep
+        // panic after one panic while the diagnostics list was held. The
+        // admission decision itself is atomic and never depended on it.
+        let r = Arc::new(DatastoreReadiness::default());
+        let held = r.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = held.blocking.lock().unwrap();
+            panic!("poison the readiness diagnostics");
+        })
+        .join();
+        assert!(r.blocking.is_poisoned());
+        assert_eq!(r.blocking(), vec!["not yet swept".to_string()]);
+        r.mark_infrastructure_missing();
+        assert!(!r.admits());
+        assert_eq!(
+            r.blocking(),
+            vec!["datastore-infrastructure-missing".to_string()]
+        );
+        r.record(1, Vec::new());
+        assert!(r.admits());
+        assert!(r.blocking().is_empty());
+    }
 
     /// The admission truth table: no selected scopes = no dependency; selected
     /// scopes admit only when the sweep found nothing blocking; and the

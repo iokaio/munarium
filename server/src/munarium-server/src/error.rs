@@ -401,12 +401,36 @@ fn daily_cap_detail(e: &KernelError) -> Option<&str> {
 /// Seconds until the daily cap's window resets (midnight UTC) — the
 /// `Retry-After` value for `daily-cap-reached`.
 fn seconds_to_utc_midnight() -> u64 {
-    let now = chrono::Utc::now();
-    let midnight = (now.date_naive() + chrono::Days::new(1))
-        .and_hms_opt(0, 0, 0)
-        .expect("midnight is a valid time")
-        .and_utc();
-    (midnight - now).num_seconds().max(1) as u64
+    seconds_to_next_utc_midnight(chrono::Utc::now())
+}
+
+/// Seconds from `now` to the next UTC midnight, at least 1. The date
+/// arithmetic is checked: on chrono's last representable day there is no
+/// next midnight, and the answer is the rest of that day rather than a panic
+/// from `date + Days(1)` (P15/R32).
+fn seconds_to_next_utc_midnight(now: chrono::DateTime<chrono::Utc>) -> u64 {
+    use chrono::Timelike as _;
+    let rest_of_day = 86_400 - i64::from(now.num_seconds_from_midnight());
+    let seconds = now
+        .date_naive()
+        .checked_add_days(chrono::Days::new(1))
+        .and_then(|day| day.and_hms_opt(0, 0, 0))
+        .map_or(rest_of_day, |midnight| {
+            (midnight.and_utc() - now).num_seconds()
+        });
+    seconds.max(1) as u64
+}
+
+/// Serialize a DTO or record to JSON for a response or a stored column.
+/// Serializing these types does not fail in practice; if it ever did, the
+/// caller reports a storage error (a 500) instead of panicking a request
+/// worker or persisting a `null` that reads as "no value" (P15/R32).
+pub fn to_json<T: serde::Serialize + ?Sized>(
+    value: &T,
+    what: &str,
+) -> std::result::Result<serde_json::Value, KernelError> {
+    serde_json::to_value(value)
+        .map_err(|e| KernelError::Storage(format!("{what} did not serialize: {e}")))
 }
 
 /// The problem slug — the one cross-transport error key (docs/api/errors.md).
@@ -654,4 +678,56 @@ pub fn to_status(e: &KernelError) -> tonic::Status {
     let mut details = ErrorDetails::new();
     details.set_error_info(slug(e), ERROR_DOMAIN, metadata);
     tonic::Status::with_error_details(code, e.to_string(), details)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A value whose serialization fails, standing in for a future DTO whose
+    /// Serialize impl can refuse (a map with non-string keys, say).
+    struct Unserializable;
+
+    impl serde::Serialize for Unserializable {
+        fn serialize<S: serde::Serializer>(&self, _: S) -> std::result::Result<S::Ok, S::Error> {
+            Err(serde::ser::Error::custom("refused"))
+        }
+    }
+
+    #[test]
+    fn to_json_reports_a_serialization_failure_as_a_storage_error() {
+        // P15/R32: `to_value(..).unwrap_or_default()` stored and returned
+        // `null` for this, which reads as "no value", and `.expect(..)`
+        // panicked a request worker.
+        match to_json(&Unserializable, "turn hits") {
+            Err(KernelError::Storage(m)) => assert!(m.contains("turn hits"), "{m}"),
+            other => panic!("expected a storage error, got {other:?}"),
+        }
+        assert_eq!(
+            to_json(&serde_json::json!({"a": [1, 2]}), "x").unwrap(),
+            serde_json::json!({"a": [1, 2]})
+        );
+    }
+
+    #[test]
+    fn seconds_to_midnight_is_positive_and_does_not_panic_at_the_calendar_end() {
+        use chrono::TimeZone as _;
+        let at = |y, m, d, h, mi, s| chrono::Utc.with_ymd_and_hms(y, m, d, h, mi, s).unwrap();
+        assert_eq!(
+            seconds_to_next_utc_midnight(at(2026, 9, 25, 23, 0, 0)),
+            3600
+        );
+        assert_eq!(
+            seconds_to_next_utc_midnight(at(2026, 9, 25, 0, 0, 0)),
+            86_400
+        );
+        assert_eq!(seconds_to_next_utc_midnight(at(2026, 9, 25, 23, 59, 59)), 1);
+        // chrono's last day has no next midnight: the rest of the day, not a
+        // panic from `date + Days(1)`.
+        let last = chrono::NaiveDate::MAX
+            .and_hms_opt(12, 0, 0)
+            .unwrap()
+            .and_utc();
+        assert_eq!(seconds_to_next_utc_midnight(last), 43_200);
+    }
 }

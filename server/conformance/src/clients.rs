@@ -13,6 +13,7 @@ use munarium_core::types::*;
 use munarium_core::{KernelError, Result};
 use munarium_proto::mmp::v1 as pb;
 use std::collections::BTreeMap;
+use tonic::metadata::AsciiMetadataValue;
 use tonic::transport::Channel;
 
 /// The uid the conformance suite acts as (M7 uid contract).
@@ -444,11 +445,22 @@ fn promise_from_json(v: &serde_json::Value) -> Promise {
 
 pub struct GrpcClientStore {
     channel: Channel,
-    token: String,
+    authorization: AsciiMetadataValue,
+}
+
+/// The `authorization` metadata for `token`, or an error naming the problem.
+/// The token comes from the operator's configuration; one that cannot be gRPC
+/// metadata (a newline, say) is a configuration error reported at connect
+/// time, not a panic on the first request (P15/R32).
+fn bearer(token: &str) -> Result<AsciiMetadataValue> {
+    AsciiMetadataValue::try_from(format!("Bearer {token}")).map_err(|_| {
+        KernelError::InvalidInput("the bearer token is not valid gRPC metadata".into())
+    })
 }
 
 impl GrpcClientStore {
     pub async fn connect(endpoint: &str, token: &str) -> Result<Self> {
+        let authorization = bearer(token)?;
         let channel = Channel::from_shared(endpoint.to_string())
             .map_err(|e| KernelError::Storage(e.to_string()))?
             .connect()
@@ -456,7 +468,7 @@ impl GrpcClientStore {
             .map_err(|e| KernelError::Storage(format!("grpc connect {endpoint}: {e}")))?;
         Ok(Self {
             channel,
-            token: token.to_string(),
+            authorization,
         })
     }
 
@@ -468,20 +480,22 @@ impl GrpcClientStore {
         pb::query_service_client::QueryServiceClient::new(self.channel.clone())
     }
 
-    fn request<T>(&self, msg: T, with_idem: bool) -> tonic::Request<T> {
+    fn request<T>(&self, msg: T, with_idem: bool) -> Result<tonic::Request<T>> {
         let mut req = tonic::Request::new(msg);
-        req.metadata_mut().insert(
-            "authorization",
-            format!("Bearer {}", self.token).parse().expect("ascii"),
-        );
-        // M7 uid contract: every mmp.v1 call names the acting end user.
         req.metadata_mut()
-            .insert("munarium-uid", CONFORMANCE_UID.parse().expect("ascii"));
+            .insert("authorization", self.authorization.clone());
+        // M7 uid contract: every mmp.v1 call names the acting end user.
+        req.metadata_mut().insert(
+            "munarium-uid",
+            AsciiMetadataValue::from_static(CONFORMANCE_UID),
+        );
         if with_idem {
-            req.metadata_mut()
-                .insert("idempotency-key", idem().parse().expect("ascii"));
+            let key = AsciiMetadataValue::try_from(idem()).map_err(|_| {
+                KernelError::InvalidInput("idempotency key is not valid gRPC metadata".into())
+            })?;
+            req.metadata_mut().insert("idempotency-key", key);
         }
-        req
+        Ok(req)
     }
 }
 
@@ -632,7 +646,7 @@ impl StorageBackend for GrpcClientStore {
                     metadata_json: metadata.map(|m| m.to_string()).unwrap_or_default(),
                 },
                 true,
-            ))
+            )?)
             .await
             .map_err(status_to_err)?;
         Ok(resp.into_inner().version_id)
@@ -646,7 +660,7 @@ impl StorageBackend for GrpcClientStore {
                     version_id: version_id.to_string(),
                 },
                 false,
-            ))
+            )?)
             .await
             .map_err(status_to_err)?;
         Ok(resp
@@ -664,7 +678,7 @@ impl StorageBackend for GrpcClientStore {
                     version_id: version_id.to_string(),
                 },
                 false,
-            ))
+            )?)
             .await
             .map_err(status_to_err)?;
         Ok(resp.into_inner().head_seq)
@@ -700,7 +714,7 @@ impl StorageBackend for GrpcClientStore {
                     origin: claim.origin.map(origin_to_pb),
                 },
                 true,
-            ))
+            )?)
             .await
             .map_err(status_to_err)?;
         resp.into_inner()
@@ -729,7 +743,7 @@ impl StorageBackend for GrpcClientStore {
                         limit: q.limit.unwrap_or(0) as u32,
                     },
                     false,
-                ),
+                )?,
             )
             .await
             .map_err(status_to_err)?;
@@ -748,7 +762,7 @@ impl StorageBackend for GrpcClientStore {
                     claim_id: claim_id.to_string(),
                 },
                 false,
-            ))
+            )?)
             .await
         {
             Ok(resp) => Ok(resp.into_inner().claim.map(pb_to_claim)),
@@ -765,7 +779,7 @@ impl StorageBackend for GrpcClientStore {
                     claim_id: claim_id.to_string(),
                 },
                 false,
-            ))
+            )?)
             .await
         {
             Ok(resp) => {
@@ -802,7 +816,7 @@ impl StorageBackend for GrpcClientStore {
                     evidence_json: evidence.map(|v| v.to_string()).unwrap_or_default(),
                 },
                 true,
-            ))
+            )?)
             .await
             .map_err(status_to_err)?;
         let a = resp
@@ -838,7 +852,7 @@ impl StorageBackend for GrpcClientStore {
                     as_of_seq: as_of_seq.unwrap_or(0),
                 },
                 false,
-            ))
+            )?)
             .await
             .map_err(status_to_err)?;
         let mut out = BTreeMap::new();
@@ -885,7 +899,7 @@ impl StorageBackend for GrpcClientStore {
                     due_scope: due_scope.unwrap_or_default().to_string(),
                 },
                 true,
-            ))
+            )?)
             .await
             .map_err(status_to_err)?;
         let p = resp
@@ -905,7 +919,7 @@ impl StorageBackend for GrpcClientStore {
                     as_of_seq: as_of_seq.unwrap_or(0),
                 },
                 false,
-            ))
+            )?)
             .await
             .map_err(status_to_err)?;
         Ok(resp
@@ -926,7 +940,7 @@ impl StorageBackend for GrpcClientStore {
                     result_ref: String::new(),
                 },
                 true,
-            ))
+            )?)
             .await
             .map_err(status_to_err)?;
         Ok(resp.into_inner().fulfilled)
@@ -950,7 +964,7 @@ impl StorageBackend for GrpcClientStore {
                     budget: budget.unwrap_or(0),
                 },
                 true,
-            ))
+            )?)
             .await
             .map_err(status_to_err)?;
         Ok(())
@@ -969,7 +983,7 @@ impl StorageBackend for GrpcClientStore {
                     as_of_seq: as_of_seq.unwrap_or(0),
                 },
                 false,
-            ))
+            )?)
             .await
             .map_err(status_to_err)?;
         Ok(resp
@@ -998,7 +1012,7 @@ impl StorageBackend for GrpcClientStore {
                     }),
                 },
                 true,
-            ))
+            )?)
             .await
             .map_err(status_to_err)?;
         Ok(())
@@ -1012,7 +1026,7 @@ impl StorageBackend for GrpcClientStore {
                     version_id: version_id.to_string(),
                 },
                 false,
-            ))
+            )?)
             .await
             .map_err(status_to_err)?;
         Ok(resp
@@ -1028,5 +1042,24 @@ impl StorageBackend for GrpcClientStore {
                 built_from_seq: d.built_from_seq,
             })
             .collect())
+    }
+}
+
+#[cfg(test)]
+mod metadata_tests {
+    use super::*;
+
+    #[test]
+    fn a_token_that_cannot_be_metadata_is_a_configuration_error() {
+        // P15/R32: `format!("Bearer {}", token).parse().expect("ascii")` ran on
+        // every request, so this token panicked the first gRPC call.
+        assert!(matches!(
+            bearer("bad\ntoken"),
+            Err(KernelError::InvalidInput(_))
+        ));
+        assert_eq!(
+            bearer("abc.def").expect("ascii token").to_str().ok(),
+            Some("Bearer abc.def")
+        );
     }
 }

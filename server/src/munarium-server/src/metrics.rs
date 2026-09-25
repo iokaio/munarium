@@ -22,7 +22,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::sync::RwLock;
+use std::sync::{PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 /// Histogram buckets in seconds. Fixed for every duration metric: request
 /// latencies and provider calls share a range from sub-10ms to the 30s
@@ -193,6 +193,20 @@ pub fn labels(pairs: &[(&str, &str)]) -> String {
     out
 }
 
+// The metric maps are append-only: every write is one
+// `entry().or_insert_with()` plus an atomic add or `Histogram::observe`, none of
+// which can unwind part-way. A poisoned guard (a panic elsewhere while a write
+// guard was held) is therefore recovered instead of turning every later
+// request into a panic. The unpoisoned path is the same `Ok` branch `expect`
+// took, so the per-request hot path is unchanged (P15/R32).
+fn read<T>(lock: &RwLock<T>) -> RwLockReadGuard<'_, T> {
+    lock.read().unwrap_or_else(PoisonError::into_inner)
+}
+
+fn write<T>(lock: &RwLock<T>) -> RwLockWriteGuard<'_, T> {
+    lock.write().unwrap_or_else(PoisonError::into_inner)
+}
+
 impl Metrics {
     pub fn inc(&self, metric: &'static str, labels: String) {
         self.inc_by(metric, labels, 1);
@@ -201,13 +215,13 @@ impl Metrics {
     pub fn inc_by(&self, metric: &'static str, labels: String, n: u64) {
         // Read-lock fast path; write lock only on first sight of a series.
         {
-            let map = self.counters.read().expect("metrics lock");
+            let map = read(&self.counters);
             if let Some(c) = map.get(&(metric, labels.clone())) {
                 c.fetch_add(n, Ordering::Relaxed);
                 return;
             }
         }
-        let mut map = self.counters.write().expect("metrics lock");
+        let mut map = write(&self.counters);
         map.entry((metric, labels))
             .or_insert_with(|| Arc::new(AtomicU64::new(0)))
             .fetch_add(n, Ordering::Relaxed);
@@ -215,13 +229,13 @@ impl Metrics {
 
     pub fn observe(&self, metric: &'static str, labels: String, seconds: f64) {
         {
-            let map = self.histograms.read().expect("metrics lock");
+            let map = read(&self.histograms);
             if let Some(h) = map.get(&(metric, labels.clone())) {
                 h.observe(seconds);
                 return;
             }
         }
-        let mut map = self.histograms.write().expect("metrics lock");
+        let mut map = write(&self.histograms);
         map.entry((metric, labels))
             .or_insert_with(|| Arc::new(Histogram::new()))
             .observe(seconds);
@@ -231,7 +245,7 @@ impl Metrics {
     /// sorted by (metric, labels) so scrapes and tests see a stable order.
     fn render_recorded(&self, out: &mut String, emitted_help: &mut Vec<&'static str>) {
         let counters: Vec<(Key, u64)> = {
-            let map = self.counters.read().expect("metrics lock");
+            let map = read(&self.counters);
             let mut v: Vec<_> = map
                 .iter()
                 .map(|(k, c)| (k.clone(), c.load(Ordering::Relaxed)))
@@ -249,7 +263,7 @@ impl Metrics {
         }
 
         let histos: Vec<(Key, Arc<Histogram>)> = {
-            let map = self.histograms.read().expect("metrics lock");
+            let map = read(&self.histograms);
             let mut v: Vec<_> = map.iter().map(|(k, h)| (k.clone(), h.clone())).collect();
             v.sort_by(|a, b| a.0.cmp(&b.0));
             v
@@ -331,6 +345,40 @@ pub fn render(state: &crate::state::AppState) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_poisoned_metrics_lock_keeps_recording_and_rendering() {
+        // P15/R32: `.expect("metrics lock")` ran on every request, so one
+        // panic while a write guard was held made every later request panic.
+        let m = Arc::new(Metrics::default());
+        m.inc("munarium_load_shed_total", String::new());
+        let held = m.clone();
+        let _ = std::thread::spawn(move || {
+            let _c = held.counters.write().unwrap();
+            let _h = held.histograms.write().unwrap();
+            panic!("poison both metric maps");
+        })
+        .join();
+        assert!(m.counters.is_poisoned() && m.histograms.is_poisoned());
+        m.inc("munarium_load_shed_total", String::new());
+        m.inc("munarium_http_requests_total", labels(&[("plane", "rest")]));
+        m.observe(
+            "munarium_http_request_duration_seconds",
+            String::new(),
+            0.02,
+        );
+        let mut out = String::new();
+        m.render_recorded(&mut out, &mut Vec::new());
+        assert!(out.contains("munarium_load_shed_total 2"), "{out}");
+        assert!(
+            out.contains("munarium_http_requests_total{plane=\"rest\"} 1"),
+            "{out}"
+        );
+        assert!(
+            out.contains("munarium_http_request_duration_seconds_count 1"),
+            "{out}"
+        );
+    }
 
     #[test]
     fn label_escaping_covers_the_three_specials() {

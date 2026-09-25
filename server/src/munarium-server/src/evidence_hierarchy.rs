@@ -727,7 +727,10 @@ pub fn compose(
                     t.truncated = true;
                 }
                 EvidenceBlock::FactSlice { claims } => claims.truncate(keep),
-                _ => unreachable!("only blocks with items are truncated"),
+                // A block without items has count 0, so this loop never runs
+                // for it; were that to change, stop and let the empty-fit
+                // path below drop the block rather than panic (P15/R32).
+                _ => break,
             }
             let candidate = render_block(name, layer, &partial, document_evidence);
             if candidate.len() <= room {

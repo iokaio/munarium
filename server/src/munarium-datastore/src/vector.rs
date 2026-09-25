@@ -126,29 +126,28 @@ impl FlatVectorIndex {
     /// the header: these bytes come from an untrusted store, and a declared
     /// count is an allocation instruction until it is bounded.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
+        use crate::bytes::{le_u32_at, le_u64_at, slice_at};
         let bad = |what: &str| Error::Integrity(format!("vector index: {what}"));
-        if bytes.len() < 16 {
+        let (Some(dims), Some(count)) = (le_u64_at(bytes, 0), le_u64_at(bytes, 8)) else {
             return Err(bad("shorter than its header"));
-        }
-        let dims = u64::from_le_bytes(bytes[0..8].try_into().unwrap()) as usize;
-        let count = u64::from_le_bytes(bytes[8..16].try_into().unwrap()) as usize;
+        };
+        let (Ok(dims), Ok(count)) = (usize::try_from(dims), usize::try_from(count)) else {
+            return Err(bad("declared size overflows"));
+        };
         if dims == 0 {
             return Err(bad("declares zero dimensions"));
         }
         let mut pos = 16;
         let mut chunk_ids = Vec::with_capacity(count.min(4096));
         for i in 0..count {
-            if pos + 4 > bytes.len() {
-                return Err(bad(&format!("truncated before id {i}")));
-            }
-            let len = u32::from_le_bytes(bytes[pos..pos + 4].try_into().unwrap()) as usize;
+            let len = le_u32_at(bytes, pos)
+                .ok_or_else(|| bad(&format!("truncated before id {i}")))?
+                as usize;
             pos += 4;
-            if pos + len > bytes.len() {
-                return Err(bad(&format!("id {i} claims {len} bytes past the end")));
-            }
+            let id = slice_at(bytes, pos, len)
+                .ok_or_else(|| bad(&format!("id {i} claims {len} bytes past the end")))?;
             chunk_ids.push(
-                String::from_utf8(bytes[pos..pos + len].to_vec())
-                    .map_err(|_| bad(&format!("id {i} is not UTF-8")))?,
+                String::from_utf8(id.to_vec()).map_err(|_| bad(&format!("id {i} is not UTF-8")))?,
             );
             pos += len;
         }
@@ -162,7 +161,7 @@ impl FlatVectorIndex {
                 bytes.len() - pos
             )));
         }
-        let mut data = Vec::with_capacity(count * dims);
+        let mut data = Vec::with_capacity(want / 4);
         let (quads, _) = bytes[pos..].as_chunks::<4>();
         for c in quads {
             data.push(f32::from_le_bytes(*c));

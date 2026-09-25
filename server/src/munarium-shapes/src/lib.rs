@@ -9,12 +9,27 @@
 //! lineage). Validation results are cacheable by (shape_ref, body_hash) —
 //! the doc's named performance mitigation.
 
+// Production code returns typed errors instead of panicking; tests are exempt.
+// The policy, its two exemptions and the per-site record are in
+// server/docs/panic-boundaries.md (P15/R32).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
 pub mod validate;
 
 use serde::{Deserialize, Serialize};
 use sha2::Digest as _;
 use std::collections::HashMap;
-use std::sync::{Mutex, RwLock};
+use std::sync::{Mutex, MutexGuard, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShapeDoc {
@@ -279,8 +294,8 @@ pub fn parse_shape(yaml: &str) -> Result<Shape, String> {
 /// Per-tenant shape registry with a (shape_ref, body_hash) validation cache.
 #[derive(Default)]
 pub struct ShapeRegistry {
-    shapes: RwLock<HashMap<(String, String), std::sync::Arc<Shape>>>,
-    cache: Mutex<HashMap<(String, String), Result<(), String>>>,
+    shapes: RwLock<ShapeMap>,
+    cache: Mutex<ValidationCache>,
 }
 
 impl Shape {
@@ -312,11 +327,31 @@ impl Shape {
     }
 }
 
+type ShapeMap = HashMap<(String, String), std::sync::Arc<Shape>>;
+type ValidationCache = HashMap<(String, String), Result<(), String>>;
+
+// The registry holds immutable `Arc<Shape>` values and the cache settled
+// validation outcomes; every critical section is one map operation, so neither
+// is ever half updated. A poisoned lock (a panic elsewhere while a guard was
+// held) is recovered rather than turning every later lookup into a panic
+// (P15/R32).
 impl ShapeRegistry {
+    fn shapes_read(&self) -> RwLockReadGuard<'_, ShapeMap> {
+        self.shapes.read().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn shapes_write(&self) -> RwLockWriteGuard<'_, ShapeMap> {
+        self.shapes.write().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn cache(&self) -> MutexGuard<'_, ValidationCache> {
+        self.cache.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
     pub fn apply(&self, tenant: &str, yaml: &str) -> Result<std::sync::Arc<Shape>, String> {
         let shape = std::sync::Arc::new(parse_shape(yaml)?);
         let key = (tenant.to_string(), shape.shape_ref());
-        let mut shapes = self.shapes.write().expect("registry lock");
+        let mut shapes = self.shapes_write();
         if let Some(existing) = shapes.get(&key) {
             if existing.yaml_hash != shape.yaml_hash {
                 // Additive versioning: same version + different content is a
@@ -333,9 +368,7 @@ impl ShapeRegistry {
     }
 
     pub fn get(&self, tenant: &str, shape_ref: &str) -> Option<std::sync::Arc<Shape>> {
-        self.shapes
-            .read()
-            .expect("registry lock")
+        self.shapes_read()
             .get(&(tenant.to_string(), shape_ref.to_string()))
             .cloned()
     }
@@ -343,9 +376,7 @@ impl ShapeRegistry {
     /// Every published (shape_ref, yaml_hash) for one tenant — the
     /// additive-versioning preflight input for set-level authoring checks.
     pub fn list(&self, tenant: &str) -> Vec<(String, String)> {
-        self.shapes
-            .read()
-            .expect("registry lock")
+        self.shapes_read()
             .iter()
             .filter(|((t, _), _)| t == tenant)
             .map(|((_, r), s)| (r.clone(), s.yaml_hash.clone()))
@@ -386,14 +417,11 @@ impl ShapeRegistry {
         };
         let body_hash = hex::encode(sha2::Sha256::digest(body.to_string().as_bytes()));
         let cache_key = (shape.yaml_hash.clone(), body_hash);
-        if let Some(hit) = self.cache.lock().expect("cache lock").get(&cache_key) {
+        if let Some(hit) = self.cache().get(&cache_key) {
             return (revision, hit.clone());
         }
         let outcome = validator.validate(body).map_err(|err| format!("{err}"));
-        self.cache
-            .lock()
-            .expect("cache lock")
-            .insert(cache_key, outcome.clone());
+        self.cache().insert(cache_key, outcome.clone());
         (revision, outcome)
     }
 }
@@ -432,6 +460,33 @@ spec:
       required: [subject, key, value]
   chunking: { max_chars: 512 }
 "#;
+
+    #[test]
+    fn a_poisoned_registry_or_cache_keeps_serving() {
+        // P15/R32: `.expect("registry lock")` / `.expect("cache lock")` turned
+        // one panic while a guard was held into a panic on every later shape
+        // lookup and claim validation.
+        let reg = std::sync::Arc::new(ShapeRegistry::default());
+        reg.apply("t1", SHAPE).expect("apply");
+        let held = reg.clone();
+        let _ = std::thread::spawn(move || {
+            let _shapes = held.shapes.write().unwrap();
+            let _cache = held.cache.lock().unwrap();
+            panic!("poison both locks");
+        })
+        .join();
+        assert!(reg.shapes.is_poisoned() && reg.cache.is_poisoned());
+        let ok = serde_json::json!({"subject": "contract-1", "key": "k", "value": "v"});
+        let bad = serde_json::json!({"subject": "other", "key": "k", "value": "v"});
+        assert!(reg.validate("t1", "contract-clauses@1", &ok).is_ok());
+        assert!(
+            reg.validate("t1", "contract-clauses@1", &ok).is_ok(),
+            "cached"
+        );
+        assert!(reg.validate("t1", "contract-clauses@1", &bad).is_err());
+        assert_eq!(reg.list("t1").len(), 1);
+        assert!(reg.apply("t1", SHAPE).is_ok(), "idempotent re-apply");
+    }
 
     #[test]
     fn parse_apply_validate() {

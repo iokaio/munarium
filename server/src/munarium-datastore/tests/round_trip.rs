@@ -10,13 +10,21 @@
 
 use std::collections::BTreeMap;
 
-use munarium_datastore::fusion::FusionWeights;
 use munarium_datastore::model::*;
-use munarium_datastore::shard::{OpenShard, ShardWriter, MANIFEST, RECORDS_BODY, VECTOR_DATA};
-use munarium_datastore::store::{ArtifactStore, LocalFileStore};
-use munarium_datastore::vector::Candidate;
-use munarium_datastore::verify::{Limits, ReaderCapabilities};
+use munarium_datastore::shard::ShardWriter;
+use munarium_datastore::store::LocalFileStore;
 use munarium_datastore::PreparedChunk;
+// Sealing needs the lexical engine (a build without it refuses; see
+// `a_build_without_the_lexical_engine_refuses_to_seal`), so the tests that
+// seal, reopen and query, and what only they use, need it too.
+#[cfg(feature = "lexical-tantivy")]
+use munarium_datastore::{
+    fusion::FusionWeights,
+    shard::{OpenShard, MANIFEST, RECORDS_BODY, VECTOR_DATA},
+    store::ArtifactStore,
+    vector::Candidate,
+    verify::{Limits, ReaderCapabilities},
+};
 use sha2::{Digest, Sha256};
 
 #[cfg(all(target_os = "linux", feature = "lexical-tantivy"))]
@@ -185,6 +193,7 @@ fn plan() -> ArtifactBuildPlan {
     }
 }
 
+#[cfg(feature = "lexical-tantivy")]
 fn build_into(dir: &std::path::Path) -> (LocalFileStore, String) {
     let store = LocalFileStore::new(dir).unwrap();
     let mut w = ShardWriter::new(Some(3));
@@ -196,6 +205,7 @@ fn build_into(dir: &std::path::Path) -> (LocalFileStore, String) {
     (store, sealed.artifact_id)
 }
 
+#[cfg(feature = "lexical-tantivy")]
 /// The gate itself.
 #[test]
 fn build_seal_reopen_verify_and_query_with_no_server() {
@@ -247,6 +257,7 @@ fn build_seal_reopen_verify_and_query_with_no_server() {
     assert!(hits[0].lexical_rank.is_some() && hits[0].vector_rank.is_some());
 }
 
+#[cfg(feature = "lexical-tantivy")]
 /// Metadata is a string map; reserved-looking keys and exact decimal strings
 /// must survive the actual artifact format, not a Value-only simulation.
 #[test]
@@ -280,6 +291,7 @@ fn json_feature_artifact_write() {
     assert_json_artifact(&root);
 }
 
+#[cfg(feature = "lexical-tantivy")]
 fn assert_json_artifact(root: &std::path::Path) {
     let id = std::fs::read_to_string(root.join("qualification-id.txt")).unwrap();
     let store = LocalFileStore::new(root).unwrap();
@@ -301,6 +313,7 @@ fn assert_json_artifact(root: &std::path::Path) {
     );
 }
 
+#[cfg(feature = "lexical-tantivy")]
 #[test]
 #[ignore = "requires artifact from another feature configuration; tools/test-json-features.ps1"]
 fn json_feature_artifact_read_other_configuration() {
@@ -332,6 +345,7 @@ fn json_feature_typed_parameters_reject_unsupported_values() {
     }
 }
 
+#[cfg(feature = "lexical-tantivy")]
 /// What converges, and what does not.
 ///
 /// The content-pure manifest means two builds of the same inputs produce the
@@ -379,6 +393,7 @@ fn the_logical_id_converges_even_though_the_artifact_id_need_not() {
     }
 }
 
+#[cfg(feature = "lexical-tantivy")]
 /// The sidecars, which ARE deterministic, converge byte-for-byte. That is what
 /// makes the logical id reproducible rather than merely equal by luck.
 #[test]
@@ -396,6 +411,7 @@ fn the_canonical_sidecars_are_byte_identical_across_builds() {
     }
 }
 
+#[cfg(feature = "lexical-tantivy")]
 /// A substituted manifest is caught by its hash BEFORE its contents are used
 /// to decide what to read. This is the ordering property of `open`.
 #[test]
@@ -424,6 +440,7 @@ fn a_tampered_manifest_is_refused() {
     assert!(err.to_string().contains("integrity"), "{err}");
 }
 
+#[cfg(feature = "lexical-tantivy")]
 /// A corrupt component is caught by its own checksum, even though the manifest
 /// is intact — the two checks are independent for a reason.
 #[test]
@@ -445,6 +462,7 @@ fn a_corrupt_component_is_refused() {
     assert!(err.to_string().contains("integrity"), "{err}");
 }
 
+#[cfg(feature = "lexical-tantivy")]
 /// A REQUIRED component that is gone is fatal; an OPTIONAL one that is gone is
 /// not. Both decided from the manifest, not from what is on disk.
 #[test]
@@ -479,6 +497,7 @@ fn a_missing_required_component_is_fatal_and_an_optional_one_is_not() {
     assert!(err.to_string().contains("required component"), "{err}");
 }
 
+#[cfg(feature = "lexical-tantivy")]
 /// An artifact that declares a newer envelope than this reader supports is
 /// refused BEFORE anything is opened, rather than being opened and misread.
 #[test]
@@ -538,6 +557,7 @@ fn the_writer_refuses_ambiguous_or_partial_input() {
     assert!(err.to_string().contains("no chunks"), "{err}");
 }
 
+#[cfg(feature = "lexical-tantivy")]
 /// A lexical-only corpus is a first-class shape, not a degraded one.
 #[test]
 fn a_lexical_only_artifact_builds_and_opens() {
@@ -574,6 +594,7 @@ fn a_lexical_only_artifact_builds_and_opens() {
     assert_eq!(shard.records().len(), 3);
 }
 
+#[cfg(feature = "lexical-tantivy")]
 /// The manifest carries no attempt-specific metadata, which is what makes the
 /// convergence above possible. Asserted on the SERIALIZED bytes, because that
 /// is what gets hashed.
@@ -605,6 +626,7 @@ fn the_sealed_manifest_carries_no_build_metadata() {
 // ---------------------------------------------------------------------------
 
 /// A plan naming the diskann engine: same corpus, different physical engine.
+#[cfg(feature = "lexical-tantivy")]
 fn diskann_plan() -> ArtifactBuildPlan {
     #[cfg(feature = "vector-diskann")]
     let graph = Some(munarium_datastore::vector_diskann::GraphParams::default().to_plan_map());
@@ -635,6 +657,7 @@ fn diskann_plan() -> ArtifactBuildPlan {
     p
 }
 
+#[cfg(feature = "lexical-tantivy")]
 #[cfg(feature = "vector-diskann")]
 #[test]
 fn a_diskann_artifact_seals_opens_and_answers_like_the_exact_one() {
@@ -699,6 +722,7 @@ fn a_diskann_artifact_seals_opens_and_answers_like_the_exact_one() {
     assert_eq!(approx, exact);
 }
 
+#[cfg(feature = "lexical-tantivy")]
 #[cfg(feature = "vector-diskann")]
 #[test]
 fn a_reader_without_the_feature_bit_refuses_the_approximate_artifact() {
@@ -727,6 +751,7 @@ fn a_reader_without_the_feature_bit_refuses_the_approximate_artifact() {
     }
 }
 
+#[cfg(feature = "lexical-tantivy")]
 #[cfg(not(feature = "vector-diskann"))]
 #[test]
 fn a_diskann_plan_refuses_to_seal_without_the_engine() {
@@ -744,6 +769,7 @@ fn a_diskann_plan_refuses_to_seal_without_the_engine() {
     }
 }
 
+#[cfg(feature = "lexical-tantivy")]
 #[test]
 fn an_unknown_vector_engine_is_refused_at_seal() {
     let dir = tempfile::tempdir().unwrap();
@@ -853,6 +879,7 @@ fn demotion_reports_bounded_pool_and_keeps_the_late_candidate() {
     assert_eq!(zero.diagnostics.fetched, 10);
 }
 
+#[cfg(feature = "lexical-tantivy")]
 #[test]
 fn concurrent_generation_build_does_not_change_an_open_pin() {
     let old_dir = tempfile::tempdir().unwrap();
@@ -902,4 +929,27 @@ fn concurrent_generation_build_does_not_change_an_open_pin() {
     assert!(new.record("s1#0").is_none());
     assert!(old.record("s1#0").is_some());
     thread.join().unwrap();
+}
+
+/// A build without the lexical engine cannot seal: every plan names a lexical
+/// engine, and the seal refuses rather than publish an artifact that claims an
+/// engine it does not carry (shard.rs `lexical_component`). Such a build is a
+/// model, verification, flat-vector and fusion configuration; see
+/// docs/embedded-support.md.
+#[cfg(not(feature = "lexical-tantivy"))]
+#[test]
+fn a_build_without_the_lexical_engine_refuses_to_seal() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = LocalFileStore::new(dir.path()).unwrap();
+    let mut w = ShardWriter::new(Some(3));
+    for c in fixture() {
+        w.add(c).unwrap();
+    }
+    let err = w
+        .seal(&spec(), &plan(), &store)
+        .expect_err("sealing must refuse without the lexical engine");
+    assert!(
+        matches!(&err, munarium_datastore::Error::Unsupported(m) if m.contains("no lexical engine")),
+        "{err}"
+    );
 }

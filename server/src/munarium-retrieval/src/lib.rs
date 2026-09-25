@@ -33,6 +33,21 @@
 //! gets a second implementation. The methods below are grouped to make that
 //! visible, so the eventual trait is obvious rather than negotiated.
 
+// Production code returns typed errors instead of panicking; tests are exempt.
+// The policy, its two exemptions and the per-site record are in
+// server/docs/panic-boundaries.md (P15/R32).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
 pub mod backfill;
 pub mod build_metrics;
 pub mod capabilities;
@@ -558,10 +573,15 @@ impl Retrieval {
         if !self.scope_is_datastore_served(scope_kind, scope_id).await? {
             return Ok(());
         }
-        let plane = self
-            .serving
-            .as_ref()
-            .expect("scope_is_datastore_served returned true only with a plane");
+        // scope_is_datastore_served answers true only with a plane; should
+        // that ever change, fail closed with its own no-plane error rather
+        // than panic.
+        let Some(plane) = self.serving.as_ref() else {
+            return Err(munarium_core::KernelError::DatastoreUnavailable(
+                "this replica is in datastore mode with no datastore plane; activation cannot verify the serving binding it requires"
+                    .into(),
+            ));
+        };
         match plane.executor.catalog.binding(index_id, munarium_store_pg::artifacts::BindingSlot::Serving).await? {
             None => Err(munarium_core::KernelError::InvalidInput(format!(
                 "{scope_kind} {scope_id} is datastore-served and version {index_id} has no serving binding; build and promote its artifact before activating"

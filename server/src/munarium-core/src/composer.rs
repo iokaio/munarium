@@ -71,42 +71,44 @@ pub fn compose(
 ) -> ComposedContext {
     // Try each digest level in order; within a level, trim facts oldest-first
     // only at the LAST level (facts are trimmed only after digests are as
-    // coarse as they can get).
-    for (i, level) in LEVELS.iter().enumerate() {
-        let last = i == LEVELS.len() - 1;
-        let ctx = compose_at(snapshot, scope, *level, None);
+    // coarse as they can get). Destructuring the array makes "the last level"
+    // a binding rather than an index, so there is no unreachable fall-through.
+    let [coarser @ .., last] = LEVELS;
+    for level in coarser {
+        let ctx = compose_at(snapshot, scope, level, None);
         match budget_tokens {
             None => return ctx,
             Some(budget) if ctx.estimated_tokens() <= budget => return ctx,
-            Some(budget) if last => {
-                // Oldest-first fact trimming as the final resort: find the
-                // LARGEST `keep` (newest facts kept) whose rendering fits.
-                // The estimate is monotone in `keep` — more facts, more text
-                // — so this is a binary search over [0, len), not a descent
-                // one fact at a time: that descent re-rendered the whole
-                // context per step, O(n²) in the lineage, and `budget_tokens`
-                // arrives straight from an authenticated REST query
-                // parameter.
-                let len = snapshot.facts.len();
-                // Invariant: every keep in [0, lo) fits or is 0; hi never fits
-                // (len is known not to fit — that is how we got here).
-                let (mut lo, mut hi) = (0usize, len);
-                while lo < hi {
-                    let mid = lo + (hi - lo) / 2;
-                    if compose_at(snapshot, scope, *level, Some(mid)).estimated_tokens() <= budget {
-                        lo = mid + 1;
-                    } else {
-                        hi = mid;
-                    }
-                }
-                // `lo` is one past the largest fitting keep, or 0 when none
-                // fits — in which case the caller gets the minimum, as before.
-                return compose_at(snapshot, scope, *level, Some(lo.saturating_sub(1)));
-            }
             Some(_) => continue,
         }
     }
-    unreachable!("LEVELS is non-empty")
+    let ctx = compose_at(snapshot, scope, last, None);
+    let budget = match budget_tokens {
+        None => return ctx,
+        Some(budget) if ctx.estimated_tokens() <= budget => return ctx,
+        Some(budget) => budget,
+    };
+    // Oldest-first fact trimming as the final resort: find the LARGEST `keep`
+    // (newest facts kept) whose rendering fits. The estimate is monotone in
+    // `keep` — more facts, more text — so this is a binary search over
+    // [0, len), not a descent one fact at a time: that descent re-rendered the
+    // whole context per step, O(n²) in the lineage, and `budget_tokens`
+    // arrives straight from an authenticated REST query parameter.
+    let len = snapshot.facts.len();
+    // Invariant: every keep in [0, lo) fits or is 0; hi never fits (len is
+    // known not to fit — that is how we got here).
+    let (mut lo, mut hi) = (0usize, len);
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        if compose_at(snapshot, scope, last, Some(mid)).estimated_tokens() <= budget {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    // `lo` is one past the largest fitting keep, or 0 when none fits — in
+    // which case the caller gets the minimum, as before.
+    compose_at(snapshot, scope, last, Some(lo.saturating_sub(1)))
 }
 
 fn compose_at(

@@ -17,6 +17,37 @@ for registry availability, digests and public signing instructions.
   [governance-policy upgrade guide](docs/ops/governance-policy-upgrade.md), including
   rollback and retention steps. Installing the migration alone does not adopt
   exact semantics or rebuild existing collections.
+- Fail a `verifyDataViews` step when Matrix answers 200 with a body that is not a
+  verify response (not JSON, or no integer `failed`). Such a body previously read as
+  zero failed questions and marked the data view verified.
+- Report crafted datastore artifacts as integrity errors instead of panicking: a
+  lexical archive entry whose declared length overflows its offset, and a DiskANN
+  header that declares an impossible vector count. DiskANN now sizes its vectors
+  from the bytes present rather than the header.
+- **Operator-visible:** an occupied REST or gRPC port, or a shutdown-signal handler
+  that cannot install, now ends startup with one `startup error:` line and exit
+  status 1 instead of a panic with exit status 101. Configuration errors keep exit
+  status 2.
+- Keep serving after a panic elsewhere poisons a metrics, readiness, cache, shape
+  registry or token-cache lock; the in-memory source store and provider rate budget
+  refuse with a storage error instead. Rate-budget arithmetic no longer overflows,
+  so an enormous token estimate can no longer pass under a tpm limit in release builds.
+- Return a storage error instead of storing or returning `null`/`{}` when a turn,
+  draft validation or runbook value fails to serialize. A turn whose result cannot be
+  rendered ends its stream with an `error` event, not `done` with `{}`.
+- Deny `unwrap`, `expect`, `panic!`, `unreachable!`, `todo!` and `unimplemented!` in
+  production code across the workspace, with two reasoned exemptions. See
+  [panic boundaries](docs/panic-boundaries.md).
+- Support `munarium-datastore` as an embedded Rust library, consumed as pinned source:
+  a declared public surface under semantic versioning, minimum supported Rust 1.92
+  (`rust-version`, measured in four feature sets), and an isolated consumer that CI
+  builds outside the Server workspace. Every other crate remains internal. See
+  [embedded library support](docs/embedded-support.md).
+- **Source change for Rust embedders:** `munarium_datastore::Error` is now
+  `#[non_exhaustive]`; a `match` on it outside the crate needs a wildcard arm. The
+  crate is marked `publish = false`.
+- A datastore build without the `lexical-tantivy` feature now compiles without warnings;
+  as before, it refuses to seal or open artifacts, which a new test pins.
 
 ## 1.2.1
 

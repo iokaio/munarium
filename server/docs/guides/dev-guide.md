@@ -36,7 +36,9 @@ provide the current release installation instructions.
 What 1.0 commits to — the wire contract, the
 `MUNARIUM_*` configuration contract, and additive-only migrations — is stable
 under semantic versioning. Internal APIs and crate boundaries are not, and this
-guide says so where it teaches them.
+guide says so where it teaches them. The one exception is `munarium-datastore`:
+since P15 it is a supported embedded library whose declared Rust surface follows
+semantic versioning ([embedded-support.md](../embedded-support.md)).
 
 ## Preface
 
@@ -1156,6 +1158,9 @@ Python 3.13.12
 The tool versions and `channel = "stable"` snippet above describe the recorded
 run. Current Server builds use Rust **1.98.0**, selected by the checked-in
 `server/rust-toolchain.toml`; use that pin rather than the historical Rust floor.
+The pin is the tested toolchain, not a minimum supported version: only
+`munarium-datastore` declares one (`rust-version = "1.92"`, measured from its
+isolated consumer in [embedded-support.md](../embedded-support.md)).
 The full kit for a platform developer:
 
 - **Rust via rustup.** If the machine has nothing:
@@ -2658,7 +2663,9 @@ violation.
 | `munarium-access` holds the same purity rule as core | access header | **CI**: same grep, second crate (since 2026-08-17) |
 | `munarium-providers` never depends on a storage crate | this chapter; architecture.md | **CI**: inverted grep — no `munarium-store-*`/`munarium-retrieval-*` in its tree (since 2026-08-17) |
 | `munarium-api-types` depends on no server crate but `munarium-proto` (it ships in the public contract bundle) | api-types header; api-conv header | **CI**: inverted grep over its `--all-features` tree — the only `munarium-*` allowed are itself and `munarium-proto` (since 2026-09-02) |
+| `munarium-datastore` depends on no `munarium-core`, transport or database crate, and stays usable outside this workspace | datastore header; [embedded-support.md](../embedded-support.md) | **CI**: tree grep over its workspace graph, plus the `embedded-datastore` job, which checks a standalone consumer's closure, `serde_json` features and minimum compiler in four feature sets (since P15) |
 | Recorded source URIs never carry credentials; Azure URIs stay byte-identical | store-objects header | crate tests |
+| Production code never uses `unwrap` / `expect` / `panic!` / `unreachable!` / `todo!` / `unimplemented!` outside tests (two reasoned `#[expect]` exemptions) | every crate root; [panic-boundaries.md](../panic-boundaries.md) | **CI**: the existing clippy steps deny them per crate, and `panic_policy` fails `cargo test` if a crate root lacks the attribute (since P15) |
 
 The machine-enforced anchor, quoted in full because you should know
 exactly what it does and does not check
@@ -2968,8 +2975,11 @@ branch on this distinction.
 binds first (main.rs:87-101) through `rest::router` over `MUNARIUM_HTTP_ADDR`,
 serving `/v1`, `/docs`, `/openapi.json`, and health probes, h1 and h2c on
 one port. The bind is awaited inline in `main`, so a REST bind failure
-panics the process. This is honest because nothing else is up yet. A loud,
-immediate death leaves no half-started ambiguity. The direct gRPC plane
+ends the process with one `startup error: bind <addr>: ...` line and exit
+status 1 (a panic with exit status 101 until P15, see
+[panic-boundaries.md](../panic-boundaries.md)). This is honest because
+nothing else is up yet. A loud, immediate exit leaves no half-started
+ambiguity. The direct gRPC plane
 follows (main.rs:104-156) unless `MUNARIUM_GRPC_ADDR=disabled`. The
 tonic server stacks the health service, reflection (both mmp and health
 descriptor sets), and six mmp services: command, query, ingest, retrieval,
@@ -3004,7 +3014,8 @@ Since 2026-08-17 "meant to" IS enforced on the gRPC plane: the listener
 binds INLINE before the spawn and before `direct gRPC plane listening` is
 logged, then hands the bound socket to the task
 (`serve_with_incoming_shutdown` over a `TcpListenerStream`). An occupied
-port now panics loudly at startup — the same fail-loudly shape as REST.
+port now fails startup loudly (`startup error: bind gRPC <addr>: ...`,
+exit status 1; a panic until P15) — the same fail-loudly shape as REST.
 Through v0.1.2 the bind happened inside the spawned task after the log
 line, so two servers sharing a gRPC port produced a half-started process
 that answered REST health checks under a false `listening` line (verified
@@ -7905,10 +7916,25 @@ number with a one-line retirement note rather than disappearing.
 
 ### 13.2 Open
 
-No numbered entry is open. That is the goal state, and also a snapshot:
-the next gap found gets the next number and lands here. Three sub-items
-closed *with* their entries stay visible where they are tracked rather
-than here:
+**Entry 30 — a serving plane that fails after startup leaves a
+half-alive process.** Open.
+**What's missing:** a supervisor that ends the process when the REST,
+direct gRPC or ops serving task returns an error after its listener bound.
+**Evidence:** `main.rs` spawns each plane and awaits the handles only
+during shutdown (`futures_join_all` ignores their results). Before P15 the
+task panicked with `expect("rest server")`, which ended only that task;
+since P15 it logs `REST plane stopped with an error` (or the gRPC/ops
+equivalent) and still ends only that task. **Impact:** an operator whose
+plane stops serving sees an error log, but the process keeps answering on
+its other planes, and `/readyz` on the ops plane does not reflect a dead
+data plane. **The shape of the fix:** select over the serving handles
+beside the shutdown signal, and on the first unexpected completion start
+the graceful drain and exit non-zero, with a process-level test that
+forces a serve error. **Status:** open. The discussion is in
+[panic-boundaries.md](../panic-boundaries.md#remaining-boundaries).
+
+Three sub-items closed *with* their entries stay visible where they are
+tracked rather than here:
 
 - The Helm chart's workload-identity exchange and gateway plane are
   unexercised. The chart README's status says so; both need a real cloud
@@ -8467,6 +8493,22 @@ winning over all of it. All four clients carry the pair on their providers
 plane. Reference: [docs/tokenbudgets.md](../tokenbudgets.md). The daily
 spending caps (§20) were deliberately not touched: a cap on a day's spend
 is not a per-call ceiling.
+
+**Entry 29 — `verifyDataViews` passed a 200 whose body was not a verify
+response.** Closed, amending entry 23: after entry 23 made the step read
+the body, a 200 whose body did not parse as JSON, or had no non-negative
+integer `failed`, still read as zero failed questions and marked the data
+view verified (`unwrap_or_default()` on the body, `unwrap_or(0)` on the
+count). An HTML maintenance page or an empty object behind a proxy was a
+pass. Matrix's published `VerifyResponse` requires `failed`, so the step
+now fails that view with `malformed verify response`
+(`runbooks_api.rs::verify_data_views_against`). The regression
+`a_malformed_200_verify_response_fails_the_step` drives `{}`, a string
+`failed`, a negative `failed`, a bare JSON string and an HTML body at the
+loopback stand-in Matrix; it returned `verified: 1` for `{}` before the
+fix. Found by the P15 panic-boundary audit;
+[panic-boundaries.md](../panic-boundaries.md#silent-defaults) lists the
+other silent defaults that audit replaced.
 
 **Unnumbered — empty turn answers from reasoning-model tiers** (fixed the
 day it was found, never an open entry): the turn completion's 1,024-token

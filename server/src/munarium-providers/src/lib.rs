@@ -13,6 +13,21 @@
 //! provenance (request hash, provider, model, token counts, latency — never
 //! the key, never bodies) is the server's job on top of these responses.
 
+// Production code returns typed errors instead of panicking; tests are exempt.
+// The policy, its two exemptions and the per-site record are in
+// server/docs/panic-boundaries.md (P15/R32).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
 use async_trait::async_trait;
 use munarium_core::provider::*;
 use munarium_core::{KernelError, Result};
@@ -368,29 +383,40 @@ impl RateBudget {
     }
 
     /// Check-and-consume one request + an estimated token load.
+    ///
+    /// The arithmetic is checked: an estimate that does not fit alongside the
+    /// window's total exceeds any tpm limit, and without a limit the totals
+    /// saturate. A poisoned lock refuses the request (a storage-class error,
+    /// not a 429) rather than panicking or admitting it unmetered (P15/R32).
     pub fn check(&self, estimated_tokens: u64) -> Result<()> {
-        let mut s = self.state.lock().expect("budget lock");
+        let mut s = self
+            .state
+            .lock()
+            .map_err(|_| KernelError::Storage("provider rate budget lock is poisoned".into()))?;
         if s.window_start.elapsed() >= Duration::from_secs(60) {
             s.window_start = Instant::now();
             s.requests = 0;
             s.tokens = 0;
         }
         if let Some(rpm) = self.rpm {
-            if s.requests + 1 > rpm {
+            if s.requests >= rpm {
                 return Err(KernelError::RateLimited(format!(
                     "rpm budget {rpm} exhausted"
                 )));
             }
         }
         if let Some(tpm) = self.tpm {
-            if s.tokens + estimated_tokens > tpm as u64 {
+            if s.tokens
+                .checked_add(estimated_tokens)
+                .is_none_or(|total| total > u64::from(tpm))
+            {
                 return Err(KernelError::RateLimited(format!(
                     "tpm budget {tpm} exhausted"
                 )));
             }
         }
-        s.requests += 1;
-        s.tokens += estimated_tokens;
+        s.requests = s.requests.saturating_add(1);
+        s.tokens = s.tokens.saturating_add(estimated_tokens);
         Ok(())
     }
 }
@@ -408,14 +434,21 @@ impl RateBudget {
 const PROVIDER_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 const PROVIDER_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
+// The builder fails only on a TLS backend that cannot initialise, which is a
+// broken binary rather than a runtime condition; the client is built once at
+// provider construction, and the public constructors that call this are
+// infallible. Falling back to a default client would silently drop the
+// timeouts above, so this is one of the two registered panic exemptions
+// (server/docs/panic-boundaries.md).
+#[expect(
+    clippy::expect_used,
+    reason = "TLS backend initialisation failure is a broken binary; a default client would drop the timeouts"
+)]
 fn http_client() -> reqwest::Client {
     reqwest::Client::builder()
         .connect_timeout(PROVIDER_CONNECT_TIMEOUT)
         .timeout(PROVIDER_REQUEST_TIMEOUT)
         .build()
-        // The builder fails only on a TLS backend that cannot initialise,
-        // which is a broken binary rather than a runtime condition; the
-        // client is built once at provider construction.
         .expect("reqwest client with timeouts")
 }
 
@@ -1166,6 +1199,43 @@ spec:
             matches!(b.check(20), Err(KernelError::RateLimited(_))),
             "tpm exceeded"
         );
+    }
+
+    #[test]
+    fn budget_arithmetic_cannot_overflow_into_a_bypass() {
+        // P15/R32: `s.tokens + estimated_tokens` overflowed while the lock
+        // was held — a panic in debug builds, and in release a wrapped sum
+        // that admitted the request under a tpm limit.
+        let b = RateBudget::new(&Budgets {
+            tpm: Some(100),
+            ..Default::default()
+        });
+        assert!(b.check(10).is_ok());
+        assert!(matches!(
+            b.check(u64::MAX),
+            Err(KernelError::RateLimited(_))
+        ));
+        assert!(b.check(90).is_ok(), "tokens == tpm is still admitted");
+        assert!(matches!(b.check(1), Err(KernelError::RateLimited(_))));
+        // Without a tpm limit a huge estimate is admitted and saturates.
+        let b = RateBudget::new(&Budgets::default());
+        assert!(b.check(u64::MAX).is_ok());
+        assert!(b.check(u64::MAX).is_ok());
+    }
+
+    #[test]
+    fn a_poisoned_budget_refuses_rather_than_panicking() {
+        let b = std::sync::Arc::new(RateBudget::new(&Budgets {
+            rpm: Some(10),
+            ..Default::default()
+        }));
+        let held = b.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = held.state.lock().unwrap();
+            panic!("poison the budget");
+        })
+        .join();
+        assert!(matches!(b.check(1), Err(KernelError::Storage(_))));
     }
 }
 

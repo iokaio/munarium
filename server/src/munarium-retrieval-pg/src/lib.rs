@@ -18,6 +18,21 @@
 //! - Hybrid ranking: reciprocal rank fusion over the lexical and vector
 //!   candidate lists (k configurable per shape, default 60).
 
+// Production code returns typed errors instead of panicking; tests are exempt.
+// The policy, its two exemptions and the per-site record are in
+// server/docs/panic-boundaries.md (P15/R32).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
 use async_trait::async_trait;
 use munarium_core::docintel::DocumentIntelligence;
 use munarium_core::retrieval::*;

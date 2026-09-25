@@ -11,8 +11,23 @@
 //! endpoint. Azure Container Apps/App Service inject `IDENTITY_ENDPOINT` plus
 //! a rotating `IDENTITY_HEADER`; VM/AKS workloads fall back to IMDS.
 
+// Production code returns typed errors instead of panicking; tests are exempt.
+// The policy, its two exemptions and the per-site record are in
+// server/docs/panic-boundaries.md (P15/R32).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
 use munarium_core::{KernelError, Result};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, SystemTime};
 
 /// Blob data plane.
@@ -111,9 +126,16 @@ impl ImdsTokenSource {
         url
     }
 
+    /// The token cache. It is poisoned only if a thread panicked while
+    /// holding it; the cache is one `Option` replaced whole, so it is never
+    /// half updated and recovering it is sound (P15/R32).
+    fn cache(&self) -> MutexGuard<'_, Option<Cached>> {
+        self.cached.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
     /// A valid bearer token, from cache when one is still good.
     pub async fn token(&self) -> Result<String> {
-        if let Some(t) = self.cached.lock().expect("token lock").as_ref() {
+        if let Some(t) = self.cache().as_ref() {
             if t.expires_at > SystemTime::now() {
                 return Ok(t.value.clone());
             }
@@ -175,11 +197,21 @@ impl ImdsTokenSource {
                 Some(expires_on.saturating_sub(now_secs))
             })
             .unwrap_or(3600);
-        let expires_at = now + Duration::from_secs(ttl).saturating_sub(TOKEN_SKEW);
-        *self.cached.lock().expect("token lock") = Some(Cached {
-            value: parsed.access_token.clone(),
-            expires_at,
-        });
+        // The lifetime comes from the identity endpoint. One that does not fit
+        // a SystemTime is not trusted for caching: the token is returned and
+        // the next call asks again, rather than panicking on the addition.
+        match now.checked_add(Duration::from_secs(ttl).saturating_sub(TOKEN_SKEW)) {
+            Some(expires_at) => {
+                *self.cache() = Some(Cached {
+                    value: parsed.access_token.clone(),
+                    expires_at,
+                });
+            }
+            None => tracing::warn!(
+                resource = %self.resource,
+                "managed-identity token lifetime is out of range; not caching it"
+            ),
+        }
         Ok(parsed.access_token)
     }
 }
@@ -263,6 +295,66 @@ mod tests {
         assert!(url.contains("resource=https%3A%2F%2Fstorage.azure.com%2F"));
         assert!(url.contains("client_id=uami-client"));
         assert!(!url.contains("rotating-secret"));
+    }
+
+    /// A one-shot platform identity endpoint on loopback that answers with
+    /// `body`, so a test controls exactly what the "platform" says.
+    fn serve_once(body: &'static str) -> IdentityEndpoint {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut request = [0u8; 4096];
+                let _ = stream.read(&mut request);
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\
+                     content-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+        IdentityEndpoint::Platform {
+            base_url: format!("http://{addr}/msi/token"),
+            header: "test-header".into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn an_unrepresentable_token_lifetime_is_not_a_panic() {
+        // P15/R32: `now + Duration::from_secs(ttl)` panicked when the identity
+        // endpoint's `expires_in` did not fit a SystemTime. The token is still
+        // returned; it is simply not cached.
+        let src = source_with_endpoint(
+            RESOURCE_STORAGE,
+            None,
+            serve_once(r#"{"access_token":"t","expires_in":"18446744073709551615"}"#),
+        );
+        assert_eq!(src.token().await.expect("token"), "t");
+        assert!(src.cached.lock().unwrap().is_none(), "not cached");
+    }
+
+    #[tokio::test]
+    async fn a_poisoned_token_cache_still_serves_and_refreshes() {
+        // P15/R32: `.expect("token lock")` turned one panic while the cache
+        // was held into a panic on every later token request. The cache is a
+        // single Option replaced whole, so recovering it is sound.
+        let src = std::sync::Arc::new(source_with_endpoint(
+            RESOURCE_STORAGE,
+            None,
+            serve_once(r#"{"access_token":"fresh","expires_in":"3600"}"#),
+        ));
+        let held = src.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = held.cached.lock().unwrap();
+            panic!("poison the token cache");
+        })
+        .join();
+        assert!(src.cached.is_poisoned());
+        assert_eq!(src.token().await.expect("token"), "fresh");
+        // Cached now: a second call does not need the (one-shot) endpoint.
+        assert_eq!(src.token().await.expect("cached token"), "fresh");
     }
 
     #[tokio::test]

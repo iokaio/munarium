@@ -222,11 +222,19 @@ impl PgRetrieval {
         for outcome in &build.outcomes {
             self.record_extraction(&mut *tx, &outcome.source_id, &outcome.raw)
                 .await?;
-            let source = build
+            // Every outcome is produced from one of `build.sources`; a miss is
+            // an inconsistent build, reported (and rolled back with `tx`)
+            // rather than a panic inside the transaction.
+            let Some(source) = build
                 .sources
                 .iter()
                 .find(|s| s.source_id == outcome.source_id)
-                .expect("prepared source");
+            else {
+                return Err(KernelError::Storage(format!(
+                    "build outcome names source {} that the build did not prepare",
+                    outcome.source_id
+                )));
+            };
             self.record_chunk_provenance(
                 &mut tx,
                 index_id,

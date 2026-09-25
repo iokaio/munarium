@@ -63,11 +63,13 @@ release's published limitations.
 | **Ingestion + lifecycle** | `POST /v1/ingest(+/batch)` (`ingest` scope; explicit or matcher auto-bind; clearance-checked writes), double-pass soft removal (`remove-request` → `remove-confirm`, 15-min TTL, 410 afterwards, data retained), DBA-only physical deletion runbook | Complete |
 | **Reporting + hardening** | `GET /v1/reports/usage\|audit\|cost` (mgmt), token issuance audit + revoke (deny-list enforced when `MUNARIUM_TOKEN_REVOCATION_CHECK=true`), idempotency table-backed in pg mode (restart/replica-safe) | Complete on REST and the native `ServerApiService` gRPC surface |
 | **Storage + extraction** | multi-cloud source stores: `SourceStore` seam + `munarium-store-objects` over `object_store` 0.14 (Azure Blob / S3(-compatible) / GCS / local file), local DOCX/PDF extraction (`munarium-extract`, optional `ocr` feature), Azure Document Intelligence escalation (`munarium-docintel-az`, off by default), MinIO `--profile s3` smoke target | Complete |
+| **Embedded datastore library** | `munarium-datastore` as a supported Rust library: a declared public surface under semantic versioning, four qualified feature sets, minimum Rust 1.92, checked from an isolated consumer outside the workspace ([docs/embedded-support.md](docs/embedded-support.md)). Every other crate is internal: no Rust API promise | Supported as pinned source; not published to a registry |
 
 ## Quickstart (dev profile)
 
 Prerequisites: Docker with Compose for the container stack. Native Server builds
-use **Rust 1.98.0**, pinned in [rust-toolchain.toml](rust-toolchain.toml).
+use **Rust 1.98.0**, pinned in [rust-toolchain.toml](rust-toolchain.toml). The pin
+is the tested toolchain, not a minimum; only `munarium-datastore` declares one.
 Run the following from the repository root:
 
 ```powershell
@@ -228,12 +230,17 @@ local-file `SourceStore` over the Apache Arrow `object_store` crate — one adap
 backends, ambient credentials), `munarium-extract` (local DOCX/PDF text extraction, OCR behind
 a feature — pure Rust only), `munarium-docintel-az` (Azure Document Intelligence behind the
 `DocumentIntelligence` trait — the paid OCR escalation), `munarium-retrieval-pg`,
-`munarium-shapes`, `munarium-runbooks`, `munarium-providers`, `munarium-server`, `munarium-cli`
-(`mmctl`). Plus [proto/](proto/), [conformance/](conformance/), [deploy/](deploy/)
+`munarium-retrieval` (the retrieval coordinator Server talks to),
+`munarium-datastore` (immutable, content-verified search artifacts — the one supported
+embedded library, see [docs/embedded-support.md](docs/embedded-support.md)),
+`munarium-shapes`, `munarium-runbooks`, `munarium-authoring` (guided runbook-set authoring),
+`munarium-providers`, `munarium-server`, `munarium-cli` (`mmctl`). Plus [proto/](proto/), [conformance/](conformance/), [deploy/](deploy/)
 (helm, envoy, an example terraform module), [runbooks/](runbooks/).
 
 Boundary rules (CI-checked): `munarium-core` never depends on sqlx/axum/tonic/reqwest;
-`munarium-providers` never on storage crates; rustls everywhere, openssl banned by `deny.toml`.
+`munarium-providers` never on storage crates; `munarium-datastore` never on `munarium-core`,
+a transport or a database crate, in the workspace and from its isolated consumer; rustls
+everywhere, openssl banned by `deny.toml`.
 
 ## Demo vs production posture
 

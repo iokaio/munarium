@@ -264,8 +264,7 @@ fn scan(text: &str) -> Vec<Token> {
                     parts.push((j + 1, part_end));
                     j = part_end;
                 }
-                if parts.len() >= 2 {
-                    let chain_end = parts.last().unwrap().1;
+                if let [_, .., (_, chain_end)] = parts[..] {
                     push(
                         chars[start].0,
                         byte_end(chain_end),
