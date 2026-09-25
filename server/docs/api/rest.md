@@ -133,6 +133,13 @@ this is separate from a ledger sequence pin. See the
 | Admin | No `/v1/admin/*` tenant-management routes; token operations use `/v1/access-tokens` | `AdminService` serves Issue/List/RevokeAccessToken; CreateTenant/ListTenants/Usage remain `UNIMPLEMENTED` |
 | Ops | `GET /healthz` · `GET /readyz` · `GET /version` · `GET /openapi.json` · `GET /docs` — plus the ops plane (:9090, never via ingress): `/healthz`, `/readyz`, `/metrics` (Prometheus text) | `ServerApiService` for documented meta operations; `grpc.health.v1.Health` for health; Swagger UI and Prometheus exposition remain HTTP |
 
+Runbook checkpoints and required ledger transitions commit together when a run
+names a version; runs without a version have checkpoint-only history. Existing
+history gaps remain unknown. Approval retries validate state under the run lock.
+Restart does not resume a run automatically, and posting a new run does not
+resume an older run. See [run recovery](../ops/clustering.md#diagnosing-a-crash-orphaned-run)
+for effect/checkpoint ambiguity and rollout limits.
+
 ## Provider selection: default rule, tiers, and /healthai
 
 Complete/embed routes normally address an applied ProviderConfig by `{name}`. The

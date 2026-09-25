@@ -289,7 +289,7 @@ Rules of the registry:
 
 ## 7. Runbooks: Declarative, Deployable Operations
 
-A **runbook** is a versioned, declarative definition of an operational pipeline over one shape (v1) or a set of collections (v2) — ingest, index, re-index, verify, archive — executed by the built-in runbook executor (`munarium-runbooks`) with durable, resumable steps recorded in the ledger. No external workflow engine is required; the executor is a checkpointed step machine whose state is (of course) events. An external workflow engine remains the documented substitution seam if a deployment's pipelines outgrow it.
+A **runbook** is a versioned, declarative definition of an operational pipeline over one shape (v1) or a set of collections (v2) — ingest, index, re-index, verify, archive — executed by the built-in runbook executor (`munarium-runbooks`) with durable, resumable steps recorded in the ledger. No external workflow engine is required; the executor is a checkpointed step machine whose state is (of course) events. An external workflow engine remains the documented substitution seam if a deployment's pipelines outgrow it. Step checkpoints and their required ledger transitions now share a PostgreSQL transaction; no-version runs remain checkpoint-only. Effects occur outside that transaction, legacy missing events are not reconstructed, and process restart does not automatically resume execution. See [crash-orphaned runs](ops/clustering.md#diagnosing-a-crash-orphaned-run) for recovery and mixed-version limits.
 
 ```yaml
 # runbooks/pipelines/cuad-reindex@2.yaml

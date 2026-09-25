@@ -76,38 +76,68 @@ async fn set_step(
     detail: Option<serde_json::Value>,
     version_id: Option<&str>,
 ) -> Result<()> {
-    sqlx::query(
-        "UPDATE runbook_steps SET state = $4, detail = COALESCE($5, detail), updated_at = now()
-          WHERE tenant_id = $1 AND run_id = $2 AND ordinal = $3",
-    )
-    .bind(tenant)
-    .bind(run_id)
-    .bind(ordinal as i32)
-    .bind(step_state.as_str())
-    .bind(&detail)
-    .execute(pool(state)?)
-    .await
-    .map_err(|e| KernelError::Storage(e.to_string()))?;
-    state.metrics.inc(
-        "munarium_runbook_step_transitions_total",
-        crate::metrics::labels(&[("state", step_state.as_str())]),
-    );
-
-    // every transition is a ledger event when the run names a lineage
-    #[cfg(test)]
-    crate::crash_recovery::barrier(&format!("step_state:{}:{}", ordinal, step_state.as_str()));
-    if let Some(version_id) = version_id {
-        let store = state.store_for(tenant).await?;
+    let ordinal_i32 = i32::try_from(ordinal)
+        .map_err(|_| KernelError::InvalidInput("step ordinal exceeds i32".into()))?;
+    // Lock order: run advisory lock (caller), lineage head, checkpoint row.
+    // Never use the generic store here: it would commit the event separately.
+    let mut tx = if let Some(version_id) = version_id {
+        let store = state.pg_store_for(tenant).await?;
         let mut claim = munarium_core::storage::NewClaim::fact(
             &format!("runbook-run-{}", &run_id[..12.min(run_id.len())]),
             &format!("step-{ordinal}-{name}-{}", step_state.as_str()),
             step_state.as_str(),
         );
-        claim.evidence = detail;
-        let _ = store.append_claim(version_id, claim, None).await?;
-    }
+        claim.evidence = detail.clone();
+        store
+            .append_claims_uncommitted(version_id, vec![claim], None)
+            .await?
+            .0
+    } else {
+        pool(state)?
+            .begin()
+            .await
+            .map_err(|e| KernelError::Storage(e.to_string()))?
+    };
     #[cfg(test)]
     crate::crash_recovery::barrier(&format!("step_event:{}:{}", ordinal, step_state.as_str()));
+    let updated = sqlx::query(
+        "UPDATE runbook_steps s SET state = $4, detail = COALESCE($5, s.detail), updated_at = now()
+          FROM runbook_runs r
+          WHERE s.tenant_id = $1 AND s.run_id = $2 AND s.ordinal = $3 AND s.name = $6
+            AND r.tenant_id = s.tenant_id AND r.id = s.run_id
+            AND r.version_id IS NOT DISTINCT FROM $7::text",
+    )
+    .bind(tenant)
+    .bind(run_id)
+    .bind(ordinal_i32)
+    .bind(step_state.as_str())
+    .bind(&detail)
+    .bind(name)
+    .bind(version_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| KernelError::Storage(e.to_string()))?;
+    if updated.rows_affected() != 1 {
+        // Explicit rollback also makes the failure observable immediately to
+        // another connection; no orphan claim or lineage-head advance survives.
+        tx.rollback()
+            .await
+            .map_err(|e| KernelError::Storage(e.to_string()))?;
+        return Err(KernelError::InvalidInput(
+            "runbook checkpoint identity mismatch".into(),
+        ));
+    }
+    #[cfg(test)]
+    crate::crash_recovery::barrier(&format!("step_state:{}:{}", ordinal, step_state.as_str()));
+    tx.commit()
+        .await
+        .map_err(|e| KernelError::Storage(e.to_string()))?;
+    #[cfg(test)]
+    crate::crash_recovery::barrier(&format!("step_commit:{}:{}", ordinal, step_state.as_str()));
+    state.metrics.inc(
+        "munarium_runbook_step_transitions_total",
+        crate::metrics::labels(&[("state", step_state.as_str())]),
+    );
     Ok(())
 }
 
@@ -927,6 +957,9 @@ pub async fn op_approve_step(
         kind: "run",
         id: run_id.to_string(),
     })?;
+    // Validate approval state while holding the same lock as execution. A
+    // concurrent approval may have completed while this caller was arriving.
+    let _lock = acquire_run_lock(state, tenant, run_id).await?;
     let current: Option<(String,)> = sqlx::query_as(
         "SELECT state FROM runbook_steps WHERE tenant_id = $1 AND run_id = $2 AND ordinal = $3",
     )
@@ -951,9 +984,6 @@ pub async fn op_approve_step(
         }
     }
     let doc = load_runbook(state, tenant, &runbook_ref).await?;
-    // The lock must be held BEFORE the state flip: two concurrent approvals
-    // must resolve to exactly one executor (the loser 409s `run-locked`).
-    let _lock = acquire_run_lock(state, tenant, run_id).await?;
     set_run_state(state, tenant, run_id, "running").await?;
     execute(
         state,

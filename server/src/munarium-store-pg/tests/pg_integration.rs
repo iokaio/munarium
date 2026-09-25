@@ -1358,3 +1358,55 @@ mod max_tokens {
             .is_none());
     }
 }
+
+/// Fixed workloads over independent pools qualify lineage serialization for
+/// the transaction boundary also used by runbook checkpoints.
+#[tokio::test]
+async fn recovery_two_pools_seeded_batches() {
+    let Some(url) = test_url() else { return };
+    tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        for seed in [0x08_u64, 0x5eed_u64] {
+            let tenant = fresh_tenant(&format!("p08-seed-{seed}"));
+            let a = PgStore::connect(&url, &tenant).await.unwrap();
+            let b = PgStore::connect(&url, &tenant).await.unwrap();
+            let version = a.create_version(None, None).await.unwrap();
+            let mut random = seed;
+            let mut acknowledged = Vec::new();
+            for round in 0..8 {
+                random = random.wrapping_mul(6364136223846793005).wrapping_add(1);
+                let batch = |side: &str, count: usize| (0..count).map(|i|
+                    NewClaim::fact("recovery", &format!("{round}-{side}-{i}"), "observed")
+                ).collect::<Vec<_>>();
+                let left = batch("a", (random % 3 + 1) as usize);
+                let right = batch("b", ((random >> 8) % 3 + 1) as usize);
+                let head = a.head(&version).await.unwrap();
+                let (ra, rb) = tokio::join!(
+                    a.append_claims(&version, left.clone(), Some(head)),
+                    b.append_claims(&version, right.clone(), Some(head))
+                );
+                let (winner, loser, retry) = match (ra, rb) {
+                    (Ok(rows), Err(e)) => (rows, e, right),
+                    (Err(e), Ok(rows)) => (rows, e, left),
+                    other => panic!("seed={seed} round={round}: expected one winner: {other:?}"),
+                };
+                assert!(matches!(loser, KernelError::HeadConflict { .. }));
+                assert!(winner.windows(2).all(|w| w[0].seq < w[1].seq));
+                acknowledged.extend(winner);
+                acknowledged.extend(b.append_claims(&version, retry, None).await.unwrap());
+            }
+            let reopened = PgStore::connect(&url, &tenant).await.unwrap();
+            for claim in &acknowledged {
+                let stored = reopened.get_claim(&claim.id).await.unwrap().unwrap();
+                assert_eq!(stored.seq, claim.seq, "seed={seed}");
+                assert_eq!(stored.key, claim.key);
+                let event: String = sqlx::query_scalar("SELECT body->>'claim_id' FROM ledger_events WHERE tenant_id=$1 AND version_id=$2 AND seq=$3")
+                    .bind(&tenant).bind(&version).bind(claim.seq as i64)
+                    .fetch_one(reopened.pool()).await.unwrap();
+                assert_eq!(event, claim.id);
+            }
+            let sequences: std::collections::BTreeSet<_> = acknowledged.iter().map(|c| c.seq).collect();
+            assert_eq!(sequences.len(), acknowledged.len());
+            assert_eq!(reopened.head(&version).await.unwrap(), *sequences.last().unwrap());
+        }
+    }).await.expect("bounded two-pool recovery qualification");
+}

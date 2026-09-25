@@ -127,6 +127,146 @@ impl PgStore {
         })
     }
 
+    /// Append under the ordinary lineage lock without committing. The caller may
+    /// add related PostgreSQL writes, then commit all of them together. Dropping
+    /// the returned transaction rolls back the append and its head update.
+    /// Acquire any related row locks AFTER this lineage lock, and do not borrow
+    /// another pool connection while holding the transaction.
+    pub async fn append_claims_uncommitted(
+        &self,
+        version_id: &str,
+        claims: Vec<NewClaim>,
+        expected_head: Option<Seq>,
+    ) -> Result<(Transaction<'static, Postgres>, Vec<Claim>)> {
+        if claims.is_empty() {
+            return Ok((self.pool.begin().await.map_err(storage_err)?, Vec::new()));
+        }
+        // ONE transaction under the lineage lock spans the whole batch:
+        // every claim lands or none does, seqs consecutive from head + 1.
+        let (mut tx, chain, root, head) = self.locked_head(version_id).await?;
+        if let Some(expected) = expected_head {
+            if expected != head {
+                return Err(KernelError::HeadConflict {
+                    expected,
+                    actual: head,
+                });
+            }
+        }
+        // Validate every supersedes_id up front — a mid-batch failure must
+        // reject the batch before any row is written.
+        for claim in &claims {
+            if let Some(sup) = &claim.supersedes_id {
+                let exists = sqlx::query(
+                    "SELECT 1 AS one FROM claims
+                      WHERE tenant_id = $1 AND id = $2 AND version_id = ANY($3)",
+                )
+                .bind(&self.tenant_id)
+                .bind(sup)
+                .bind(&chain)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(storage_err)?;
+                if exists.is_none() {
+                    return Err(KernelError::NotFound {
+                        kind: "claim",
+                        id: sup.clone(),
+                    });
+                }
+            }
+        }
+
+        let mut out = Vec::with_capacity(claims.len());
+        let mut seq = head as i64;
+        for claim in claims {
+            seq += 1;
+            let id = format!("claim-{}", uuid::Uuid::new_v4().simple());
+            let normalized =
+                munarium_core::ledger::normalize_claim(&claim.subject, &claim.key, &claim.value);
+
+            // event + projection in ONE transaction; the projection is regenerable
+            let origin_json: Option<serde_json::Value> = claim
+                .origin
+                .as_ref()
+                .map(|o| serde_json::to_value(o).expect("ClaimOrigin serializes"));
+            sqlx::query(
+                "INSERT INTO ledger_events (tenant_id, version_id, seq, event_type, body)
+                 VALUES ($1, $2, $3, 'claim.appended', $4)",
+            )
+            .bind(&self.tenant_id)
+            .bind(version_id)
+            .bind(seq)
+            .bind(serde_json::json!({
+                "claim_id": id,
+                "claim_type": claim_type_str(claim.claim_type),
+                "normalized": normalized,
+                "status": status_str(claim.status),
+                "supersedes_id": claim.supersedes_id,
+                "origin": origin_json,
+            }))
+            .execute(&mut *tx)
+            .await
+            .map_err(storage_err)?;
+
+            sqlx::query(
+                "INSERT INTO claims (tenant_id, id, version_id, seq, claim_type, subject, key, value,
+                                     scope_path, status, provenance, supersedes_id, entity_id,
+                                     evidence, confidence, shape_ref, origin)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)",
+            )
+            .bind(&self.tenant_id)
+            .bind(&id)
+            .bind(version_id)
+            .bind(seq)
+            .bind(claim_type_str(claim.claim_type))
+            .bind(&claim.subject)
+            .bind(&claim.key)
+            .bind(&claim.value)
+            .bind(&claim.scope_path)
+            .bind(status_str(claim.status))
+            .bind(provenance_str(claim.provenance))
+            .bind(&claim.supersedes_id)
+            .bind(&claim.entity_id)
+            .bind(&claim.evidence)
+            .bind(claim.confidence)
+            .bind(&claim.shape_ref)
+            .bind(origin_json.as_ref())
+            .execute(&mut *tx)
+            .await
+            .map_err(storage_err)?;
+
+            out.push(Claim {
+                id,
+                version_id: version_id.to_string(),
+                seq: seq as Seq,
+                claim_type: claim.claim_type,
+                subject: claim.subject,
+                key: claim.key,
+                value: claim.value,
+                scope_path: claim.scope_path,
+                status: claim.status,
+                provenance: claim.provenance,
+                supersedes_id: claim.supersedes_id,
+                entity_id: claim.entity_id,
+                evidence: claim.evidence,
+                confidence: claim.confidence,
+                shape_ref: claim.shape_ref,
+                origin: claim.origin,
+            });
+        }
+
+        sqlx::query(
+            "UPDATE lineage_heads SET current_seq = GREATEST(current_seq, $3)
+              WHERE tenant_id = $1 AND lineage_root_id = $2",
+        )
+        .bind(&self.tenant_id)
+        .bind(&root)
+        .bind(seq)
+        .execute(&mut *tx)
+        .await
+        .map_err(storage_err)?;
+        Ok((tx, out))
+    }
+
     /// Version chain root -> leaf for `version_id` (recursive parent walk).
     async fn lineage_chain(&self, version_id: &str) -> Result<Vec<(String, String)>> {
         let rows = sqlx::query(
@@ -401,135 +541,14 @@ impl StorageBackend for PgStore {
         if claims.is_empty() {
             return Ok(Vec::new());
         }
-        // ONE transaction under the lineage lock spans the whole batch:
-        // every claim lands or none does, seqs consecutive from head + 1.
-        let (mut tx, chain, root, head) = self.locked_head(version_id).await?;
-        if let Some(expected) = expected_head {
-            if expected != head {
-                return Err(KernelError::HeadConflict {
-                    expected,
-                    actual: head,
-                });
-            }
-        }
-        // Validate every supersedes_id up front — a mid-batch failure must
-        // reject the batch before any row is written.
-        for claim in &claims {
-            if let Some(sup) = &claim.supersedes_id {
-                let exists = sqlx::query(
-                    "SELECT 1 AS one FROM claims
-                      WHERE tenant_id = $1 AND id = $2 AND version_id = ANY($3)",
-                )
-                .bind(&self.tenant_id)
-                .bind(sup)
-                .bind(&chain)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(storage_err)?;
-                if exists.is_none() {
-                    return Err(KernelError::NotFound {
-                        kind: "claim",
-                        id: sup.clone(),
-                    });
-                }
-            }
-        }
-
-        let mut out = Vec::with_capacity(claims.len());
-        let mut seq = head as i64;
-        for claim in claims {
-            seq += 1;
-            let id = format!("claim-{}", uuid::Uuid::new_v4().simple());
-            let normalized =
-                munarium_core::ledger::normalize_claim(&claim.subject, &claim.key, &claim.value);
-
-            // event + projection in ONE transaction; the projection is regenerable
-            let origin_json: Option<serde_json::Value> = claim
-                .origin
-                .as_ref()
-                .map(|o| serde_json::to_value(o).expect("ClaimOrigin serializes"));
-            sqlx::query(
-                "INSERT INTO ledger_events (tenant_id, version_id, seq, event_type, body)
-                 VALUES ($1, $2, $3, 'claim.appended', $4)",
-            )
-            .bind(&self.tenant_id)
-            .bind(version_id)
-            .bind(seq)
-            .bind(serde_json::json!({
-                "claim_id": id,
-                "claim_type": claim_type_str(claim.claim_type),
-                "normalized": normalized,
-                "status": status_str(claim.status),
-                "supersedes_id": claim.supersedes_id,
-                "origin": origin_json,
-            }))
-            .execute(&mut *tx)
-            .await
-            .map_err(storage_err)?;
-
-            sqlx::query(
-                "INSERT INTO claims (tenant_id, id, version_id, seq, claim_type, subject, key, value,
-                                     scope_path, status, provenance, supersedes_id, entity_id,
-                                     evidence, confidence, shape_ref, origin)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)",
-            )
-            .bind(&self.tenant_id)
-            .bind(&id)
-            .bind(version_id)
-            .bind(seq)
-            .bind(claim_type_str(claim.claim_type))
-            .bind(&claim.subject)
-            .bind(&claim.key)
-            .bind(&claim.value)
-            .bind(&claim.scope_path)
-            .bind(status_str(claim.status))
-            .bind(provenance_str(claim.provenance))
-            .bind(&claim.supersedes_id)
-            .bind(&claim.entity_id)
-            .bind(&claim.evidence)
-            .bind(claim.confidence)
-            .bind(&claim.shape_ref)
-            .bind(origin_json.as_ref())
-            .execute(&mut *tx)
-            .await
-            .map_err(storage_err)?;
-
-            out.push(Claim {
-                id,
-                version_id: version_id.to_string(),
-                seq: seq as Seq,
-                claim_type: claim.claim_type,
-                subject: claim.subject,
-                key: claim.key,
-                value: claim.value,
-                scope_path: claim.scope_path,
-                status: claim.status,
-                provenance: claim.provenance,
-                supersedes_id: claim.supersedes_id,
-                entity_id: claim.entity_id,
-                evidence: claim.evidence,
-                confidence: claim.confidence,
-                shape_ref: claim.shape_ref,
-                origin: claim.origin,
-            });
-        }
-
-        sqlx::query(
-            "UPDATE lineage_heads SET current_seq = GREATEST(current_seq, $3)
-              WHERE tenant_id = $1 AND lineage_root_id = $2",
-        )
-        .bind(&self.tenant_id)
-        .bind(&root)
-        .bind(seq)
-        .execute(&mut *tx)
-        .await
-        .map_err(storage_err)?;
+        let (tx, out) = self
+            .append_claims_uncommitted(version_id, claims, expected_head)
+            .await?;
         #[cfg(test)]
         crash_recovery::barrier("before_commit");
         tx.commit().await.map_err(storage_err)?;
         #[cfg(test)]
         crash_recovery::barrier("after_commit");
-
         Ok(out)
     }
 
