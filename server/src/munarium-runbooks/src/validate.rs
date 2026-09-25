@@ -95,8 +95,8 @@ pub fn validate_runbook(doc: &RunbookDoc) -> Vec<ValidationFinding> {
         ("cutover", "steps.cutover-before-build"),
         ("retireOld", "steps.retire-before-build"),
     ] {
-        if let (Some(d), b) = (pos(dependent), build) {
-            if b.is_none() || d < b.unwrap() {
+        if let Some(d) = pos(dependent) {
+            if build.is_none_or(|b| d < b) {
                 out.push(finding(
                     Severity::Error,
                     code,
@@ -774,6 +774,30 @@ spec:
         let doc = v2("    - resolveSources: {}\n    - buildIndex: {}\n    - verify: {}\n    - cutover: { approval: required }\n    - retireOld: { keep_versions: 2 }");
         let findings = validate_runbook(&doc);
         assert!(is_valid(&findings), "{findings:?}");
+    }
+
+    #[test]
+    fn dependent_steps_need_a_build_that_precedes_them() {
+        // Control for the P15 rewrite of the ordering check: no build at all
+        // and a build after the dependent are both errors; a build before it
+        // is not.
+        let codes = |steps: &str| {
+            validate_runbook(&v2(steps))
+                .into_iter()
+                .map(|f| f.code)
+                .collect::<Vec<_>>()
+        };
+        assert!(codes("    - verify: {}").contains(&"steps.verify-before-build".to_string()));
+        assert!(codes(
+            "    - verify: {}
+    - buildIndex: {}"
+        )
+        .contains(&"steps.verify-before-build".to_string()));
+        assert!(!codes(
+            "    - buildIndex: {}
+    - verify: {}"
+        )
+        .contains(&"steps.verify-before-build".to_string()));
     }
 
     #[test]
