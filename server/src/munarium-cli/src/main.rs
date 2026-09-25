@@ -21,6 +21,21 @@
 //! Env: MUNARIUMCTL_URL (default http://localhost:8080), MUNARIUMCTL_TOKEN,
 //!      MUNARIUMCTL_UID (the uid contract; default "mmctl").
 
+// Production code returns typed errors instead of panicking; tests are exempt.
+// The policy, its two exemptions and the per-site record are in
+// server/docs/panic-boundaries.md (P15/R32).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
 mod matrix;
 
 use std::time::Duration;
@@ -33,7 +48,7 @@ fn client() -> reqwest::blocking::Client {
     reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(600))
         .build()
-        .expect("client")
+        .unwrap_or_else(|e| die(&format!("could not build the HTTP client: {e}")))
 }
 
 fn auth(rb: reqwest::blocking::RequestBuilder) -> reqwest::blocking::RequestBuilder {
@@ -49,6 +64,14 @@ fn auth(rb: reqwest::blocking::RequestBuilder) -> reqwest::blocking::RequestBuil
 fn die(msg: &str) -> ! {
     eprintln!("mmctl: {msg}");
     std::process::exit(1);
+}
+
+/// A response body for the terminal. Rendering a `serde_json::Value` does not
+/// fail in practice; if it ever did, the operator gets an error and exit 1,
+/// never an empty line that looks like an empty answer (P15/R32).
+fn pretty(v: &serde_json::Value) -> String {
+    serde_json::to_string_pretty(v)
+        .unwrap_or_else(|e| die(&format!("could not render the response: {e}")))
 }
 
 fn check(resp: reqwest::blocking::Response) -> serde_json::Value {
@@ -194,7 +217,7 @@ fn main() {
                     .send()
                     .unwrap_or_else(|e| die(&e.to_string())),
             );
-            println!("{}", serde_json::to_string_pretty(&body).unwrap());
+            println!("{}", pretty(&body));
         }
         Some("run") => {
             let name = args
@@ -211,7 +234,7 @@ fn main() {
                     .send()
                     .unwrap_or_else(|e| die(&e.to_string())),
             );
-            println!("{}", serde_json::to_string_pretty(&body).unwrap());
+            println!("{}", pretty(&body));
             if args.iter().any(|a| a == "--watch") {
                 let run_id = body["run_id"].as_str().unwrap_or_default().to_string();
                 loop {
@@ -222,7 +245,7 @@ fn main() {
                             .unwrap_or_else(|e| die(&e.to_string())),
                     );
                     let state = run["state"].as_str().unwrap_or_default().to_string();
-                    println!("{}", serde_json::to_string_pretty(&run).unwrap());
+                    println!("{}", pretty(&run));
                     if state != "running" {
                         if state == "awaiting_approval" {
                             println!("approve with: mmctl approve {run_id} <step-ordinal>");
@@ -247,7 +270,7 @@ fn main() {
                 .send()
                 .unwrap_or_else(|e| die(&e.to_string())),
             );
-            println!("{}", serde_json::to_string_pretty(&body).unwrap());
+            println!("{}", pretty(&body));
         }
         Some("runbook") => match args.get(1).map(String::as_str) {
             Some("list") => {
@@ -256,7 +279,7 @@ fn main() {
                         .send()
                         .unwrap_or_else(|e| die(&e.to_string())),
                 );
-                println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                println!("{}", pretty(&body));
             }
             Some("info") => {
                 let name = args
@@ -267,7 +290,7 @@ fn main() {
                         .send()
                         .unwrap_or_else(|e| die(&e.to_string())),
                 );
-                println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                println!("{}", pretty(&body));
             }
             Some("validate") => {
                 let path = args
@@ -289,7 +312,7 @@ fn main() {
                     .send()
                     .unwrap_or_else(|e| die(&e.to_string())),
                 );
-                println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                println!("{}", pretty(&body));
             }
             _ => die("usage: mmctl runbook list|info <name>|validate -f <file.yaml>"),
         },
@@ -318,7 +341,7 @@ fn main() {
                     .send()
                     .unwrap_or_else(|e| die(&e.to_string())),
             );
-            println!("{}", serde_json::to_string_pretty(&body).unwrap());
+            println!("{}", pretty(&body));
         }
         Some("author") => match args.get(1).map(String::as_str) {
             Some("patterns") => {
@@ -327,7 +350,7 @@ fn main() {
                         .send()
                         .unwrap_or_else(|e| die(&e.to_string())),
                 );
-                println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                println!("{}", pretty(&body));
             }
             Some("pattern") => {
                 let id = args
@@ -338,7 +361,7 @@ fn main() {
                         .send()
                         .unwrap_or_else(|e| die(&e.to_string())),
                 );
-                println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                println!("{}", pretty(&body));
             }
             Some("new") => {
                 let name = args.get(2).unwrap_or_else(|| {
@@ -357,7 +380,7 @@ fn main() {
                         .send()
                         .unwrap_or_else(|e| die(&e.to_string())),
                 );
-                println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                println!("{}", pretty(&body));
             }
             Some("list") => {
                 let body = check(
@@ -365,7 +388,7 @@ fn main() {
                         .send()
                         .unwrap_or_else(|e| die(&e.to_string())),
                 );
-                println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                println!("{}", pretty(&body));
             }
             Some("show") => {
                 let id = args
@@ -376,7 +399,7 @@ fn main() {
                         .send()
                         .unwrap_or_else(|e| die(&e.to_string())),
                 );
-                println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                println!("{}", pretty(&body));
             }
             Some("answer") => {
                 let id = args.get(2).unwrap_or_else(|| {
@@ -399,7 +422,7 @@ fn main() {
                         .send()
                         .unwrap_or_else(|e| die(&e.to_string())),
                 );
-                println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                println!("{}", pretty(&body));
             }
             Some("validate") => {
                 let id = args
@@ -413,7 +436,7 @@ fn main() {
                     .send()
                     .unwrap_or_else(|e| die(&e.to_string())),
                 );
-                println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                println!("{}", pretty(&body));
             }
             Some("assist") => {
                 let id = args
@@ -437,7 +460,7 @@ fn main() {
                         .send()
                         .unwrap_or_else(|e| die(&e.to_string())),
                 );
-                println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                println!("{}", pretty(&body));
             }
             Some("export") => {
                 let id = args
@@ -473,7 +496,7 @@ fn main() {
                 let bundle_path = out_dir.join("bundle.json");
                 std::fs::write(
                     &bundle_path,
-                    serde_json::to_string_pretty(&body).unwrap(),
+                    pretty(&body),
                 )
                 .unwrap_or_else(|e| die(&format!("write {}: {e}", bundle_path.display())));
                 eprintln!(
@@ -482,7 +505,7 @@ fn main() {
                     out_dir.display(),
                     body["manifest_hash"].as_str().unwrap_or_default()
                 );
-                println!("{}", serde_json::to_string_pretty(&body["validation"]).unwrap());
+                println!("{}", pretty(&body["validation"]));
             }
             _ => die("usage: mmctl author patterns | pattern <id> | new <name> [--pattern <id>] [--seed] | list | show <draft-id> | answer <draft-id> -f <answers.yaml> [--no-materialize] | validate <draft-id> | assist <draft-id> [...] | export <draft-id> --out <dir>"),
         },
@@ -554,7 +577,7 @@ fn main() {
                         .unwrap_or_else(|e| die(&e.to_string())),
                 );
                 eprintln!("applied {p}");
-                println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                println!("{}", pretty(&body));
             }
         }
         Some("bulk") => match args.get(1).map(String::as_str) {
@@ -764,7 +787,7 @@ fn main() {
                     .send()
                     .unwrap_or_else(|e| die(&e.to_string())),
                 );
-                println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                println!("{}", pretty(&body));
                 if body["status"].as_str() != Some("completed") {
                     die(&format!(
                         "session {bulk_id} incomplete — resume with: mmctl bulk upload --dir {dir} --prefix '{prefix}' --resume {bulk_id}"
@@ -784,7 +807,7 @@ fn main() {
                     .send()
                     .unwrap_or_else(|e| die(&e.to_string())),
                 );
-                println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                println!("{}", pretty(&body));
             }
             Some("complete") => {
                 let id = args
@@ -795,7 +818,7 @@ fn main() {
                         .send()
                         .unwrap_or_else(|e| die(&e.to_string())),
                 );
-                println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                println!("{}", pretty(&body));
             }
             _ => die("usage: mmctl bulk upload --dir <dir> [--prefix <p/>] [--label L] [--resume <bulk-id>] | bulk status <bulk-id> [--needed] | bulk complete <bulk-id>"),
         },
@@ -808,7 +831,7 @@ fn main() {
                     .send()
                     .unwrap_or_else(|e| die(&e.to_string())),
             );
-            println!("{}", serde_json::to_string_pretty(&body).unwrap());
+            println!("{}", pretty(&body));
         }
         // The derived-index tier. Reporting and operating
         // on artifacts; nothing here changes which index version is ACTIVE,
@@ -823,7 +846,7 @@ fn main() {
                         .send()
                         .unwrap_or_else(|e| die(&e.to_string())),
                 );
-                println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                println!("{}", pretty(&body));
             }
             Some("verify") => {
                 let v = args
@@ -834,7 +857,7 @@ fn main() {
                         .send()
                         .unwrap_or_else(|e| die(&e.to_string())),
                 );
-                println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                println!("{}", pretty(&body));
                 // Exit 3 on an artifact that failed verification, so CI can
                 // tell a broken artifact from a broken command -- the same
                 // convention `mmctl matrix verify` uses.
@@ -855,7 +878,7 @@ fn main() {
                         .send()
                         .unwrap_or_else(|e| die(&e.to_string())),
                 );
-                println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                println!("{}", pretty(&body));
             }
             Some("backfill") => {
                 let c = args
@@ -867,7 +890,7 @@ fn main() {
                         .send()
                         .unwrap_or_else(|e| die(&e.to_string())),
                 );
-                println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                println!("{}", pretty(&body));
                 // Incomplete is not an error -- a version another node is
                 // building will finish -- but it is not success either, and a
                 // rollout gate must be able to tell the difference.
@@ -913,7 +936,7 @@ fn main() {
                         .send()
                         .unwrap_or_else(|e| die(&e.to_string())),
                 );
-                println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                println!("{}", pretty(&body));
             }
             Some("promote") => {
                 // mmctl datastore promote <index-version-id> --staged <g> [--serving <g>] [--reason <text>]
@@ -959,7 +982,7 @@ fn main() {
                         .send()
                         .unwrap_or_else(|e| die(&e.to_string())),
                 );
-                println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                println!("{}", pretty(&body));
             }
             Some("rollout") => {
                 // mmctl datastore rollout get <kind> <id>
@@ -977,7 +1000,7 @@ fn main() {
                             .send()
                             .unwrap_or_else(|e| die(&e.to_string())),
                         );
-                        println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                        println!("{}", pretty(&body));
                     }
                     Some("set") => {
                         let kind = args
@@ -1023,7 +1046,7 @@ fn main() {
                                 .send()
                                 .unwrap_or_else(|e| die(&e.to_string())),
                         );
-                        println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                        println!("{}", pretty(&body));
                     }
                     _ => die("usage: mmctl datastore rollout get <kind> <id> | set <kind> <id> <postgres|datastore> [--prewarm] [--expect <g>] [--reason <text>]"),
                 }
@@ -1070,7 +1093,7 @@ fn main() {
                                 .send()
                                 .unwrap_or_else(|e| die(&e.to_string())),
                         );
-                        println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                        println!("{}", pretty(&body));
                     }
                     Some("get") => {
                         let id = args.get(3).unwrap_or_else(|| die("jobs get <job-id>"));
@@ -1079,7 +1102,7 @@ fn main() {
                                 .send()
                                 .unwrap_or_else(|e| die(&e.to_string())),
                         );
-                        println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                        println!("{}", pretty(&body));
                         // A poller in a script needs the state as an exit code:
                         // 0 done, 3 not yet, 4 failed.
                         match body["state"].as_str() {
@@ -1094,7 +1117,7 @@ fn main() {
                                 .send()
                                 .unwrap_or_else(|e| die(&e.to_string())),
                         );
-                        println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                        println!("{}", pretty(&body));
                     }
                     Some("cancel") => {
                         let id = args.get(3).unwrap_or_else(|| die("jobs cancel <job-id>"));
@@ -1104,7 +1127,7 @@ fn main() {
                             .send()
                             .unwrap_or_else(|e| die(&e.to_string())),
                         );
-                        println!("{}", serde_json::to_string_pretty(&body).unwrap());
+                        println!("{}", pretty(&body));
                     }
                     _ => die("usage: mmctl datastore jobs enqueue <kind> <target> | get <job-id> | list | cancel <job-id>"),
                 }
