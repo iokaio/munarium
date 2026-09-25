@@ -541,13 +541,17 @@ pub type SharedL1Cache = Arc<L1Cache>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::*;
-    use crate::shard::ShardWriter;
-    use crate::store::LocalFileStore;
-    use crate::PreparedChunk;
+    // Building a seedable artifact needs the lexical engine: a build without
+    // it refuses to seal (shard.rs `lexical_component`), so those tests and
+    // their helpers compile only with `lexical-tantivy`.
+    #[cfg(feature = "lexical-tantivy")]
+    use crate::{model::*, shard::ShardWriter, store::LocalFileStore, PreparedChunk};
+    #[cfg(feature = "lexical-tantivy")]
     use sha2::{Digest, Sha256};
+    #[cfg(feature = "lexical-tantivy")]
     use std::collections::BTreeMap;
 
+    #[cfg(feature = "lexical-tantivy")]
     fn spec() -> BuildSpec {
         BuildSpec {
             spec_version: 1,
@@ -591,6 +595,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "lexical-tantivy")]
     fn plan() -> ArtifactBuildPlan {
         ArtifactBuildPlan {
             plan_version: 1,
@@ -618,6 +623,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "lexical-tantivy")]
     /// Build a small artifact into a store and return its id.
     fn seed(dir: &Path, n: usize) -> (LocalFileStore, String) {
         let store = LocalFileStore::new(dir).unwrap();
@@ -650,6 +656,7 @@ mod tests {
         L1Cache::new(root, CacheBudget::new(10_000_000, 5_000_000).unwrap()).unwrap()
     }
 
+    #[cfg(feature = "lexical-tantivy")]
     #[test]
     fn a_poisoned_cache_lock_keeps_hydrating_and_answering() {
         // P15/R32: every L1 method used `.lock().unwrap()`, so one panic while
@@ -690,6 +697,7 @@ mod tests {
         assert!(!r.path.exists());
     }
 
+    #[cfg(feature = "lexical-tantivy")]
     #[test]
     fn hydrates_verifies_and_seals() {
         let src = tempfile::tempdir().unwrap();
@@ -717,6 +725,7 @@ mod tests {
         assert!(!r.path.with_extension("partial").exists());
     }
 
+    #[cfg(feature = "lexical-tantivy")]
     #[test]
     fn hydrating_twice_is_idempotent_and_can_raise_residency() {
         let src = tempfile::tempdir().unwrap();
@@ -749,6 +758,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "lexical-tantivy")]
     /// The isolation property, at the cache layer. Identical CONTENT in two
     /// domains is two entries, two directories, and two independent lifetimes.
     #[test]
@@ -787,6 +797,7 @@ mod tests {
         assert!(rb.path.exists());
     }
 
+    #[cfg(feature = "lexical-tantivy")]
     /// Corruption quarantines the KEY, not the content hash: one domain's bad
     /// copy must never suppress another's good one, nor reveal that the other
     /// holds it.
@@ -898,6 +909,7 @@ mod tests {
         assert!(c.resident(&k).is_some());
     }
 
+    #[cfg(feature = "lexical-tantivy")]
     /// An artifact bigger than the whole cache is refused up front. Admitting
     /// it would evict everything and still not fit, so the wait would never end.
     #[test]
@@ -930,6 +942,7 @@ mod tests {
         assert!(!stale.exists());
     }
 
+    #[cfg(feature = "lexical-tantivy")]
     /// A sealed leaf from a previous process is not adopted, so it is disk
     /// the watermarks cannot see; startup removes it rather than carrying an
     /// invisible copy beside the one the next hydration will fetch.
@@ -970,6 +983,7 @@ mod tests {
         assert!(leaf.join(COMPLETE_MARKER).exists());
     }
 
+    #[cfg(feature = "lexical-tantivy")]
     /// The artifact a hydration just brought in must not be the victim of
     /// the eviction that follows it. With a low watermark below the size of
     /// ANY artifact, every hydration is over the watermark the moment it
@@ -1016,6 +1030,7 @@ mod tests {
         assert!(c.resident(&ka).is_none());
     }
 
+    #[cfg(feature = "lexical-tantivy")]
     /// Absence is not corruption. A required component the store does not
     /// have fails the hydration but does NOT quarantine the key: no byte was
     /// checked and found wrong, and an eventually-consistent listing must not
@@ -1051,6 +1066,7 @@ mod tests {
         assert!(c.resident(&k).is_none());
     }
 
+    #[cfg(feature = "lexical-tantivy")]
     /// Single-flight, proven with real threads rather than asserted.
     ///
     /// Eight callers race for one key. Exactly one download happens, every
@@ -1131,6 +1147,7 @@ mod tests {
         assert!(c.resident(&k).is_some());
     }
 
+    #[cfg(feature = "lexical-tantivy")]
     /// Two DOMAINS holding identical content must not block each other: the
     /// single-flight key is the whole cache key, not the content hash.
     #[test]
