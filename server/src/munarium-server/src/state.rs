@@ -335,7 +335,13 @@ impl AppState {
         let stores = match config.store {
             StoreKind::Memory => StoreRegistry::Mem(RwLock::new(HashMap::new())),
             StoreKind::Postgres => {
-                let url = config.database_url.clone().expect("checked in Config");
+                // Config::from_env refuses a postgres store without a URL;
+                // a Config built any other way gets the same answer here.
+                let url = config.database_url.clone().ok_or_else(|| {
+                    KernelError::InvalidInput(
+                        "MUNARIUM_STORE=postgres requires MUNARIUM_DATABASE_URL".into(),
+                    )
+                })?;
                 StoreRegistry::Pg(
                     PgStore::connect_with_pool_size(
                         &url,
@@ -485,7 +491,7 @@ impl AppState {
         let rest_permits = Arc::new(tokio::sync::Semaphore::new(config.max_concurrency));
         let grpc_permits = Arc::new(tokio::sync::Semaphore::new(config.max_concurrency));
         let matrix_http =
-            crate::evidence_providers::MatrixProvider::client(std::time::Duration::from_secs(5));
+            crate::evidence_providers::MatrixProvider::client(std::time::Duration::from_secs(5))?;
         let matrix_breaker = Arc::new(crate::evidence_providers::CircuitBreaker::default());
 
         // Resolved once, here, rather than read per request: a mode that could

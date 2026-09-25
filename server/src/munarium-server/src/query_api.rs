@@ -345,7 +345,15 @@ pub async fn query_collections(
         });
         pools.push((members, prepared, q.retrieval_concurrency));
     }
-    let query_policy = query_policy.expect("nonempty authorized collections");
+    // The request's collection list is checked non-empty above, and every
+    // authorized collection sets a policy; an empty set answers as that check
+    // does rather than panicking (P15/R32).
+    let Some(query_policy) = query_policy else {
+        return Err(KernelError::InvalidInput(
+            "invalid question, collection scope or future date".into(),
+        )
+        .into());
+    };
     let mut results = Vec::new();
     if !decisions_require_review {
         for (members, prepared, concurrency) in pools {

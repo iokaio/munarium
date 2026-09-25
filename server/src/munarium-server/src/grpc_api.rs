@@ -213,7 +213,12 @@ fn problem_status(status: u16, body: &[u8]) -> Status {
                         encoded = "[]".into();
                         for finding in findings {
                             kept.push(finding);
-                            let candidate = serde_json::to_string(&kept).unwrap();
+                            // Rendering JSON values cannot fail; if it did,
+                            // keep the findings encoded so far (P15/R32).
+                            let Ok(candidate) = serde_json::to_string(&kept) else {
+                                kept.pop();
+                                break;
+                            };
                             if candidate.len() + key.len() + 160 > remaining {
                                 kept.pop();
                                 break;

@@ -534,10 +534,16 @@ async fn search_collections_bounded(
         on_done(&infos[index], &result);
         slots[index] = Some((result, elapsed));
     }
-    Ok(slots
+    // Every spawned search is joined above; a slot left empty would be a lost
+    // task, reported as the storage error a failed task already is.
+    slots
         .into_iter()
-        .map(|slot| slot.expect("every spawned search joined"))
-        .collect())
+        .map(|slot| {
+            slot.ok_or_else(|| {
+                KernelError::Storage("a collection search task did not report".into())
+            })
+        })
+        .collect()
 }
 
 /// The document layer, exactly as turns have always executed it.
@@ -1418,6 +1424,15 @@ pub async fn op_turn(
     // Two concurrent turns can still compute the same MAX and collide on the
     // PK — that unique violation is retried here instead of surfacing as a
     // 500 storage-error.
+    // Serialized once, before the retry loop. A failure is a storage error:
+    // `unwrap_or_default()` stored `null`, and `.ok()` on the hierarchy stored
+    // NULL, which reads as "no profile ran" (P15/R32).
+    let hits_json = crate::error::to_json(&hits, "turn hits")?;
+    let envelopes_json = crate::error::to_json(&envelopes, "turn envelopes")?;
+    let hierarchy_json = hierarchy_dto
+        .as_ref()
+        .map(|h| crate::error::to_json(h, "turn hierarchy"))
+        .transpose()?;
     let mut ordinal: i32 = 0;
     for attempt in 0..3 {
         let inserted: std::result::Result<i32, sqlx::Error> = sqlx::query_scalar(
@@ -1435,16 +1450,12 @@ pub async fn op_turn(
         .bind(&access.uid)
         .bind(&req.query)
         .bind(&searched)
-        .bind(serde_json::to_value(&hits).unwrap_or_default())
-        .bind(serde_json::to_value(&envelopes).unwrap_or_default())
+        .bind(&hits_json)
+        .bind(&envelopes_json)
         .bind(&completion_audit)
         // NULL when no profile ran — an empty object would claim a
         // hierarchy ran and decided nothing.
-        .bind(
-            hierarchy_dto
-                .as_ref()
-                .and_then(|h| serde_json::to_value(h).ok()),
-        )
+        .bind(&hierarchy_json)
         .fetch_one(crate::runbooks_api::pool(state)?)
         .await;
         match inserted {
@@ -1750,7 +1761,12 @@ pub async fn turn_stream(
     let fwd_tx = tx.clone();
     let forwarder = tokio::spawn(async move {
         while let Some(ev) = progress_rx.recv().await {
-            let data = serde_json::to_string(&ev).unwrap_or_else(|_| "{}".into());
+            // A progress event is advisory; one that cannot be rendered is
+            // skipped, never sent as `{}` (P15/R32).
+            let Ok(data) = serde_json::to_string(&ev) else {
+                tracing::warn!("a turn progress event could not be rendered; skipped");
+                continue;
+            };
             if fwd_tx
                 .send(Event::default().event("progress").data(data))
                 .is_err()
@@ -1769,13 +1785,12 @@ pub async fn turn_stream(
         let _ = forwarder.await;
         let event = match result {
             Ok((resp, meta)) => {
+                let (event, data) = done_event_data(&resp);
                 if let Ok(mut o) = outcome_w.lock() {
                     o.meta = meta;
-                    o.status = Some(200);
+                    o.status = Some(if event == "done" { 200 } else { 500 });
                 }
-                Event::default()
-                    .event("done")
-                    .data(serde_json::to_string(&resp).unwrap_or_else(|_| "{}".into()))
+                Event::default().event(event).data(data)
             }
             Err(e) => {
                 let (status, problem) = match &e {
@@ -1790,7 +1805,7 @@ pub async fn turn_stream(
                 }
                 Event::default()
                     .event("error")
-                    .data(serde_json::to_string(&problem).unwrap_or_else(|_| "{}".into()))
+                    .data(problem_event_data(&problem))
             }
         };
         // The slot is filled BEFORE the terminal event is sent, so by the
@@ -1912,6 +1927,62 @@ pub async fn get_session(
 #[cfg(test)]
 #[path = "sessions_model_tests.rs"]
 mod model_integration_tests;
+
+/// The terminal event when a turn's own result or problem cannot be
+/// rendered: a constant, valid storage-error problem. The client sees an
+/// error, never a `done` whose `{}` reads as an empty answer (P15/R32).
+const UNRENDERABLE_TURN_PROBLEM: &str = r#"{"type":"https://munarium.ioka.io/problems/storage-error","title":"storage error","status":500,"detail":"the turn's result could not be rendered"}"#;
+
+/// The terminal SSE event for a completed turn: `done` with the response, or
+/// `error` with `UNRENDERABLE_TURN_PROBLEM` if the response cannot be rendered.
+fn done_event_data<T: serde::Serialize>(resp: &T) -> (&'static str, String) {
+    match serde_json::to_string(resp) {
+        Ok(data) => ("done", data),
+        Err(e) => {
+            tracing::error!(error = %e, "a completed turn could not be rendered for its stream");
+            ("error", UNRENDERABLE_TURN_PROBLEM.to_string())
+        }
+    }
+}
+
+/// The data of a turn's `error` event.
+fn problem_event_data<T: serde::Serialize>(problem: &T) -> String {
+    serde_json::to_string(problem).unwrap_or_else(|_| UNRENDERABLE_TURN_PROBLEM.to_string())
+}
+
+#[cfg(test)]
+mod terminal_event_tests {
+    use super::*;
+
+    struct Unserializable;
+
+    impl serde::Serialize for Unserializable {
+        fn serialize<S: serde::Serializer>(&self, _: S) -> std::result::Result<S::Ok, S::Error> {
+            Err(serde::ser::Error::custom("refused"))
+        }
+    }
+
+    #[test]
+    fn an_unrenderable_turn_result_ends_the_stream_with_an_error_not_an_empty_done() {
+        // P15/R32: `to_string(&resp).unwrap_or_else(|_| "{}")` sent a `done`
+        // event whose data was `{}`, which a client reads as a completed turn
+        // with nothing in it.
+        let (event, data) = done_event_data(&Unserializable);
+        assert_eq!(event, "error");
+        let problem: serde_json::Value = serde_json::from_str(&data).unwrap();
+        assert_eq!(problem["status"], 500);
+        assert!(problem["type"]
+            .as_str()
+            .unwrap()
+            .ends_with("/storage-error"));
+        let (event, data) = done_event_data(&serde_json::json!({"turn": 1}));
+        assert_eq!((event, data.as_str()), ("done", r#"{"turn":1}"#));
+        assert_eq!(
+            problem_event_data(&Unserializable),
+            UNRENDERABLE_TURN_PROBLEM
+        );
+    }
+}
 
 #[cfg(test)]
 mod tests {

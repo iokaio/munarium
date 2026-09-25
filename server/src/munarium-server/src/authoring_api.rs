@@ -445,7 +445,8 @@ pub(crate) async fn op_update_answers(
     };
     let findings_json = validation
         .as_ref()
-        .map(|v| serde_json::to_value(v).unwrap_or_default());
+        .map(|v| crate::error::to_json(v, "draft validation"))
+        .transpose()?;
     store_draft_update(
         state,
         tenant,
@@ -488,7 +489,7 @@ pub(crate) async fn op_validate_draft(
         draft_state,
         None,
         None,
-        Some(serde_json::to_value(&validation).unwrap_or_default()),
+        Some(crate::error::to_json(&validation, "draft validation")?),
         None,
     )
     .await?;
@@ -822,7 +823,7 @@ pub(crate) async fn op_export_draft(
         "exported",
         None,
         None,
-        Some(serde_json::to_value(&validation).unwrap_or_default()),
+        Some(crate::error::to_json(&validation, "draft validation")?),
         None,
     )
     .await?;
@@ -954,7 +955,7 @@ pub async fn assist_draft(
         if changed { "drafted" } else { &row.state },
         None,
         changed.then_some(&final_docs),
-        Some(serde_json::to_value(&validation).unwrap_or_default()),
+        Some(crate::error::to_json(&validation, "draft validation")?),
         Some(note.as_deref()),
     )
     .await?;
@@ -1001,8 +1002,12 @@ async fn run_assist(
     for (path, yaml) in docs {
         docs_block.push_str(&format!("--- {path}\n```yaml\n{yaml}\n```\n"));
     }
-    let findings_json = serde_json::to_string(validation).unwrap_or_default();
-    let answers_json = serde_json::to_string(&row.answers).unwrap_or_default();
+    // The model is asked to fix THESE findings for THESE answers; an empty
+    // string in their place would ask it to draft blind (P15/R32).
+    let findings_json = serde_json::to_string(validation)
+        .map_err(|e| KernelError::Storage(format!("draft validation did not serialize: {e}")))?;
+    let answers_json = serde_json::to_string(&row.answers)
+        .map_err(|e| KernelError::Storage(format!("draft answers did not serialize: {e}")))?;
     let instructions = req.instructions.clone().unwrap_or_default();
     let prompt = format!(
         "You draft munarium authoring document sets: a Shape (fact schema, chunking) plus a \

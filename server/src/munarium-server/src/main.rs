@@ -6,6 +6,20 @@
 //!
 //! `munarium-server openapi` prints the OpenAPI document (CI drift check).
 
+// Production code returns typed errors instead of panicking; tests are exempt.
+// The policy, its two exemptions and the per-site record are in
+// server/docs/panic-boundaries.md (P15/R32).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
 // KernelError carries gate-finding vectors by design (policy rejections are the
 // payload, not an anomaly), and step/invocation recorders take one argument
 // per recorded dimension — both clippy defaults trade away the wrong thing here.
@@ -50,6 +64,8 @@ mod models;
 mod money_api;
 mod openapi;
 mod ops;
+#[cfg(test)]
+mod panic_policy;
 mod providers_api;
 mod query_api;
 mod reports_api;
@@ -76,10 +92,13 @@ use state::AppState;
 #[tokio::main]
 async fn main() {
     if std::env::args().nth(1).as_deref() == Some("openapi") {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&openapi::doc()).expect("openapi serializes")
-        );
+        match serde_json::to_string_pretty(&openapi::doc()) {
+            Ok(json) => println!("{json}"),
+            Err(e) => {
+                eprintln!("openapi error: {e}");
+                std::process::exit(1);
+            }
+        }
         return;
     }
 
@@ -128,7 +147,13 @@ async fn main() {
         }
     };
 
-    let shutdown = shutdown_signal();
+    // One signal listener for the whole process, installed before any
+    // listener binds: a platform that cannot deliver SIGTERM (or the Windows
+    // equivalent) is a startup failure, not a panic inside a serving task.
+    let shutdown = match Shutdown::install() {
+        Ok(s) => s,
+        Err(e) => startup_failure(format!("shutdown signal handler: {e}")),
+    };
     let mut tasks: Vec<tokio::task::JoinHandle<()>> = Vec::new();
     tokio::spawn(vocabulary_api::worker(state.clone()));
 
@@ -137,8 +162,9 @@ async fn main() {
     // while in-flight requests finish under the grace window.
     tokio::spawn({
         let state = state.clone();
+        let shutdown = shutdown.clone();
         async move {
-            shutdown_signal().await;
+            shutdown.wait().await;
             state
                 .draining
                 .store(true, std::sync::atomic::Ordering::Relaxed);
@@ -149,15 +175,22 @@ async fn main() {
     {
         let app = rest::router(state.clone());
         let addr = config.http_addr.clone();
-        let listener = tokio::net::TcpListener::bind(&addr)
-            .await
-            .unwrap_or_else(|e| panic!("bind {addr}: {e}"));
+        let listener = match tokio::net::TcpListener::bind(&addr).await {
+            Ok(l) => l,
+            Err(e) => startup_failure(format!("bind {addr}: {e}")),
+        };
         tracing::info!(%addr, "REST plane listening");
+        let shutdown = shutdown.clone();
         tasks.push(tokio::spawn(async move {
-            axum::serve(listener, app)
-                .with_graceful_shutdown(shutdown_signal())
+            if let Err(e) = axum::serve(listener, app)
+                .with_graceful_shutdown(shutdown.wait())
                 .await
-                .expect("rest server");
+            {
+                // Logged, not panicked. The process stays up with this plane
+                // stopped, as it did when the panic ended only this task
+                // (dev-guide section 13, entry 30).
+                tracing::error!(error = %e, "REST plane stopped with an error");
+            }
         }));
     }
 
@@ -167,11 +200,14 @@ async fn main() {
         health_reporter
             .set_serving::<pb::command_service_server::CommandServiceServer<grpc::CommandSvc>>()
             .await;
-        let reflection = tonic_reflection::server::Builder::configure()
+        let reflection = match tonic_reflection::server::Builder::configure()
             .register_encoded_file_descriptor_set(munarium_proto::FILE_DESCRIPTOR_SET)
             .register_encoded_file_descriptor_set(tonic_health::pb::FILE_DESCRIPTOR_SET)
             .build_v1()
-            .expect("reflection");
+        {
+            Ok(r) => r,
+            Err(e) => startup_failure(format!("gRPC reflection service: {e}")),
+        };
         let command = pb::command_service_server::CommandServiceServer::new(grpc::CommandSvc {
             state: state.clone(),
         });
@@ -219,15 +255,17 @@ async fn main() {
         // occupied port produced a half-started process that answered REST
         // health checks under a false gRPC "listening" line (dev-guide §13
         // entry 4, closed).
-        let listener = tokio::net::TcpListener::bind(socket)
-            .await
-            .unwrap_or_else(|e| panic!("bind gRPC {socket}: {e}"));
+        let listener = match tokio::net::TcpListener::bind(socket).await {
+            Ok(l) => l,
+            Err(e) => startup_failure(format!("bind gRPC {socket}: {e}")),
+        };
         tracing::info!(addr = %socket, "direct gRPC plane listening");
         let capture_layer = middleware::GrpcCaptureLayer {
             state: state.clone(),
         };
+        let shutdown = shutdown.clone();
         tasks.push(tokio::spawn(async move {
-            tonic::transport::Server::builder()
+            if let Err(e) = tonic::transport::Server::builder()
                 .layer(capture_layer)
                 .add_service(health_service)
                 .add_service(reflection)
@@ -242,10 +280,12 @@ async fn main() {
                 .add_service(api)
                 .serve_with_incoming_shutdown(
                     tokio_stream::wrappers::TcpListenerStream::new(listener),
-                    shutdown_signal(),
+                    shutdown.wait(),
                 )
                 .await
-                .expect("grpc server");
+            {
+                tracing::error!(error = %e, "direct gRPC plane stopped with an error");
+            }
         }));
     }
 
@@ -255,18 +295,21 @@ async fn main() {
         let app = ops::router(state.clone());
         if let Ok(listener) = tokio::net::TcpListener::bind(&addr).await {
             tracing::info!(%addr, "ops listening");
+            let shutdown = shutdown.clone();
             tasks.push(tokio::spawn(async move {
-                axum::serve(listener, app)
-                    .with_graceful_shutdown(shutdown_signal())
+                if let Err(e) = axum::serve(listener, app)
+                    .with_graceful_shutdown(shutdown.wait())
                     .await
-                    .expect("ops server");
+                {
+                    tracing::error!(error = %e, "ops plane stopped with an error");
+                }
             }));
         } else {
             tracing::warn!(%addr, "ops port unavailable; continuing without it");
         }
     }
 
-    shutdown.await;
+    shutdown.wait().await;
     tracing::info!("shutdown signal received; draining");
     let grace = std::time::Duration::from_secs(state.config.shutdown_grace_secs);
     let _ = tokio::time::timeout(grace, futures_join_all(tasks)).await;
@@ -278,28 +321,52 @@ async fn futures_join_all(tasks: Vec<tokio::task::JoinHandle<()>>) {
     }
 }
 
+/// Report a startup failure the way `AppState::new` failures already are: one
+/// `startup error:` line on stderr and exit status 1, with no panic backtrace.
+/// Configuration errors keep exit status 2 (P15/R32).
+fn startup_failure(message: impl std::fmt::Display) -> ! {
+    eprintln!("startup error: {message}");
+    std::process::exit(1);
+}
+
 /// Resolve on ANY shutdown request the platform can send. Until 2026-08-17
 /// this awaited only ctrl_c (SIGINT) — Kubernetes and Container Apps send
 /// SIGTERM, so the graceful drain (MUNARIUM_SHUTDOWN_GRACE_SECS) never fired
 /// under an orchestrator and every rolling restart was a hard kill. The
 /// Windows arm keeps the dev loop honest with the same select shape.
-async fn shutdown_signal() {
-    #[cfg(unix)]
-    {
-        let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("SIGTERM handler installs");
-        tokio::select! {
-            _ = tokio::signal::ctrl_c() => {}
-            _ = term.recv() => {}
-        }
+///
+/// The handler is installed ONCE, by `install`, and fanned out to every plane
+/// through a watch channel. Each plane used to install its own, and an
+/// installation failure was an `expect` inside a serving task (P15/R32).
+#[derive(Clone)]
+struct Shutdown(tokio::sync::watch::Receiver<bool>);
+
+impl Shutdown {
+    fn install() -> std::io::Result<Self> {
+        let (fired, rx) = tokio::sync::watch::channel(false);
+        #[cfg(unix)]
+        let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+        #[cfg(windows)]
+        let mut shut = tokio::signal::windows::ctrl_shutdown()?;
+        tokio::spawn(async move {
+            #[cfg(unix)]
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {}
+                _ = term.recv() => {}
+            }
+            #[cfg(windows)]
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {}
+                _ = shut.recv() => {}
+            }
+            let _ = fired.send(true);
+        });
+        Ok(Self(rx))
     }
-    #[cfg(windows)]
-    {
-        let mut shut =
-            tokio::signal::windows::ctrl_shutdown().expect("ctrl-shutdown handler installs");
-        tokio::select! {
-            _ = tokio::signal::ctrl_c() => {}
-            _ = shut.recv() => {}
-        }
+
+    /// Resolves once shutdown has been requested. A listener task that ended
+    /// without sending also counts: nothing could signal shutdown any more.
+    async fn wait(mut self) {
+        let _ = self.0.wait_for(|fired| *fired).await;
     }
 }

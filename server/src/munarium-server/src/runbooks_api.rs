@@ -332,9 +332,25 @@ pub(crate) async fn verify_data_views_against(
             // real run of this step (2026-08-29, dev) reported a data view
             // verified while its one question had failed — the body said
             // `failed: 1` and nobody read it. The body is the verdict.
+            //
+            // Matrix's VerifyResponse REQUIRES `failed`. A 200 whose body is
+            // not JSON, or has no non-negative integer `failed`, is not
+            // evidence the view verified: it fails closed. Until P15 the body
+            // was parsed with `unwrap_or_default()` and a missing `failed`
+            // read as 0 (dev-guide section 13, entry 29).
             Ok(r) if r.status().is_success() => {
-                let body: serde_json::Value = r.json().await.unwrap_or_default();
-                let failed_questions = body["failed"].as_u64().unwrap_or(0);
+                // A body that is not JSON becomes Null, whose `failed` is
+                // absent: it takes the malformed arm below, never a default.
+                let body: serde_json::Value = r.json().await.unwrap_or(serde_json::Value::Null);
+                let Some(failed_questions) = body["failed"].as_u64() else {
+                    failed.push(serde_json::json!({
+                        "dataView": v.name,
+                        "contract": v.contract,
+                        "status": 200,
+                        "reason": "malformed verify response: no integer `failed` field",
+                    }));
+                    continue;
+                };
                 if failed_questions == 0 {
                     verified.push(v.name.clone());
                 } else {
@@ -661,11 +677,10 @@ async fn execute(
                         .retire_old(shape, *keep_versions)
                         .await
                         .map(|n| serde_json::json!({ "retired_chunk_rows": n })),
-                    // Unreachable: the runbook-scoped arm above matches this
-                    // step on both v1 and v2 before control reaches here.
-                    StepSpec::VerifyDataViews {} => {
-                        unreachable!("verifyDataViews is handled by the runbook-scoped arm")
-                    }
+                    // The runbook-scoped arm above matches this step on both v1
+                    // and v2 before control reaches here; were that ever to
+                    // change, it runs exactly as that arm would (P15/R32).
+                    StepSpec::VerifyDataViews {} => verify_data_views(state, doc).await,
                 }
             }
         };
@@ -1127,7 +1142,8 @@ pub async fn op_runbook_info(
             .spec
             .models
             .as_ref()
-            .map(|m| serde_json::to_value(m).unwrap_or_default()),
+            .map(|m| crate::error::to_json(m, "runbook models"))
+            .transpose()?,
         retrieval: serde_json::json!({
             "top_k": retrieval_spec.top_k,
             "rrf_k": retrieval_spec.rrf_k,
@@ -1219,7 +1235,8 @@ async fn ai_suggestions(
 ) -> std::result::Result<Vec<dto::SuggestionDto>, ApiError> {
     let resolved = crate::models::resolve_model(doc, "validation", override_req)?;
     let store = state.store_for(tenant).await?;
-    let findings_json = serde_json::to_string(findings).unwrap_or_default();
+    let findings_json = serde_json::to_string(findings)
+        .map_err(|e| KernelError::Storage(format!("validation findings did not serialize: {e}")))?;
     let prompt = format!(
         "You review munarium runbook definitions (declarative retrieval applications: \
          compartmentalized collections, index lifecycle steps, retrieval knobs, model \
@@ -1904,6 +1921,53 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("rows: expected 1, got 3"), "{text}");
+    }
+
+    /// A stand-in Matrix that answers 200 with a raw, non-JSON body.
+    async fn stand_in_matrix_text(body: &'static str) -> String {
+        use axum::{routing::post, Router};
+        let app = Router::new().route(
+            "/v1/{kind}/{name}/verify",
+            post(move || async move { body }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        format!("http://{addr}")
+    }
+
+    /// P15/R32, dev-guide section 13 entry 29: a 200 whose body is not
+    /// Matrix's VerifyResponse is not a pass. The body was parsed with
+    /// `unwrap_or_default()` and a missing `failed` read as 0, so an HTML
+    /// maintenance page or an empty object marked the data view verified.
+    /// `failed` is required by Matrix's published VerifyResponse.
+    #[tokio::test]
+    async fn a_malformed_200_verify_response_fails_the_step() {
+        for answer in [
+            serde_json::json!({}),
+            serde_json::json!({ "passed": 1, "failed": "0" }),
+            serde_json::json!({ "passed": 1, "failed": -1 }),
+            serde_json::json!("ok"),
+        ] {
+            let (base, _) = stand_in_matrix(answer.clone()).await;
+            let err = verify_data_views_against(&base, Some("t"), &views())
+                .await
+                .expect_err("a malformed 200 is not a pass");
+            assert!(
+                err.to_string().contains("malformed verify response"),
+                "{answer}: {err}"
+            );
+        }
+        let base = stand_in_matrix_text("<html>maintenance</html>").await;
+        let err = verify_data_views_against(&base, Some("t"), &views())
+            .await
+            .expect_err("a non-JSON 200 is not a pass");
+        assert!(
+            err.to_string().contains("malformed verify response"),
+            "{err}"
+        );
     }
 
     fn doc_with(order: Option<&str>) -> RunbookDoc {

@@ -256,16 +256,19 @@ pub struct MatrixProvider {
 impl MatrixProvider {
     /// A pooled HTTP/2 client. One per instance: rebuilding it per turn would
     /// throw away the connection pool, which is most of the point.
-    pub fn client(connect_timeout: Duration) -> reqwest::Client {
+    ///
+    /// Built once at composition; a builder failure is a broken TLS backend,
+    /// and it fails startup (`AppState::new`) rather than panicking.
+    /// `unwrap_or_default()` would have silently handed out a client with NO
+    /// connect timeout, which is the one property this function exists for.
+    pub fn client(connect_timeout: Duration) -> Result<reqwest::Client> {
         reqwest::Client::builder()
             .connect_timeout(connect_timeout)
             .pool_idle_timeout(Duration::from_secs(90))
             .build()
-            // Built once at composition; a builder failure is a broken TLS
-            // backend, not a runtime condition. `unwrap_or_default()` here
-            // would have silently handed out a client with NO connect
-            // timeout, which is the one property this function exists for.
-            .expect("matrix HTTP client with a connect timeout")
+            .map_err(|e| {
+                KernelError::Provider(format!("matrix HTTP client with a connect timeout: {e}"))
+            })
     }
 
     fn note(&self, outcome: &'static str) {
