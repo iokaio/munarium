@@ -26,6 +26,9 @@ import re
 import sys
 import urllib.parse
 
+from frozen_eval import check_claims
+from p13_report import check_reports
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
 
@@ -69,7 +72,9 @@ def links_in(text: str) -> list[tuple[int, str]]:
 
 
 def main() -> int:
-    findings: list[str] = []
+    findings: list[str] = check_claims(ROOT)
+    if not findings:
+        findings.extend(check_reports(ROOT))
     files = markdown_files()
     linked_from_index: set[pathlib.Path] = set()
 

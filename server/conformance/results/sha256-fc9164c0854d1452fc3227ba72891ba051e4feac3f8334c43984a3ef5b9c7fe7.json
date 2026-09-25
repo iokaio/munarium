@@ -1,0 +1,1559 @@
+{
+  "schema_version": 1,
+  "kind": "grading",
+  "manifest_id": "sha256:855e378fef98c6e88ad1046277685a281384aa70e3b5e9a4be45c3f9f26f6d25",
+  "raw_id": "sha256:f5cc4b142ca439b1f5c69361f5a1647b1d730fc48621e47e8f054a3f49ff350d",
+  "source": {
+    "scripts/p13_live.py": "sha256:9993bf0aff4c975618ca90a2e213a28898df41dcbdbdf47a9976b4655e0f0b89",
+    "scripts/p13_cases.py": "sha256:c8c21c05241a2946f2b00058b3ec1134d9bfd59bd2c7bf65535453b9c898df32",
+    "scripts/p13_local.py": "sha256:2ea8f13b5844c0215cac31db97728540102e423fc005a045fb67199774775cf7",
+    "scripts/frozen_eval.py": "sha256:d15bf88b6b4fed1d6eabc036c8a6dd0ece05b600865ee384d2dccfcec80658e2",
+    "docs/lab/example/grade.py": "sha256:c7302383151e0b248587d5fdefe4c0d15085ca44cf1714d514141784787e29ce",
+    "server/Cargo.lock": "sha256:7447ad7145e30c40c28ba086819afe19794d8f520b2a03c0428d6a50fd7dcd66",
+    "server/build-input-tree": "sha256:43237a5e6ab52ccc54e31e38473fcd2ac9d52069a693a2d1de6be1f4b4a6a54a",
+    "server/Cargo.toml": "sha256:395dcf2730235a85a780974a383692d36fe1851a5a23a68febf43b2e487cb9b8"
+  },
+  "grader": "sha256:c7302383151e0b248587d5fdefe4c0d15085ca44cf1714d514141784787e29ce",
+  "evaluator": "sha256:d15bf88b6b4fed1d6eabc036c8a6dd0ece05b600865ee384d2dccfcec80658e2",
+  "revision": "1",
+  "completed": true,
+  "exit_code": 1,
+  "scores": [
+    {
+      "id": "pilot-stable-000:no_memory",
+      "outcome": "failed",
+      "reason": "checks_failed",
+      "checks": {
+        "id": "pilot-stable-000:no_memory",
+        "ask": "What is pilot-stable-000's value at time 2?",
+        "family": "stable",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "cite_all",
+            false,
+            "pilot-stable-000/0"
+          ],
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "contains_all",
+            false,
+            "amber-000"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "insufficient evidence"
+        },
+        "turn": {
+          "hits": [],
+          "completion": {
+            "text": "insufficient evidence"
+          },
+          "context_chars": 2
+        }
+      }
+    },
+    {
+      "id": "pilot-stable-000:versioned_notes",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "pilot-stable-000:versioned_notes",
+        "ask": "What is pilot-stable-000's value at time 2?",
+        "family": "stable",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "cite_all",
+            true,
+            "pilot-stable-000/0"
+          ],
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "contains_all",
+            true,
+            "all terms present"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [
+          "pilot-stable-000/0"
+        ],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "amber-000"
+        },
+        "turn": {
+          "hits": [
+            {
+              "source_path": "pilot-stable-000/0",
+              "text": "amber-000"
+            }
+          ],
+          "completion": {
+            "text": "amber-000"
+          },
+          "context_chars": 77
+        }
+      }
+    },
+    {
+      "id": "pilot-stable-000:conventional_retrieval",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "pilot-stable-000:conventional_retrieval",
+        "ask": "What is pilot-stable-000's value at time 2?",
+        "family": "stable",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "cite_all",
+            true,
+            "pilot-stable-000/0"
+          ],
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "contains_all",
+            true,
+            "all terms present"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [
+          "pilot-stable-000/0"
+        ],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "amber-000"
+        },
+        "turn": {
+          "hits": [
+            {
+              "source_path": "pilot-stable-000/0",
+              "text": "amber-000"
+            }
+          ],
+          "completion": {
+            "text": "amber-000"
+          },
+          "context_chars": 77
+        }
+      }
+    },
+    {
+      "id": "pilot-stable-000:munarium",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "pilot-stable-000:munarium",
+        "ask": "What is pilot-stable-000's value at time 2?",
+        "family": "stable",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "cite_all",
+            true,
+            "pilot-stable-000/0"
+          ],
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "contains_all",
+            true,
+            "all terms present"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [
+          "pilot-stable-000/0"
+        ],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "amber-000"
+        },
+        "turn": {
+          "hits": [
+            {
+              "source_path": "pilot-stable-000/0",
+              "text": "amber-000"
+            }
+          ],
+          "completion": {
+            "text": "amber-000"
+          },
+          "context_chars": 77
+        }
+      }
+    },
+    {
+      "id": "pilot-stable-000:governance_ablation",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "pilot-stable-000:governance_ablation",
+        "ask": "What is pilot-stable-000's value at time 2?",
+        "family": "stable",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "cite_all",
+            true,
+            "pilot-stable-000/0"
+          ],
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "contains_all",
+            true,
+            "all terms present"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [
+          "pilot-stable-000/0"
+        ],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "amber-000"
+        },
+        "turn": {
+          "hits": [
+            {
+              "source_path": "pilot-stable-000/0",
+              "text": "amber-000"
+            }
+          ],
+          "completion": {
+            "text": "amber-000"
+          },
+          "context_chars": 77
+        }
+      }
+    },
+    {
+      "id": "pilot-correction-000:no_memory",
+      "outcome": "failed",
+      "reason": "checks_failed",
+      "checks": {
+        "id": "pilot-correction-000:no_memory",
+        "ask": "What is pilot-correction-000's value at time 2?",
+        "family": "correction",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "cite_all",
+            false,
+            "pilot-correction-000/1"
+          ],
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "contains_all",
+            false,
+            "violet-000"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "insufficient evidence"
+        },
+        "turn": {
+          "hits": [],
+          "completion": {
+            "text": "insufficient evidence"
+          },
+          "context_chars": 2
+        }
+      }
+    },
+    {
+      "id": "pilot-correction-000:versioned_notes",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "pilot-correction-000:versioned_notes",
+        "ask": "What is pilot-correction-000's value at time 2?",
+        "family": "correction",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "cite_all",
+            true,
+            "pilot-correction-000/1"
+          ],
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "contains_all",
+            true,
+            "all terms present"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [
+          "pilot-correction-000/1"
+        ],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "violet-000"
+        },
+        "turn": {
+          "hits": [
+            {
+              "source_path": "pilot-correction-000/1",
+              "text": "violet-000"
+            }
+          ],
+          "completion": {
+            "text": "violet-000"
+          },
+          "context_chars": 128
+        }
+      }
+    },
+    {
+      "id": "pilot-correction-000:conventional_retrieval",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "pilot-correction-000:conventional_retrieval",
+        "ask": "What is pilot-correction-000's value at time 2?",
+        "family": "correction",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "cite_all",
+            true,
+            "pilot-correction-000/1"
+          ],
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "contains_all",
+            true,
+            "all terms present"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [
+          "pilot-correction-000/1"
+        ],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "violet-000"
+        },
+        "turn": {
+          "hits": [
+            {
+              "source_path": "pilot-correction-000/1",
+              "text": "violet-000"
+            }
+          ],
+          "completion": {
+            "text": "violet-000"
+          },
+          "context_chars": 128
+        }
+      }
+    },
+    {
+      "id": "pilot-correction-000:munarium",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "pilot-correction-000:munarium",
+        "ask": "What is pilot-correction-000's value at time 2?",
+        "family": "correction",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "cite_all",
+            true,
+            "pilot-correction-000/1"
+          ],
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "contains_all",
+            true,
+            "all terms present"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [
+          "pilot-correction-000/1"
+        ],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "violet-000"
+        },
+        "turn": {
+          "hits": [
+            {
+              "source_path": "pilot-correction-000/1",
+              "text": "violet-000"
+            }
+          ],
+          "completion": {
+            "text": "violet-000"
+          },
+          "context_chars": 128
+        }
+      }
+    },
+    {
+      "id": "pilot-correction-000:governance_ablation",
+      "outcome": "failed",
+      "reason": "checks_failed",
+      "checks": {
+        "id": "pilot-correction-000:governance_ablation",
+        "ask": "What is pilot-correction-000's value at time 2?",
+        "family": "correction",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "cite_all",
+            true,
+            "pilot-correction-000/1"
+          ],
+          [
+            "must_not_cite",
+            false,
+            "pilot-correction-000/0"
+          ]
+        ],
+        "answer": [
+          [
+            "contains_all",
+            true,
+            "all terms present"
+          ]
+        ],
+        "hard_fail": true,
+        "hits": [
+          "pilot-correction-000/0",
+          "pilot-correction-000/1"
+        ],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "conflict: amber-000 | violet-000"
+        },
+        "turn": {
+          "hits": [
+            {
+              "source_path": "pilot-correction-000/0",
+              "text": "amber-000"
+            },
+            {
+              "source_path": "pilot-correction-000/1",
+              "text": "violet-000"
+            }
+          ],
+          "completion": {
+            "text": "conflict: amber-000 | violet-000"
+          },
+          "context_chars": 209
+        }
+      }
+    },
+    {
+      "id": "pilot-past-000:no_memory",
+      "outcome": "failed",
+      "reason": "checks_failed",
+      "checks": {
+        "id": "pilot-past-000:no_memory",
+        "ask": "What is pilot-past-000's value at time 1?",
+        "family": "past",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "cite_all",
+            false,
+            "pilot-past-000/0"
+          ],
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "contains_all",
+            false,
+            "amber-000"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "insufficient evidence"
+        },
+        "turn": {
+          "hits": [],
+          "completion": {
+            "text": "insufficient evidence"
+          },
+          "context_chars": 2
+        }
+      }
+    },
+    {
+      "id": "pilot-past-000:versioned_notes",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "pilot-past-000:versioned_notes",
+        "ask": "What is pilot-past-000's value at time 1?",
+        "family": "past",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "cite_all",
+            true,
+            "pilot-past-000/0"
+          ],
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "contains_all",
+            true,
+            "all terms present"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [
+          "pilot-past-000/0"
+        ],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "amber-000"
+        },
+        "turn": {
+          "hits": [
+            {
+              "source_path": "pilot-past-000/0",
+              "text": "amber-000"
+            }
+          ],
+          "completion": {
+            "text": "amber-000"
+          },
+          "context_chars": 75
+        }
+      }
+    },
+    {
+      "id": "pilot-past-000:conventional_retrieval",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "pilot-past-000:conventional_retrieval",
+        "ask": "What is pilot-past-000's value at time 1?",
+        "family": "past",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "cite_all",
+            true,
+            "pilot-past-000/0"
+          ],
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "contains_all",
+            true,
+            "all terms present"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [
+          "pilot-past-000/0"
+        ],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "amber-000"
+        },
+        "turn": {
+          "hits": [
+            {
+              "source_path": "pilot-past-000/0",
+              "text": "amber-000"
+            }
+          ],
+          "completion": {
+            "text": "amber-000"
+          },
+          "context_chars": 75
+        }
+      }
+    },
+    {
+      "id": "pilot-past-000:munarium",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "pilot-past-000:munarium",
+        "ask": "What is pilot-past-000's value at time 1?",
+        "family": "past",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "cite_all",
+            true,
+            "pilot-past-000/0"
+          ],
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "contains_all",
+            true,
+            "all terms present"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [
+          "pilot-past-000/0"
+        ],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "amber-000"
+        },
+        "turn": {
+          "hits": [
+            {
+              "source_path": "pilot-past-000/0",
+              "text": "amber-000"
+            }
+          ],
+          "completion": {
+            "text": "amber-000"
+          },
+          "context_chars": 75
+        }
+      }
+    },
+    {
+      "id": "pilot-past-000:governance_ablation",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "pilot-past-000:governance_ablation",
+        "ask": "What is pilot-past-000's value at time 1?",
+        "family": "past",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "cite_all",
+            true,
+            "pilot-past-000/0"
+          ],
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "contains_all",
+            true,
+            "all terms present"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [
+          "pilot-past-000/0"
+        ],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "amber-000"
+        },
+        "turn": {
+          "hits": [
+            {
+              "source_path": "pilot-past-000/0",
+              "text": "amber-000"
+            }
+          ],
+          "completion": {
+            "text": "amber-000"
+          },
+          "context_chars": 75
+        }
+      }
+    },
+    {
+      "id": "pilot-conflict-000:no_memory",
+      "outcome": "failed",
+      "reason": "checks_failed",
+      "checks": {
+        "id": "pilot-conflict-000:no_memory",
+        "ask": "What is pilot-conflict-000's value at time 2?",
+        "family": "conflict",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "cite_all",
+            false,
+            "pilot-conflict-000/0, pilot-conflict-000/1"
+          ],
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "contains_all",
+            false,
+            "amber-000, violet-000, conflict"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "insufficient evidence"
+        },
+        "turn": {
+          "hits": [],
+          "completion": {
+            "text": "insufficient evidence"
+          },
+          "context_chars": 2
+        }
+      }
+    },
+    {
+      "id": "pilot-conflict-000:versioned_notes",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "pilot-conflict-000:versioned_notes",
+        "ask": "What is pilot-conflict-000's value at time 2?",
+        "family": "conflict",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "cite_all",
+            true,
+            "pilot-conflict-000/0, pilot-conflict-000/1"
+          ],
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "contains_all",
+            true,
+            "all terms present"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [
+          "pilot-conflict-000/0",
+          "pilot-conflict-000/1"
+        ],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "conflict: amber-000 | violet-000"
+        },
+        "turn": {
+          "hits": [
+            {
+              "source_path": "pilot-conflict-000/0",
+              "text": "amber-000"
+            },
+            {
+              "source_path": "pilot-conflict-000/1",
+              "text": "violet-000"
+            }
+          ],
+          "completion": {
+            "text": "conflict: amber-000 | violet-000"
+          },
+          "context_chars": 159
+        }
+      }
+    },
+    {
+      "id": "pilot-conflict-000:conventional_retrieval",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "pilot-conflict-000:conventional_retrieval",
+        "ask": "What is pilot-conflict-000's value at time 2?",
+        "family": "conflict",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "cite_all",
+            true,
+            "pilot-conflict-000/0, pilot-conflict-000/1"
+          ],
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "contains_all",
+            true,
+            "all terms present"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [
+          "pilot-conflict-000/0",
+          "pilot-conflict-000/1"
+        ],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "conflict: amber-000 | violet-000"
+        },
+        "turn": {
+          "hits": [
+            {
+              "source_path": "pilot-conflict-000/0",
+              "text": "amber-000"
+            },
+            {
+              "source_path": "pilot-conflict-000/1",
+              "text": "violet-000"
+            }
+          ],
+          "completion": {
+            "text": "conflict: amber-000 | violet-000"
+          },
+          "context_chars": 159
+        }
+      }
+    },
+    {
+      "id": "pilot-conflict-000:munarium",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "pilot-conflict-000:munarium",
+        "ask": "What is pilot-conflict-000's value at time 2?",
+        "family": "conflict",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "cite_all",
+            true,
+            "pilot-conflict-000/0, pilot-conflict-000/1"
+          ],
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "contains_all",
+            true,
+            "all terms present"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [
+          "pilot-conflict-000/0",
+          "pilot-conflict-000/1"
+        ],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "conflict: amber-000 | violet-000"
+        },
+        "turn": {
+          "hits": [
+            {
+              "source_path": "pilot-conflict-000/0",
+              "text": "amber-000"
+            },
+            {
+              "source_path": "pilot-conflict-000/1",
+              "text": "violet-000"
+            }
+          ],
+          "completion": {
+            "text": "conflict: amber-000 | violet-000"
+          },
+          "context_chars": 159
+        }
+      }
+    },
+    {
+      "id": "pilot-conflict-000:governance_ablation",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "pilot-conflict-000:governance_ablation",
+        "ask": "What is pilot-conflict-000's value at time 2?",
+        "family": "conflict",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "cite_all",
+            true,
+            "pilot-conflict-000/0, pilot-conflict-000/1"
+          ],
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "contains_all",
+            true,
+            "all terms present"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [
+          "pilot-conflict-000/0",
+          "pilot-conflict-000/1"
+        ],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "conflict: amber-000 | violet-000"
+        },
+        "turn": {
+          "hits": [
+            {
+              "source_path": "pilot-conflict-000/0",
+              "text": "amber-000"
+            },
+            {
+              "source_path": "pilot-conflict-000/1",
+              "text": "violet-000"
+            }
+          ],
+          "completion": {
+            "text": "conflict: amber-000 | violet-000"
+          },
+          "context_chars": 159
+        }
+      }
+    },
+    {
+      "id": "pilot-removed-000:no_memory",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "pilot-removed-000:no_memory",
+        "ask": "What is pilot-removed-000's value at time 2?",
+        "family": "removed",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "insufficient",
+            true,
+            "declared"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "insufficient evidence"
+        },
+        "turn": {
+          "hits": [],
+          "completion": {
+            "text": "insufficient evidence"
+          },
+          "context_chars": 2
+        }
+      }
+    },
+    {
+      "id": "pilot-removed-000:versioned_notes",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "pilot-removed-000:versioned_notes",
+        "ask": "What is pilot-removed-000's value at time 2?",
+        "family": "removed",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "insufficient",
+            true,
+            "declared"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "insufficient evidence"
+        },
+        "turn": {
+          "hits": [],
+          "completion": {
+            "text": "insufficient evidence"
+          },
+          "context_chars": 2
+        }
+      }
+    },
+    {
+      "id": "pilot-removed-000:conventional_retrieval",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "pilot-removed-000:conventional_retrieval",
+        "ask": "What is pilot-removed-000's value at time 2?",
+        "family": "removed",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "insufficient",
+            true,
+            "declared"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "insufficient evidence"
+        },
+        "turn": {
+          "hits": [],
+          "completion": {
+            "text": "insufficient evidence"
+          },
+          "context_chars": 2
+        }
+      }
+    },
+    {
+      "id": "pilot-removed-000:munarium",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "pilot-removed-000:munarium",
+        "ask": "What is pilot-removed-000's value at time 2?",
+        "family": "removed",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "insufficient",
+            true,
+            "declared"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "insufficient evidence"
+        },
+        "turn": {
+          "hits": [],
+          "completion": {
+            "text": "insufficient evidence"
+          },
+          "context_chars": 2
+        }
+      }
+    },
+    {
+      "id": "pilot-removed-000:governance_ablation",
+      "outcome": "failed",
+      "reason": "checks_failed",
+      "checks": {
+        "id": "pilot-removed-000:governance_ablation",
+        "ask": "What is pilot-removed-000's value at time 2?",
+        "family": "removed",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "must_not_cite",
+            false,
+            "pilot-removed-000/0"
+          ]
+        ],
+        "answer": [
+          [
+            "insufficient",
+            false,
+            "no insufficiency marker in the text"
+          ]
+        ],
+        "hard_fail": true,
+        "hits": [
+          "pilot-removed-000/0"
+        ],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "amber-000"
+        },
+        "turn": {
+          "hits": [
+            {
+              "source_path": "pilot-removed-000/0",
+              "text": "amber-000"
+            }
+          ],
+          "completion": {
+            "text": "amber-000"
+          },
+          "context_chars": 78
+        }
+      }
+    },
+    {
+      "id": "pilot-revoked-000:no_memory",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "pilot-revoked-000:no_memory",
+        "ask": "What is pilot-revoked-000's value at time 1?",
+        "family": "revoked",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "insufficient",
+            true,
+            "declared"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "insufficient evidence"
+        },
+        "turn": {
+          "hits": [],
+          "completion": {
+            "text": "insufficient evidence"
+          },
+          "context_chars": 2
+        }
+      }
+    },
+    {
+      "id": "pilot-revoked-000:versioned_notes",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "pilot-revoked-000:versioned_notes",
+        "ask": "What is pilot-revoked-000's value at time 1?",
+        "family": "revoked",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "insufficient",
+            true,
+            "declared"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "insufficient evidence"
+        },
+        "turn": {
+          "hits": [],
+          "completion": {
+            "text": "insufficient evidence"
+          },
+          "context_chars": 2
+        }
+      }
+    },
+    {
+      "id": "pilot-revoked-000:conventional_retrieval",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "pilot-revoked-000:conventional_retrieval",
+        "ask": "What is pilot-revoked-000's value at time 1?",
+        "family": "revoked",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "insufficient",
+            true,
+            "declared"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "insufficient evidence"
+        },
+        "turn": {
+          "hits": [],
+          "completion": {
+            "text": "insufficient evidence"
+          },
+          "context_chars": 2
+        }
+      }
+    },
+    {
+      "id": "pilot-revoked-000:munarium",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "pilot-revoked-000:munarium",
+        "ask": "What is pilot-revoked-000's value at time 1?",
+        "family": "revoked",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "insufficient",
+            true,
+            "declared"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "insufficient evidence"
+        },
+        "turn": {
+          "hits": [],
+          "completion": {
+            "text": "insufficient evidence"
+          },
+          "context_chars": 2
+        }
+      }
+    },
+    {
+      "id": "pilot-revoked-000:governance_ablation",
+      "outcome": "passed",
+      "reason": "completed",
+      "checks": {
+        "id": "pilot-revoked-000:governance_ablation",
+        "ask": "What is pilot-revoked-000's value at time 1?",
+        "family": "revoked",
+        "caller": {
+          "level": 0,
+          "compartments": []
+        },
+        "evidence": [
+          [
+            "must_not_cite",
+            true,
+            "no restricted path in hits"
+          ]
+        ],
+        "answer": [
+          [
+            "insufficient",
+            true,
+            "declared"
+          ]
+        ],
+        "hard_fail": false,
+        "hits": [],
+        "permitted_collections": [],
+        "collections_searched": [],
+        "skipped": [],
+        "completion": {
+          "text": "insufficient evidence"
+        },
+        "turn": {
+          "hits": [],
+          "completion": {
+            "text": "insufficient evidence"
+          },
+          "context_chars": 2
+        }
+      }
+    }
+  ],
+  "unknown_usage_rows": 0,
+  "id": "sha256:fc9164c0854d1452fc3227ba72891ba051e4feac3f8334c43984a3ef5b9c7fe7"
+}

@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "kind": "raw",
+  "manifest_id": "sha256:0a1f85e9584852268814288e29179886fe77d44b8b7139ca456048a67c84a1e0",
+  "run_id": "p13-scripted-pilot-001",
+  "purpose": "pilot",
+  "source": {
+    "scripts/frozen_eval_pilot.py": "sha256:e48671e7e15ec71c926a7f109e3a7b1d3e142783bc779311d15cc7919137bbd9",
+    "scripts/frozen_eval.py": "sha256:bb778476d3029d2d4531310761c1b5413d3703da1fb82d75226e987b1d39f592",
+    "docs/lab/example/grade.py": "sha256:3aeef8bf99f9c632e26ecddcfef963b5774070ccb7639df8de78e5c149e0d61e",
+    "server/conformance/evaluation/pilot.json": "sha256:aa577a312364cfe7bb659030109453643e7045ef24df4786c4f48aebebe4d92c"
+  },
+  "rows": [
+    {
+      "id": "opaque:α/01",
+      "status": "completed",
+      "reason": "scripted_response",
+      "usage": null,
+      "turn": {
+        "hits": [
+          {
+            "source_path": "aster/correction",
+            "text": "Launch corrected to Friday",
+            "evidence_id": "opaque:e/α"
+          }
+        ],
+        "completion": {
+          "text": "Friday"
+        }
+      },
+      "duration_ms": 0.020700012100860476
+    },
+    {
+      "id": "a-past",
+      "status": "completed",
+      "reason": "scripted_response",
+      "usage": null,
+      "turn": {
+        "hits": [
+          {
+            "source_path": "aster/original",
+            "text": "Launch Tuesday"
+          }
+        ],
+        "completion": {
+          "text": "Tuesday"
+        }
+      },
+      "duration_ms": 0.009500014130026102
+    },
+    {
+      "id": "b-conflict",
+      "status": "completed",
+      "reason": "scripted_response",
+      "usage": null,
+      "turn": {
+        "hits": [
+          {
+            "source_path": "birch/blue",
+            "text": "Blue"
+          },
+          {
+            "source_path": "birch/green",
+            "text": "Green, disputed"
+          }
+        ],
+        "completion": {
+          "text": "The evidence conflicts: blue and green."
+        }
+      },
+      "duration_ms": 0.008500006515532732
+    },
+    {
+      "id": "c-revoked",
+      "status": "completed",
+      "reason": "scripted_response",
+      "usage": null,
+      "turn": {
+        "hits": [],
+        "completion": {
+          "text": "Insufficient evidence under current authorization."
+        }
+      },
+      "duration_ms": 0.0041000021155923605
+    },
+    {
+      "id": "d-removed",
+      "status": "completed",
+      "reason": "scripted_response",
+      "usage": null,
+      "turn": {
+        "hits": [],
+        "completion": {
+          "text": "Insufficient evidence."
+        }
+      },
+      "duration_ms": 0.0050000089686363935
+    }
+  ],
+  "elapsed_ms": 0.05390000296756625,
+  "timing_scope": "scripted_provider_only; not product latency",
+  "id": "sha256:2d16e13f302d0892a79951cd6a0cd6edf22a9691c46e8b3b71b7b276d247b185"
+}

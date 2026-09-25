@@ -1,0 +1,246 @@
+{
+  "schema_version": 1,
+  "kind": "live_analysis",
+  "manifest_id": "sha256:18401dd4e6d4e4e04b60b6b8a3843e32a228536f5e97e1d32c8191afda96ef34",
+  "raw_id": "sha256:9e1cd2b669aac8c34f179a4eb090f1dc3f78cd9c1ec6e4b99f296e87c9136f41",
+  "grading_id": "sha256:fd68129dc4db036f9bbefb96db1d0c6c7239708f1cf3058012563e02d70d2ec7",
+  "source": {
+    "scripts/p13_live.py": "sha256:e7c73d01a50ddc673871bb5b482059fd359738959128c263bd6e9b2d2fc666ff",
+    "scripts/p13_cases.py": "sha256:c8c21c05241a2946f2b00058b3ec1134d9bfd59bd2c7bf65535453b9c898df32",
+    "scripts/p13_local.py": "sha256:2ea8f13b5844c0215cac31db97728540102e423fc005a045fb67199774775cf7",
+    "scripts/frozen_eval.py": "sha256:d15bf88b6b4fed1d6eabc036c8a6dd0ece05b600865ee384d2dccfcec80658e2",
+    "docs/lab/example/grade.py": "sha256:c7302383151e0b248587d5fdefe4c0d15085ca44cf1714d514141784787e29ce",
+    "server/Cargo.lock": "sha256:7447ad7145e30c40c28ba086819afe19794d8f520b2a03c0428d6a50fd7dcd66",
+    "server/build-input-tree": "sha256:43237a5e6ab52ccc54e31e38473fcd2ac9d52069a693a2d1de6be1f4b4a6a54a",
+    "server/Cargo.toml": "sha256:395dcf2730235a85a780974a383692d36fe1851a5a23a68febf43b2e487cb9b8"
+  },
+  "governance": {
+    "d6_verdict": "diagnostic_only",
+    "per_arm": {
+      "no_memory": {
+        "planned": 60,
+        "correct": 0,
+        "unauthorized_disclosures": 0,
+        "abstentions": 0,
+        "incomplete": 60,
+        "authorization_bypasses": 0,
+        "stale_or_conflicting": 0,
+        "citation_failures": 0
+      },
+      "versioned_notes": {
+        "planned": 60,
+        "correct": 0,
+        "unauthorized_disclosures": 0,
+        "abstentions": 0,
+        "incomplete": 60,
+        "authorization_bypasses": 0,
+        "stale_or_conflicting": 0,
+        "citation_failures": 0
+      },
+      "conventional_retrieval": {
+        "planned": 60,
+        "correct": 0,
+        "unauthorized_disclosures": 0,
+        "abstentions": 0,
+        "incomplete": 60,
+        "authorization_bypasses": 0,
+        "stale_or_conflicting": 0,
+        "citation_failures": 0
+      },
+      "munarium": {
+        "planned": 60,
+        "correct": 0,
+        "unauthorized_disclosures": 0,
+        "abstentions": 0,
+        "incomplete": 60,
+        "authorization_bypasses": 0,
+        "stale_or_conflicting": 0,
+        "citation_failures": 0
+      },
+      "governance_ablation": {
+        "planned": 60,
+        "correct": 0,
+        "unauthorized_disclosures": 0,
+        "abstentions": 0,
+        "incomplete": 60,
+        "authorization_bypasses": 0,
+        "stale_or_conflicting": 0,
+        "citation_failures": 0
+      }
+    },
+    "independent_histories": 60,
+    "paired_difference": 0.0,
+    "paired_bootstrap_95": [
+      0.0,
+      0.0
+    ],
+    "model_quality_qualified": false,
+    "paired_history_differences": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "calibration": {
+    "retrieval": {
+      "repetitions": [
+        {
+          "offered": 100,
+          "correct": 0,
+          "p95_ms": null,
+          "goodput_per_second": null,
+          "measurement": "interrupted_or_unexecuted"
+        },
+        {
+          "offered": 100,
+          "correct": 0,
+          "p95_ms": null,
+          "goodput_per_second": null,
+          "measurement": "interrupted_or_unexecuted"
+        },
+        {
+          "offered": 100,
+          "correct": 0,
+          "p95_ms": null,
+          "goodput_per_second": null,
+          "measurement": "interrupted_or_unexecuted"
+        }
+      ],
+      "p95_min_ms": null,
+      "p95_max_ms": null,
+      "complete": false,
+      "baseline_workload_id": "sha256:d9d541201aa23490dc4581444f90d327c33eac841a118f1b439c96cda0b26f8d",
+      "proposed_absolute_p95_ms": null,
+      "proposed_relative_regression": 0.2,
+      "confirmation": "two consecutive complete runs; retain both",
+      "required_ci_gate": false,
+      "scope": "local shared workstation; proposals require baseline review"
+    },
+    "ledger_append": {
+      "repetitions": [
+        {
+          "offered": 100,
+          "correct": 0,
+          "p95_ms": null,
+          "goodput_per_second": null,
+          "measurement": "interrupted_or_unexecuted"
+        },
+        {
+          "offered": 100,
+          "correct": 0,
+          "p95_ms": null,
+          "goodput_per_second": null,
+          "measurement": "interrupted_or_unexecuted"
+        },
+        {
+          "offered": 100,
+          "correct": 0,
+          "p95_ms": null,
+          "goodput_per_second": null,
+          "measurement": "interrupted_or_unexecuted"
+        }
+      ],
+      "p95_min_ms": null,
+      "p95_max_ms": null,
+      "complete": false,
+      "baseline_workload_id": "sha256:55d69279a7074fb10a1c8ce26c04218d3863cd225f20696b5567eaa6fca665c7",
+      "proposed_absolute_p95_ms": null,
+      "proposed_relative_regression": 0.2,
+      "confirmation": "two consecutive complete runs; retain both",
+      "required_ci_gate": false,
+      "scope": "local shared workstation; proposals require baseline review"
+    },
+    "cold_readiness": {
+      "repetitions": [
+        {
+          "offered": 10,
+          "correct": 0,
+          "p95_ms": null,
+          "goodput_per_second": null,
+          "measurement": "interrupted_or_unexecuted"
+        },
+        {
+          "offered": 10,
+          "correct": 0,
+          "p95_ms": null,
+          "goodput_per_second": null,
+          "measurement": "interrupted_or_unexecuted"
+        },
+        {
+          "offered": 10,
+          "correct": 0,
+          "p95_ms": null,
+          "goodput_per_second": null,
+          "measurement": "interrupted_or_unexecuted"
+        }
+      ],
+      "p95_min_ms": null,
+      "p95_max_ms": null,
+      "complete": false,
+      "baseline_workload_id": "sha256:237c572e14e307adeebf4ca258c53925546f787ce547aea15008f590643238c8",
+      "proposed_absolute_p95_ms": null,
+      "proposed_relative_regression": 0.2,
+      "confirmation": "two consecutive complete runs; retain both",
+      "required_ci_gate": false,
+      "scope": "local shared workstation; proposals require baseline review"
+    }
+  },
+  "id": "sha256:a7ddf28ae702582e1943c9766f47c2553ba6d5bd971f6560563ebef1cd17ff5e"
+}

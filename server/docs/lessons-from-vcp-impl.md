@@ -119,7 +119,7 @@ Each row is a coherent implementation slice; it may require more than one PR whe
 | P10 | Authority/evidence audit, model-only envelopes and checked retention inventory implemented; qualification below in §10.4 | D4 for stronger retention changes | Medium | Access-path matrix, effect-denial tests, declared derived-content treatment |
 | P11 | Integer/unknown-field protocol characterization | Existing contract publisher/client suites | Medium | N/N−1 fixtures; exact integer tests; no unversioned field-type change |
 | P12 | Restricted-filesystem qualification | Existing datastore build/reopen fixtures | Medium | Supported Linux permissions documented; separate Windows results |
-| P13 | Frozen evaluation and latency reporting | P02/P06/P07; D6 | Medium–large | Offline pilot, validated graders, immutable manifests/results; calibrated timing reports |
+| P13 | Frozen evaluation implemented; preregistered local D6 usefulness claim rejected, local latency budgets confirmed; §12.1 | P02/P06/P07; D6 | Medium–large | Offline/live pilots, validated graders, immutable manifests/results, retained rejection and calibrated local timing reports |
 | P14 | Optional monetary accounting | P05/P11; D2 | Medium–large | Unknown-price/usage semantics, immutable prices, checked arithmetic, coverage-qualified reports |
 | P15 | Library support and lint tightening | D5; measured audit | Medium | Isolated consumer builds/MSRV if adopted; targeted production failure handling |
 | P16 | Shared gate definitions and policy follow-ups | P02 stabilized; maintainer-owned workflow changes | Medium | Same required coverage before/after, automatic CI retained, checker self-tests |
@@ -983,6 +983,29 @@ four-language conformance remain separate from the offline fixture evidence.
 ## 12. Evaluation and performance evidence
 
 ### 12.1 P13: frozen inputs and independently tested grading — R24 and R26
+
+**Implemented recording slice:** [frozen evaluation](guides/frozen-evaluation.md)
+adds versioned content-addressed manifests, raw outcomes and independent grading
+receipts, exclusive record writes, source/case identity validation, and explicit
+measured-result checks in the existing documentation gate. The public
+[result index](../conformance/results/README.md) retains the scripted offline pilot.
+The producer persists all planned rows before grading with the existing example
+grader; malformed evidence now fails explicitly. Offline controls cover missing,
+duplicate and extra IDs, unknown usage, interruption, unauthorized evidence,
+semantic failure, tampering and percentile/goodput computation.
+
+**Local live qualification completed:** the same index records a release Server
+and isolated PostgreSQL campaign, with all five arms, 60 held-out histories and
+630 timing samples. The source and manifest were committed before execution.
+Munarium and the competent conventional baseline both passed all 60 histories,
+with zero unauthorized disclosures, so the approved five-point improvement
+criterion was rejected. Retain that negative result. Three fixed repetitions
+confirmed the frozen local retrieval, append and process-cold readiness budgets.
+The [result record](../conformance/results/README.md#local-live-qualification-001)
+includes raw evidence, uncertainty, exact source/build identities, a failed setup
+pilot, cleanup and check results. These narrow deterministic fixtures do not
+qualify model-answer quality, broad governance benefit, power-on cold caches or
+release-wide SLOs; §12.2 and §12.3 continue to govern such broader campaigns.
 
 Reuse [the public example grader](../../docs/lab/example/grade.py), [its tests](../../scripts/test_lab_example.py), and [the performance guide](guides/measuring-performance.md). Positive and negative grader controls already exist; extend them rather than create a second scoring implementation.
 

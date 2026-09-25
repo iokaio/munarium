@@ -1,0 +1,22 @@
+{
+  "histories": [
+    {"id": "history-a", "events": [{"at": 1, "fact": "Aster launch is Tuesday"}, {"at": 2, "correction": "Aster launch is Friday"}]},
+    {"id": "history-b", "events": [{"at": 1, "fact": "Birch door is blue"}, {"at": 2, "disputed": "Birch door is green"}]},
+    {"id": "history-c", "events": [{"at": 1, "fact": "Cedar code is amber", "path": "restricted/cedar"}, {"at": 2, "access": "revoked"}]},
+    {"id": "history-d", "events": [{"at": 1, "fact": "Dune delivery is Monday"}, {"at": 2, "removed": true}]}
+  ],
+  "cases": [
+    {"id": "opaque:α/01", "history_id": "history-a", "task_id": "current", "split": "pilot", "ask": "When is Aster launch now?", "caller": {"level": 0}, "expect": {"cite_all": ["aster/correction"], "contains_all": ["Friday"], "must_not_cite": ["restricted/"]}},
+    {"id": "a-past", "history_id": "history-a", "task_id": "past", "split": "pilot", "ask": "When was Aster launch at time 1?", "caller": {"level": 0}, "expect": {"cite_all": ["aster/original"], "contains_all": ["Tuesday"]}},
+    {"id": "b-conflict", "history_id": "history-b", "task_id": "conflict", "split": "pilot", "ask": "What color is Birch door?", "caller": {"level": 0}, "expect": {"conflict": {"cite_all": ["birch/blue", "birch/green"], "sides": [["blue"], ["green"]]}}},
+    {"id": "c-revoked", "history_id": "history-c", "task_id": "past-current-authority", "split": "pilot", "ask": "What was Cedar code at time 1?", "caller": {"level": 0}, "expect": {"must_not_cite": ["restricted/"], "insufficient": true}},
+    {"id": "d-removed", "history_id": "history-d", "task_id": "removed", "split": "pilot", "ask": "When is Dune delivery now?", "caller": {"level": 0}, "expect": {"must_not_cite": ["dune/removed"], "insufficient": true}}
+  ],
+  "scripted_responses": {
+    "opaque:α/01": {"hits": [{"source_path": "aster/correction", "text": "Launch corrected to Friday", "evidence_id": "opaque:e/α"}], "completion": {"text": "Friday"}},
+    "a-past": {"hits": [{"source_path": "aster/original", "text": "Launch Tuesday"}], "completion": {"text": "Tuesday"}},
+    "b-conflict": {"hits": [{"source_path": "birch/blue", "text": "Blue"}, {"source_path": "birch/green", "text": "Green, disputed"}], "completion": {"text": "The evidence conflicts: blue and green."}},
+    "c-revoked": {"hits": [], "completion": {"text": "Insufficient evidence under current authorization."}},
+    "d-removed": {"hits": [], "completion": {"text": "Insufficient evidence."}}
+  }
+}

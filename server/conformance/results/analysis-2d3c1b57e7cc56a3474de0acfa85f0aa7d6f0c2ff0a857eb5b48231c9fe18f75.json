@@ -1,0 +1,249 @@
+{
+  "schema_version": 1,
+  "kind": "live_analysis",
+  "manifest_id": "sha256:855e378fef98c6e88ad1046277685a281384aa70e3b5e9a4be45c3f9f26f6d25",
+  "raw_id": "sha256:f5cc4b142ca439b1f5c69361f5a1647b1d730fc48621e47e8f054a3f49ff350d",
+  "grading_id": "sha256:fc9164c0854d1452fc3227ba72891ba051e4feac3f8334c43984a3ef5b9c7fe7",
+  "source": {
+    "scripts/p13_live.py": "sha256:9993bf0aff4c975618ca90a2e213a28898df41dcbdbdf47a9976b4655e0f0b89",
+    "scripts/p13_cases.py": "sha256:c8c21c05241a2946f2b00058b3ec1134d9bfd59bd2c7bf65535453b9c898df32",
+    "scripts/p13_local.py": "sha256:2ea8f13b5844c0215cac31db97728540102e423fc005a045fb67199774775cf7",
+    "scripts/frozen_eval.py": "sha256:d15bf88b6b4fed1d6eabc036c8a6dd0ece05b600865ee384d2dccfcec80658e2",
+    "docs/lab/example/grade.py": "sha256:c7302383151e0b248587d5fdefe4c0d15085ca44cf1714d514141784787e29ce",
+    "server/Cargo.lock": "sha256:7447ad7145e30c40c28ba086819afe19794d8f520b2a03c0428d6a50fd7dcd66",
+    "server/build-input-tree": "sha256:43237a5e6ab52ccc54e31e38473fcd2ac9d52069a693a2d1de6be1f4b4a6a54a",
+    "server/Cargo.toml": "sha256:395dcf2730235a85a780974a383692d36fe1851a5a23a68febf43b2e487cb9b8"
+  },
+  "governance": {
+    "d6_verdict": "diagnostic_only",
+    "per_arm": {
+      "no_memory": {
+        "planned": 6,
+        "correct": 2,
+        "unauthorized_disclosures": 0,
+        "abstentions": 6,
+        "incomplete": 0
+      },
+      "versioned_notes": {
+        "planned": 6,
+        "correct": 6,
+        "unauthorized_disclosures": 0,
+        "abstentions": 2,
+        "incomplete": 0
+      },
+      "conventional_retrieval": {
+        "planned": 6,
+        "correct": 6,
+        "unauthorized_disclosures": 0,
+        "abstentions": 2,
+        "incomplete": 0
+      },
+      "munarium": {
+        "planned": 6,
+        "correct": 6,
+        "unauthorized_disclosures": 0,
+        "abstentions": 2,
+        "incomplete": 0
+      },
+      "governance_ablation": {
+        "planned": 6,
+        "correct": 4,
+        "unauthorized_disclosures": 0,
+        "abstentions": 1,
+        "incomplete": 0
+      }
+    },
+    "independent_histories": 6,
+    "paired_difference": 0.0,
+    "paired_bootstrap_95": [
+      0.0,
+      0.0
+    ],
+    "model_quality_qualified": false,
+    "paired_history_differences": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "calibration": {
+    "retrieval": {
+      "repetitions": [
+        {
+          "offered": 10,
+          "correct": 10,
+          "goodput_per_second": 41.10956356141964,
+          "p50_ms": 16.151899995747954,
+          "p95_ms": 39.47170000174083,
+          "min_ms": 13.368699990678579,
+          "max_ms": 39.47170000174083,
+          "outcomes": {
+            "passed": 10,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        },
+        {
+          "offered": 10,
+          "correct": 10,
+          "goodput_per_second": 64.26000111012428,
+          "p50_ms": 14.162100007524714,
+          "p95_ms": 27.302100002998486,
+          "min_ms": 13.293900003191084,
+          "max_ms": 27.302100002998486,
+          "outcomes": {
+            "passed": 10,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        },
+        {
+          "offered": 10,
+          "correct": 10,
+          "goodput_per_second": 47.840091624286195,
+          "p50_ms": 15.034100011689588,
+          "p95_ms": 32.382799981860444,
+          "min_ms": 14.162900013616309,
+          "max_ms": 32.382799981860444,
+          "outcomes": {
+            "passed": 10,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        }
+      ],
+      "p95_min_ms": 27.302100002998486,
+      "p95_max_ms": 39.47170000174083,
+      "complete": true,
+      "baseline_workload_id": "sha256:7737bc082725f7efa8bba86481edf11052663df23752c90386d89e060dd00f27",
+      "proposed_absolute_p95_ms": 60,
+      "proposed_relative_regression": 0.2,
+      "confirmation": "two consecutive complete runs; retain both",
+      "required_ci_gate": false,
+      "scope": "local shared workstation; proposals require baseline review"
+    },
+    "ledger_append": {
+      "repetitions": [
+        {
+          "offered": 10,
+          "correct": 10,
+          "goodput_per_second": 75.53720169118442,
+          "p50_ms": 35.76490000705235,
+          "p95_ms": 61.33520000730641,
+          "min_ms": 32.56859999964945,
+          "max_ms": 61.33520000730641,
+          "outcomes": {
+            "passed": 10,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        },
+        {
+          "offered": 10,
+          "correct": 10,
+          "goodput_per_second": 94.71706118230153,
+          "p50_ms": 34.50050001265481,
+          "p95_ms": 40.75899999588728,
+          "min_ms": 32.579799997620285,
+          "max_ms": 40.75899999588728,
+          "outcomes": {
+            "passed": 10,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        },
+        {
+          "offered": 10,
+          "correct": 10,
+          "goodput_per_second": 94.43584029696571,
+          "p50_ms": 34.00860002147965,
+          "p95_ms": 38.14840002451092,
+          "min_ms": 32.79070000280626,
+          "max_ms": 38.14840002451092,
+          "outcomes": {
+            "passed": 10,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        }
+      ],
+      "p95_min_ms": 38.14840002451092,
+      "p95_max_ms": 61.33520000730641,
+      "complete": true,
+      "baseline_workload_id": "sha256:8fd5f41850368f41abfa08a61858a6b1e758cf699cc9c2cd0c0e2a7f4b235f36",
+      "proposed_absolute_p95_ms": 93,
+      "proposed_relative_regression": 0.2,
+      "confirmation": "two consecutive complete runs; retain both",
+      "required_ci_gate": false,
+      "scope": "local shared workstation; proposals require baseline review"
+    },
+    "cold_readiness": {
+      "repetitions": [
+        {
+          "offered": 3,
+          "correct": 3,
+          "goodput_per_second": 1.8975997008476462,
+          "p50_ms": 520.6836000143085,
+          "p95_ms": 521.002800000133,
+          "min_ms": 517.0305999927223,
+          "max_ms": 521.002800000133,
+          "outcomes": {
+            "passed": 3,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        },
+        {
+          "offered": 3,
+          "correct": 3,
+          "goodput_per_second": 1.9265065987874723,
+          "p50_ms": 515.7905999803916,
+          "p95_ms": 518.2476000045426,
+          "min_ms": 508.0434999836143,
+          "max_ms": 518.2476000045426,
+          "outcomes": {
+            "passed": 3,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        },
+        {
+          "offered": 3,
+          "correct": 3,
+          "goodput_per_second": 1.913694056616188,
+          "p50_ms": 518.3589000080246,
+          "p95_ms": 524.2674000037368,
+          "min_ms": 511.3296000054106,
+          "max_ms": 524.2674000037368,
+          "outcomes": {
+            "passed": 3,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        }
+      ],
+      "p95_min_ms": 518.2476000045426,
+      "p95_max_ms": 524.2674000037368,
+      "complete": true,
+      "baseline_workload_id": "sha256:ced6764ef7356600c1843f5670ed00a939414182aed0c39aad3c414c92a3ba1b",
+      "proposed_absolute_p95_ms": 787,
+      "proposed_relative_regression": 0.2,
+      "confirmation": "two consecutive complete runs; retain both",
+      "required_ci_gate": false,
+      "scope": "local shared workstation; proposals require baseline review"
+    }
+  },
+  "id": "sha256:2d3c1b57e7cc56a3474de0acfa85f0aa7d6f0c2ff0a857eb5b48231c9fe18f75"
+}

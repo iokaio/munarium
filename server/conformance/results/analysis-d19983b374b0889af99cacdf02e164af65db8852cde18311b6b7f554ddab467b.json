@@ -1,0 +1,339 @@
+{
+  "schema_version": 1,
+  "kind": "live_analysis",
+  "manifest_id": "sha256:a4cef43f2d3fd66382fe6bc9f91b068b7d61504f9d02598f50bdf931c230e5eb",
+  "raw_id": "sha256:6874ac22350c30c6e274e6d2edd627349b47032a2aee139f72c54bca33587171",
+  "grading_id": "sha256:38f5b1dced3f7bebabc81f6b83e35ef449b1b4db65ef34824d46822370c05d38",
+  "source": {
+    "scripts/p13_live.py": "sha256:1e2a0dd4dd92420c2d28199974ee124a0a480f25be4eb2960150f09b0b3e0dc2",
+    "scripts/p13_cases.py": "sha256:c8c21c05241a2946f2b00058b3ec1134d9bfd59bd2c7bf65535453b9c898df32",
+    "scripts/p13_local.py": "sha256:e552300fbe6fd78f1ff3aa37f38f52886127f9ac14329cdb132d6b7f833ed65a",
+    "scripts/frozen_eval.py": "sha256:d15bf88b6b4fed1d6eabc036c8a6dd0ece05b600865ee384d2dccfcec80658e2",
+    "docs/lab/example/grade.py": "sha256:c7302383151e0b248587d5fdefe4c0d15085ca44cf1714d514141784787e29ce",
+    "server/Cargo.lock": "sha256:7447ad7145e30c40c28ba086819afe19794d8f520b2a03c0428d6a50fd7dcd66",
+    "server/build-input-tree": "sha256:3f89ac20f81e567a8fa4b1aa7dee39775e108e81e4376d5e614f18e393fe0333",
+    "server/Cargo.toml": "sha256:395dcf2730235a85a780974a383692d36fe1851a5a23a68febf43b2e487cb9b8"
+  },
+  "governance": {
+    "d6_verdict": "rejected",
+    "per_arm": {
+      "no_memory": {
+        "planned": 60,
+        "correct": 20,
+        "unauthorized_disclosures": 0,
+        "abstentions": 60,
+        "incomplete": 0,
+        "authorization_bypasses": 0,
+        "stale_or_conflicting": 0,
+        "citation_failures": 40
+      },
+      "versioned_notes": {
+        "planned": 60,
+        "correct": 60,
+        "unauthorized_disclosures": 0,
+        "abstentions": 20,
+        "incomplete": 0,
+        "authorization_bypasses": 0,
+        "stale_or_conflicting": 0,
+        "citation_failures": 0
+      },
+      "conventional_retrieval": {
+        "planned": 60,
+        "correct": 60,
+        "unauthorized_disclosures": 0,
+        "abstentions": 20,
+        "incomplete": 0,
+        "authorization_bypasses": 0,
+        "stale_or_conflicting": 0,
+        "citation_failures": 0
+      },
+      "munarium": {
+        "planned": 60,
+        "correct": 60,
+        "unauthorized_disclosures": 0,
+        "abstentions": 20,
+        "incomplete": 0,
+        "authorization_bypasses": 0,
+        "stale_or_conflicting": 0,
+        "citation_failures": 0
+      },
+      "governance_ablation": {
+        "planned": 60,
+        "correct": 40,
+        "unauthorized_disclosures": 0,
+        "abstentions": 10,
+        "incomplete": 0,
+        "authorization_bypasses": 0,
+        "stale_or_conflicting": 20,
+        "citation_failures": 0
+      }
+    },
+    "independent_histories": 60,
+    "paired_difference": 0.0,
+    "paired_bootstrap_95": [
+      0.0,
+      0.0
+    ],
+    "model_quality_qualified": false,
+    "paired_history_differences": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "calibration": {
+    "retrieval": {
+      "repetitions": [
+        {
+          "offered": 100,
+          "correct": 100,
+          "goodput_per_second": 46.300418319769165,
+          "p50_ms": 15.70210000500083,
+          "p95_ms": 36.203700001351535,
+          "min_ms": 13.032599992584437,
+          "max_ms": 42.623499990440905,
+          "outcomes": {
+            "passed": 100,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        },
+        {
+          "offered": 100,
+          "correct": 100,
+          "goodput_per_second": 49.11927663396944,
+          "p50_ms": 14.6635000128299,
+          "p95_ms": 34.37490001670085,
+          "min_ms": 13.089000014588237,
+          "max_ms": 38.19269998348318,
+          "outcomes": {
+            "passed": 100,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        },
+        {
+          "offered": 100,
+          "correct": 100,
+          "goodput_per_second": 51.13650891094947,
+          "p50_ms": 14.403700013644993,
+          "p95_ms": 33.30229999846779,
+          "min_ms": 12.90770000196062,
+          "max_ms": 35.85580000071786,
+          "outcomes": {
+            "passed": 100,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        }
+      ],
+      "p95_min_ms": 33.30229999846779,
+      "p95_max_ms": 36.203700001351535,
+      "complete": true,
+      "baseline_workload_id": "sha256:d9d541201aa23490dc4581444f90d327c33eac841a118f1b439c96cda0b26f8d",
+      "proposed_absolute_p95_ms": 55,
+      "proposed_relative_regression": 0.2,
+      "confirmation": "two consecutive complete runs; retain both",
+      "required_ci_gate": false,
+      "scope": "local shared workstation; proposals require baseline review",
+      "frozen_budget": {
+        "absolute_p95_ms": 51,
+        "relative_p95_ms": 40.795199980493635,
+        "absolute_breach": false,
+        "sustained_relative_breach": false,
+        "verdict": "within_local_budget"
+      }
+    },
+    "ledger_append": {
+      "repetitions": [
+        {
+          "offered": 100,
+          "correct": 100,
+          "goodput_per_second": 104.84752024903942,
+          "p50_ms": 34.690999978920445,
+          "p95_ms": 53.3661000081338,
+          "min_ms": 31.50209999876097,
+          "max_ms": 60.60639998759143,
+          "outcomes": {
+            "passed": 100,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        },
+        {
+          "offered": 100,
+          "correct": 100,
+          "goodput_per_second": 104.16391066204301,
+          "p50_ms": 34.86399998655543,
+          "p95_ms": 53.77349999616854,
+          "min_ms": 30.925200000638142,
+          "max_ms": 59.39260000013746,
+          "outcomes": {
+            "passed": 100,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        },
+        {
+          "offered": 100,
+          "correct": 100,
+          "goodput_per_second": 102.84600610394592,
+          "p50_ms": 35.487999994074926,
+          "p95_ms": 51.64669998339377,
+          "min_ms": 32.472999999299645,
+          "max_ms": 59.19010000070557,
+          "outcomes": {
+            "passed": 100,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        }
+      ],
+      "p95_min_ms": 51.64669998339377,
+      "p95_max_ms": 53.77349999616854,
+      "complete": true,
+      "baseline_workload_id": "sha256:55d69279a7074fb10a1c8ce26c04218d3863cd225f20696b5567eaa6fca665c7",
+      "proposed_absolute_p95_ms": 81,
+      "proposed_relative_regression": 0.2,
+      "confirmation": "two consecutive complete runs; retain both",
+      "required_ci_gate": false,
+      "scope": "local shared workstation; proposals require baseline review",
+      "frozen_budget": {
+        "absolute_p95_ms": 91,
+        "relative_p95_ms": 72.6992400130257,
+        "absolute_breach": false,
+        "sustained_relative_breach": false,
+        "verdict": "within_local_budget"
+      }
+    },
+    "cold_readiness": {
+      "repetitions": [
+        {
+          "offered": 10,
+          "correct": 10,
+          "goodput_per_second": 1.7003521446292202,
+          "p50_ms": 519.8473999917042,
+          "p95_ms": 537.7256000065245,
+          "min_ms": 506.90509998821653,
+          "max_ms": 537.7256000065245,
+          "outcomes": {
+            "passed": 10,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        },
+        {
+          "offered": 10,
+          "correct": 10,
+          "goodput_per_second": 1.906841160681809,
+          "p50_ms": 520.818999997573,
+          "p95_ms": 536.1884000012651,
+          "min_ms": 507.7547999972012,
+          "max_ms": 536.1884000012651,
+          "outcomes": {
+            "passed": 10,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        },
+        {
+          "offered": 10,
+          "correct": 10,
+          "goodput_per_second": 1.8998834383511993,
+          "p50_ms": 521.7942000017501,
+          "p95_ms": 534.3193999724463,
+          "min_ms": 506.29550000303425,
+          "max_ms": 534.3193999724463,
+          "outcomes": {
+            "passed": 10,
+            "failed": 0,
+            "harness_error": 0,
+            "unavailable": 0
+          }
+        }
+      ],
+      "p95_min_ms": 534.3193999724463,
+      "p95_max_ms": 537.7256000065245,
+      "complete": true,
+      "baseline_workload_id": "sha256:237c572e14e307adeebf4ca258c53925546f787ce547aea15008f590643238c8",
+      "proposed_absolute_p95_ms": 807,
+      "proposed_relative_regression": 0.2,
+      "confirmation": "two consecutive complete runs; retain both",
+      "required_ci_gate": false,
+      "scope": "local shared workstation; proposals require baseline review",
+      "frozen_budget": {
+        "absolute_p95_ms": 805,
+        "relative_p95_ms": 643.3507199864835,
+        "absolute_breach": false,
+        "sustained_relative_breach": false,
+        "verdict": "within_local_budget"
+      }
+    }
+  },
+  "id": "sha256:d19983b374b0889af99cacdf02e164af65db8852cde18311b6b7f554ddab467b"
+}
