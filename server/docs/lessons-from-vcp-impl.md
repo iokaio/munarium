@@ -511,6 +511,19 @@ Run a separate Windows AppContainer fixture with explicitly documented token/ACL
 
 Only if the reproduction requires it, add optional scratch-root/build/open options preserving existing constructors and lifetimes. Wire configuration through Server's composition root with validated paths. Do not solve a path failure by broadening host filesystem access, moving data to an uncontrolled global directory, disabling the sandbox, or allowing cleanup outside the chosen root. Document the required artifact, scratch, and ancestor permissions alongside the datastore guide.
 
+P12 now has an explicit Linux container qualification runner,
+[`test-datastore-permissions.ps1`](../tools/test-datastore-permissions.ps1), reusing
+the round-trip corpus. Build/seal happens before the read-only serving phase;
+serving uses UID/GID 65532, no capabilities, a read-only root including artifacts,
+and separate writable scratch selected through `TMPDIR`. It checks open/query/
+close/reopen, scratch lifetime and owned cleanup, missing/read-only scratch,
+denied ancestor traversal and corrupt manifests. The existing constructors are
+retained. See the [permission contract](guides/datastore.md#linux-artifact-and-scratch-permissions)
+for scope and required paths. This default-engine fixture does not qualify the
+Server hydration cache or Windows AppContainer; the latter tier is not adopted.
+Execution evidence is the runner's per-case validation receipt, not compilation
+or ordinary Windows tests.
+
 ## 9. Crash recovery and command receipts
 
 ### 9.1 P08: define what a restart proves — R13

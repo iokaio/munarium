@@ -9,6 +9,7 @@ Run these PowerShell 7 commands from `server/`:
 py -m unittest discover -s tools -p test_validation.py
 ./tools/test-json-features.ps1
 ./tools/test-json-features.ps1 -Postgres
+./tools/test-datastore-permissions.ps1
 ```
 
 `-All` selects every test tier. `-Enterprise` remains accepted as an alias for
@@ -89,6 +90,13 @@ and its anonymous storage. There is no executable-name/port reaping. A forced
 kill can bypass cleanup: the incomplete receipt retains acquired resource IDs
 for inspection, not permission to stop matching unrelated resources. Caller
 environment values and working directory are restored during normal unwinding.
+
+## Linux filesystem qualification
+
+The separate `datastore-linux-permissions` profile exercises the
+[restricted filesystem fixture](datastore.md#linux-artifact-and-scratch-permissions)
+using Docker, with no database or provider. Its receipt records build and each
+serving case separately. Windows AppContainer is not requested by this profile.
 
 ## JSON feature matrix
 

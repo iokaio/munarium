@@ -98,6 +98,45 @@ and GCS endpoint/credential options and [Managing keys and secrets](managing-key
 for secret references and rotation. Selecting `MUNARIUM_SOURCE_STORE=pg` remains
 supported for **raw documents**, independently of the artifact backend restriction.
 
+### Linux artifact and scratch permissions
+
+The standalone Datastore reader can open sealed artifacts on a read-only
+filesystem. Its Tantivy adapter still materializes the verified lexical archive
+into a temporary directory and keeps that directory for the open shard's mmap
+lifetime. Configure `TMPDIR` **before starting the Linux process** to an existing,
+separate writable directory. Both build/seal and open need scratch space;
+`MUNARIUM_DATASTORE_STAGING_ROOT` does not select Tantivy's temporary directory.
+
+The serving identity needs read access to artifact files, read/search access to
+artifact directories, and search (`x`) permission on every ancestor. Scratch
+needs read/write/search permission for that identity and sufficient space for
+each simultaneously open lexical index. A private mount owned by the process
+UID with mode `0700` is sufficient; do not make a host directory broadly writable.
+Keep scratch mounted and available until all readers have closed. Normal shard
+drop removes its own temporary directory; it does not remove neighboring files.
+Process death does not promise temporary-directory cleanup, so use disposable
+per-instance storage or separately managed cleanup after readers have stopped.
+
+Run `./tools/test-datastore-permissions.ps1` from `server/` with Docker Desktop
+in Linux-container mode (or a Linux Docker engine). The runner builds the existing
+round-trip corpus before serving, then runs as UID/GID `65532` with no capabilities,
+no network, a read-only image filesystem including artifacts, and a private
+64 MiB `/scratch` tmpfs. It checks lexical/vector queries across close/reopen,
+scratch lifetime and owned cleanup, missing/read-only scratch, denied ancestor
+traversal, and corrupt manifests. Each serving process has a 60-second timeout.
+Only allowlisted public source files enter its build context; host directories
+are not mounted into the serving containers. Containers and the uniquely tagged
+test image are removed; Docker build caches and the ignored local receipt remain.
+
+This qualifies the standalone reader's default Tantivy/flat-vector configuration.
+Server's hydration cache, catalog and builder have additional writable paths
+described above; the fixture does not qualify a read-only Server local root or
+DiskANN. No new constructor or Server configuration is needed for `TMPDIR`.
+Windows AppContainer is a separate, unadopted tier (`not_requested` in this
+profile); neither ordinary Windows execution nor this Linux fixture qualifies
+its token, ACL or ancestor-handle conditions. If Linux Docker is unavailable,
+the dependent checks are `not_run`, never inferred passes.
+
 ### Cache capacity, pins and retention
 
 | Variable | Default | Meaning and constraints |
