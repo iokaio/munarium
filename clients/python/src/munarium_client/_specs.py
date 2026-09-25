@@ -10,12 +10,15 @@ from dataclasses import dataclass, field
 from typing import Any, Generic, Literal, TypeVar
 from urllib.parse import quote
 
+from pydantic import TypeAdapter
+
 from . import models as m
 from ._errors import check_bulk_files, check_promise_status
 
 RetryClass = Literal["read", "command", "write"]
 
 T = TypeVar("T")
+_head_seq = TypeAdapter(m.UInt64)
 
 
 def seg(s: str) -> str:
@@ -207,7 +210,7 @@ def head(version_id: str) -> Spec[int]:
     return Spec(
         "GET",
         f"/v1/versions/{seg(version_id)}/head",
-        parse=lambda v: int(v["head_seq"]),
+        parse=lambda v: _head_seq.validate_python(v["head_seq"]),
     )
 
 

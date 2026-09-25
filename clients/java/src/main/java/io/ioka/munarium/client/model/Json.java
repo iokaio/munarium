@@ -5,6 +5,9 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import com.fasterxml.jackson.databind.cfg.CoercionAction;
+import com.fasterxml.jackson.databind.cfg.CoercionInputShape;
+import com.fasterxml.jackson.databind.type.LogicalType;
 
 /**
  * The one shared Jackson mapper. Wire casing is the server's
@@ -19,6 +22,14 @@ public final class Json {
             .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
             .setSerializationInclusion(JsonInclude.Include.NON_NULL);
+
+    static {
+        // Integer DTO fields must receive integer JSON tokens. A float may
+        // already have lost precision above 2^53, before conversion to long.
+        MAPPER.coercionConfigFor(LogicalType.Integer)
+                .setCoercion(CoercionInputShape.Float, CoercionAction.Fail)
+                .setCoercion(CoercionInputShape.String, CoercionAction.Fail);
+    }
 
     private Json() {}
 }

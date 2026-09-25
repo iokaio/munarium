@@ -945,6 +945,8 @@ pub async fn op_approve_step(
     run_id: &str,
     ordinal: usize,
 ) -> Result<String> {
+    let stored_ordinal = i32::try_from(ordinal)
+        .map_err(|_| KernelError::InvalidInput("step ordinal exceeds signed-32 range".into()))?;
     let run: Option<(String, Option<String>)> = sqlx::query_as(
         "SELECT runbook_ref, version_id FROM runbook_runs WHERE tenant_id = $1 AND id = $2",
     )
@@ -965,7 +967,7 @@ pub async fn op_approve_step(
     )
     .bind(tenant)
     .bind(run_id)
-    .bind(ordinal as i32)
+    .bind(stored_ordinal)
     .fetch_optional(pool(state)?)
     .await
     .map_err(|e| KernelError::Storage(e.to_string()))?;

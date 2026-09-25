@@ -47,7 +47,8 @@ public final class Ledger {
             String shapeRef,
             ClaimOrigin origin) {
         public boolean isDisputed() {
-            return "disputed".equals(status);
+            // Preserve future status strings without treating them as acceptance.
+            return !"accepted".equals(status);
         }
     }
 

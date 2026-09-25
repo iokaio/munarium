@@ -901,6 +901,72 @@ Extend N/N−1 fixtures with added fields, missing optional fields, null versus 
 
 Change normative DTO/proto sources and generators, then run the documented publisher/re-vendoring and SDK regeneration workflow. Never hand-edit generated clients or locked contract copies to satisfy a test. Required publisher/drift checks remain automatic. Record the source and generated artifact versions in the compatibility evidence.
 
+### 11.3 P11 implementation and local qualification
+
+The [wire inventory and direction-specific policy](wire-compatibility.md) records
+REST/typed MMP/native bridge integer carriers, PostgreSQL limits, all four SDKs,
+browser precision and previous/current fixture scope. Sources and generated
+artifacts remain Server 1.2.1, SDK 1.1.1 and MMP v1. No DTO field, protobuf tag,
+generated client, migration, error slug or locked contract changes.
+
+Tests were added before fixes. Nine PostgreSQL regressions failed, including a
+batch append panic at signed-64 exhaustion and large inclusive pins returning
+empty results after wrapping to negative SQL bounds. The transport tests exposed
+digest tier truncation, bulk length/approval ordinal/evidence offset overflow,
+signed budget report wrap and report addition overflow. Retrieval fixtures
+exposed oversized watermark writes and negative stored watermark/source-length
+reads. A memory-store regression reproduced a counter sum overflow panic.
+Python and Java fixtures exposed coercion of invalid integer tokens; Java also
+returned unsigned protobuf values as negative signed longs. Python's unknown
+governance enums and .NET's unknown provenance decoded permissively. Java/.NET
+REST disputed predicates also treated unknown/null status as non-disputed.
+
+Checked conversions now reject these cases through existing errors. Whole-batch
+sequence capacity is checked before mutation, inclusive high pins retain their
+meaning, reports cannot return wrapped negative counts, and unknown governance
+protobuf values retain conservative meanings. Valid JSON numbers and legacy
+protobuf presence/sentinel behavior remain unchanged. Synthetic high-sequence
+fixtures use a disposable PostgreSQL database and ordinary store operations after
+test-only seeding; there is no production sequence-setting API.
+
+The new fixtures cover exact `2^53` neighbors, signed limits, applicable unsigned
+limits, request rejection, write/read/replay, pins, error metadata, optional
+null/omission, unknown fields/enums and additive P01 usage metadata. Existing SSE
+unknown-stage/event tests remain controls. Synthetic 1.1 baseline and additive
+current payloads qualify current SDK decoders; previous released binaries and
+the full hosted cross-version matrix are not claimed as locally executed.
+P10's stronger erasure and continuous-reauthorization work stays separate.
+
+Local validation used cached Rust dependencies, Python 3.13,
+.NET 10 and Gradle 9.7.1 (Java 26 targeting Java 21). PostgreSQL commands set
+`MUNARIUM_TEST_DATABASE_URL` to the owned loopback database. Commands below run
+from `server/` unless a different directory is named.
+
+| Check | Result |
+|---|---|
+| `cargo test --locked --offline -p munarium-server -- --skip process_recovery` with `RETENTION_PYTHON` selecting installed Python | 231 unit tests and 1 retention-inventory integration passed; 6 existing ignored tests and 4 process-recovery tests not run. Database-dependent Server tests without a URL do not establish PostgreSQL coverage |
+| `cargo test --locked --offline -p munarium-api-types --features proto` | 15 passed, including 4 new wire compatibility tests |
+| `cargo test -p munarium-store-pg` with test database | 66 passed, including 11 boundary tests; 1 child-process fixture intentionally ignored by the runner and invoked by its parent test |
+| `cargo test --locked --offline -p munarium-retrieval-pg -- --quiet` with test database | 53 passed: 28 unit, 22 existing integration and 3 boundary tests |
+| `cargo test --locked --offline -p munarium-store-mem` | 17 passed, including 2 aggregate boundary tests |
+| `clients/rust`: `cargo test --locked --offline --workspace`; final `cargo test --locked --offline -p munarium-client wire_ -- --quiet` | Workspace: 42 unit and 1 documentation test passed. Final focused run: 12 passed, including the added frozen previous-release completion reader |
+| `clients/rust`: `cargo clippy --locked --offline --workspace --all-targets -- -D warnings`; package-scoped formatting | Passed |
+| `clients/python`: `python -m pytest tests -q --basetemp ../scratch/p11-pytest`; `python -m ruff check src tests`; `python -m ruff format --check src tests`; `python -m mypy src/munarium_client` | 177 tests passed; source/test lint, format and types passed. Test-owned temporary directory removed after validation |
+| `clients/dotnet`: `dotnet build src/Ioka.Munarium.Client/Ioka.Munarium.Client.csproj --no-restore -p:TreatWarningsAsErrors=true`; `dotnet test tests/Ioka.Munarium.Client.Tests/Ioka.Munarium.Client.Tests.csproj --no-restore -p:TreatWarningsAsErrors=true` | Build passed; 92 tests passed |
+| `clients/java`: `.\gradlew.bat build compileConformanceTestJava --offline` | Build and conformance compilation passed; 74 offline tests passed |
+| Root: `python check_license.py`; `python clients/check_compatibility.py`; `python scripts/generate_server_api.py --check`; `python scripts/docs_linkcheck.py`; `git diff --check` | Passed; generated catalog still has 121 operations |
+| `cargo fmt --all -- --check` | Passed |
+| `cargo clippy --locked --offline -p munarium-server -p munarium-api-types -p munarium-store-pg -p munarium-retrieval-pg -p munarium-store-mem --all-targets --all-features -- -D warnings` | Passed |
+| Root: `python scripts/private_material_scan.py` | Failed: 350 findings, all confined to scratch; no finding outside scratch. Not waived or reported as passed |
+
+The broader Python `ruff format --check .` also reports existing README snippet
+formatting; the relevant changed source/test check passed. Initial default
+temporary-directory failures were resolved using the owned test directory before
+the final 177-test Python run. The owned PostgreSQL container and its disposable
+volumes were removed after validation. No paid provider, deployment, package publication
+or change to automatic CI was performed. Historical binary execution and live
+four-language conformance remain separate from the offline fixture evidence.
+
 ## 12. Evaluation and performance evidence
 
 ### 12.1 P13: frozen inputs and independently tested grading — R24 and R26

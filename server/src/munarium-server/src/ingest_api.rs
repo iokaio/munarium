@@ -475,10 +475,16 @@ pub async fn op_bulk_open(
                 entry.filename
             )));
         }
+        let bytes_len = i64::try_from(entry.bytes_len).map_err(|_| {
+            invalid(format!(
+                "manifest entry '{}': bytes_len exceeds signed-64 range",
+                entry.filename
+            ))
+        })?;
         manifest.push((
             entry.filename.clone(),
             sha,
-            entry.bytes_len as i64,
+            bytes_len,
             entry.media_type.clone(),
         ));
     }

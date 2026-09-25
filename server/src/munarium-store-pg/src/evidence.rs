@@ -30,7 +30,7 @@ use munarium_core::evidence::{
 use munarium_core::{KernelError, Result};
 use sqlx::{PgPool, Row};
 
-use crate::storage_err;
+use crate::{pg_bigint, storage_err};
 
 #[derive(Clone)]
 pub struct PgEvidenceStore {
@@ -324,7 +324,7 @@ impl EvidenceStore for PgEvidenceStore {
         )
         .bind(tenant)
         .bind(evidence_id)
-        .bind(limit as i64)
+        .bind(pg_bigint(limit, "limit")?)
         .fetch_all(&self.pool)
         .await
         .map_err(storage_err)?;
@@ -364,7 +364,7 @@ impl EvidenceStore for PgEvidenceStore {
               LIMIT $2"
         ))
         .bind(now)
-        .bind(limit as i64)
+        .bind(pg_bigint(limit, "limit")?)
         .fetch_all(&self.pool)
         .await
         .map_err(storage_err)?;

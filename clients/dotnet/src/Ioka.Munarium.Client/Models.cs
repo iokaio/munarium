@@ -80,7 +80,8 @@ public sealed record ClaimOutcome
     [JsonPropertyName("claim")] public required Claim Claim { get; init; }
     [JsonPropertyName("findings")] public required IReadOnlyList<GateFinding> Findings { get; init; }
     [JsonPropertyName("head_seq")] public ulong HeadSeq { get; init; }
-    [JsonIgnore] public bool IsDisputed => Claim.Status == "disputed";
+    // Preserve future status strings but never present one as gate acceptance.
+    [JsonIgnore] public bool IsDisputed => Claim.Status != "accepted";
 }
 
 public sealed record EventsOutcome
@@ -88,7 +89,7 @@ public sealed record EventsOutcome
     [JsonPropertyName("claims")] public required IReadOnlyList<Claim> Claims { get; init; }
     [JsonPropertyName("findings")] public required IReadOnlyList<GateFinding> Findings { get; init; }
     [JsonPropertyName("head_seq")] public ulong HeadSeq { get; init; }
-    [JsonIgnore] public bool IsDisputed => Claims.Any(c => c.Status == "disputed");
+    [JsonIgnore] public bool IsDisputed => Claims.Any(c => c.Status != "accepted");
 }
 
 public sealed record ClaimLookup

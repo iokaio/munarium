@@ -98,6 +98,17 @@ including vocabulary, answers, source references and streaming turns. Read the
 limitations; the complete API client closes those gaps on Server 1.2. Matrix
 clients remain on **Matrix 1.0**, independently of Server compatibility.
 
+Integer JSON fields retain their numeric wire format. The
+[wire inventory and evolution policy](../server/docs/wire-compatibility.md)
+records their exact ranges and the offline boundary fixtures. Python validates
+sequence, watermark, byte-length and counter models as unsigned 64-bit integers;
+float, boolean and string coercions are rejected for those fields. Java's typed
+facade uses nonnegative `long` for these unsigned quantities and rejects decoded
+gRPC values above `Long.MAX_VALUE`; the complete API's raw Jackson JSON nodes
+retain the full unsigned range. JSON integer fields do not accept fractional
+or string values as a substitute. Browser callers need a lossless JSON parser
+for values above `2^53 - 1`.
+
 | Server version | Client-visible behavior |
 |---|---|
 | 1.0 | Existing cloud providers and the baseline MMP 1 operations, subject to the transport gaps below |
@@ -206,6 +217,9 @@ The invariants:
    severity, or provenance on the gRPC wire decodes as the CONSERVATIVE value
    (`disputed` / `block` / `emergent`), so a tag this client build cannot name
    can never read as "the gates passed".
+   Java and .NET retain raw REST status strings; their `isDisputed` /
+   `IsDisputed` helpers return false only for explicit `accepted`. An unknown,
+   empty or null status therefore remains disputed.
 9. **Typed errors keyed on the problem-slug registry**
    (errors.md) on both transports — no
    English message text is ever parsed.

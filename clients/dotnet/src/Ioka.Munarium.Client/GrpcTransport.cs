@@ -211,11 +211,12 @@ internal sealed partial class GrpcTransport : ITransport
 
     private static string ProvenanceName(Provenance p) => p switch
     {
+        Provenance.Witnessed => "witnessed",
         Provenance.Backfilled => "backfilled",
         Provenance.Repaired => "repaired",
         Provenance.Emergent => "emergent",
         Provenance.CoverageRepair => "coverage_repair",
-        _ => "witnessed",
+        _ => "emergent",
     };
 
     private static Claim ToClaim(Mmp.V1.Claim c) => new()

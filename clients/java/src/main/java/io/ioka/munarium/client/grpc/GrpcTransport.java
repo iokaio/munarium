@@ -350,6 +350,16 @@ public final class GrpcTransport implements io.ioka.munarium.client.Transport {
 
     // -- pb -> model conversions --------------------------------------------
 
+    private static long unsigned(String field, long value) {
+        // Protobuf Java exposes uint64 as signed long bits. This facade's
+        // public models use nonnegative long values, so wrapping is not usable.
+        if (value < 0) {
+            throw new UnexpectedServerException(
+                    field + " exceeds Long.MAX_VALUE; use the full API JSON response", null);
+        }
+        return value;
+    }
+
     private static Ledger.GateFinding finding(Common.GateFinding f) {
         return new Ledger.GateFinding(
                 f.getRuleId(), severityStr(f.getSeverity()), f.getMessage(),
@@ -362,7 +372,7 @@ public final class GrpcTransport implements io.ioka.munarium.client.Transport {
 
     private static Ledger.Claim claim(Claim c) {
         return new Ledger.Claim(
-                c.getId(), c.getVersionId(), c.getSeq(), claimTypeStr(c.getClaimType()),
+                c.getId(), c.getVersionId(), unsigned("seq", c.getSeq()), claimTypeStr(c.getClaimType()),
                 c.getSubject(), c.getKey(), c.getValue(), c.getNormalizedText(),
                 optStr(c.getScopePath()), statusStr(c.getStatus()),
                 provenanceStr(c.getProvenance()), optStr(c.getSupersedesId()),
@@ -393,13 +403,14 @@ public final class GrpcTransport implements io.ioka.munarium.client.Transport {
 
     private static Memory.Anchor anchor(Anchor a) {
         return new Memory.Anchor(a.getId(), a.getVersionId(), a.getDetailKey(),
-                a.getLockedValue(), optStr(a.getLockedAtScope()), a.getStatus(), a.getSeq());
+                a.getLockedValue(), optStr(a.getLockedAtScope()), a.getStatus(), unsigned("seq", a.getSeq()));
     }
 
     private static Memory.Promise promise(Promise p) {
         return new Memory.Promise(p.getId(), p.getVersionId(), p.getKey(), p.getKind(),
                 p.getDescription(), optStr(p.getOriginScope()), optStr(p.getDueScope()),
-                p.getStatus(), p.getSeq(), p.getFulfilledSeq() == 0 ? null : p.getFulfilledSeq());
+                p.getStatus(), unsigned("seq", p.getSeq()),
+                p.getFulfilledSeq() == 0 ? null : unsigned("fulfilled_seq", p.getFulfilledSeq()));
     }
 
     private static Retrieval.CollectionInfo collection(CollectionInfo c) {
@@ -412,7 +423,8 @@ public final class GrpcTransport implements io.ioka.munarium.client.Transport {
     private static Retrieval.ProvenanceEnvelope envelope(Common.ProvenanceEnvelope e) {
         return new Retrieval.ProvenanceEnvelope(
                 e.getChunkIdsList(), e.getSourceIdsList(), e.getSourcePathsList(),
-                e.getSourceContentHashesList(), e.getIndexVersion(), e.getEventWatermark(),
+                e.getSourceContentHashesList(), e.getIndexVersion(),
+                unsigned("event_watermark", e.getEventWatermark()),
                 optStr(e.getProviderFingerprint()));
     }
 
@@ -505,7 +517,8 @@ public final class GrpcTransport implements io.ioka.munarium.client.Transport {
             throw new UnexpectedServerException("ProposeClaimResponse without claim", null);
         }
         return new Ledger.ClaimOutcome(
-                claim(resp.getClaim()), findings(resp.getFindingsList()), resp.getHeadSeq());
+                claim(resp.getClaim()), findings(resp.getFindingsList()),
+                unsigned("head_seq", resp.getHeadSeq()));
     }
 
     @Override
@@ -525,7 +538,7 @@ public final class GrpcTransport implements io.ioka.munarium.client.Transport {
         var resp = command(() -> commands(key).appendEvents(req));
         return new Ledger.EventsOutcome(
                 resp.getClaimsList().stream().map(GrpcTransport::claim).toList(),
-                findings(resp.getFindingsList()), resp.getHeadSeq());
+                findings(resp.getFindingsList()), unsigned("head_seq", resp.getHeadSeq()));
     }
 
     @Override
@@ -611,7 +624,7 @@ public final class GrpcTransport implements io.ioka.munarium.client.Transport {
     @Override
     public long head(String versionId) {
         var req = Query.GetHeadRequest.newBuilder().setVersionId(versionId).build();
-        return read(() -> queries().getHead(req)).getHeadSeq();
+        return unsigned("head_seq", read(() -> queries().getHead(req)).getHeadSeq());
     }
 
     @Override
@@ -649,7 +662,7 @@ public final class GrpcTransport implements io.ioka.munarium.client.Transport {
         var slice = resp.getSlice();
         return new Ledger.FactsPage(
                 slice.getFactsList().stream().map(GrpcTransport::claim).toList(),
-                slice.getAsOfSeq(), slice.getHeadSeq());
+                unsigned("as_of_seq", slice.getAsOfSeq()), unsigned("head_seq", slice.getHeadSeq()));
     }
 
     @Override
@@ -691,7 +704,8 @@ public final class GrpcTransport implements io.ioka.munarium.client.Transport {
                 .build();
         return read(() -> queries().counterTotals(req)).getCountersList().stream()
                 .map(c -> new Memory.Counter(
-                        c.getKey(), c.getTotal(), c.getBudget() == 0 ? null : c.getBudget()))
+                        c.getKey(), unsigned("total", c.getTotal()),
+                        c.getBudget() == 0 ? null : unsigned("budget", c.getBudget())))
                 .toList();
     }
 
@@ -700,7 +714,7 @@ public final class GrpcTransport implements io.ioka.munarium.client.Transport {
         var req = Query.ListDigestsRequest.newBuilder().setVersionId(versionId).build();
         return read(() -> queries().listDigests(req)).getDigestsList().stream()
                 .map(d -> new Memory.Digest(d.getVersionId(), d.getTier(), d.getScopePath(),
-                        d.getContent(), d.getContentHash(), d.getBuiltFromSeq()))
+                        d.getContent(), d.getContentHash(), unsigned("built_from_seq", d.getBuiltFromSeq())))
                 .toList();
     }
 
@@ -737,7 +751,8 @@ public final class GrpcTransport implements io.ioka.munarium.client.Transport {
         return new Memory.ComposedContext(
                 ctx.getSectionsList().stream()
                         .map(s -> new Memory.Section(s.getTitle(), s.getBody())).toList(),
-                ctx.getText(), ctx.getEstimatedTokens(), ctx.getContentHash(), ctx.getAsOfSeq());
+                ctx.getText(), unsigned("estimated_tokens", ctx.getEstimatedTokens()),
+                ctx.getContentHash(), unsigned("as_of_seq", ctx.getAsOfSeq()));
     }
 
     // -- ingest -------------------------------------------------------------
@@ -839,7 +854,7 @@ public final class GrpcTransport implements io.ioka.munarium.client.Transport {
             throw new UnexpectedServerException("PutSource completed without a response", null);
         }
         return new Ingesting.PutSourceResult(
-                resp.getSourceId(), resp.getContentHash(), resp.getBytesLen(),
+                resp.getSourceId(), resp.getContentHash(), unsigned("bytes_len", resp.getBytesLen()),
                 resp.getAlreadyExisted());
     }
 
@@ -852,7 +867,7 @@ public final class GrpcTransport implements io.ioka.munarium.client.Transport {
                 .setShapeRef(orEmpty(shapeRef))
                 .build();
         var resp = once(() -> ingestSvc().recordIngest(req));
-        return new Ingesting.RecordIngestResult(resp.getEventId(), resp.getSeq());
+        return new Ingesting.RecordIngestResult(resp.getEventId(), unsigned("seq", resp.getSeq()));
     }
 
     @Override
@@ -1023,7 +1038,8 @@ public final class GrpcTransport implements io.ioka.munarium.client.Transport {
                 .build();
         var resp = read(() -> retrievalSvc().getIndexVersion(req));
         return new Retrieval.IndexStatus(resp.getIndexVersion(), shapeRef,
-                resp.getEventWatermark(), resp.getActive(), jsonOpt(resp.getManifestJson()));
+                unsigned("event_watermark", resp.getEventWatermark()),
+                resp.getActive(), jsonOpt(resp.getManifestJson()));
     }
 
     @Override
@@ -1266,7 +1282,8 @@ public final class GrpcTransport implements io.ioka.munarium.client.Transport {
                 .build();
         var resp = once(() -> providerSvc().complete(req));
         return new Providers.CompleteResult(resp.getText(), resp.getStopReason(),
-                resp.getInputTokens(), resp.getOutputTokens(), resp.getProvider(),
+                unsigned("input_tokens", resp.getInputTokens()), unsigned("output_tokens", resp.getOutputTokens()),
+                resp.getProvider(),
                 resp.getModel(), optStr(resp.getInvocationEventId()));
     }
 
@@ -1359,7 +1376,8 @@ public final class GrpcTransport implements io.ioka.munarium.client.Transport {
                         v.getRetries(), v.getFirstPassViolationsList(), v.getViolationsList());
             }
             completion = new SessionsApi.TurnCompletion(c.getProvider(), c.getModel(),
-                    c.getWasOverride(), c.getText(), c.getInputTokens(), c.getOutputTokens(),
+                    c.getWasOverride(), c.getText(), unsigned("input_tokens", c.getInputTokens()),
+                    unsigned("output_tokens", c.getOutputTokens()),
                     verification);
         }
         // Present only when a research profile ran; a legacy turn leaves the
@@ -1390,7 +1408,7 @@ public final class GrpcTransport implements io.ioka.munarium.client.Transport {
                         .map(l -> new SessionsApi.LayerOutcome(l.getLayer(), l.getRole(),
                                 l.getRequirement(), l.getBlock(), optStr(l.getEvidenceId()),
                                 l.getSupportsCompleteness(), optStr(l.getRefusalCode()),
-                                l.getElapsedMs()))
+                                unsigned("elapsed_ms", l.getElapsedMs())))
                         .toList(),
                 d.getCompletenessAvailable(),
                 d.getDisclosedConflicts(),

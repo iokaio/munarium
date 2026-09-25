@@ -821,6 +821,7 @@ impl PgRetrieval {
         watermark_seq: u64,
         activate: bool,
     ) -> Result<munarium_core::retrieval::IndexVersion> {
+        let watermark_seq = crate::pg_watermark(watermark_seq)?;
         let info = self.collection_by_id(collection_id).await?;
         let sources = sqlx::query(
             "SELECT s.source_id, s.filename, s.content_hash, s.media_type
@@ -904,7 +905,7 @@ impl PgRetrieval {
             .bind(&info.shape_ref)
             .bind(collection_id)
             .bind(&manifest)
-            .bind(watermark_seq as i64)
+            .bind(watermark_seq)
             .execute(&mut *tx)
             .await
             .map_err(storage_err)?;
@@ -934,7 +935,9 @@ impl PgRetrieval {
                         format!("{sid}#{ordinal}"),
                         &sid,
                         &hash,
-                        ordinal as i32,
+                        i32::try_from(ordinal).map_err(|_| {
+                            KernelError::Storage("chunk ordinal exceeds PostgreSQL INTEGER".into())
+                        })?,
                         chunk,
                         Vector::from(local_embed(chunk)),
                     );
@@ -959,7 +962,7 @@ impl PgRetrieval {
         )
         .bind(&self.tenant_id)
         .bind(&index_id)
-        .bind(watermark_seq as i64)
+        .bind(watermark_seq)
         .execute(&self.pool)
         .await
         .map_err(storage_err)?;
@@ -1482,7 +1485,7 @@ impl PgRetrieval {
         });
 
         let envelope = self
-            .envelope_for(&mut hits, index_id, watermark as u64)
+            .envelope_for(&mut hits, index_id, crate::read_watermark(watermark)?)
             .await?;
         Ok(SearchResult { hits, envelope })
     }

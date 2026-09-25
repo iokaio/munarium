@@ -65,6 +65,8 @@ mod tokens_api;
 mod v12_tests;
 mod verification;
 mod vocabulary_api;
+#[cfg(test)]
+mod wire_compat_tests;
 
 use config::Config;
 use munarium_proto::mmp::v1 as pb;

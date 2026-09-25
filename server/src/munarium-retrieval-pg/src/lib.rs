@@ -57,6 +57,16 @@ pub(crate) fn storage_err(e: sqlx::Error) -> KernelError {
     KernelError::Storage(e.to_string())
 }
 
+fn pg_watermark(value: u64) -> Result<i64> {
+    i64::try_from(value)
+        .map_err(|_| KernelError::Storage("watermark_seq exceeds PostgreSQL BIGINT".into()))
+}
+
+fn read_watermark(value: i64) -> Result<u64> {
+    u64::try_from(value)
+        .map_err(|_| KernelError::Storage("negative PostgreSQL watermark_seq".into()))
+}
+
 /// Reciprocal rank fusion over the lexical and vector candidate rows (each
 /// row: chunk_id, source_id, source_hash, text). Shared by the legacy
 /// shape-scoped search and the collection search; deterministic tie-break
@@ -490,7 +500,8 @@ impl PgRetrieval {
             filename: row.get("filename"),
             media_type: row.get("media_type"),
             content_hash: row.get("content_hash"),
-            bytes_len: row.get::<i64, _>("bytes_len") as u64,
+            bytes_len: u64::try_from(row.get::<i64, _>("bytes_len"))
+                .map_err(|_| KernelError::Storage("negative PostgreSQL bytes_len".into()))?,
             storage_backend: row.get("storage_backend"),
             blob_uri: row.get("blob_uri"),
             extraction_status: row.get("extraction_status"),
@@ -730,6 +741,7 @@ impl PgRetrieval {
         watermark_seq: u64,
         activate: bool,
     ) -> Result<IndexVersion> {
+        let watermark_seq = pg_watermark(watermark_seq)?;
         let sources = sqlx::query(
             "SELECT source_id, filename, content_hash, media_type FROM sources
               WHERE tenant_id = $1 AND shape_ref = $2 ORDER BY source_id",
@@ -799,7 +811,7 @@ impl PgRetrieval {
             .bind(&index_id)
             .bind(shape_ref)
             .bind(&manifest)
-            .bind(watermark_seq as i64)
+            .bind(watermark_seq)
             .execute(&mut *tx)
             .await
             .map_err(storage_err)?;
@@ -831,7 +843,9 @@ impl PgRetrieval {
                     .bind(format!("{sid}#{ordinal}"))
                     .bind(&sid)
                     .bind(&hash)
-                    .bind(ordinal as i32)
+                    .bind(i32::try_from(ordinal).map_err(|_| {
+                        KernelError::Storage("chunk ordinal exceeds PostgreSQL INTEGER".into())
+                    })?)
                     .bind(chunk)
                     .bind(Vector::from(local_embed(chunk)))
                     .execute(&mut *tx)
@@ -848,7 +862,7 @@ impl PgRetrieval {
         )
         .bind(&self.tenant_id)
         .bind(&index_id)
-        .bind(watermark_seq as i64)
+        .bind(watermark_seq)
         .execute(&self.pool)
         .await
         .map_err(storage_err)?;
@@ -877,7 +891,7 @@ impl PgRetrieval {
             id: row.get("id"),
             shape_ref: row.get("shape_ref"),
             manifest: row.get("manifest"),
-            event_watermark: row.get::<i64, _>("watermark_seq") as u64,
+            event_watermark: read_watermark(row.get("watermark_seq"))?,
             active: row.get("active"),
         })
     }
@@ -918,7 +932,7 @@ impl PgRetrieval {
             kind: "index",
             id: index_version.unwrap_or(shape_ref).to_string(),
         })?;
-        Ok((row.get("id"), row.get::<i64, _>("watermark_seq") as u64))
+        Ok((row.get("id"), read_watermark(row.get("watermark_seq"))?))
     }
 }
 
@@ -995,7 +1009,7 @@ impl RetrievalBackend for PgRetrieval {
             id: row.get("id"),
             shape_ref: row.get("shape_ref"),
             manifest: row.get("manifest"),
-            event_watermark: row.get::<i64, _>("watermark_seq") as u64,
+            event_watermark: read_watermark(row.get("watermark_seq"))?,
             active: row.get("active"),
         })
     }

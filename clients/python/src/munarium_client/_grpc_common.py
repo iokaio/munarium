@@ -182,8 +182,8 @@ def parse_claim(c: Any) -> m.Claim:
         value=c.value,
         normalized_text=c.normalized_text,
         scope_path=_opt(c.scope_path),
-        status="disputed" if c.status == common_pb2.CLAIM_STATUS_DISPUTED else "accepted",
-        provenance=_PROVENANCE_FROM_PB.get(c.provenance, "witnessed"),  # type: ignore[arg-type]
+        status="accepted" if c.status == common_pb2.CLAIM_STATUS_ACCEPTED else "disputed",
+        provenance=_PROVENANCE_FROM_PB.get(c.provenance, "emergent"),  # type: ignore[arg-type]
         supersedes_id=_opt(c.supersedes_id),
         entity_id=_opt(c.entity_id),
         evidence=_json_opt(c.evidence_json),
@@ -222,7 +222,7 @@ def origin_to_pb(o: m.ClaimOrigin) -> Any:
 def parse_finding(f: Any) -> m.GateFinding:
     return m.GateFinding(
         rule_id=f.rule_id,
-        severity=_SEVERITY_FROM_PB.get(f.severity, "info"),  # type: ignore[arg-type]
+        severity=_SEVERITY_FROM_PB.get(f.severity, "block"),  # type: ignore[arg-type]
         message=f.message,
         scope_path=_opt(f.scope_path),
         detail=_json_opt(f.detail_json),
