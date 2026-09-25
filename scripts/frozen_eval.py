@@ -277,8 +277,26 @@ def validate_raw(manifest, raw):
             capture_output=True,
             check=False,
         )
-        require(saved.returncode == 0, "frozen_manifest_not_committed")
-        require(json.loads(saved.stdout) == manifest, "committed_manifest_mismatch")
+        if saved.returncode == 0:
+            require(json.loads(saved.stdout) == manifest, "committed_manifest_mismatch")
+        else:
+            # A shallow CI checkout need not fetch old history to verify an
+            # archived run. Git object hashes prove exact manifest inclusion.
+            import preregistration
+
+            proof_path = (
+                ROOT
+                / "server/conformance/results"
+                / (
+                    "preregistration-"
+                    + manifest["id"].split(":")[1]
+                    + "-"
+                    + commit
+                    + ".json"
+                )
+            )
+            require(proof_path.is_file(), "frozen_manifest_not_committed")
+            preregistration.verify(manifest, commit, read(proof_path))
     for row in raw["rows"]:
         require(row.get("status") in STATUSES, "invalid_outcome")
         require(

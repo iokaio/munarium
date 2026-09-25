@@ -67,6 +67,11 @@ is verifiable; actual preregistration timing still needs the operator's reviewed
 run record. Pilot and diagnostic records cannot be relabeled by a grading run.
 Changed criteria need a new manifest and campaign, including retained failures.
 
+Archived results can carry an accompanying Git commit/tree/blob inclusion proof
+for checkouts that lack the preregistration commit's history. The validator hashes
+each Git object and checks the exact manifest path and bytes; missing or tampered
+proofs fail. This keeps shallow CI offline without relaxing preregistration.
+
 Regrade unchanged raw evidence with:
 
 ```powershell
@@ -230,3 +235,8 @@ are reported; the runner does not retry until passing or change the baseline.
 These are calibration/reporting thresholds on a shared local workstation, not
 release-wide SLOs or new required CI checks. Changing a baseline requires a new
 reviewed manifest retaining the prior records.
+
+The [recorded local qualification](../../conformance/results/README.md#local-live-qualification-001)
+completed with a rejected usefulness claim and all three paths within their frozen
+local latency budgets. Keep that measured rejection; it is not permission to weaken
+the conventional baseline or lower D6 retrospectively.
