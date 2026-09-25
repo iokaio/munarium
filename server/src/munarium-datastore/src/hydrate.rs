@@ -25,7 +25,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::SystemTime;
 
 use crate::model::ArtifactManifest;
@@ -132,26 +132,30 @@ impl L1Cache {
         &self.root
     }
 
+    /// The cache state. The lock is poisoned only if a thread panicked while
+    /// holding it, and no critical section in this file can unwind part-way:
+    /// each is a map or set operation, a clone or a saturating sum. The guard
+    /// is therefore recovered, so one panic elsewhere cannot make every later
+    /// hydration panic, and the in-flight guard can always release its key
+    /// (P15/R32).
+    fn state(&self) -> MutexGuard<'_, CacheState> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
     fn sealed_path(&self, key: &ArtifactCacheKey) -> Result<PathBuf, Error> {
         Ok(self.root.join(key.l1_relative_path()?))
     }
 
     pub fn resident(&self, key: &ArtifactCacheKey) -> Option<ResidentArtifact> {
-        self.state.lock().unwrap().resident.get(key).cloned()
+        self.state().resident.get(key).cloned()
     }
 
     pub fn is_quarantined(&self, key: &ArtifactCacheKey) -> bool {
-        self.state.lock().unwrap().quarantined.contains(key)
+        self.state().quarantined.contains(key)
     }
 
     pub fn used_bytes(&self) -> u64 {
-        self.state
-            .lock()
-            .unwrap()
-            .resident
-            .values()
-            .map(|r| r.bytes)
-            .sum()
+        total_bytes(&self.state())
     }
 
     /// Hydrate an artifact from a store into L1.
@@ -178,7 +182,7 @@ impl L1Cache {
         residency: Residency,
     ) -> Result<ResidentArtifact, Error> {
         {
-            let mut st = self.state.lock().unwrap();
+            let mut st = self.state();
             if st.quarantined.contains(key) {
                 return Err(Error::Integrity(format!(
                     "{key} is quarantined; it will not be re-fetched until an operator or a \
@@ -204,7 +208,7 @@ impl L1Cache {
                 st = self
                     .finished
                     .wait(st)
-                    .expect("the cache lock is not poisoned on any path we recover from");
+                    .unwrap_or_else(PoisonError::into_inner);
             }
 
             // The hydration this call waited on has finished. Take its result.
@@ -234,7 +238,7 @@ impl L1Cache {
             self.hydrate_inner(key, store, reader, limits, residency)
         };
         {
-            let mut st = self.state.lock().unwrap();
+            let mut st = self.state();
             // Quarantine BEFORE waking, so a waiter observes the final state
             // rather than a window in which the key is neither in flight nor
             // yet marked bad. (The guard removed the in-flight mark; waiters
@@ -364,17 +368,13 @@ impl L1Cache {
             residency,
             last_access: SystemTime::now(),
         };
-        self.state
-            .lock()
-            .unwrap()
-            .resident
-            .insert(key.clone(), resident.clone());
+        self.state().resident.insert(key.clone(), resident.clone());
         Ok(resident)
     }
 
     /// Raise or lower why an artifact is resident.
     pub fn set_residency(&self, key: &ArtifactCacheKey, residency: Residency) -> Result<(), Error> {
-        let mut st = self.state.lock().unwrap();
+        let mut st = self.state();
         let entry = st
             .resident
             .get_mut(key)
@@ -403,8 +403,8 @@ impl L1Cache {
         let mut evicted = Vec::new();
         loop {
             let victim = {
-                let st = self.state.lock().unwrap();
-                let used: u64 = st.resident.values().map(|r| r.bytes).sum();
+                let st = self.state();
+                let used = total_bytes(&st);
                 if used <= self.budget.low_watermark_bytes {
                     break;
                 }
@@ -433,7 +433,7 @@ impl L1Cache {
     /// operation and never data loss.
     pub fn evict(&self, key: &ArtifactCacheKey) -> Result<(), Error> {
         let path = {
-            let mut st = self.state.lock().unwrap();
+            let mut st = self.state();
             match st.resident.remove(key) {
                 Some(r) => r.path,
                 None => return Ok(()),
@@ -448,7 +448,7 @@ impl L1Cache {
     /// Clear a quarantine, after an operator has looked or a verified
     /// republish has happened.
     pub fn clear_quarantine(&self, key: &ArtifactCacheKey) {
-        self.state.lock().unwrap().quarantined.remove(key);
+        self.state().quarantined.remove(key);
     }
 
     /// Reconcile in-memory state against the filesystem at startup.
@@ -493,6 +493,15 @@ impl L1Cache {
     }
 }
 
+/// Resident bytes, saturating: a sum that cannot overflow keeps every
+/// critical section panic-free, which is what makes recovering a poisoned
+/// state lock sound.
+fn total_bytes(st: &CacheState) -> u64 {
+    st.resident
+        .values()
+        .fold(0u64, |sum, r| sum.saturating_add(r.bytes))
+}
+
 /// Releases a key's in-flight mark when dropped — on the normal path and on a
 /// panic alike. The condvar is signalled by `hydrate` after it has recorded
 /// the outcome; on a panic there is no outcome, and the unwinding thread's
@@ -504,9 +513,7 @@ struct InFlightGuard<'a> {
 
 impl Drop for InFlightGuard<'_> {
     fn drop(&mut self) {
-        if let Ok(mut st) = self.cache.state.lock() {
-            st.in_flight.remove(self.key);
-        }
+        self.cache.state().in_flight.remove(self.key);
         if std::thread::panicking() {
             self.cache.finished.notify_all();
         }
@@ -641,6 +648,46 @@ mod tests {
 
     fn cache(root: &Path) -> L1Cache {
         L1Cache::new(root, CacheBudget::new(10_000_000, 5_000_000).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn a_poisoned_cache_lock_keeps_hydrating_and_answering() {
+        // P15/R32: every L1 method used `.lock().unwrap()`, so one panic while
+        // the state lock was held made every later hydration, eviction and
+        // residency query panic, and the in-flight guard skipped its cleanup.
+        let src = tempfile::tempdir().unwrap();
+        let l1 = tempfile::tempdir().unwrap();
+        let (store, id) = seed(src.path(), 2);
+        let c = std::sync::Arc::new(cache(l1.path()));
+        let held = c.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = held.state.lock().unwrap();
+            panic!("poison the L1 state lock");
+        })
+        .join();
+        assert!(c.state.is_poisoned());
+
+        let k = key("dom", &id);
+        assert!(c.resident(&k).is_none());
+        assert!(!c.is_quarantined(&k));
+        assert_eq!(c.used_bytes(), 0);
+        let r = c
+            .hydrate(
+                &k,
+                &store,
+                &ReaderCapabilities::v1(),
+                &Limits::default(),
+                Residency::Opportunistic,
+            )
+            .unwrap();
+        assert_eq!(c.resident(&k).map(|x| x.path), Some(r.path.clone()));
+        assert_eq!(c.used_bytes(), r.bytes);
+        c.set_residency(&k, Residency::Pinned).unwrap();
+        assert!(c.evict_to_low_watermark().unwrap().is_empty());
+        c.clear_quarantine(&k);
+        c.evict(&k).unwrap();
+        assert!(c.resident(&k).is_none());
+        assert!(!r.path.exists());
     }
 
     #[test]

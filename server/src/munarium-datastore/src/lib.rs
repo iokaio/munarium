@@ -33,6 +33,22 @@
 //! residency, hydration, eviction and quarantine all key on the full
 //! [`ArtifactCacheKey`], and durable catalog keys carry the tenant separately.
 
+// Production code returns typed errors instead of panicking; tests are exempt.
+// The policy, its two exemptions and the per-site record are in
+// server/docs/panic-boundaries.md (P15/R32).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
+mod bytes;
 pub mod canonical;
 pub mod diagnostics;
 pub mod fusion;

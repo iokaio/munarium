@@ -252,25 +252,20 @@ fn archive(dir: &Path) -> Result<Vec<u8>, Error> {
 }
 
 fn unarchive(bytes: &[u8], dir: &Path) -> Result<(), Error> {
+    use crate::bytes::{le_u32_at, le_u64_at, slice_at};
     let bad = |w: &str| Error::Integrity(format!("lexical archive: {w}"));
-    if bytes.len() < 4 {
-        return Err(bad("shorter than its header"));
-    }
-    let count = u32::from_le_bytes(bytes[0..4].try_into().unwrap()) as usize;
+    let count = le_u32_at(bytes, 0).ok_or_else(|| bad("shorter than its header"))?;
     let mut pos = 4;
     for i in 0..count {
-        if pos + 4 > bytes.len() {
-            return Err(bad(&format!("truncated before entry {i}")));
-        }
-        let nlen = u32::from_le_bytes(bytes[pos..pos + 4].try_into().unwrap()) as usize;
+        let nlen =
+            le_u32_at(bytes, pos).ok_or_else(|| bad(&format!("truncated before entry {i}")))?;
         pos += 4;
-        if pos + nlen > bytes.len() {
-            return Err(bad(&format!("entry {i} name runs past the end")));
-        }
-        let name = std::str::from_utf8(&bytes[pos..pos + nlen])
+        let name = slice_at(bytes, pos, nlen as usize)
+            .ok_or_else(|| bad(&format!("entry {i} name runs past the end")))?;
+        let name = std::str::from_utf8(name)
             .map_err(|_| bad(&format!("entry {i} name is not UTF-8")))?
             .to_string();
-        pos += nlen;
+        pos += name.len();
         // A name is a FILE name, never a path: the archive has no directories,
         // so anything path-shaped is either corruption or an attempt to escape.
         if name.is_empty()
@@ -281,17 +276,16 @@ fn unarchive(bytes: &[u8], dir: &Path) -> Result<(), Error> {
         {
             return Err(bad(&format!("entry {i} has a path-shaped name {name:?}")));
         }
-        if pos + 8 > bytes.len() {
-            return Err(bad(&format!("truncated before entry {i} length")));
-        }
-        let blen = u64::from_le_bytes(bytes[pos..pos + 8].try_into().unwrap()) as usize;
+        let blen = le_u64_at(bytes, pos)
+            .ok_or_else(|| bad(&format!("truncated before entry {i} length")))?;
         pos += 8;
-        if pos + blen > bytes.len() {
-            return Err(bad(&format!("entry {i} body runs past the end")));
-        }
+        let body = usize::try_from(blen)
+            .ok()
+            .and_then(|blen| slice_at(bytes, pos, blen))
+            .ok_or_else(|| bad(&format!("entry {i} body runs past the end")))?;
         let mut f = std::fs::File::create(dir.join(&name))?;
-        f.write_all(&bytes[pos..pos + blen])?;
-        pos += blen;
+        f.write_all(body)?;
+        pos += body.len();
     }
     Ok(())
 }
@@ -829,5 +823,51 @@ mod tests {
     fn a_truncated_archive_is_refused() {
         let bytes = build(&corpus()).unwrap();
         assert!(TantivyLexicalIndex::open(&bytes[..bytes.len() / 2]).is_err());
+    }
+
+    /// One entry named `a` whose declared body length is `blen`, followed by
+    /// `body`.
+    fn one_entry(blen: u64, body: &[u8]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.push(b'a');
+        bytes.extend_from_slice(&blen.to_le_bytes());
+        bytes.extend_from_slice(body);
+        bytes
+    }
+
+    #[test]
+    fn a_declared_body_length_near_u64_max_is_an_integrity_error() {
+        // P15/R32: `pos + blen` overflowed on a crafted length — a panic in
+        // debug builds, and in release a wrapped end that made the slice
+        // `bytes[pos..end]` panic instead. The archive is read from an
+        // untrusted store; a lying length is corruption, reported as such.
+        for blen in [u64::MAX, u64::MAX - 16, u64::MAX / 2] {
+            let dir = tempfile::tempdir().unwrap();
+            let err = unarchive(&one_entry(blen, b"xyz"), dir.path()).unwrap_err();
+            assert!(matches!(err, Error::Integrity(_)), "{err}");
+            assert!(err.to_string().contains("body runs past the end"), "{err}");
+        }
+        // The same shape of lie in a name length.
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+        let dir = tempfile::tempdir().unwrap();
+        let err = unarchive(&bytes, dir.path()).unwrap_err();
+        assert!(err.to_string().contains("name runs past the end"), "{err}");
+    }
+
+    #[test]
+    fn an_exact_length_body_is_accepted_and_one_byte_short_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        unarchive(&one_entry(3, b"xyz"), dir.path()).unwrap();
+        assert_eq!(std::fs::read(dir.path().join("a")).unwrap(), b"xyz");
+        let dir = tempfile::tempdir().unwrap();
+        let err = unarchive(&one_entry(4, b"xyz"), dir.path()).unwrap_err();
+        assert!(err.to_string().contains("body runs past the end"), "{err}");
+        let dir = tempfile::tempdir().unwrap();
+        let err = unarchive(&[1, 0, 0], dir.path()).unwrap_err();
+        assert!(err.to_string().contains("shorter than its header"), "{err}");
     }
 }

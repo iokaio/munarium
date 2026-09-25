@@ -43,7 +43,7 @@
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::num::NonZeroUsize;
-use std::sync::RwLock;
+use std::sync::{PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use diskann::error::{ANNError, ANNResult};
 use diskann::graph::config::MaxDegree;
@@ -228,6 +228,18 @@ struct Store {
     adjacency: Vec<RwLock<AdjacencyList<u32>>>,
 }
 
+/// A node's adjacency list for reading. The per-node locks are poisoned only
+/// if a thread panicked while holding one; every write is a single
+/// clear/extend of a plain list that cannot unwind part-way, so the guard is
+/// recovered rather than failing every later search (P15/R32).
+fn read_list(node: &RwLock<AdjacencyList<u32>>) -> RwLockReadGuard<'_, AdjacencyList<u32>> {
+    node.read().unwrap_or_else(PoisonError::into_inner)
+}
+
+fn write_list(node: &RwLock<AdjacencyList<u32>>) -> RwLockWriteGuard<'_, AdjacencyList<u32>> {
+    node.write().unwrap_or_else(PoisonError::into_inner)
+}
+
 impl Store {
     fn start_id(&self) -> u32 {
         self.count as u32
@@ -250,7 +262,7 @@ impl Store {
             .get(id as usize)
             .ok_or(ProviderError::OutOfRange(id))?;
         out.clear();
-        out.extend_from_slice(node.read().expect("adjacency lock poisoned").as_ref());
+        out.extend_from_slice(read_list(node).as_ref());
         Ok(())
     }
 }
@@ -323,7 +335,7 @@ impl provider::NeighborAccessorMut for Neighbors<'_> {
             .adjacency
             .get(id as usize)
             .ok_or(ProviderError::OutOfRange(id))?;
-        let mut list = node.write().expect("adjacency lock poisoned");
+        let mut list = write_list(node);
         list.clear();
         list.extend_from_slice(neighbors);
         Ok(())
@@ -335,7 +347,7 @@ impl provider::NeighborAccessorMut for Neighbors<'_> {
             .adjacency
             .get(id as usize)
             .ok_or(ProviderError::OutOfRange(id))?;
-        let mut list = node.write().expect("adjacency lock poisoned");
+        let mut list = write_list(node);
         list.extend_from_slice(neighbors);
         Ok(())
     }
@@ -666,7 +678,7 @@ impl DiskAnnVectorIndex {
             out.extend_from_slice(&v.to_le_bytes());
         }
         for node in &store.adjacency {
-            let list = node.read().expect("adjacency lock poisoned");
+            let list = read_list(node);
             out.extend_from_slice(&(list.len() as u32).to_le_bytes());
             for n in list.iter() {
                 out.extend_from_slice(&n.to_le_bytes());
@@ -683,19 +695,26 @@ impl DiskAnnVectorIndex {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, Error> {
         let bad = |what: &str| Error::Integrity(format!("diskann index: {what}"));
         let mut pos = 0usize;
+        // Every read goes through the bounds-checked readers in `bytes`, so a
+        // declared length that does not fit — including one whose end would
+        // overflow — is "truncated", never a wrapped range or a panic.
         let take = |pos: &mut usize, n: usize, what: &str| -> Result<&[u8], Error> {
-            if *pos + n > bytes.len() {
-                return Err(bad(&format!("truncated in {what}")));
-            }
-            let s = &bytes[*pos..*pos + n];
+            let s = crate::bytes::slice_at(bytes, *pos, n)
+                .ok_or_else(|| bad(&format!("truncated in {what}")))?;
             *pos += n;
             Ok(s)
         };
         let u32_at = |pos: &mut usize, what: &str| -> Result<u32, Error> {
-            Ok(u32::from_le_bytes(take(pos, 4, what)?.try_into().unwrap()))
+            let v = crate::bytes::le_u32_at(bytes, *pos)
+                .ok_or_else(|| bad(&format!("truncated in {what}")))?;
+            *pos += 4;
+            Ok(v)
         };
-        let u64_at = |pos: &mut usize, what: &str| -> Result<u64, Error> {
-            Ok(u64::from_le_bytes(take(pos, 8, what)?.try_into().unwrap()))
+        let u64_at = |pos: &mut usize, what: &str| -> Result<usize, Error> {
+            let v = crate::bytes::le_u64_at(bytes, *pos)
+                .ok_or_else(|| bad(&format!("truncated in {what}")))?;
+            *pos += 8;
+            usize::try_from(v).map_err(|_| bad("declared size overflows"))
         };
 
         let format = u32_at(&mut pos, "header")?;
@@ -704,15 +723,15 @@ impl DiskAnnVectorIndex {
                 "diskann index format {format}, this reader supports 1"
             )));
         }
-        let dims = u64_at(&mut pos, "header")? as usize;
-        let count = u64_at(&mut pos, "header")? as usize;
+        let dims = u64_at(&mut pos, "header")?;
+        let count = u64_at(&mut pos, "header")?;
         if dims == 0 || count == 0 {
             return Err(bad("declares an empty index"));
         }
         let params = GraphParams {
             max_degree: u32_at(&mut pos, "params")?,
             l_build: u32_at(&mut pos, "params")?,
-            alpha: f32::from_le_bytes(take(&mut pos, 4, "params")?.try_into().unwrap()),
+            alpha: f32::from_bits(u32_at(&mut pos, "params")?),
             l_search: u32_at(&mut pos, "params")?,
         };
         if !params.alpha.is_finite() || params.alpha < 1.0 {
@@ -735,18 +754,16 @@ impl DiskAnnVectorIndex {
             .checked_mul(dims)
             .and_then(|n| n.checked_mul(4))
             .ok_or_else(|| bad("declared size overflows"))?;
-        let mut data = Vec::with_capacity(count * dims);
+        // Take the bytes FIRST and size the vectors from what is actually
+        // there: reserving `count * dims` floats before the bounds check let a
+        // lying header request an impossible allocation.
         let (quads, rest) = take(&mut pos, vec_bytes, "vectors")?.as_chunks::<4>();
         debug_assert!(rest.is_empty());
-        for c in quads {
-            data.push(f32::from_le_bytes(*c));
-        }
-        let mut start = Vec::with_capacity(dims);
+        let data: Vec<f32> = quads.iter().map(|c| f32::from_le_bytes(*c)).collect();
+        // `dims * 4 <= vec_bytes` (count >= 1), which the checked product fit.
         let (quads, rest) = take(&mut pos, dims * 4, "start point")?.as_chunks::<4>();
         debug_assert!(rest.is_empty());
-        for c in quads {
-            start.push(f32::from_le_bytes(*c));
-        }
+        let start: Vec<f32> = quads.iter().map(|c| f32::from_le_bytes(*c)).collect();
 
         let id_ceiling = count as u32; // valid ids: 0..=count (count == start)
         let mut adjacency = Vec::with_capacity(count + 1);
@@ -1104,5 +1121,42 @@ mod tests {
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].chunk_id, "chunk-0000");
         assert!(got[0].score < 1e-6);
+    }
+
+    /// A format-1 header declaring one chunk (`id`) of `dims` dimensions,
+    /// with valid graph parameters and nothing after the id table.
+    fn lying_header(dims: u64) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&dims.to_le_bytes());
+        bytes.extend_from_slice(&1u64.to_le_bytes());
+        for p in [1u32, 1] {
+            bytes.extend_from_slice(&p.to_le_bytes());
+        }
+        bytes.extend_from_slice(&1.0f32.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(b"id");
+        bytes
+    }
+
+    #[test]
+    fn a_header_that_declares_an_impossible_size_is_an_integrity_error() {
+        // P15/R32: the parser reserved `count * dims` floats BEFORE checking
+        // that the bytes held them (a capacity-overflow panic, or an abort on
+        // a merely enormous reservation), and `take` added `pos + n` unchecked.
+        // Both sizes pass the existing `checked_mul` guard.
+        for dims in [1u64 << 61, (u64::MAX - 3) / 4] {
+            match DiskAnnVectorIndex::from_bytes(&lying_header(dims)) {
+                Err(Error::Integrity(msg)) => assert!(msg.contains("vectors"), "{msg}"),
+                other => panic!("dims {dims} gave {other:?}"),
+            }
+        }
+        // Control: the same header with an honest, small size fails only at
+        // the (absent) vector bytes, in the same way.
+        match DiskAnnVectorIndex::from_bytes(&lying_header(4)) {
+            Err(Error::Integrity(msg)) => assert!(msg.contains("vectors"), "{msg}"),
+            other => panic!("honest header gave {other:?}"),
+        }
     }
 }
