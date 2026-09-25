@@ -9,6 +9,21 @@
 //! Without an argument the markdown goes to stdout. Output is byte-stable for
 //! the CI drift check (LF line endings, no BOM).
 
+// Production code returns typed errors instead of panicking; tests are exempt.
+// The policy, its two exemptions and the per-site record are in
+// server/docs/panic-boundaries.md (P15/R32).
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
 use prost::Message;
 use prost_types::field_descriptor_proto::{Label, Type};
 use prost_types::{
@@ -18,9 +33,21 @@ use prost_types::{
 use std::collections::HashMap;
 use std::fmt::Write as _;
 
-fn main() {
+fn main() -> std::process::ExitCode {
+    match run() {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(e) => {
+            // A non-zero exit is all the CI drift check needs; the message
+            // says which step failed without a panic backtrace.
+            eprintln!("gen-grpc-docs: {e}");
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+fn run() -> Result<(), String> {
     let set = FileDescriptorSet::decode(munarium_proto::FILE_DESCRIPTOR_SET)
-        .expect("embedded descriptor set decodes");
+        .map_err(|e| format!("embedded descriptor set does not decode: {e}"))?;
     let mut out = String::new();
     out.push_str("# MMP v1 gRPC reference\n\n");
     out.push_str(
@@ -48,10 +75,11 @@ fn main() {
 
     match std::env::args().nth(1) {
         Some(path) => {
-            std::fs::write(&path, out.as_bytes()).unwrap_or_else(|e| panic!("write {path}: {e}"))
+            std::fs::write(&path, out.as_bytes()).map_err(|e| format!("write {path}: {e}"))?
         }
         None => print!("{out}"),
     }
+    Ok(())
 }
 
 /// Comments by source-info path (e.g. [6, s, 2, m] = service s method m).
