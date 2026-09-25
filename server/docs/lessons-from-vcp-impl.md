@@ -94,7 +94,7 @@ Discovery and tests can proceed before these decisions; dependent behavior chang
 | D2: Is money a Server reporting feature? | Adopted for explicitly scoped PostgreSQL gateway attempts in P14; unrecorded work remains unknown | R16 immutable tariffs, reconciliation and coverage-qualified report; §4.4 |
 | D3: Which fault guarantees are supported? | P08 scope: kill/restart the application while PostgreSQL stays running. Database crashes and power loss need separate qualification; stronger recovery contracts remain open | R13 acceptance and required CI coverage |
 | D4: What does deletion mean? | Preserve current soft-removal and audit retention; design each stronger mode explicitly | R21 cleanup, tombstones, restore behavior |
-| D5: Are embedded crates supported public Rust APIs? | Preserve existing constructors and minimize source breakage while documenting the decision | R31 MSRV/support tier; API shape for R01/R07/R08 |
+| D5: Are embedded crates supported public Rust APIs? | Decided in P15 (2026-09-25): only `munarium-datastore`, as a supported embedded library. It has a declared surface under semantic versioning, is consumed as pinned source, and has minimum Rust 1.92 measured from an isolated consumer. Every other crate is internal ([embedded-support.md](embedded-support.md)) | R31 MSRV/support tier; API shape for R01/R07/R08 |
 | D6: What makes governance useful for a target workload? | Freeze task population, minimum useful effect, cost/latency constraints, and mandatory authorization checks before the final evaluation | R25 quality claims and any paid campaign |
 | D7: Who may trigger paid diagnostics and view credential aliases? | Keep diagnostics free of credential references; review a separately permissioned operator surface | R28 and health-probe admission policy |
 | D8: How is comparison policy selected and pinned? | Immutable profiles; legacy default; existing histories transition explicitly to a child revision | R08 writes, replay, exports, and mixed-version operation |
@@ -121,7 +121,7 @@ Each row is a coherent implementation slice; it may require more than one PR whe
 | P12 | Restricted-filesystem qualification | Existing datastore build/reopen fixtures | Medium | Supported Linux permissions documented; separate Windows results |
 | P13 | Frozen evaluation implemented; preregistered local D6 usefulness claim rejected, local latency budgets confirmed; §12.1 | P02/P06/P07; D6 | Medium–large | Offline/live pilots, validated graders, immutable manifests/results, retained rejection and calibrated local timing reports |
 | P14 | Optional monetary accounting | P05/P11; D2 | Medium–large | Unknown-price/usage semantics, immutable prices, checked arithmetic, coverage-qualified reports |
-| P15 | Library support and lint tightening | D5; measured audit | Medium | Isolated consumer builds/MSRV if adopted; targeted production failure handling |
+| P15 | Implemented: panic-boundary policy in every production crate (R32) and the datastore-only embedded tier (D5/R31); locally qualified, §13.4 | D5; measured audit | Medium | Isolated consumer builds/MSRV if adopted; targeted production failure handling |
 | P16 | Shared gate definitions and policy follow-ups | P02 stabilized; maintainer-owned workflow changes | Medium | Same required coverage before/after, automatic CI retained, checker self-tests |
 
 P02–P06 diagnostics and baseline slices are merged; broader P05 admission and diagnostic access still await D1/D7. P07 retrieval instrumentation and characterization merged in PR #51. P08 ledger characterization merged in PR #52 and broader characterization in PR #53; atomic runbook recovery and local qualification complete the supported D3 scope (§9.1). Keep the outstanding P01 late reconciliation, estimator revisions, and usage-quality reporting separate. Characterization establishes whether retrieval and recovery fixes are needed. A failing authorization, persistence, or compatibility reproduction discovered in any slice takes priority over optimization. Money and embedded support are conditional product work, not prerequisites for fixing shared-code defects.
@@ -1049,6 +1049,30 @@ Retain raw samples or an auditable summary sufficient to check percentile comput
 
 ### 13.1 P15: choose the embedded support contract — R31
 
+**Implemented:** D5 adopted a datastore-only tier.
+
+- **Declared surface.** `munarium-datastore`'s declared public surface follows
+  semantic versioning. It is named in the isolated consumer's `src/lib.rs`, so a
+  removal fails that build.
+- **API baseline.** `Error` is now `#[non_exhaustive]` and the crate is
+  `publish = false`.
+- **Minimum compiler.** `rust-version = "1.92"` was measured in four feature
+  sets from a consumer at `server/tests/embedded-datastore`. That consumer
+  resolves its own committed lock outside the workspace. The source and the
+  lexical sets need 1.88; `diskann` 0.56 needs 1.92, and `rust-version` cannot
+  vary by feature.
+- **No-default build.** It now compiles without warnings and, as before,
+  refuses to seal or open artifacts.
+- **Internal crates.** `munarium-core`, `munarium-access`, `munarium-store-mem`
+  and every other crate are documented as internal.
+- **Checks.** A runner (`tools/test-embedded-datastore.ps1`, also in
+  `gates.ps1`) and a mirrored `embedded-datastore` CI job check the closure,
+  `serde_json` features, pinned and minimum-compiler tests, and cross-resolution
+  artifact exchange.
+
+The record is in [embedded-support.md](embedded-support.md), and the
+qualification in §13.4. The requirements below remain the rationale.
+
 Core, datastore, and memory-store manifests inherit workspace metadata and do not declare an MSRV. Datastore already emphasizes independent usability and has optional engine/artifact features. A repository compiler pin is not evidence of the minimum supported compiler.
 
 If D5 adopts a supported embedded tier, document the selected crates, features, public API/versioning promise, required public fixtures/contracts, and dependency boundaries. Create an isolated consumer fixture outside the Server workspace with its own dependency resolution; a build inside the original workspace cannot demonstrate standalone selection. Test minimal/default/selected engine features, serializer feature unification, and the agreed dependency closure on the pinned compiler and an empirically selected MSRV. Set `rust-version` only after those builds establish it.
@@ -1056,6 +1080,23 @@ If D5 adopts a supported embedded tier, document the selected crates, features, 
 Preserve `new()`/`Default()` and legacy gate/provider seams introduced in earlier slices. Registry publication, a lower compiler requirement, and support for Windows AppContainer are separate decisions. If these crates remain internal, document that consumers pin source and that wire compatibility does not imply stable Rust APIs. Shared-code Server defects still need correction regardless of that policy.
 
 ### 13.2 Incremental panic-boundary audit — R32
+
+**Implemented:** all 146 production `unwrap`/`expect`/`panic!`/`unreachable!`
+sites were fixed by category: 103 in service and library crates, 43 in tooling.
+Every production crate root now denies those shortcuts outside test code. A
+`panic_policy` test keeps the attribute on every root. The register holds two
+reasoned `#[expect]` exemptions.
+
+The audit also fixed defects the lint cannot see:
+
+- two crafted-artifact panics in datastore parsers;
+- rate-budget and token-lifetime overflows;
+- a `verifyDataViews` false pass on a malformed 200 (dev-guide §13 entry 29).
+
+It replaced silent `null`/`{}` defaults with errors. Startup bind failures now
+exit 1 instead of panicking. A serving plane that fails after startup is
+recorded as open gap 30. See [panic-boundaries.md](panic-boundaries.md) and
+§13.4.
 
 Inventory production `unwrap`/`expect` sites by category: untrusted input, database/I/O, lock poisoning, date arithmetic, guarded invariants, and constant initialization. Existing chronology/date/regex handling and store lock/serialization paths need different remedies.
 
@@ -1124,7 +1165,7 @@ The database-dependent commands require a configured, isolated test database and
 
 For grader/checker changes, run `py -m unittest discover -s scripts -p "test_*.py"` from root, plus the new focused harness tests once implemented. For contract/SDK work, run the current publisher/re-vendoring, generation/drift, and per-language checks documented in contributor/client guidance. For migrations, qualify a fresh database and an upgrade of the preceding supported schema with realistic fictional data. Preserve checksum validation; never reset a database to conceal an upgrade defect.
 
-The detailed provider methods exist after PR #44. A `-Fault` tier, result-schema validator, or isolated consumer runner does not exist merely because this plan names it. Add exact commands to the relevant documentation when those slices land. No live provider, deployment, infrastructure, or paid test is required to validate this plan.
+The detailed provider methods exist after PR #44. A `-Fault` tier or result-schema validator does not exist merely because this plan names it. The isolated consumer runner exists since P15: `pwsh tools/test-embedded-datastore.ps1` from `server/` ([embedded-support.md](embedded-support.md)). Add exact commands to the relevant documentation when those slices land. No live provider, deployment, infrastructure, or paid test is required to validate this plan.
 
 ### 14.3 Acceptance and rollback checklist for each implementation slice
 
@@ -1170,8 +1211,8 @@ Rollback must be described at the level of state and semantics. Switching an eng
 | R28 | Safe permissioned diagnostic aliases after audience review | P05, §4.3; D7 |
 | R29 | Release input audit belongs to the release-owning workflow | Coordination only, §13.3 |
 | R30 | Paid campaign planning includes unresolved exposure | Coordination only, §13.3; no spending authorization |
-| R31 | Conditional supported embedded tier/MSRV/selection fixture | P15, §13.1; D5 |
-| R32 | Targeted production panic audit and incremental lint | P15, §13.2 |
+| R31 | Datastore-only embedded tier adopted: declared semver surface, MSRV 1.92, isolated consumer fixture and CI job | P15, §13.1 and §13.4; D5 |
+| R32 | Production panic audit complete; non-test panic lints enforced in every crate | P15, §13.2 and §13.4 |
 | R33 | Waivers remain known gaps with original outcomes retained | P02/P16, §2.2 and §13.3 |
 | R34 | Environment availability before dependent qualification | Coordination only, §13.3 |
 

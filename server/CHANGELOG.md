@@ -38,6 +38,16 @@ for registry availability, digests and public signing instructions.
 - Deny `unwrap`, `expect`, `panic!`, `unreachable!`, `todo!` and `unimplemented!` in
   production code across the workspace, with two reasoned exemptions. See
   [panic boundaries](docs/panic-boundaries.md).
+- Support `munarium-datastore` as an embedded Rust library, consumed as pinned source:
+  a declared public surface under semantic versioning, minimum supported Rust 1.92
+  (`rust-version`, measured in four feature sets), and an isolated consumer that CI
+  builds outside the Server workspace. Every other crate remains internal. See
+  [embedded library support](docs/embedded-support.md).
+- **Source change for Rust embedders:** `munarium_datastore::Error` is now
+  `#[non_exhaustive]`; a `match` on it outside the crate needs a wildcard arm. The
+  crate is marked `publish = false`.
+- A datastore build without the `lexical-tantivy` feature now compiles without warnings;
+  as before, it refuses to seal or open artifacts, which a new test pins.
 
 ## 1.2.1
 

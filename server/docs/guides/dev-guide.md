@@ -36,7 +36,9 @@ provide the current release installation instructions.
 What 1.0 commits to — the wire contract, the
 `MUNARIUM_*` configuration contract, and additive-only migrations — is stable
 under semantic versioning. Internal APIs and crate boundaries are not, and this
-guide says so where it teaches them.
+guide says so where it teaches them. The one exception is `munarium-datastore`:
+since P15 it is a supported embedded library whose declared Rust surface follows
+semantic versioning ([embedded-support.md](../embedded-support.md)).
 
 ## Preface
 
@@ -1156,6 +1158,9 @@ Python 3.13.12
 The tool versions and `channel = "stable"` snippet above describe the recorded
 run. Current Server builds use Rust **1.98.0**, selected by the checked-in
 `server/rust-toolchain.toml`; use that pin rather than the historical Rust floor.
+The pin is the tested toolchain, not a minimum supported version: only
+`munarium-datastore` declares one (`rust-version = "1.92"`, measured from its
+isolated consumer in [embedded-support.md](../embedded-support.md)).
 The full kit for a platform developer:
 
 - **Rust via rustup.** If the machine has nothing:
@@ -2658,6 +2663,7 @@ violation.
 | `munarium-access` holds the same purity rule as core | access header | **CI**: same grep, second crate (since 2026-08-17) |
 | `munarium-providers` never depends on a storage crate | this chapter; architecture.md | **CI**: inverted grep — no `munarium-store-*`/`munarium-retrieval-*` in its tree (since 2026-08-17) |
 | `munarium-api-types` depends on no server crate but `munarium-proto` (it ships in the public contract bundle) | api-types header; api-conv header | **CI**: inverted grep over its `--all-features` tree — the only `munarium-*` allowed are itself and `munarium-proto` (since 2026-09-02) |
+| `munarium-datastore` depends on no `munarium-core`, transport or database crate, and stays usable outside this workspace | datastore header; [embedded-support.md](../embedded-support.md) | **CI**: tree grep over its workspace graph, plus the `embedded-datastore` job, which checks a standalone consumer's closure, `serde_json` features and minimum compiler in four feature sets (since P15) |
 | Recorded source URIs never carry credentials; Azure URIs stay byte-identical | store-objects header | crate tests |
 | Production code never uses `unwrap` / `expect` / `panic!` / `unreachable!` / `todo!` / `unimplemented!` outside tests (two reasoned `#[expect]` exemptions) | every crate root; [panic-boundaries.md](../panic-boundaries.md) | **CI**: the existing clippy steps deny them per crate, and `panic_policy` fails `cargo test` if a crate root lacks the attribute (since P15) |
 
