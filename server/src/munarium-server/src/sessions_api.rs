@@ -31,6 +31,84 @@ type ApiResult<T> = std::result::Result<T, ApiError>;
 /// 1,500-char chunks — a `topK: 20` runbook should size its own.
 const CONTEXT_CHAR_BUDGET: usize = 16_000;
 
+struct CompletedTurnAnswer {
+    response: dto::CompleteResponse,
+    budget: u32,
+    attempt: u32,
+    input_tokens: u64,
+    output_tokens: u64,
+}
+
+fn completion_truncated(response: &dto::CompleteResponse) -> Result<bool> {
+    match response.stop_reason.as_str() {
+        "max_tokens" | "length" => Ok(true),
+        "stop" | "end_turn" | "stop_sequence" if !response.text.trim().is_empty() => Ok(false),
+        "refusal" | "content_filter" => Err(KernelError::Provider(
+            "completion refused by provider".into(),
+        )),
+        "tool_use" | "tool_calls" | "pause_turn" => Err(KernelError::Provider(
+            "completion requires unsupported continuation".into(),
+        )),
+        _ => Err(KernelError::Provider(
+            "completion returned empty or malformed output".into(),
+        )),
+    }
+}
+
+/// The gateway settles every response before this loop decides whether another
+/// call is warranted. Empty text alone never authorizes a larger paid request.
+async fn complete_turn_answer<F, Fut>(
+    complete: F,
+    prompt: &str,
+    base_budget: u32,
+    progress: &Option<TurnProgressTx>,
+) -> Result<CompletedTurnAnswer>
+where
+    F: Fn(String, u32) -> Fut,
+    Fut: std::future::Future<Output = Result<dto::CompleteResponse>>,
+{
+    let mut budget = base_budget;
+    let mut input_tokens = 0u64;
+    let mut output_tokens = 0u64;
+    for attempt in 0..=1 {
+        let response = complete(prompt.to_owned(), budget).await?;
+        input_tokens = input_tokens
+            .checked_add(response.input_tokens)
+            .ok_or_else(|| KernelError::Provider("completion usage overflow".into()))?;
+        output_tokens = output_tokens
+            .checked_add(response.output_tokens)
+            .ok_or_else(|| KernelError::Provider("completion usage overflow".into()))?;
+        emit(
+            progress,
+            dto::TurnProgressEvent::Completion {
+                attempt,
+                provider: response.provider.clone(),
+                model: response.model.clone(),
+                input_tokens: response.input_tokens,
+                output_tokens: response.output_tokens,
+            },
+        );
+        if !completion_truncated(&response)? {
+            return Ok(CompletedTurnAnswer {
+                response,
+                budget,
+                attempt,
+                input_tokens,
+                output_tokens,
+            });
+        }
+        if attempt == 1 {
+            return Err(KernelError::Provider(
+                "completion token budget exhausted after bounded retry".into(),
+            ));
+        }
+        budget = base_budget.checked_mul(4).ok_or_else(|| {
+            KernelError::InvalidInput("completion retry token ceiling exceeds u32".into())
+        })?;
+    }
+    Err(KernelError::Provider("completion did not finish".into()))
+}
+
 // The per-turn completion ceiling lives in `max_tokens_api` since 2026-09-02
 // (`MaxTokensBudgets::turn_completion`: built-in 2,048,
 // `MUNARIUM_MAX_TOKENS_TURN_COMPLETION`, or the tenant's `/v1/max-tokens`
@@ -1223,53 +1301,12 @@ pub async fn op_turn(
                     .turn_completion
             }
         };
-        let mut budget = base_budget;
-        let mut completion_attempt = 0;
-        let mut resp = complete(prompt.clone(), budget).await?;
-        let mut total_in = resp.input_tokens;
-        let mut total_out = resp.output_tokens;
-        emit(
-            &progress,
-            dto::TurnProgressEvent::Completion {
-                attempt: completion_attempt,
-                provider: resp.provider.clone(),
-                model: resp.model.clone(),
-                input_tokens: resp.input_tokens,
-                output_tokens: resp.output_tokens,
-            },
-        );
-
-        // Truncation-aware retry (the stop-reason lesson of §17 lesson 1,
-        // server-side). Reasoning models — gpt-5.4,
-        // z-ai/glm-5.2 — spend hidden reasoning tokens from the completion
-        // budget, so a turn can exhaust it before ANY visible text (empty
-        // answer under the model badge) or mid-answer. The adapters pass the
-        // provider's stop reason through verbatim: "max_tokens" (anthropic) /
-        // "length" (openai dialect). Pay for exactly ONE retry at 4x budget;
-        // max_tokens is a ceiling, not spend, so the retry costs only what
-        // the model actually generates.
-        let truncated = matches!(resp.stop_reason.as_str(), "max_tokens" | "length")
-            || resp.text.trim().is_empty();
-        if truncated {
-            budget = base_budget.checked_mul(4).ok_or_else(|| {
-                KernelError::InvalidInput("completion retry token ceiling exceeds u32".into())
-            })?;
-            let retry = complete(prompt.clone(), budget).await?;
-            completion_attempt += 1;
-            total_in += retry.input_tokens;
-            total_out += retry.output_tokens;
-            emit(
-                &progress,
-                dto::TurnProgressEvent::Completion {
-                    attempt: completion_attempt,
-                    provider: retry.provider.clone(),
-                    model: retry.model.clone(),
-                    input_tokens: retry.input_tokens,
-                    output_tokens: retry.output_tokens,
-                },
-            );
-            resp = retry;
-        }
+        let completed = complete_turn_answer(&complete, &prompt, base_budget, &progress).await?;
+        let budget = completed.budget;
+        let mut completion_attempt = completed.attempt;
+        let mut total_in = completed.input_tokens;
+        let mut total_out = completed.output_tokens;
+        let mut resp = completed.response;
 
         // Deterministic verification + corrective retries (the measured
         // conformance_retry shape — dev-guide §13 entry 10). Pure
@@ -1394,9 +1431,13 @@ pub async fn op_turn(
                         output_tokens: retry.output_tokens,
                     },
                 );
-                resp.text = retry.text;
-                resp.provider = retry.provider;
-                resp.model = retry.model;
+                if completion_truncated(&retry)? {
+                    return Err(KernelError::Provider(
+                        "verification completion token budget exhausted".into(),
+                    )
+                    .into());
+                }
+                resp = retry;
                 violations = run_checks(&resp.text);
                 emit(
                     &progress,
@@ -1422,6 +1463,7 @@ pub async fn op_turn(
             "resolved": resolved.audit_json(),
             "provider": resp.provider,
             "model": resp.model,
+            "stop_reason": resp.stop_reason,
             "input_tokens": total_in,
             "output_tokens": total_out,
             "text": resp.text,

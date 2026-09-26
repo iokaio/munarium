@@ -97,6 +97,46 @@ an invalid response authoritative. Older binaries ignore this additive policy,
 so activate it only after all replicas have upgraded and retain a compatible
 binary if relying on refusal behavior during rollback.
 
+### Claude effort and thinking
+
+On a Server containing the Claude policy support, `spec.anthropic.models`
+selects controls by **exact resolved model ID**, including an explicit dated
+snapshot when used. The qualified families are Sonnet 5 and Fable 5.1:
+
+```yaml
+anthropic:
+  models:
+    claude-sonnet-5: { effort: high, thinking: adaptive }
+    claude-fable-5-1: { effort: high }
+```
+
+Effort accepts `low`, `medium`, `high`, `xhigh` and `max`. Thinking accepts
+`adaptive` or `disabled`. Fable 5.1 cannot disable thinking. Unknown models,
+fields, values and invalid
+combinations are rejected when applying the configuration. These controls are
+Anthropic-only; Haiku and other providers retain their existing request shape.
+An omitted model entry or setting retains the provider's default. A model change
+requires reviewing its exact entry; settings do not follow tier names implicitly.
+
+Server omits `temperature` for these two model families, including dated
+snapshots, because they do not support non-default sampling. This also covers
+internal tasks that request temperature zero. Other model families retain the
+requested temperature. Effort and structured-output `format` share
+`output_config` without replacing one another, and both participate in the
+request hash. Thinking text is not exposed as answer text.
+
+These controls never increase `max_tokens`. The gateway resolves the ceiling
+before budget admission and passes it unchanged to the adapter. Both thinking
+and visible text consume that ceiling; lower effort is a behavioral preference,
+not a token guarantee. Use the existing [token budgets](../tokenbudgets.md) to
+size calls and compare quality, truncation rate, latency and usage before changing
+defaults. The example pins current high effort; it does not assert that this is
+optimal for a particular corpus. See the provider's
+[effort documentation](https://platform.claude.com/docs/en/build-with-claude/effort)
+and [Sonnet migration guide](https://platform.claude.com/docs/en/models/sonnet-5/migration-guide).
+Older Server binaries ignore this additive configuration; upgrade all replicas
+before relying on it. This change does not qualify a live model or a deployment.
+
 The reserved provider selector `default` tries Anthropic, then OpenAI, then
 OpenRouter, choosing the first family with a resolvable credential. Applied
 tenant configurations take precedence over synthesized defaults within a family.

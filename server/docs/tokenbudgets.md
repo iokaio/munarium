@@ -36,6 +36,21 @@ cannot set a value a runbook could not; the rest accept 1..=65,536.
 
 ## Precedence
 
+Session completion enlarges its ceiling once, by four, only for a provider
+`max_tokens` or `length` stop reason. Empty output with another stop reason,
+refusal, unsupported tool/continuation output, or malformed output fails without
+an enlargement. If the enlarged call still exhausts its allowance, the turn fails
+with a provider error instead of returning a blank or incomplete answer as a
+successful completion. Corrective verification calls also reject incomplete
+output and do not trigger another enlargement. Every dispatched attempt goes
+through admission and settlement; a denied retry retains the first call's usage.
+
+Claude effort/thinking can be pinned per model in the
+[provider configuration](guides/managing-key-and-secrets.md#claude-effort-and-thinking).
+These settings do not alter the ceilings or spending caps. Prompt wording and
+effort changes need model evaluation; an offline protocol test cannot establish
+answer quality or an appropriate production allowance.
+
 At the moment of a call, the first of these that applies wins:
 
 1. **The runbook's own declaration**, where the grammar has one

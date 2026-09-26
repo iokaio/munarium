@@ -198,6 +198,14 @@ The existing `settle` operation is intentionally a no-op after a reservation lea
 
 **Implemented slice:** [dispatch inventory](tokenbudgets.md#dispatch-accounting-inventory), sequential session completion ordinals, checked truncation retry ceiling, and scripted retry/cancellation tests. D1 now adds an opt-in config-wide physical-attempt cap. It reuses atomic memory/PostgreSQL reservations, retains unresolved retry liability, and exposes embedding usage through budget evidence. Diagnostic audience changes remain separate under D7.
 
+The Claude follow-up adds explicit per-model effort/thinking controls, omits
+unsupported sampling parameters for Sonnet 5/Fable 5.1, and retries session
+completion only on an exhaustion stop reason. Empty/refused/malformed responses
+do not authorize extra spend. A second exhaustion fails, and verification retains
+the latest stop reason. Loopback tests exercise the production retry helper through
+the gateway and memory budget ledger. Live calibration remains separate; see
+[Claude controls](guides/managing-key-and-secrets.md#claude-effort-and-thinking).
+
 **Change locations:** `providers_api.rs::complete_with_schema`, `models.rs`, `sessions_api.rs`, `sessions_model_tests.rs`, `runbooks_api.rs`, `authoring_api.rs`, `evidence_hierarchy.rs`, `answers_api.rs`, `vocabulary_api.rs`, and the existing budget-store implementations.
 
 | Dispatch path | Current relevant behavior | Required plan |

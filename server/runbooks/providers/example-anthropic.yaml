@@ -25,6 +25,12 @@ kind: ProviderConfig
 metadata: { name: example-anthropic }
 spec:
   provider: anthropic
+  # Pin current effort; calibrate quality and token use before lowering it.
+  # Requires Server Claude policy support; older binaries ignore this block.
+  anthropic:
+    models:
+      claude-sonnet-5: { effort: high, thinking: adaptive }
+      claude-fable-5-1: { effort: high }
   credentialRef: { env: MUNARIUM_SECRET_ANTHROPIC }
   budgets:
     rpm: 30

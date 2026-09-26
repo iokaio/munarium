@@ -19,7 +19,7 @@
 #   mmctl run threat-intelligence --watch
 apiVersion: munarium.ioka.io/v1
 kind: Runbook
-metadata: { name: threat-intelligence, version: 2 }
+metadata: { name: threat-intelligence, version: 3 }
 spec:
   # Where this runbook's documents live. The blob path IS the ingest
   # filename, so every collection binding below sits under this prefix —
@@ -106,7 +106,7 @@ spec:
       - ALIASES: vendors name the same adversary differently. Reconcile them
         onto one actor and say which vendor designations you merged. Do NOT
         merge two actors on a shared tool, a shared loader or a shared
-        target — that is the over-merge this corpus is built to catch.
+        target; distinct actors can use the same tools and attack the same targets.
       - Write indicators in ONE canonical form (fanged URLs and domains,
         uppercase CVE ids, lowercase hashes) so the same indicator from two
         vendors reads as one.
