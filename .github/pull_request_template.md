@@ -2,6 +2,21 @@
 
 <!-- One paragraph. Link the issue if there is one. -->
 
+## Behavior and review scope
+
+<!-- Describe the observable change, its regression and an adjacent valid case.
+     Above 500 added + deleted non-generated lines, split by behavior or explain
+     why one review is coherent. Report excluded generated files and their checks.
+     Size triggers a review decision; it is not a correctness or merge gate. -->
+
+## Validation evidence and limitations
+
+<!-- Name commands, results, source identity, and unavailable coverage. Explain
+     what each checker proves and cannot prove; transport success alone does not
+     establish semantic success. Keep automatic CI enabled. A waiver must link a
+     numbered known gap with the original outcome, owner, reason and revisit
+     condition; it does not turn failure or missing evidence into a passed check. -->
+
 ## Checks
 
 - [ ] Every commit is signed off (`git commit -s`; the DCO, see CONTRIBUTING.md).

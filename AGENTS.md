@@ -191,6 +191,21 @@ registries. Link new pages from the appropriate README index and check relative 
 State observed results and limitations honestly; a heuristic grade is not proof of
 semantic correctness, and a local run is not evidence that remote CI passed.
 
+Fix the cause of a failing check; preserve meaningful assertions and verify the
+answer's semantics as well as transport success. Document each checker's scope,
+limitations and negative controls. Never weaken tests or relabel unavailable
+coverage to obtain a pass. Automatic CI provides independent, repeatable review
+evidence and remains enabled even when local checks pass.
+
+Keep PRs bounded by behavior. Above 500 added plus deleted non-generated lines,
+split the work or explain why one review is coherent in the PR template. Identify
+excluded generated artifacts and their validation. Size is a review trigger,
+not evidence of quality. A waiver links a numbered component known gap retaining
+the original outcome, owner, rationale and revisit condition; it cannot rewrite
+the receipt. Before scheduling qualification, record each environment's owner,
+availability check, cost authority and expiry constraints. Release input audits
+belong to the release-owning workflow; planning does not authorize paid runs.
+
 ## Commits, PRs, and identity: no agent signatures
 
 - Do not sign work as an agent, model, assistant, or tool. Do not add agent

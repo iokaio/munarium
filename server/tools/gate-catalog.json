@@ -1,0 +1,490 @@
+{
+  "schema_version": 1,
+  "steps": [
+    {
+      "id": "runner.regression",
+      "commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tools",
+          "-p",
+          "test_validation.py"
+        ]
+      ],
+      "features": "default",
+      "depends_on": [],
+      "cwd": "server",
+      "required": true,
+      "prerequisites": [
+        "py",
+        "pwsh"
+      ],
+      "adapters": {
+        "local": "receipt-command-arrays",
+        "ci": "python-command-arrays"
+      }
+    },
+    {
+      "id": "catalog.regression",
+      "commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tools",
+          "-p",
+          "test_gate_catalog.py"
+        ]
+      ],
+      "features": "default",
+      "depends_on": [],
+      "cwd": "server",
+      "required": true,
+      "prerequisites": [
+        "py"
+      ],
+      "adapters": {
+        "local": "receipt-command-arrays",
+        "ci": "python-command-arrays"
+      }
+    },
+    {
+      "id": "catalog.equivalence",
+      "commands": [
+        [
+          "{python}",
+          "tools/check_gate_equivalence.py"
+        ]
+      ],
+      "features": "default",
+      "depends_on": [],
+      "cwd": "server",
+      "required": true,
+      "prerequisites": [
+        "py"
+      ],
+      "adapters": {
+        "local": "receipt-command-arrays",
+        "ci": "python-command-arrays"
+      }
+    },
+    {
+      "id": "format",
+      "commands": [
+        [
+          "cargo",
+          "fmt",
+          "--all",
+          "--check"
+        ]
+      ],
+      "features": "default",
+      "depends_on": [],
+      "cwd": "server",
+      "required": true,
+      "prerequisites": [
+        "cargo"
+      ],
+      "adapters": {
+        "local": "receipt-command-arrays",
+        "ci": "python-command-arrays"
+      }
+    },
+    {
+      "id": "clippy.default",
+      "commands": [
+        [
+          "cargo",
+          "clippy",
+          "--workspace",
+          "--all-targets",
+          "--",
+          "-D",
+          "warnings"
+        ]
+      ],
+      "features": "default",
+      "depends_on": [],
+      "cwd": "server",
+      "required": true,
+      "prerequisites": [
+        "cargo"
+      ],
+      "adapters": {
+        "local": "receipt-command-arrays",
+        "ci": "python-command-arrays"
+      }
+    },
+    {
+      "id": "clippy.all-features",
+      "commands": [
+        [
+          "cargo",
+          "clippy",
+          "--workspace",
+          "--all-features",
+          "--all-targets",
+          "--",
+          "-D",
+          "warnings"
+        ]
+      ],
+      "features": "all",
+      "depends_on": [],
+      "cwd": "server",
+      "required": true,
+      "prerequisites": [
+        "cargo"
+      ],
+      "adapters": {
+        "local": "receipt-command-arrays",
+        "ci": "python-command-arrays"
+      }
+    },
+    {
+      "id": "clippy.diskann",
+      "commands": [
+        [
+          "cargo",
+          "clippy",
+          "-p",
+          "munarium-datastore",
+          "-p",
+          "munarium-retrieval",
+          "-p",
+          "munarium-server",
+          "--features",
+          "vector-diskann",
+          "--all-targets",
+          "--",
+          "-D",
+          "warnings"
+        ]
+      ],
+      "features": "vector-diskann",
+      "depends_on": [],
+      "cwd": "server",
+      "required": true,
+      "prerequisites": [
+        "cargo"
+      ],
+      "adapters": {
+        "local": "receipt-command-arrays",
+        "ci": "python-command-arrays"
+      }
+    },
+    {
+      "id": "contract.mmp",
+      "commands": [
+        [
+          "{python}",
+          "contract/mmp/publish.py",
+          "--self-test"
+        ]
+      ],
+      "features": "default",
+      "depends_on": [],
+      "cwd": "server",
+      "required": true,
+      "prerequisites": [
+        "py"
+      ],
+      "adapters": {
+        "local": "receipt-command-arrays",
+        "ci": "python-command-arrays"
+      }
+    },
+    {
+      "id": "contract.matrix",
+      "commands": [
+        [
+          "{python}",
+          "../matrix/contract/publish.py",
+          "--self-test"
+        ],
+        [
+          "{python}",
+          "../matrix/contract/publish.py",
+          "--check",
+          "contract/matrix"
+        ]
+      ],
+      "features": "default",
+      "depends_on": [],
+      "cwd": "server",
+      "required": true,
+      "prerequisites": [
+        "py"
+      ],
+      "adapters": {
+        "local": "receipt-command-arrays",
+        "ci": "python-command-arrays"
+      }
+    },
+    {
+      "id": "license",
+      "commands": [
+        [
+          "{python}",
+          "check_license.py"
+        ]
+      ],
+      "features": "default",
+      "depends_on": [],
+      "cwd": "server",
+      "required": true,
+      "prerequisites": [
+        "py"
+      ],
+      "adapters": {
+        "local": "receipt-command-arrays",
+        "ci": "python-command-arrays"
+      }
+    },
+    {
+      "id": "boundaries.crates",
+      "commands": [
+        [
+          "{python}",
+          "tools/gate_catalog.py",
+          "--boundary",
+          "crates"
+        ]
+      ],
+      "features": "api-types:all;others:default",
+      "depends_on": [],
+      "cwd": "server",
+      "required": true,
+      "prerequisites": [
+        "py",
+        "cargo"
+      ],
+      "adapters": {
+        "local": "receipt-command-arrays",
+        "ci": "python-command-arrays"
+      }
+    },
+    {
+      "id": "boundaries.datastore",
+      "commands": [
+        [
+          "{python}",
+          "tools/gate_catalog.py",
+          "--boundary",
+          "datastore"
+        ]
+      ],
+      "features": "default",
+      "depends_on": [],
+      "cwd": "server",
+      "required": true,
+      "prerequisites": [
+        "py",
+        "cargo"
+      ],
+      "adapters": {
+        "local": "receipt-command-arrays",
+        "ci": "python-command-arrays"
+      }
+    },
+    {
+      "id": "boundaries.retrieval",
+      "commands": [
+        [
+          "{python}",
+          "tools/gate_catalog.py",
+          "--boundary",
+          "retrieval"
+        ]
+      ],
+      "features": "default",
+      "depends_on": [],
+      "cwd": "server",
+      "required": true,
+      "prerequisites": [
+        "py"
+      ],
+      "adapters": {
+        "local": "receipt-command-arrays",
+        "ci": "python-command-arrays"
+      }
+    },
+    {
+      "id": "migrations.additive",
+      "commands": [
+        [
+          "{python}",
+          "tools/gate_catalog.py",
+          "--boundary",
+          "migrations"
+        ]
+      ],
+      "features": "default",
+      "depends_on": [],
+      "cwd": "server",
+      "required": true,
+      "prerequisites": [
+        "py"
+      ],
+      "adapters": {
+        "local": "receipt-command-arrays",
+        "ci": "python-command-arrays"
+      }
+    },
+    {
+      "id": "dependencies.deny",
+      "commands": [
+        [
+          "cargo",
+          "deny",
+          "--all-features",
+          "check"
+        ]
+      ],
+      "features": "all",
+      "depends_on": [],
+      "cwd": "server",
+      "required": true,
+      "prerequisites": [
+        "cargo",
+        "cargo-deny"
+      ],
+      "adapters": {
+        "local": "receipt-command-arrays",
+        "ci": "python-command-arrays"
+      }
+    },
+    {
+      "id": "tests.workspace",
+      "commands": [
+        [
+          "cargo",
+          "test",
+          "--workspace"
+        ]
+      ],
+      "cwd": "server",
+      "required": true,
+      "features": "default",
+      "depends_on": [],
+      "prerequisites": [
+        "cargo"
+      ],
+      "adapters": {
+        "local": "receipt-command-arrays",
+        "ci": "python-command-arrays"
+      }
+    },
+    {
+      "id": "tests.diskann",
+      "commands": [
+        [
+          "cargo",
+          "test",
+          "-p",
+          "munarium-datastore",
+          "-p",
+          "munarium-retrieval",
+          "--features",
+          "vector-diskann"
+        ]
+      ],
+      "cwd": "server",
+      "required": true,
+      "features": "vector-diskann",
+      "depends_on": [],
+      "prerequisites": [
+        "cargo"
+      ],
+      "adapters": {
+        "local": "receipt-command-arrays",
+        "ci": "python-command-arrays"
+      }
+    },
+    {
+      "id": "conformance.memory",
+      "commands": [
+        [
+          "cargo",
+          "run",
+          "-p",
+          "mmp-conformance",
+          "--",
+          "--in-process"
+        ]
+      ],
+      "cwd": "server",
+      "required": true,
+      "features": "default",
+      "depends_on": [],
+      "prerequisites": [
+        "cargo"
+      ],
+      "adapters": {
+        "local": "receipt-command-arrays",
+        "ci": "python-command-arrays"
+      }
+    }
+  ],
+  "boundaries": {
+    "munarium-core": {
+      "features": [],
+      "banned": [
+        "sqlx",
+        "axum",
+        "tonic",
+        "reqwest",
+        "utoipa"
+      ]
+    },
+    "munarium-access": {
+      "features": [],
+      "banned": [
+        "sqlx",
+        "axum",
+        "tonic",
+        "reqwest",
+        "utoipa"
+      ]
+    },
+    "munarium-providers": {
+      "features": [],
+      "banned": [
+        "munarium-store-pg",
+        "munarium-store-mem",
+        "munarium-retrieval-pg"
+      ]
+    },
+    "munarium-api-types": {
+      "features": [
+        "--all-features"
+      ],
+      "banned": [],
+      "workspace_allow": [
+        "munarium-api-types",
+        "munarium-proto"
+      ]
+    },
+    "munarium-datastore": {
+      "features": [],
+      "banned": [
+        "sqlx",
+        "axum",
+        "tonic",
+        "reqwest",
+        "utoipa",
+        "munarium-core",
+        "munarium-store-pg",
+        "munarium-retrieval-pg",
+        "munarium-server",
+        "munarium-runbooks"
+      ]
+    }
+  }
+}

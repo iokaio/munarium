@@ -1,0 +1,570 @@
+{
+  "schema_version": 1,
+  "source_commit": "5fbc92958552c21612f60b6236e6dbc8b8a81ef4",
+  "preserved_sha256": "c8cfec5ff1d9755e08084df5917bf161328e6ada29b3ab59bc9d06493ec0d1c9",
+  "steps": {
+    "fmt": {
+      "ids": [
+        "format"
+      ],
+      "before": "      - name: fmt\n        run: cargo fmt --all --check\n"
+    },
+    "clippy": {
+      "ids": [
+        "clippy.default"
+      ],
+      "before": "      - name: clippy\n        run: cargo clippy --workspace --all-targets -- -D warnings\n\n      # Every optional feature, compiled. The `ocr` feature carried an unused\n      # import and an orphaned function for exactly as long as nothing built\n      # it: the default graph does not, and the only other --all-features in\n      # this file are dependency-graph queries that never compile. Matrix had\n      # the same hole and it hid 22 errors.\n"
+    },
+    "cargo clippy (all features, all targets)": {
+      "ids": [
+        "clippy.all-features"
+      ],
+      "before": "      - name: cargo clippy (all features, all targets)\n        run: cargo clippy --workspace --all-features --all-targets -- -D warnings\n"
+    },
+    "test (includes pg integration via MUNARIUM_TEST_DATABASE_URL)": {
+      "ids": [
+        "tests.workspace"
+      ],
+      "before": "      - name: test (includes pg integration via MUNARIUM_TEST_DATABASE_URL)\n        run: cargo test --workspace\n"
+    },
+    "diskann feature (clippy + tests; off by default, so the workspace run never sees it)": {
+      "ids": [
+        "clippy.diskann",
+        "tests.diskann"
+      ],
+      "before": "      - name: diskann feature (clippy + tests; off by default, so the workspace run never sees it)\n        run: |\n          cargo clippy -p munarium-datastore -p munarium-retrieval -p munarium-server --features vector-diskann --all-targets -- -D warnings\n          cargo test -p munarium-datastore -p munarium-retrieval --features vector-diskann\n"
+    },
+    "contract bundle is reproducible": {
+      "ids": [
+        "contract.mmp"
+      ],
+      "before": "      - name: contract bundle is reproducible\n        # Mirrored in server/gates.ps1 'contract bundle self-test' \u2014 change\n        # both in the same commit. The public MMP contract bundle (contract/mmp/)\n        # is cut by a publisher; two cuts of this tree must be byte-identical and\n        # every file must match the lock, or a vendored copy could never be\n        # drift-checked against the tree.\n        run: python3 contract/mmp/publish.py --self-test\n"
+    },
+    "matrix contract drift check": {
+      "ids": [
+        "contract.matrix"
+      ],
+      "before": "      - name: matrix contract drift check\n        # server/contract/matrix/ is cut from matrix/contract/ by\n        # matrix/contract/publish.py, which writes contract.lock (a sha256 per\n        # file, UTF-8/LF/no BOM). Ground rule 1 still holds: a copy plus\n        # checks, no crate edge. Two proofs, and both run here: the copy must\n        # equal a fresh cut (--check,\n        # the lock's source commit ignored), and munarium-api-types'\n        # matrix_contract test verifies every vendored file against the lock\n        # independently. Mirrored in server/gates.ps1 and\n        # matrix-ci.yml -- change all three in the same commit.\n        working-directory: .\n        run: |\n          if [ ! -d server/contract/matrix ]; then\n            echo \"::error::server/contract/matrix is missing; cut it with: py matrix/contract/publish.py --out server/contract/matrix\"\n            exit 1\n          fi\n          python3 matrix/contract/publish.py --self-test\n          python3 matrix/contract/publish.py --check server/contract/matrix\n          echo \"contract version: $(cat matrix/contract/VERSION)\"\n"
+    },
+    "license gate (manifests, SPDX headers, license texts)": {
+      "ids": [
+        "license"
+      ],
+      "before": "      - name: license gate (manifests, SPDX headers, license texts)\n        # The licence gate: the workspace and every crate declare Apache-2.0,\n        # LICENSE / NOTICE / THIRD_PARTY_NOTICES.md exist, and every source file\n        # that can carry an SPDX line does. check_license.py's docstring is the\n        # rule list; --stamp adds a missing header. Mirrored in server/gates.ps1.\n        run: python3 check_license.py\n"
+    },
+    "crate boundary check": {
+      "ids": [
+        "boundaries.crates"
+      ],
+      "before": "      - name: crate boundary check\n        # Mirrored in server/gates.ps1 'crate boundary check' \u2014 change\n        # both in the same commit. Three machine-checked boundaries (dev-guide\n        # \u00a74 boundary table):\n        #   munarium-core / munarium-access: never depend on sqlx/axum/tonic/reqwest/utoipa\n        #   munarium-providers: never depends on a storage crate\n        run: |\n          for crate in munarium-core munarium-access; do\n            deps=$(cargo tree -p \"$crate\" -e normal --prefix none | awk '{print $1}' | sort -u)\n            for banned in sqlx axum tonic reqwest utoipa; do\n              if echo \"$deps\" | grep -qx \"$banned\"; then\n                echo \"BOUNDARY VIOLATION: $crate depends on $banned\"; exit 1\n              fi\n            done\n          done\n          deps=$(cargo tree -p munarium-providers -e normal --prefix none | awk '{print $1}' | sort -u)\n          for banned in munarium-store-pg munarium-store-mem munarium-retrieval-pg; do\n            if echo \"$deps\" | grep -qx \"$banned\"; then\n              echo \"BOUNDARY VIOLATION: munarium-providers depends on $banned\"; exit 1\n            fi\n          done\n          # munarium-api-types ships in the public contract bundle: it may depend on munarium-proto\n          # and on nothing else of the workspace. The core <-> DTO conversions live\n          # in munarium-api-conv.\n          deps=$(cargo tree -p munarium-api-types --all-features -e normal --prefix none | awk '{print $1}' | sort -u)\n          strays=$(echo \"$deps\" | grep -E '^munarium-' | grep -vx -E 'munarium-api-types|munarium-proto' || true)\n          if [ -n \"$strays\" ]; then\n            echo \"BOUNDARY VIOLATION: munarium-api-types depends on a server crate:\"; echo \"$strays\"; exit 1\n          fi\n"
+    },
+    "retrieval boundary check": {
+      "ids": [
+        "boundaries.retrieval"
+      ],
+      "before": "      - name: retrieval boundary check\n        # Mirrored in server/gates.ps1 -- change both in the same commit.\n        #\n        # Cargo has no notion of \"a dependency only the composition root may\n        # name\", so the retrieval boundary is enforced at source level:\n        # munarium-server may reference munarium_retrieval_pg ONLY in state.rs,\n        # where AppState constructs PgRetrieval and PgSourceStore. Without this\n        # the extraction silently rots -- one `use munarium_retrieval_pg::` in\n        # a new handler and PostgreSQL is the real interface again.\n        run: |\n          strays=$(grep -rln \"munarium_retrieval_pg\" src/munarium-server/src/                    | grep -v \"^src/munarium-server/src/state.rs$\" || true)\n          if [ -n \"$strays\" ]; then\n            echo \"::error::munarium-server names munarium_retrieval_pg outside state.rs:\"\n            echo \"$strays\"\n            echo \"use munarium_retrieval::Retrieval instead; state.rs is the composition root.\"\n            exit 1\n          fi\n"
+    },
+    "datastore boundary check": {
+      "ids": [
+        "boundaries.datastore"
+      ],
+      "before": "      - name: datastore boundary check\n        # Mirrored in server/gates.ps1 -- change both in the same commit.\n        #\n        # munarium-datastore must stay independently usable: no Axum, tonic,\n        # SQLx, PostgreSQL, server config, auth or runbooks in its dependency\n        # graph, and no munarium-core either. The premise is a crate\n        # that can be lifted out of this workspace; a boundary nothing enforces\n        # lasts until the first convenient import.\n        run: |\n          deps=$(cargo tree -p munarium-datastore -e normal --prefix none | awk '{print $1}' | sort -u)\n          rc=0\n          for banned in sqlx axum tonic reqwest utoipa munarium-core munarium-store-pg                         munarium-retrieval-pg munarium-server munarium-runbooks; do\n            if echo \"$deps\" | grep -qx \"$banned\"; then\n              echo \"::error::munarium-datastore depends on $banned\"; rc=1\n            fi\n          done\n          exit $rc\n"
+    },
+    "additive-only migrations check": {
+      "ids": [
+        "migrations.additive"
+      ],
+      "before": "      - name: additive-only migrations check\n        # no destructive DDL may ever enter the migration set\n        run: |\n          if grep -riE '^\\s*(drop\\s+(table|column)|alter\\s+table\\s+\\S+\\s+drop)' src/munarium-store-pg/migrations/ 2>/dev/null; then\n            echo \"DESTRUCTIVE DDL in migrations\"; exit 1\n          fi\n"
+    }
+  },
+  "catalog": {
+    "schema_version": 1,
+    "steps": [
+      {
+        "id": "runner.regression",
+        "commands": [
+          [
+            "{python}",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tools",
+            "-p",
+            "test_validation.py"
+          ]
+        ],
+        "features": "default",
+        "depends_on": [],
+        "cwd": "server",
+        "required": true,
+        "prerequisites": [
+          "py",
+          "pwsh"
+        ],
+        "adapters": {
+          "local": "receipt-command-arrays",
+          "ci": "python-command-arrays"
+        }
+      },
+      {
+        "id": "catalog.regression",
+        "commands": [
+          [
+            "{python}",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tools",
+            "-p",
+            "test_gate_catalog.py"
+          ]
+        ],
+        "features": "default",
+        "depends_on": [],
+        "cwd": "server",
+        "required": true,
+        "prerequisites": [
+          "py"
+        ],
+        "adapters": {
+          "local": "receipt-command-arrays",
+          "ci": "python-command-arrays"
+        }
+      },
+      {
+        "id": "catalog.equivalence",
+        "commands": [
+          [
+            "{python}",
+            "tools/check_gate_equivalence.py"
+          ]
+        ],
+        "features": "default",
+        "depends_on": [],
+        "cwd": "server",
+        "required": true,
+        "prerequisites": [
+          "py"
+        ],
+        "adapters": {
+          "local": "receipt-command-arrays",
+          "ci": "python-command-arrays"
+        }
+      },
+      {
+        "id": "format",
+        "commands": [
+          [
+            "cargo",
+            "fmt",
+            "--all",
+            "--check"
+          ]
+        ],
+        "features": "default",
+        "depends_on": [],
+        "cwd": "server",
+        "required": true,
+        "prerequisites": [
+          "cargo"
+        ],
+        "adapters": {
+          "local": "receipt-command-arrays",
+          "ci": "python-command-arrays"
+        }
+      },
+      {
+        "id": "clippy.default",
+        "commands": [
+          [
+            "cargo",
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ]
+        ],
+        "features": "default",
+        "depends_on": [],
+        "cwd": "server",
+        "required": true,
+        "prerequisites": [
+          "cargo"
+        ],
+        "adapters": {
+          "local": "receipt-command-arrays",
+          "ci": "python-command-arrays"
+        }
+      },
+      {
+        "id": "clippy.all-features",
+        "commands": [
+          [
+            "cargo",
+            "clippy",
+            "--workspace",
+            "--all-features",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ]
+        ],
+        "features": "all",
+        "depends_on": [],
+        "cwd": "server",
+        "required": true,
+        "prerequisites": [
+          "cargo"
+        ],
+        "adapters": {
+          "local": "receipt-command-arrays",
+          "ci": "python-command-arrays"
+        }
+      },
+      {
+        "id": "clippy.diskann",
+        "commands": [
+          [
+            "cargo",
+            "clippy",
+            "-p",
+            "munarium-datastore",
+            "-p",
+            "munarium-retrieval",
+            "-p",
+            "munarium-server",
+            "--features",
+            "vector-diskann",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ]
+        ],
+        "features": "vector-diskann",
+        "depends_on": [],
+        "cwd": "server",
+        "required": true,
+        "prerequisites": [
+          "cargo"
+        ],
+        "adapters": {
+          "local": "receipt-command-arrays",
+          "ci": "python-command-arrays"
+        }
+      },
+      {
+        "id": "contract.mmp",
+        "commands": [
+          [
+            "{python}",
+            "contract/mmp/publish.py",
+            "--self-test"
+          ]
+        ],
+        "features": "default",
+        "depends_on": [],
+        "cwd": "server",
+        "required": true,
+        "prerequisites": [
+          "py"
+        ],
+        "adapters": {
+          "local": "receipt-command-arrays",
+          "ci": "python-command-arrays"
+        }
+      },
+      {
+        "id": "contract.matrix",
+        "commands": [
+          [
+            "{python}",
+            "../matrix/contract/publish.py",
+            "--self-test"
+          ],
+          [
+            "{python}",
+            "../matrix/contract/publish.py",
+            "--check",
+            "contract/matrix"
+          ]
+        ],
+        "features": "default",
+        "depends_on": [],
+        "cwd": "server",
+        "required": true,
+        "prerequisites": [
+          "py"
+        ],
+        "adapters": {
+          "local": "receipt-command-arrays",
+          "ci": "python-command-arrays"
+        }
+      },
+      {
+        "id": "license",
+        "commands": [
+          [
+            "{python}",
+            "check_license.py"
+          ]
+        ],
+        "features": "default",
+        "depends_on": [],
+        "cwd": "server",
+        "required": true,
+        "prerequisites": [
+          "py"
+        ],
+        "adapters": {
+          "local": "receipt-command-arrays",
+          "ci": "python-command-arrays"
+        }
+      },
+      {
+        "id": "boundaries.crates",
+        "commands": [
+          [
+            "{python}",
+            "tools/gate_catalog.py",
+            "--boundary",
+            "crates"
+          ]
+        ],
+        "features": "api-types:all;others:default",
+        "depends_on": [],
+        "cwd": "server",
+        "required": true,
+        "prerequisites": [
+          "py",
+          "cargo"
+        ],
+        "adapters": {
+          "local": "receipt-command-arrays",
+          "ci": "python-command-arrays"
+        }
+      },
+      {
+        "id": "boundaries.datastore",
+        "commands": [
+          [
+            "{python}",
+            "tools/gate_catalog.py",
+            "--boundary",
+            "datastore"
+          ]
+        ],
+        "features": "default",
+        "depends_on": [],
+        "cwd": "server",
+        "required": true,
+        "prerequisites": [
+          "py",
+          "cargo"
+        ],
+        "adapters": {
+          "local": "receipt-command-arrays",
+          "ci": "python-command-arrays"
+        }
+      },
+      {
+        "id": "boundaries.retrieval",
+        "commands": [
+          [
+            "{python}",
+            "tools/gate_catalog.py",
+            "--boundary",
+            "retrieval"
+          ]
+        ],
+        "features": "default",
+        "depends_on": [],
+        "cwd": "server",
+        "required": true,
+        "prerequisites": [
+          "py"
+        ],
+        "adapters": {
+          "local": "receipt-command-arrays",
+          "ci": "python-command-arrays"
+        }
+      },
+      {
+        "id": "migrations.additive",
+        "commands": [
+          [
+            "{python}",
+            "tools/gate_catalog.py",
+            "--boundary",
+            "migrations"
+          ]
+        ],
+        "features": "default",
+        "depends_on": [],
+        "cwd": "server",
+        "required": true,
+        "prerequisites": [
+          "py"
+        ],
+        "adapters": {
+          "local": "receipt-command-arrays",
+          "ci": "python-command-arrays"
+        }
+      },
+      {
+        "id": "dependencies.deny",
+        "commands": [
+          [
+            "cargo",
+            "deny",
+            "--all-features",
+            "check"
+          ]
+        ],
+        "features": "all",
+        "depends_on": [],
+        "cwd": "server",
+        "required": true,
+        "prerequisites": [
+          "cargo",
+          "cargo-deny"
+        ],
+        "adapters": {
+          "local": "receipt-command-arrays",
+          "ci": "python-command-arrays"
+        }
+      },
+      {
+        "id": "tests.workspace",
+        "commands": [
+          [
+            "cargo",
+            "test",
+            "--workspace"
+          ]
+        ],
+        "cwd": "server",
+        "required": true,
+        "features": "default",
+        "depends_on": [],
+        "prerequisites": [
+          "cargo"
+        ],
+        "adapters": {
+          "local": "receipt-command-arrays",
+          "ci": "python-command-arrays"
+        }
+      },
+      {
+        "id": "tests.diskann",
+        "commands": [
+          [
+            "cargo",
+            "test",
+            "-p",
+            "munarium-datastore",
+            "-p",
+            "munarium-retrieval",
+            "--features",
+            "vector-diskann"
+          ]
+        ],
+        "cwd": "server",
+        "required": true,
+        "features": "vector-diskann",
+        "depends_on": [],
+        "prerequisites": [
+          "cargo"
+        ],
+        "adapters": {
+          "local": "receipt-command-arrays",
+          "ci": "python-command-arrays"
+        }
+      },
+      {
+        "id": "conformance.memory",
+        "commands": [
+          [
+            "cargo",
+            "run",
+            "-p",
+            "mmp-conformance",
+            "--",
+            "--in-process"
+          ]
+        ],
+        "cwd": "server",
+        "required": true,
+        "features": "default",
+        "depends_on": [],
+        "prerequisites": [
+          "cargo"
+        ],
+        "adapters": {
+          "local": "receipt-command-arrays",
+          "ci": "python-command-arrays"
+        }
+      }
+    ],
+    "boundaries": {
+      "munarium-core": {
+        "features": [],
+        "banned": [
+          "sqlx",
+          "axum",
+          "tonic",
+          "reqwest",
+          "utoipa"
+        ]
+      },
+      "munarium-access": {
+        "features": [],
+        "banned": [
+          "sqlx",
+          "axum",
+          "tonic",
+          "reqwest",
+          "utoipa"
+        ]
+      },
+      "munarium-providers": {
+        "features": [],
+        "banned": [
+          "munarium-store-pg",
+          "munarium-store-mem",
+          "munarium-retrieval-pg"
+        ]
+      },
+      "munarium-api-types": {
+        "features": [
+          "--all-features"
+        ],
+        "banned": [],
+        "workspace_allow": [
+          "munarium-api-types",
+          "munarium-proto"
+        ]
+      },
+      "munarium-datastore": {
+        "features": [],
+        "banned": [
+          "sqlx",
+          "axum",
+          "tonic",
+          "reqwest",
+          "utoipa",
+          "munarium-core",
+          "munarium-store-pg",
+          "munarium-retrieval-pg",
+          "munarium-server",
+          "munarium-runbooks"
+        ]
+      }
+    }
+  }
+}

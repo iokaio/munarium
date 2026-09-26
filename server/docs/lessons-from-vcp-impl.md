@@ -291,6 +291,17 @@ First make local execution consume it and test it. Then compare the old CI step 
 
 Boundary checks must recursively inspect the intended source tree and fail when `cargo tree` fails; an empty dependency result is not proof of a clean graph. Add fixtures that intentionally violate each boundary and that fail dependency resolution. Matrix can adopt the receipt format later without depending on Server runtime crates or adopting Server-specific step semantics.
 
+**P16 implementation:** the [shared catalog and inventory check](guides/validation.md#shared-gates-and-ci-inventory)
+now drive portable local/CI steps. Platform resource ownership remains explicit,
+and the independent embedded, dependency and infrastructure jobs remain intact.
+The reviewed baseline retains original CI blocks and exact unchanged workflow
+content; checker controls reject weakened features, dependencies, required status,
+boundaries, triggers, runners and permissions. Local gates add the existing CI
+Matrix publisher self-test, DiskANN and all-features dependency checks. Root agent
+guidance and the PR template now require checker limitations, behavior-sized
+reviews with a 500-line split/rationale trigger, and waivers retaining original
+outcomes. Hosted CI qualification remains distinct from local test results.
+
 ### 5.3 P04: fix verified current documentation, preserve history — R03
 
 | Source recommendation | Recheck | Proposed change |

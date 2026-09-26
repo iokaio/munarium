@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Disposable PostgreSQL and live-server adapters for local validation.
+. "$PSScriptRoot/gate-catalog.ps1"
 function Start-ValidationPostgres {
     $image = 'pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b'
     Invoke-ValidationCommand docker @('info','--format','{{.ServerVersion}}')
@@ -98,12 +99,17 @@ function Add-ValidationTiers {
     if ($Postgres -or $Platform -or $Cluster) { Add-ValidationStep 'postgres.setup' { Start-ValidationPostgres } -Requires docker }
     $deps = if ($Postgres) { @('postgres.setup') } else { @() }
     $body = if ($Postgres) {
-        { Invoke-ValidationEnvironment @{ MUNARIUM_TEST_DATABASE_URL = $script:Validation.DatabaseUrl } { Invoke-ValidationCargoTests @('test','--workspace') } }
+        { Invoke-ValidationEnvironment @{ MUNARIUM_TEST_DATABASE_URL = $script:Validation.DatabaseUrl } { Invoke-CatalogCommand 'tests.workspace' -Tests } }
     } else {
-        { Invoke-ValidationEnvironment @{ MUNARIUM_TEST_DATABASE_URL = $null } { Invoke-ValidationCargoTests @('test','--workspace') } }
+        { Invoke-ValidationEnvironment @{ MUNARIUM_TEST_DATABASE_URL = $null } { Invoke-CatalogCommand 'tests.workspace' -Tests } }
     }
     Add-ValidationStep 'tests.workspace' $body -Requires cargo -DependsOn $deps
-    Add-ValidationStep 'conformance.memory' { Invoke-ValidationCommand cargo @('run','-p','mmp-conformance','--','--in-process') } -Requires cargo
+    Add-CatalogSteps @('conformance.memory')
+    if ($Gate) {
+        Add-ValidationStep 'tests.diskann' {
+            Invoke-ValidationEnvironment @{ MUNARIUM_TEST_DATABASE_URL = $script:Validation.DatabaseUrl } { Invoke-CatalogCommand 'tests.diskann' -Tests }
+        } -Requires cargo -DependsOn 'postgres.setup'
+    }
     if ($Postgres) {
         Add-ValidationStep 'tests.json-postgres' {
             Invoke-ValidationEnvironment @{ MUNARIUM_TEST_DATABASE_URL = $script:Validation.DatabaseUrl } {

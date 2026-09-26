@@ -34,6 +34,9 @@ function New-ValidationRun {
         'server/tools/validation.ps1', 'server/tools/validation-tiers.ps1',
         'server/tools/test-json-features.ps1', 'server/tools/test_validation.py',
         'server/tools/check_validation_receipt.py', 'server/docs/guides/validation.md',
+        'server/tools/gate-catalog.json', 'server/tools/gate-catalog.ps1',
+        'server/tools/gate_catalog.py', 'server/tools/test_gate_catalog.py',
+        'server/tools/check_gate_equivalence.py', 'server/tools/gate-ci-baseline.json',
         'server/src/munarium-server/src/json_persistence_tests.rs'
     )
     $dir = Join-Path $Root "server/scratch/validation/$id"
