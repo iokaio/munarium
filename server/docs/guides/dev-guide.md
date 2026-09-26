@@ -14313,6 +14313,7 @@ route family needs one rule there.
 | `/v1/providers/{name}/complete` | POST | providers | §11 (BYOK diagnostic), §17 |
 | `/v1/providers/{name}/embed` | POST | providers | §11 (BYOK diagnostic), §17 |
 | `/v1/providers/{name}/health` | GET | providers | §11 (BYOK diagnostic), §17 |
+| `/v1/providers/{name}/diagnostics` | GET | providers | Management-only alias/readiness disclosure; [operator diagnostics](../tokenbudgets.md#operator-diagnostics) |
 | `/v1/reports/audit` | GET | reports | §20; rest.md Reports rows |
 | `/v1/reports/budgets` | GET | reports | §20 (spend governance) |
 | `/v1/reports/budget-usage` | GET | reports | [Token evidence quality](../tokenbudgets.md#late-token-evidence-and-accounting-quality) |
