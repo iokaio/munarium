@@ -1,6 +1,7 @@
 # munarium-client (Rust)
 
-Targets **Munarium Server 1.2.1**. Client package **1.1.1** provides the complete `ServerApiClient` over REST and native gRPC, while the existing typed planes retain their Server 1.1 baseline. See the [Server 1.2 guide](https://github.com/iokaio/munarium/blob/main/clients/docs/guides/server-1.2.md) for vocabulary, collection queries, publication governance, answers and source references. Transport limitations below apply to the older typed planes.
+Client **1.2.0** targets **Munarium Server 1.3.0** with declared support for
+Server minors **1.3 and 1.2**; see the [compatibility record](https://github.com/iokaio/munarium/blob/main/clients/compatibility.json).
 
 Official Rust client for munarium-server: the full ten-plane surface
 (`commands`, `query`, `ingest`, `retrieval`, `runbooks`, `providers`,
@@ -11,6 +12,9 @@ for the invariants, the transport-gap ledger, and guides. (Links in this file
 are absolute because it is also the crate's README on crates.io.)
 
 ## Install
+
+The registry examples below pin the recorded published release. Client 1.2.0
+is unreleased; use the source installation instructions for its Server 1.3 APIs.
 
 Install [munarium-client from crates.io](https://crates.io/crates/munarium-client):
 

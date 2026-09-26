@@ -17,10 +17,14 @@ Use **Server** for document search, grounded chat and a governed fact ledger. Ad
 immutable file exports. The separate [Munarium Demo](https://github.com/iokaio/munarium-demo)
 provides six working applications and bundled datasets for evaluation.
 
-**Source versions:** Server **1.2.1**, Matrix **1.0.0**, and all seven client
-libraries **1.1.1**. Server 1.2 adds configurable collection vocabularies, checked
+**Source versions:** Server **1.3.0 (release preparation)**, Matrix **1.0.0**,
+Server client libraries **1.2.0 (unreleased)**, and Matrix clients **1.1.1**.
+Server 1.2 adds configurable collection vocabularies, checked
 narrative answers and the [complete API on REST/gRPC](clients/docs/guides/server-1.2.md).
-The published Server image is **1.2.1**. Client libraries are published on
+Server 1.3 adds durable command recovery, governance profiles, usage and monetary
+accounting, source retention, and provider controls. See the
+[1.3 release and upgrade guide](server/docs/guides/server-1.3.md).
+Publication of 1.3.0 is pending; the last published Server image is **1.2.1**. Client libraries are published on
 [NuGet](https://www.nuget.org/packages/Ioka.Munarium.Client),
 [Maven Central](https://central.sonatype.com/artifact/io.ioka.munarium/munarium-client),
 [PyPI](https://pypi.org/project/munarium-client/), and
@@ -50,6 +54,9 @@ for all seven package links and available versions.
 
 ## Run with Docker
 
+The examples below use the published **1.2.1** image. For Server 1.3 development,
+see the [source build instructions](server/CONTAINER.md#building-from-source).
+
 The public [iokaio/munarium image on Docker Hub](https://hub.docker.com/r/iokaio/munarium)
 contains **Munarium Server and the `/mmctl` client**. It supports `linux/amd64` and
 `linux/arm64`; Docker selects the platform automatically. On Windows, use Docker Desktop
@@ -59,14 +66,12 @@ in Linux container mode. Matrix is deployed separately; see [Matrix setup](matri
 docker pull iokaio/munarium:1.2.1
 ```
 
-`1.2.1` is the immutable release tag. `1.2` tracks the current 1.2 release, and `latest`
-tracks the current stable release. Pin the digest in the publication record below
+`1.2.1` is immutable; `1.2` and `latest` can advance. Pin the verified digest
 for reproducible deployments.
 
 The image includes license notices, SBOM and build provenance attestations.
 See the [publication and verification record](server/CONTAINER.md#versions-and-verification)
-for the 1.2.1 digest and public signing instructions. There is no
-trial key or time limit.
+for image digests and public signing instructions. There is no trial key or time limit.
 
 ### Quick evaluation in memory
 

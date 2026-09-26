@@ -1,6 +1,9 @@
 # Getting started with Munarium Server
 
-This guide takes you from the published Docker image to a small, persistent
+This guide uses the published **1.2.1** image. For an upgrade from it, follow
+the [1.3 release guide](server-1.3.md).
+
+This guide takes you from the Docker image to a small, persistent
 corpus application. You will write a fact through the API, define a shape and
 runbook, upload two documents, build and approve an index, and retrieve its
 evidence. The main walkthrough makes no model calls and needs no provider keys.
@@ -29,7 +32,7 @@ optional completion asks a configured model to turn that evidence into an answer
 ## 2. Start a persistent local Server
 
 You need PowerShell 7.3 or later and Docker Desktop running Linux containers.
-The public `iokaio/munarium:1.2.1` image supports AMD64 and ARM64 and includes
+The published `iokaio/munarium:1.2.1` image supports AMD64 and ARM64 and includes
 the Server and `/mmctl` CLI. Matrix and your application UI are separate
 deployments. No source checkout or Rust toolchain is required.
 

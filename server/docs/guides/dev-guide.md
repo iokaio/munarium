@@ -1,5 +1,11 @@
 # Munarium Server: Developers Guide
 
+This checkout prepares **Server 1.3.0**. Start with the
+[1.3 release guide](server-1.3.md) for the reviewed changes since the 1.2.1 image,
+migrations 0035–0040, policy activation and rollback constraints. New work covers
+durable recovery, governance, accounting, retention, provider controls, wire
+integrity and embedded-library qualification.
+
 Server 1.2 adds [collection vocabularies](collection-vocabularies.md), checked
 answers and the [complete REST/gRPC API](../../../clients/docs/guides/server-1.2.md).
 Server 1.2.1 adds collection-scoped query orchestration, retained publication
@@ -7822,9 +7828,24 @@ checklist. Every spoke touched by the change must appear in the diff.
 The version story is deliberately small enough to hold in your head.
 
 **One source of truth.** `[workspace.package] version` in the root
-`server/Cargo.toml` (`1.1.0` for this release). Every crate
+`server/Cargo.toml` (`1.3.0` for this release preparation). Every crate
 takes `version.workspace = true`; `/version` reports
 `CARGO_PKG_VERSION`; the OpenAPI `info.version` carries it.
+
+The Dockerfile default, generated API inventory and client Server target must
+agree with the workspace. Helm app/image defaults and installation commands
+track the published image recorded in `server/release-versions.json`; they move
+with publication evidence, not source preparation. Run
+`python scripts/check_release_versions.py` from the repository root; CI enforces
+both sets of versions and tests the check with deliberately inconsistent inputs.
+`build.ps1 -Image -ImageTag 1.3.0` supplies the workspace version and source
+revision as image labels, adding `-dirty` for tracked or untracked changes under
+`server/`; client-only edits and ignored scratch files do not affect that label.
+Regenerate OpenAPI with the built Server
+and run `scripts/generate_server_api.py`; refresh the Server, Rust client and
+isolated embedded-consumer lockfiles without upgrading third-party dependencies.
+The [1.3 checklist](server-1.3.md#build-and-release-checklist) separates local
+validation from multi-platform image qualification and publication.
 
 **The tag must agree.** A public Server release is a `v<version>` tag. Releases
 are cut by Ioka outside this repository, and the first thing a release

@@ -42,6 +42,9 @@ jobs:
       - name: root docs links and indexes
         run: python3 scripts/docs_linkcheck.py
 
+      - name: source and published-image version consistency
+        run: python3 scripts/check_release_versions.py
+
       - name: lab grader and docs gate regression tests
         run: python3 -m unittest discover -s scripts -p 'test_*.py'
 

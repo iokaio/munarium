@@ -1,6 +1,7 @@
 # Ioka.Munarium.Client (.NET)
 
-Targets **Munarium Server 1.2.1**. Client package **1.1.1** provides the complete `ServerApiClient` over REST and native gRPC, while the existing typed planes retain their Server 1.1 baseline. See the [Server 1.2 guide](../docs/guides/server-1.2.md) for vocabulary, collection queries, publication governance, answers and source references. Transport limitations below apply to the older typed planes.
+Client **1.2.0** targets **Munarium Server 1.3.0** with declared support for
+Server minors **1.3 and 1.2**; see the [compatibility record](https://github.com/iokaio/munarium/blob/main/clients/compatibility.json).
 
 Official .NET client for munarium-server: the full ten-plane surface
 (`Commands`, `Query`, `Ingest`, `Retrieval`, `Runbooks`, `Providers`,
@@ -11,6 +12,9 @@ head-conflict write loop built in. See the
 ledger, and guides.
 
 ## Install
+
+The registry examples below pin the recorded published release. Client 1.2.0
+is unreleased; use the source installation instructions for its Server 1.3 APIs.
 
 Install [Ioka.Munarium.Client from NuGet](https://www.nuget.org/packages/Ioka.Munarium.Client)
 in your .NET 10 application:

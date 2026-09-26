@@ -10,6 +10,9 @@ not a deployment. Status, stated plainly: the chart's first install was
 validated on kind; the AKS module is authored and syntax-checked, not yet
 applied end to end. Expect a shakedown pass on a first cloud install.
 
+For an upgrade to Server 1.3, follow the
+[release/upgrade checklist](../guides/server-1.3.md).
+
 ## 0. Preconditions
 
 - A cluster you can `helm install` into, with the **CNPG operator** present
@@ -71,15 +74,17 @@ kubectl -n munarium rollout status deployment/munarium-server
 
 The private values file must set `staticTokens` to your comma-separated
 `token:tenant:role` registrations. Using a YAML value avoids Helm interpreting
-the commas as separate `--set` assignments. For the published Server image,
-use `image.repository=iokaio/munarium` and `image.tag=1.1.1`.
+the commas as separate `--set` assignments. For the published image, use `image.repository=iokaio/munarium` and
+`image.tag=1.2.1`. Select a qualified candidate explicitly when rehearsing an upgrade.
 
 Then add what the chart does not wire — the token secret and provider keys —
 as a Kubernetes Secret patched into the deployment's environment (or a
 post-render patch, which survives `helm upgrade` better); the chart README
 has the exact commands. Migrations run at server startup and are
-additive-only, so replicas on two adjacent versions are correct together
-during the roll ([clustering.md](clustering.md)).
+additive-only, but this does not guarantee mixed-version policy enforcement.
+Drain and upgrade every reader, writer and worker before activating 1.3 governance,
+guarded commands, source denial or provider controls; consult
+[clustering](clustering.md) and the [1.3 upgrade guide](../guides/server-1.3.md).
 
 **With the AKS module:** copy `example.tfvars` to `terraform.tfvars`, edit
 it, then `terraform init`, `plan` and `apply`. An upgrade is the image tag

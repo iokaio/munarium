@@ -6,8 +6,10 @@ authoritative, machine-readable answer, and this page is the short prose explana
 
 ## Compatibility
 
-The current Server target is **1.2.1**, with supported minor versions **1.2 and
-1.1**. All seven client source packages are **1.1.1**; Matrix clients support
+The current source Server target is **1.3.0**, with declared minor versions
+**1.3 and 1.2** for release qualification. Published packages retain their
+historical metadata; see the [1.3 release guide](../../../server/docs/guides/server-1.3.md).
+All seven client source packages are **1.1.1**; Matrix clients support
 Matrix **1.0** independently. See [installation and publication](../../README.md#installation-and-publication)
 for available registry versions and package links. The complete `ServerApiClient`
 requires Server 1.2, and its collection-query and publication-governance operations

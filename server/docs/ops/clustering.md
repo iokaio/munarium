@@ -1,5 +1,11 @@
 # Running munarium-server as a cluster (N instances, one PostgreSQL)
 
+For Server 1.3, upgrade and drain every reader, writer and worker before relying
+on guarded commands, source denial, governance profiles or new provider controls.
+The older binaries do not enforce these policies even where the schema remains
+readable. Follow the [1.3 upgrade guide](../guides/server-1.3.md); a historical
+same-version cluster test is not qualification of a mixed-version upgrade.
+
 Use [Measuring performance](../guides/measuring-performance.md) to establish
 capacity, identify shared bottlenecks and verify the benefit of adding instances.
 

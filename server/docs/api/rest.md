@@ -1,5 +1,9 @@
 # munarium-server REST API
 
+This source reference targets **Server 1.3.0**. MMP stays
+major 1, and existing `/v1` and `/v1.2` route prefixes remain unchanged. See the
+[1.3 release guide](../guides/server-1.3.md) for new operations and upgrade duties.
+
 Management-only `GET/POST /v1/source-retention` lists durable source policy or
 applies denial, holds and optional PostgreSQL original-byte cleanup. See
 [source retention](../ops/source-retention.md) for exact scope and restore duties.

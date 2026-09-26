@@ -3,13 +3,32 @@
 These are source release notes. See the [container publication record](CONTAINER.md#versions-and-verification)
 for registry availability, digests and public signing instructions.
 
-## Unreleased
+## 1.3.0 — pending publication
 
-- Add immutable governance profiles for memory versions, opt-in exact string
-  comparison, explicit existing-history transitions and retained assessments.
-  Governed claim evaluations commit with their findings; original decisions remain
-  unchanged. PostgreSQL migration 0036 retains legacy defaults and rejects old
-  writers on governed versions.
+Source preparation for the 1.3 series; no 1.3.0 image qualification or registry
+publication is claimed yet. The [1.3 release guide](docs/guides/server-1.3.md)
+reviews all changes since the 1.2.1 image and records the build/release checklist.
+
+### Breaking and upgrade changes
+
+- **Source change for Rust embedders:** `munarium_datastore::Error` is now
+  `#[non_exhaustive]`; a `match` on it outside the crate needs a wildcard arm. The
+  crate is marked `publish = false`.
+- **Operator-visible:** an occupied REST or gRPC port, or a shutdown-signal handler
+  that cannot install, now ends startup with one `startup error:` line and exit
+  status 1 instead of a panic with exit status 101. Configuration errors keep exit
+  status 2.
+
+**Upgrade:** migrations 0035–0040 follow the 1.2.1 schema. Back up the database,
+sources and artifacts; drain and upgrade every relevant process before activating
+new policies. A legacy image rollback needs the matching pre-upgrade database and
+reconciliation of authoritative recovery/retention records. It is not sufficient
+to restore a backup after new irreversible effects and serve it immediately.
+See [upgrade and rollback](docs/guides/server-1.3.md#database-and-configuration-upgrade).
+MMP stays major 1 and REST paths retain `/v1` and `/v1.2`. Matrix remains
+unchanged. Server SDK source packages move to unreleased 1.2.0; image and
+package publication remain separate release actions.
+
 - **Upgrade action:** upgrade all writers before adopting a profile, transition
   existing memory versions explicitly, review assessments, and rebuild affected
   collections (or all collections in a small deployment). Re-extraction, publication
@@ -17,6 +36,42 @@ for registry availability, digests and public signing instructions.
   [governance-policy upgrade guide](docs/ops/governance-policy-upgrade.md), including
   rollback and retention steps. Installing the migration alone does not adopt
   exact semantics or rebuild existing collections.
+
+### Highlights
+
+- Preserve token reservation origins and usage certainty; reconcile late evidence
+  with append-only adjustments and retain the original accounting day.
+- Add opt-in config-wide `dailyTotalTokens` admission for every physical completion
+  and embedding attempt, including retries. Managed provider diagnostics require
+  management authority and capped tenant configs; free diagnostics expose only
+  explicit safe credential aliases and bounded outcomes.
+- Add per-model Claude effort/thinking controls without increasing output ceilings.
+  Retry session token exhaustion at most once with the larger ceiling; empty text
+  alone no longer triggers that retry. Reject incomplete final answers and preserve
+  accounting. Revise bundled evidence prompts with runbook version increments.
+- Add optional PostgreSQL monetary accounting with immutable tariffs, per-attempt
+  liability and observations, and reports that retain unknown/partial coverage.
+  This does not provide prices, an entire provider bill or a monetary admission cap.
+- Commit runbook checkpoints and transitions atomically, retain Matrix execution
+  receipts, and supervise critical runtime tasks through readiness.
+- Add opt-in `guarded-v1` PostgreSQL command claims: ambiguous outcomes remain
+  unresolved and cannot be automatically executed again. Activation is one-way;
+  the protocol does not guarantee exactly-once remote effects.
+- Add stable-path source denial, holds, and durable retryable PostgreSQL original
+  cleanup. Derived artifacts and external copies remain separately retained.
+- Preserve exact wire integers and reject unknown enum values, qualify JSON
+  persistence/feature combinations and Linux datastore permissions, and expose
+  sparse retrieval candidate work with deterministic baseline fixtures.
+- Add immutable evaluation inputs/results and truthful validation receipts.
+  Share portable local/CI gates while retaining automatic hosted coverage.
+- Add immutable governance profiles for memory versions, opt-in exact string
+  comparison, explicit existing-history transitions and retained assessments.
+  Governed claim evaluations commit with their findings; original decisions remain
+  unchanged. PostgreSQL migration 0036 retains legacy defaults and rejects old
+  writers on governed versions.
+
+### Details
+
 - Fail a `verifyDataViews` step when Matrix answers 200 with a body that is not a
   verify response (not JSON, or no integer `failed`). Such a body previously read as
   zero failed questions and marked the data view verified.
@@ -24,10 +79,6 @@ for registry availability, digests and public signing instructions.
   lexical archive entry whose declared length overflows its offset, and a DiskANN
   header that declares an impossible vector count. DiskANN now sizes its vectors
   from the bytes present rather than the header.
-- **Operator-visible:** an occupied REST or gRPC port, or a shutdown-signal handler
-  that cannot install, now ends startup with one `startup error:` line and exit
-  status 1 instead of a panic with exit status 101. Configuration errors keep exit
-  status 2.
 - Keep serving after a panic elsewhere poisons a metrics, readiness, cache, shape
   registry or token-cache lock; the in-memory source store and provider rate budget
   refuse with a storage error instead. Rate-budget arithmetic no longer overflows,
@@ -43,9 +94,6 @@ for registry availability, digests and public signing instructions.
   (`rust-version`, measured in four feature sets), and an isolated consumer that CI
   builds outside the Server workspace. Every other crate remains internal. See
   [embedded library support](docs/embedded-support.md).
-- **Source change for Rust embedders:** `munarium_datastore::Error` is now
-  `#[non_exhaustive]`; a `match` on it outside the crate needs a wildcard arm. The
-  crate is marked `publish = false`.
 - A datastore build without the `lexical-tantivy` feature now compiles without warnings;
   as before, it refuses to seal or open artifacts, which a new test pins.
 

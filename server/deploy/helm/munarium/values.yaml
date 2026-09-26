@@ -1,9 +1,8 @@
 image:
-  # No default: there is no official public image location for the open
-  # edition, and a placeholder here fails at image-pull time with a confusing
-  # error. Left empty, `helm install` refuses immediately and says why.
+  # Select iokaio/munarium or a qualified private build. The default tag tracks
+  # the published image; an empty repository fails before image pull.
   repository: ""
-  tag: "1.1.1"
+  tag: "1.2.1"
 
 replicas: 2
 

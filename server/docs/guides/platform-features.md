@@ -13,7 +13,8 @@ references: [../api/rest.md](../api/rest.md) (routes),
 [../ops/index-deletion-runbook.md](../ops/index-deletion-runbook.md) (the
 only way index data is ever physically deleted).
 
-For Server 1.2/1.2.1, also see [collection vocabularies and governed queries](collection-vocabularies.md):
+For Server 1.3 changes, activation and compatibility, start with the
+[release guide](server-1.3.md). The APIs introduced in 1.2/1.2.1 remain available; see [collection vocabularies and governed queries](collection-vocabularies.md):
 collection-scoped answers select publication versions on the Server, and the
 `vocabulary` capability permits term management independently of query/ingest.
 Every programmatic operation has a named REST/gRPC method in the

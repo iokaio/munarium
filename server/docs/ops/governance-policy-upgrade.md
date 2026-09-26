@@ -1,6 +1,6 @@
 # Upgrade to durable governance policies
 
-This guide applies to the first release containing migration `0036_governance_profiles.sql`
+This guide applies to Server 1.3, which introduces migration `0036_governance_profiles.sql`
 (see [release notes](../../CHANGELOG.md)). Installing the release preserves legacy
 comparison by default. To gain exact-value governance, explicitly adopt a profile
 on new memory versions and migrate existing histories as described below.

@@ -204,10 +204,12 @@ plus per-field withers (`withTurnCompletion(long)` …) do the same.
   model that answers in 140 tokens. It matters for the spending-cap
   *reservation*, which estimates the effective request and output ceiling before the call and
   settles to actuals after — oversizing inflates transient holds, not bills.
-- **The retry is part of the budget.** A turn whose stop reason is
-  `max_tokens`/`length`, or whose text is empty, is re-asked once at 4× the
-  base. The effective ceiling per turn is therefore 5× the base in the worst
-  case before verification retries.
+- **The retry is part of the budget.** In Server 1.3, a turn with explicit
+  `max_tokens`/`length` termination is re-asked at most once at 4× the base.
+  Empty text alone does not trigger this retry. A still-incomplete final answer
+  fails instead of being returned as complete. The two output ceilings sum to
+  5× the base before corrective verification calls and physical HTTP retries;
+  this is not a bound on total input/output usage or charges.
 - **Reasoning-always-on models** (`z-ai/glm-5.2`, `z-ai/glm-5.3`) measured
   ~5k hidden tokens on hard questions. A base of 2,048 (retry 8,192) covers
   that; history-revolution declares 4,096 in its runbook. See
