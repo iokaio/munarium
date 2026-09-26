@@ -51,6 +51,286 @@ pub(crate) async fn test_state_with_auth(
 
 struct Abort(tokio::task::JoinHandle<()>);
 
+async fn total_cap_case(state: Arc<AppState>) {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let observed = calls.clone();
+    let app = axum::Router::new().route("/api/chat", axum::routing::post(move |Json(body): Json<Value>| {
+        observed.fetch_add(1, Ordering::SeqCst);
+        async move {
+            if body["model"] == "retry" {
+                return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({})));
+            }
+            (StatusCode::OK, Json(json!({"message":{"content":"ok"},"done":true,"done_reason":"stop","prompt_eval_count":2,"eval_count":1})))
+        }
+    })).route("/api/embed", axum::routing::post(|| async {
+        Json(json!({"embeddings":[[1.0, 0.0]],"prompt_eval_count":2}))
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    let _server = Abort(tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap()
+    }));
+    let tenant = format!("total-cap-{}", uuid::Uuid::new_v4());
+    let store = state.store_for(&tenant).await.unwrap();
+    let request = |model: &str| {
+        serde_json::from_value::<dto::CompleteRequest>(
+            json!({"model":model,"prompt":"test","max_tokens":9}),
+        )
+        .unwrap()
+    };
+    let reserve = fixture_estimate("retry", None).total().unwrap();
+    let yaml = |name: &str, cap: u64| {
+        format!("apiVersion: munarium.ioka.io/v1\nkind: ProviderConfig\nmetadata: {{name: {name}}}\nspec:\n  provider: ollama\n  endpoint: {endpoint}\n  models: {{embed: [fixture]}}\n  budgets: {{dailyTotalTokens: {cap}}}\n")
+    };
+    state
+        .providers
+        .apply(&state, &tenant, &yaml("retry", reserve))
+        .await
+        .unwrap();
+    // A 503 may have executed. Its retry must reserve again, and is denied
+    // before HTTP when the first attempt consumed the remaining allowance.
+    let err = op_complete(&state, &tenant, store.as_ref(), "retry", request("retry"))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, KernelError::RateLimited(_)));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    let rows = state.budgets().ledger(&tenant).await.unwrap();
+    assert_eq!(
+        (rows[0].tier.as_str(), rows[0].held_units),
+        ("all", reserve)
+    );
+
+    state
+        .providers
+        .apply(&state, &tenant, &yaml("shared", 1000))
+        .await
+        .unwrap();
+    let report = crate::reports_api::op_budgets(&state, &tenant)
+        .await
+        .unwrap();
+    let empty = report.iter().find(|r| r.config == "shared").unwrap();
+    assert_eq!(
+        (empty.tier.as_str(), empty.limit, empty.remaining),
+        ("all", Some(1000), Some(1000))
+    );
+    // Explicit models require no invented tier; embeddings share the same cap.
+    op_complete(
+        &state,
+        &tenant,
+        store.as_ref(),
+        "shared",
+        request("fixture"),
+    )
+    .await
+    .unwrap();
+    let embed = || serde_json::from_value::<dto::EmbedRequest>(json!({"inputs":["x"]})).unwrap();
+    assert!(
+        !op_embed(&state, &tenant, store.as_ref(), "shared", embed())
+            .await
+            .unwrap()
+            .cache_hit
+    );
+    assert!(
+        op_embed(&state, &tenant, store.as_ref(), "shared", embed())
+            .await
+            .unwrap()
+            .cache_hit
+    );
+    let rows = state.budgets().ledger(&tenant).await.unwrap();
+    let shared = rows.iter().find(|r| r.config == "shared").unwrap();
+    assert_eq!(
+        (shared.held_units, shared.settled_units, shared.reservations),
+        (0, 5, 2)
+    );
+    // Tightening the cap rejects new paid work but retains free cached data.
+    state
+        .providers
+        .apply(&state, &tenant, &yaml("shared", 0))
+        .await
+        .unwrap();
+    assert!(op_complete(
+        &state,
+        &tenant,
+        store.as_ref(),
+        "shared",
+        request("fixture")
+    )
+    .await
+    .is_err());
+    assert!(
+        op_embed(&state, &tenant, store.as_ref(), "shared", embed())
+            .await
+            .unwrap()
+            .cache_hit
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    let report = crate::reports_api::op_budgets(&state, &tenant)
+        .await
+        .unwrap();
+    let exhausted = report.iter().find(|r| r.config == "shared").unwrap();
+    assert_eq!((exhausted.limit, exhausted.remaining), (Some(0), Some(0)));
+    // Refusal before any physical attempt refunds an earlier legacy tier hold.
+    let combined = yaml("combined", 0).replace(
+        "dailyTotalTokens: 0",
+        "dailyTotalTokens: 0, dailyTokens: {fast: 1000}",
+    );
+    state
+        .providers
+        .apply(&state, &tenant, &combined)
+        .await
+        .unwrap();
+    let mut tiered = request("fixture");
+    tiered.tier = Some("fast".into());
+    assert!(matches!(
+        op_complete(&state, &tenant, store.as_ref(), "combined", tiered).await,
+        Err(KernelError::RateLimited(_))
+    ));
+    let rows = state.budgets().ledger(&tenant).await.unwrap();
+    assert!(rows
+        .iter()
+        .filter(|r| r.config == "combined")
+        .all(|r| r.held_units + r.settled_units == 0));
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert!(state
+        .budgets()
+        .ledger("unrelated")
+        .await
+        .unwrap()
+        .is_empty());
+}
+
+#[tokio::test]
+async fn total_cap_memory_covers_retries_explicit_models_and_embedding_misses() {
+    total_cap_case(test_state(None).await).await;
+}
+
+#[tokio::test]
+async fn total_cap_postgres_covers_retries_explicit_models_and_embedding_misses() {
+    let Ok(url) = std::env::var("MUNARIUM_TEST_DATABASE_URL") else {
+        eprintln!("unavailable: isolated PostgreSQL not configured");
+        return;
+    };
+    total_cap_case(test_state(Some(url)).await).await;
+}
+
+#[tokio::test]
+async fn total_cap_two_postgres_instances_admit_one_http_attempt() {
+    let Ok(url) = std::env::var("MUNARIUM_TEST_DATABASE_URL") else {
+        eprintln!("unavailable: isolated PostgreSQL not configured");
+        return;
+    };
+    let first = test_state(Some(url.clone())).await;
+    let second = test_state(Some(url)).await;
+    let calls = Arc::new(AtomicUsize::new(0));
+    let observed = calls.clone();
+    let app = axum::Router::new().route(
+        "/api/chat",
+        axum::routing::post(move || {
+            observed.fetch_add(1, Ordering::SeqCst);
+                // Exact observed usage equals the reserved amount, so the
+                // completed call consumes the entire shared daily allowance.
+                async { Json(json!({"message":{"content":"ok"},"done":true,"done_reason":"stop","prompt_eval_count":fixture_estimate("fixture", None).total().unwrap(),"eval_count":0})) }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    let _server = Abort(tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap()
+    }));
+    let tenant = format!("replicas-{}", uuid::Uuid::new_v4());
+    let units = fixture_estimate("fixture", None).total().unwrap();
+    first.providers.apply(&first, &tenant, &format!("apiVersion: munarium.ioka.io/v1\nkind: ProviderConfig\nmetadata: {{name: fixture}}\nspec:\n  provider: ollama\n  endpoint: {endpoint}\n  budgets: {{dailyTotalTokens: {units}}}\n")).await.unwrap();
+    let barrier = Arc::new(tokio::sync::Barrier::new(10));
+    let mut tasks = Vec::new();
+    for i in 0..10 {
+        let state = if i % 2 == 0 {
+            first.clone()
+        } else {
+            second.clone()
+        };
+        let tenant = tenant.clone();
+        let barrier = barrier.clone();
+        tasks.push(tokio::spawn(async move {
+            let store = state.store_for(&tenant).await.unwrap();
+            barrier.wait().await;
+            op_complete(
+                &state,
+                &tenant,
+                store.as_ref(),
+                "fixture",
+                serde_json::from_value(json!({"model":"fixture","prompt":"test","max_tokens":9}))
+                    .unwrap(),
+            )
+            .await
+        }));
+    }
+    let mut succeeded = 0;
+    for task in tasks {
+        match task.await.unwrap() {
+            Ok(_) => succeeded += 1,
+            Err(e) => assert!(matches!(e, KernelError::RateLimited(_))),
+        }
+    }
+    assert_eq!(succeeded, 1);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        second.budgets().ledger(&tenant).await.unwrap()[0].settled_units,
+        units
+    );
+}
+
+#[tokio::test]
+async fn total_cap_cancelled_submission_retains_estimate() {
+    let state = test_state(None).await;
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let observed = entered.clone();
+    let app = axum::Router::new().route(
+        "/api/chat",
+        axum::routing::post(move || {
+            let observed = observed.clone();
+            async move {
+                observed.notify_one();
+                std::future::pending::<String>().await
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    let _server = Abort(tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap()
+    }));
+    state.providers.apply(&state, "cancel", &format!("apiVersion: munarium.ioka.io/v1\nkind: ProviderConfig\nmetadata: {{name: fixture}}\nspec:\n  provider: ollama\n  endpoint: {endpoint}\n  budgets: {{dailyTotalTokens: 1000}}\n")).await.unwrap();
+    let task_state = state.clone();
+    let task = tokio::spawn(async move {
+        let store = task_state.store_for("cancel").await.unwrap();
+        op_complete(
+            &task_state,
+            "cancel",
+            store.as_ref(),
+            "fixture",
+            serde_json::from_value(json!({"model":"fixture","prompt":"test","max_tokens":9}))
+                .unwrap(),
+        )
+        .await
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(10), entered.notified())
+        .await
+        .unwrap();
+    task.abort();
+    assert!(task.await.unwrap_err().is_cancelled());
+    let rows = state.budgets().ledger("cancel").await.unwrap();
+    assert_eq!(
+        rows[0].held_units,
+        fixture_estimate("fixture", None).total().unwrap()
+    );
+    state.budgets().sweep_stale(0).await.unwrap();
+    let rows = state.budgets().ledger("cancel").await.unwrap();
+    assert_eq!(
+        rows[0].settled_units,
+        fixture_estimate("fixture", None).total().unwrap()
+    );
+}
+
 #[tokio::test]
 async fn structured_capability_refusal_precedes_admission_and_preserves_plain_requests() {
     let state = test_state(None).await;

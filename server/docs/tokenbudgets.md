@@ -261,14 +261,41 @@ Prefer a roll-forward fix when these accounting methods or estimator are require
 
 ## Dispatch accounting inventory
 
-The following describes the implemented policy, including uncapped paths. It is
-not a claim that every physical provider submission has its own reservation.
+The following describes the implemented policy, including uncapped paths.
 The [implementation roadmap](lessons-from-vcp-impl.md#42-p05-make-the-admission-coverage-explicit--r15-and-r14)
-keeps broader admission changes under D1 and diagnostic access changes under D7.
+records D1's opt-in config-wide policy and D7's separate diagnostic access work.
+
+Set `spec.budgets.dailyTotalTokens` to a nonnegative signed 64-bit integer to
+reserve capacity before **each physical completion or embedding HTTP attempt**
+through the gateway. Zero refuses paid work; omission preserves legacy behavior.
+This uses the existing shared ledger's `all` scope, keyed by tenant, resolved
+config and UTC day. It covers explicit models without assigning a tier, every
+helper using that config, structured requests, and transport retries. Embedding
+cache hits create no new reservation; the existing rate check still precedes
+the cache lookup. Embedding estimates use effective serialized request bytes
+rounded up by four plus 32 framing tokens. Completion estimates use the existing
+effective-request estimator. Attempt evidence records `physical-attempt-v1`.
+
+The `all` scope and legacy `fast`/`capable`/`frontier` scopes are independent
+ceilings over overlapping work: **do not add their totals as a provider bill**.
+Legacy tier reservations remain per logical completion. A reservation is not a
+guarantee of an exact bill: observed usage can exceed its estimate and blocks later
+admission when that creates debt. Missing, partial or malformed usage retains at
+least its estimate and observed subtotal. Failed and cancelled submissions remain
+held until the conservative stale sweep; a successful retry never refunds them.
+Durable PostgreSQL money records retain invocation and physical-attempt IDs;
+token evidence retains its own reservation identity and original accounting day.
+
+This is a config-wide gateway ceiling, not an account-wide limit. Other configs,
+legacy health probes, external callers and local index embedding are outside it.
+Provider configuration writers remain trusted to set or remove caps. All replicas
+using a capped config must run this implementation; an older binary ignores the
+new optional field. Upgrade replicas before enabling it, and remove the policy
+only deliberately before rolling back. No schema migration is needed.
 
 | Dispatch path | Accounting and retry policy |
 |---|---|
-| REST and native gRPC direct completion | Both use `providers_api::op_complete`. The gateway checks the provider config's rate budget, then reserves daily capacity only when a tier and its daily cap resolve. |
+| REST and native gRPC direct completion | Both use `providers_api::op_complete`. Rate and legacy tier checks are retained; an opted-in daily total reserves each HTTP attempt. |
 | Structured completion | `op_complete_structured` uses the same gateway, reservation and settlement rules; schema handling does not create another dispatch. |
 | Session answer, truncation re-ask, corrective re-asks | Each completion re-enters the gateway with the resolved config/model/tier. One truncation re-ask permits four times the base output ceiling; checked multiplication rejects overflow before that re-ask. Corrective re-asks retain the current ceiling and the existing maximum of two. |
 | Session query expansion | `sessions_api` uses the gateway with the separately resolved expansion task. An optional failed expansion does not refund dispatched work. |
@@ -276,19 +303,18 @@ keeps broader admission changes under D1 and diagnostic access changes under D7.
 | Runbook advisory and authoring assist | `runbooks_api` and `authoring_api` call the gateway with their resolved model task. Response parsing happens after provider accounting. |
 | Checked answers and collection queries | `answers_api` uses structured completion with an explicit tier; collection query processing reaches this same answer path. |
 | Vocabulary generation | `vocabulary_api` uses structured completion with its configured tier. A later vocabulary-validation failure does not refund the completion. |
-| Explicit model or fallback without a tier | The gateway still checks rate limits, but no daily reservation is created. Naming an explicit model together with a tier still permits tier-cap enforcement. |
-| API embeddings | `op_embed` checks the rate estimate before looking in its cache. A miss submits embedding work; a hit reuses vectors. Neither has a daily token reservation. Provider-call metrics count misses; existing invocation token projections are zero, not measured embedding usage. |
+| Explicit model or fallback without a tier | Rate limits and an opted-in daily total apply. No tier is invented. Naming an explicit model together with a tier still permits tier-cap enforcement. |
+| API embeddings | `op_embed` checks the rate estimate before its cache. Each HTTP attempt on a miss reserves the opted-in daily total and records reported or unknown usage. Hits create no spend record. Existing invocation token projections remain zero, not measured embedding usage; use budget evidence for usage quality. |
 | Index construction | Uses the local embedder independently of API provider embeddings; no hosted completion charge is inferred. |
 | `/healthai` | Authenticated any-role paid diagnostic. Calls default providers directly with `healthai_probe` output ceilings, bypassing rate and daily budgets. No new cap or audience restriction is introduced here. |
 | Provider health and provider listing | Health calls model-list endpoints directly (Ollama uses its local health endpoint); it has no token reservation. Listing is disclosure without a provider call. |
 
 Hosted and Ollama HTTP adapters retry 429 and 5xx responses at most twice (three
 physical submissions) inside a single logical call, honoring a bounded
-`Retry-After`. Transport errors are not retried by this loop. The gateway has one
-reservation for the logical call and settles using the final successful response's
-usage. Earlier failed submissions may have performed work, but their usage is
-unknown and is not separately charged. An exhausted call retains its estimate.
-This limitation needs a separate admission/accounting design before changing caps.
+`Retry-After`. Transport errors are not retried by this loop. Without a daily total,
+legacy tier admission still has one reservation per logical call, settled using
+the final response. With a daily total, every retry requires a fresh grant and
+earlier unresolved attempts retain their estimated liability.
 
 Cancelling an unpolled request submits no work. Cancellation after reservation
 may leave it held even if no response arrives; stale sweeping settles the original

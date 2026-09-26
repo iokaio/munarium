@@ -452,6 +452,9 @@ pub async fn op_budgets(state: &AppState, tenant: &str) -> Result<Vec<dto::Budge
     let mut limits: std::collections::HashMap<(String, String), u64> =
         std::collections::HashMap::new();
     for entry in state.providers.list(state, tenant).await? {
+        if let Some(limit) = entry.doc.spec.budgets.daily_total_tokens {
+            limits.insert((entry.doc.metadata.name.clone(), "all".into()), limit);
+        }
         let caps = &entry.doc.spec.budgets.daily_tokens;
         for tier in munarium_providers::ModelTier::ALL {
             if let Some(limit) = caps.for_tier(tier) {
