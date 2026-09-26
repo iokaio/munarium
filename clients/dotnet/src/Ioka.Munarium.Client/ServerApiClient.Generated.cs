@@ -85,6 +85,12 @@ public sealed partial class ServerApiClient {
     public Task<ApiResponse> ActivateCollectionIndexAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("ActivateCollectionIndex", "POST", "/v1/collections/{collection_id}/activate-index", "application/json", request ?? new(), ct);
     /// <summary>GET /v1/collections/{id}</summary>
     public Task<ApiResponse> GetCollectionAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("GetCollection", "GET", "/v1/collections/{id}", "application/json", request ?? new(), ct);
+    /// <summary>GET /v1/command-recovery</summary>
+    public Task<ApiResponse> CommandRecoveryPolicyAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("CommandRecoveryPolicy", "GET", "/v1/command-recovery", "application/json", request ?? new(), ct);
+    /// <summary>POST /v1/command-recovery</summary>
+    public Task<ApiResponse> EnableCommandRecoveryAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("EnableCommandRecovery", "POST", "/v1/command-recovery", "application/json", request ?? new(), ct);
+    /// <summary>GET /v1/command-recovery/receipt</summary>
+    public Task<ApiResponse> CommandRecoveryReceiptAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("CommandRecoveryReceipt", "GET", "/v1/command-recovery/receipt", "application/json", request ?? new(), ct);
     /// <summary>POST /v1/evidence</summary>
     public Task<ApiResponse> SealAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("Seal", "POST", "/v1/evidence", "application/json", request ?? new(), ct);
     /// <summary>DELETE /v1/evidence/{evidence_id}</summary>

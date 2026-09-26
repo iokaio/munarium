@@ -128,6 +128,15 @@ public final class ServerApiClient extends ServerApiTransport {
     /** GET /v1/collections/{id} */
     public ApiResponse getCollection(ApiRequest request) { return call("GetCollection", "GET", "/v1/collections/{id}", "application/json", request); }
     public CompletableFuture<ApiResponse> getCollectionAsync(ApiRequest request) { return async(() -> getCollection(request)); }
+    /** GET /v1/command-recovery */
+    public ApiResponse commandRecoveryPolicy(ApiRequest request) { return call("CommandRecoveryPolicy", "GET", "/v1/command-recovery", "application/json", request); }
+    public CompletableFuture<ApiResponse> commandRecoveryPolicyAsync(ApiRequest request) { return async(() -> commandRecoveryPolicy(request)); }
+    /** POST /v1/command-recovery */
+    public ApiResponse enableCommandRecovery(ApiRequest request) { return call("EnableCommandRecovery", "POST", "/v1/command-recovery", "application/json", request); }
+    public CompletableFuture<ApiResponse> enableCommandRecoveryAsync(ApiRequest request) { return async(() -> enableCommandRecovery(request)); }
+    /** GET /v1/command-recovery/receipt */
+    public ApiResponse commandRecoveryReceipt(ApiRequest request) { return call("CommandRecoveryReceipt", "GET", "/v1/command-recovery/receipt", "application/json", request); }
+    public CompletableFuture<ApiResponse> commandRecoveryReceiptAsync(ApiRequest request) { return async(() -> commandRecoveryReceipt(request)); }
     /** POST /v1/evidence */
     public ApiResponse seal(ApiRequest request) { return call("Seal", "POST", "/v1/evidence", "application/json", request); }
     public CompletableFuture<ApiResponse> sealAsync(ApiRequest request) { return async(() -> seal(request)); }

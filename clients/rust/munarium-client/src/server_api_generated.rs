@@ -166,6 +166,18 @@ impl ServerApiClient {
     pub async fn get_collection(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("GetCollection", "GET", "/v1/collections/{id}", "application/json", request).await
     }
+    /// GET /v1/command-recovery
+    pub async fn command_recovery_policy(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("CommandRecoveryPolicy", "GET", "/v1/command-recovery", "application/json", request).await
+    }
+    /// POST /v1/command-recovery
+    pub async fn enable_command_recovery(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("EnableCommandRecovery", "POST", "/v1/command-recovery", "application/json", request).await
+    }
+    /// GET /v1/command-recovery/receipt
+    pub async fn command_recovery_receipt(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("CommandRecoveryReceipt", "GET", "/v1/command-recovery/receipt", "application/json", request).await
+    }
     /// POST /v1/evidence
     pub async fn seal(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("Seal", "POST", "/v1/evidence", "application/json", request).await

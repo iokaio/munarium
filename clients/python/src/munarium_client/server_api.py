@@ -541,6 +541,45 @@ class ServerApiClient(BaseServerApi):
             request,
         )
 
+    def command_recovery_policy(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/command-recovery"""
+        return self._call(
+            "CommandRecoveryPolicy",
+            "GET",
+            "/v1/command-recovery",
+            "application/json",
+            request,
+        )
+
+    def enable_command_recovery(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """POST /v1/command-recovery"""
+        return self._call(
+            "EnableCommandRecovery",
+            "POST",
+            "/v1/command-recovery",
+            "application/json",
+            request,
+        )
+
+    def command_recovery_receipt(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/command-recovery/receipt"""
+        return self._call(
+            "CommandRecoveryReceipt",
+            "GET",
+            "/v1/command-recovery/receipt",
+            "application/json",
+            request,
+        )
+
     def seal(
         self,
         request: ApiRequest | None = None,
@@ -2229,6 +2268,45 @@ class AsyncServerApiClient(BaseAsyncServerApi):
             "GetCollection",
             "GET",
             "/v1/collections/{id}",
+            "application/json",
+            request,
+        )
+
+    async def command_recovery_policy(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/command-recovery"""
+        return await self._call(
+            "CommandRecoveryPolicy",
+            "GET",
+            "/v1/command-recovery",
+            "application/json",
+            request,
+        )
+
+    async def enable_command_recovery(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """POST /v1/command-recovery"""
+        return await self._call(
+            "EnableCommandRecovery",
+            "POST",
+            "/v1/command-recovery",
+            "application/json",
+            request,
+        )
+
+    async def command_recovery_receipt(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/command-recovery/receipt"""
+        return await self._call(
+            "CommandRecoveryReceipt",
+            "GET",
+            "/v1/command-recovery/receipt",
             "application/json",
             request,
         )

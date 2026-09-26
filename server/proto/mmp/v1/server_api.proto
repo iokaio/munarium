@@ -106,6 +106,12 @@ service ServerApiService {
   rpc ActivateCollectionIndex(ServerApiRequest) returns (ServerApiResponse);
   // GET /v1/collections/{id}
   rpc GetCollection(ServerApiRequest) returns (ServerApiResponse);
+  // GET /v1/command-recovery
+  rpc CommandRecoveryPolicy(ServerApiRequest) returns (ServerApiResponse);
+  // POST /v1/command-recovery
+  rpc EnableCommandRecovery(ServerApiRequest) returns (ServerApiResponse);
+  // GET /v1/command-recovery/receipt
+  rpc CommandRecoveryReceipt(ServerApiRequest) returns (ServerApiResponse);
   // POST /v1/evidence
   rpc Seal(ServerApiRequest) returns (ServerApiResponse);
   // DELETE /v1/evidence/{evidence_id}

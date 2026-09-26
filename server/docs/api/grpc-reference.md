@@ -1246,6 +1246,9 @@ no evidence rows appear here.
 | CreateCollection | ServerApiRequest | ServerApiResponse | POST /v1/collections |
 | ActivateCollectionIndex | ServerApiRequest | ServerApiResponse | POST /v1/collections/{collection_id}/activate-index |
 | GetCollection | ServerApiRequest | ServerApiResponse | GET /v1/collections/{id} |
+| CommandRecoveryPolicy | ServerApiRequest | ServerApiResponse | GET /v1/command-recovery |
+| EnableCommandRecovery | ServerApiRequest | ServerApiResponse | POST /v1/command-recovery |
+| CommandRecoveryReceipt | ServerApiRequest | ServerApiResponse | GET /v1/command-recovery/receipt |
 | Seal | ServerApiRequest | ServerApiResponse | POST /v1/evidence |
 | Purge | ServerApiRequest | ServerApiResponse | DELETE /v1/evidence/{evidence_id} |
 | GetManifest | ServerApiRequest | ServerApiResponse | GET /v1/evidence/{evidence_id} |

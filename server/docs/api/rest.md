@@ -1,5 +1,10 @@
 # munarium-server REST API
 
+PostgreSQL management callers can inspect or activate tenant-scoped guarded
+command recovery at `GET/POST /v1/command-recovery`, and inspect claim metadata
+at `GET /v1/command-recovery/receipt?key=...`. See the
+[activation, retry and rollback contract](../ops/command-recovery.md).
+
 Token accounting evidence uses management-only `GET /v1/budgets/{id}/evidence`,
 `GET /v1/budgets/{id}/adjustments`, `POST /v1/budgets/{id}/adjustments`, and
 `GET /v1/reports/budget-usage?day=YYYY-MM-DD`. See
@@ -233,11 +238,15 @@ error registry for you.
 The complete `ServerApiClient` sends every operation once, including reads,
 writes and streams; see its [transport contract](../../../clients/docs/guides/server-1.2.md#contract-and-representation).
 
-Retry contract for the older typed client planes: idempotency keys are recorded **after**
+Default legacy retry contract for the older typed client planes: idempotency keys are recorded **after**
 the command completes, so there is no in-flight reservation. A client that
 re-sends a command whose request may already have been delivered can execute
 it twice. The official clients retry commands only on connect-phase failures
 and explicit load-shed; reads retry freely.
+
+Tenants explicitly activated for [guarded recovery](../ops/command-recovery.md)
+record claims before execution. Unknown outcomes remain `command-unresolved`
+instead of permitting duplicate execution; client retry policies are unchanged.
 
 `PUT /v1/sources` accepts bodies up to 256 MiB (the handler buffers the body,
 so the limit is the memory guard).

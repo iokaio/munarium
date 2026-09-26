@@ -1661,6 +1661,107 @@
         }
       }
     },
+    "/v1/command-recovery": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on every /v1 request (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "command"
+        ],
+        "operationId": "command_recovery_policy",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandRecoveryPolicy"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "command"
+        ],
+        "operationId": "enable_command_recovery",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommandRecoveryPolicy"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandRecoveryPolicy"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/command-recovery/receipt": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on every /v1 request (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "command"
+        ],
+        "operationId": "command_recovery_receipt",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "query",
+            "description": "Original command idempotency key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandRecoveryReceipt"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/evidence": {
       "parameters": [
         {
@@ -7625,6 +7726,50 @@
             "items": {
               "$ref": "#/components/schemas/CollectionDto"
             }
+          }
+        }
+      },
+      "CommandRecoveryPolicy": {
+        "type": "object",
+        "required": [
+          "mode"
+        ],
+        "properties": {
+          "mode": {
+            "type": "string",
+            "description": "`legacy` on read until explicitly activated; POST accepts `guarded-v1` only."
+          }
+        },
+        "additionalProperties": false
+      },
+      "CommandRecoveryReceipt": {
+        "type": "object",
+        "description": "Management metadata only; command replay retains its original plane/authority.",
+        "required": [
+          "key",
+          "operation",
+          "state",
+          "created_at"
+        ],
+        "properties": {
+          "completed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "description": "`unresolved` includes in-progress and possibly-executed work."
           }
         }
       },

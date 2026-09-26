@@ -330,6 +330,30 @@
       "streaming": false
     },
     {
+      "name": "command_recovery_policy",
+      "rpc": "CommandRecoveryPolicy",
+      "method": "GET",
+      "path": "/v1/command-recovery",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "enable_command_recovery",
+      "rpc": "EnableCommandRecovery",
+      "method": "POST",
+      "path": "/v1/command-recovery",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "command_recovery_receipt",
+      "rpc": "CommandRecoveryReceipt",
+      "method": "GET",
+      "path": "/v1/command-recovery/receipt",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
       "name": "seal",
       "rpc": "Seal",
       "method": "POST",

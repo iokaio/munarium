@@ -239,6 +239,21 @@ class ServerApiServiceStub:
                 request_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
                 response_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
                 _registered_method=True)
+        self.CommandRecoveryPolicy = channel.unary_unary(
+                '/mmp.v1.ServerApiService/CommandRecoveryPolicy',
+                request_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+                response_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+                _registered_method=True)
+        self.EnableCommandRecovery = channel.unary_unary(
+                '/mmp.v1.ServerApiService/EnableCommandRecovery',
+                request_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+                response_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+                _registered_method=True)
+        self.CommandRecoveryReceipt = channel.unary_unary(
+                '/mmp.v1.ServerApiService/CommandRecoveryReceipt',
+                request_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+                response_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+                _registered_method=True)
         self.Seal = channel.unary_unary(
                 '/mmp.v1.ServerApiService/Seal',
                 request_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
@@ -971,6 +986,27 @@ class ServerApiServiceServicer:
 
     def GetCollection(self, request, context):
         """GET /v1/collections/{id}
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CommandRecoveryPolicy(self, request, context):
+        """GET /v1/command-recovery
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def EnableCommandRecovery(self, request, context):
+        """POST /v1/command-recovery
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CommandRecoveryReceipt(self, request, context):
+        """GET /v1/command-recovery/receipt
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -1804,6 +1840,21 @@ def add_ServerApiServiceServicer_to_server(servicer, server):
             ),
             'GetCollection': grpc.unary_unary_rpc_method_handler(
                     servicer.GetCollection,
+                    request_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.FromString,
+                    response_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.SerializeToString,
+            ),
+            'CommandRecoveryPolicy': grpc.unary_unary_rpc_method_handler(
+                    servicer.CommandRecoveryPolicy,
+                    request_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.FromString,
+                    response_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.SerializeToString,
+            ),
+            'EnableCommandRecovery': grpc.unary_unary_rpc_method_handler(
+                    servicer.EnableCommandRecovery,
+                    request_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.FromString,
+                    response_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.SerializeToString,
+            ),
+            'CommandRecoveryReceipt': grpc.unary_unary_rpc_method_handler(
+                    servicer.CommandRecoveryReceipt,
                     request_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.FromString,
                     response_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.SerializeToString,
             ),
@@ -3358,6 +3409,87 @@ class ServerApiService:
             request,
             target,
             '/mmp.v1.ServerApiService/GetCollection',
+            mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+            mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CommandRecoveryPolicy(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/mmp.v1.ServerApiService/CommandRecoveryPolicy',
+            mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+            mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def EnableCommandRecovery(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/mmp.v1.ServerApiService/EnableCommandRecovery',
+            mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+            mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CommandRecoveryReceipt(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/mmp.v1.ServerApiService/CommandRecoveryReceipt',
             mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
             mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
             options,

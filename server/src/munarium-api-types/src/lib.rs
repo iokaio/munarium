@@ -2006,6 +2006,24 @@ pub struct ProviderDiagnosticsResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CommandRecoveryPolicy {
+    /// `legacy` on read until explicitly activated; POST accepts `guarded-v1` only.
+    pub mode: String,
+}
+
+/// Management metadata only; command replay retains its original plane/authority.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct CommandRecoveryReceipt {
+    pub key: String,
+    pub operation: String,
+    /// `unresolved` includes in-progress and possibly-executed work.
+    pub state: String,
+    pub created_at: String,
+    pub completed_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SessionTurnDto {
     pub ordinal: u32,
     pub query: String,

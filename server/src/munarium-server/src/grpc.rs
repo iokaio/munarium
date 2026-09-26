@@ -93,6 +93,7 @@ async fn with_idempotency<M, F, Fut>(
     state: &AppState,
     tenant: String,
     key: String,
+    operation: &'static str,
     req_hash: String,
     exec: F,
 ) -> Result<Response<M>, Status>
@@ -104,7 +105,17 @@ where
     // Plane-namespaced hash — see rest::with_idempotency: one key reused
     // across planes is a mismatch, never a cross-format decode.
     let req_hash = format!("grpc:{req_hash}");
-    match state.idem_check(&tenant, &key, &req_hash).await {
+    let admission = crate::command_recovery::begin(state, &tenant, &key, operation, &req_hash)
+        .await
+        .map_err(|e| to_status(&e))?;
+    let (guarded, replay) = match admission {
+        crate::command_recovery::Admission::Legacy => {
+            (false, state.idem_check(&tenant, &key, &req_hash).await)
+        }
+        crate::command_recovery::Admission::Claimed => (true, Ok(None)),
+        crate::command_recovery::Admission::Replay(body) => (true, Ok(Some(body))),
+    };
+    match replay {
         Ok(Some(stored)) => {
             let bytes =
                 hex::decode(&stored).map_err(|_| Status::internal("corrupt idempotency record"))?;
@@ -116,9 +127,22 @@ where
         Err(e) => return Err(to_status(&e)),
     }
     let msg = exec().await?;
-    state
-        .idem_store(&tenant, &key, &req_hash, &hex::encode(msg.encode_to_vec()))
-        .await;
+    if guarded {
+        crate::command_recovery::finish(
+            state,
+            &tenant,
+            &key,
+            operation,
+            &req_hash,
+            &hex::encode(msg.encode_to_vec()),
+        )
+        .await
+        .map_err(|e| to_status(&e))?;
+    } else {
+        state
+            .idem_store(&tenant, &key, &req_hash, &hex::encode(msg.encode_to_vec()))
+            .await;
+    }
     Ok(Response::new(msg))
 }
 
@@ -157,6 +181,7 @@ impl pb::command_service_server::CommandService for CommandSvc {
             &self.state,
             ctx.tenant_id.clone(),
             key,
+            "create_version",
             hash,
             || async move {
                 let id = ctx
@@ -186,6 +211,7 @@ impl pb::command_service_server::CommandService for CommandSvc {
             &self.state,
             ctx.tenant_id.clone(),
             key,
+            "propose_claim",
             hash,
             || async move {
                 let d: dto::ProposeClaimRequest = inner.clone().into();
@@ -238,6 +264,7 @@ impl pb::command_service_server::CommandService for CommandSvc {
             &self.state,
             ctx.tenant_id.clone(),
             key,
+            "append_events",
             hash,
             || async move {
                 let claims: Vec<dto::ProposeClaimRequest> =
@@ -291,6 +318,7 @@ impl pb::command_service_server::CommandService for CommandSvc {
             &self.state,
             ctx.tenant_id.clone(),
             key,
+            "open_promise",
             hash,
             || async move {
                 let p = ctx
@@ -326,6 +354,7 @@ impl pb::command_service_server::CommandService for CommandSvc {
             &self.state,
             ctx.tenant_id.clone(),
             key,
+            "fulfill_promise",
             hash,
             || async move {
                 let fulfilled = ctx
@@ -352,6 +381,7 @@ impl pb::command_service_server::CommandService for CommandSvc {
             &self.state,
             ctx.tenant_id.clone(),
             key,
+            "record_counts",
             hash,
             || async move {
                 ctx.store
@@ -387,6 +417,7 @@ impl pb::command_service_server::CommandService for CommandSvc {
             &self.state,
             ctx.tenant_id.clone(),
             key,
+            "upsert_digest",
             hash,
             || async move {
                 let d = inner
@@ -422,6 +453,7 @@ impl pb::command_service_server::CommandService for CommandSvc {
             &self.state,
             ctx.tenant_id.clone(),
             key,
+            "lock_anchor",
             hash,
             || async move {
                 let a = ctx
