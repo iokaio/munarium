@@ -1,20 +1,21 @@
-# Server 1.3: release preparation and upgrade
+# Server 1.3: release and upgrade
 
-This checkout prepares **1.3.0** of `iokaio/munarium`, containing Server and
-`mmctl`. Publication and image qualification are pending. The last published
-image remains 1.2.1; its digests and test results in the
-[container record](../../CONTAINER.md#versions-and-verification) do not qualify
-1.3.0. Matrix remains 1.0.0 and client packages retain their independent versions.
+**1.3.0** of `iokaio/munarium`, containing Server and `mmctl`, was published on
+2026-09-26. The [container record](../../CONTAINER.md#versions-and-verification)
+contains the exact digests, signing identity and completed qualification scope.
+Matrix remains 1.0.0 and client packages retain their independent versions.
 
 ## Changes since the 1.2.1 image
 
 The review starts at image source `c638a8e56fff45cef358ff2f4a5b5ba57957ba59`
-and covers merged main through `f5212c8` (PR #69). The following groups account
-for PRs #29–39 and #42–69, plus the CI changes in #40 and `6b39a36`.
+and covers the released source `eaa04ac6da25cb332b674c6535013a19b87fa0e7`
+(PR #70). The following groups account for PRs #29–39 and #42–70, plus the CI
+changes in #40 and `6b39a36`.
 Historical measurements remain tied to their recorded source and environment.
 
 | Area and changes | Behavior in 1.3 |
 |---|---|
+| Release preparation (#70) | Aligns Server 1.3.0 and unreleased SDK 1.2.0 source versions, adds release-version CI checks and upgrade guidance, and makes crash fixtures wait for asynchronous PostgreSQL lock release without changing production behavior. |
 | Release and SDK publication (#29–39) | Recorded 1.2.1 image identities, published client packages, Rust wire-crate packaging and manual client publication. These are separate from the new container release. |
 | Usage evidence (#44, #47, #48, #64) | Retain original reservations and observed/estimated/unknown usage; reconcile late evidence without rewriting history or changing its original accounting day. Estimates are not provider invoices. |
 | Provider admission and diagnostics (#65, #66) | Opt-in `dailyTotalTokens` reserves shared config capacity for each HTTP attempt, including retries. Managed diagnostics restrict paid probes to management callers and capped tenant configurations. Credential aliases are explicit public labels. |
@@ -52,8 +53,8 @@ remain 1.1.1 and target Matrix 1.0.
 Rust client 1.2.0 requires the 1.3.0 wire crates. Publish `munarium-proto` and
 `munarium-api-types` before publishing the Rust client. A registry-enabled
 manual [`clientbuild`](../../../.github/workflows/clientbuild.yml) run selecting
-Server crates or `all` can publish those crates once this preparation merges;
-merging this PR does not authorize that publication. Keep registry options off
+Server crates or `all` can publish those crates from this source. The container
+release does not publish those packages. Keep registry options off
 for a packaging rehearsal, and authorize the package release separately.
 
 ## Database and configuration upgrade
@@ -104,15 +105,14 @@ the [backup/restore procedure](../ops/backup-restore.md).
 
 ## Build and release checklist
 
-The target version is `1.3.0`, the eventual immutable Git tag is `v1.3.0`, and
-the candidate image tag is `1.3.0-rc.1`. Only after qualification should the same
-verified image index receive `1.3.0`, `1.3` and `latest`. Leave the existing
-`1.2` and immutable earlier tags unchanged.
+The released source is tagged `v1.3.0`. Candidate `1.3.0-rc.1` passed local and
+pulled-image qualification; the same signed index now has `1.3.0`, `1.3` and
+`latest`. Existing `1.2` and immutable earlier tags remain unchanged. The checklist
+below records the required process for reproducing release qualification.
 
-- Before tagging, compare the candidate commit with reviewed main `f5212c8`
-  (PR #69). Review every subsequently merged change and extend the table above
-  and upgrade guidance for any added behavior; do not treat this preparation's
-  review cutoff as coverage of later commits.
+- Before tagging, review every merge since the previous review cutoff and extend
+  the table and upgrade guidance. For 1.3.0, the review from `f5212c8` (PR #69)
+  through released `eaa04ac` covered the sole additional merge, PR #70.
 - Run `python scripts/check_release_versions.py` from the repository root.
   Source artifacts must agree with Cargo; Helm defaults and installation commands
   must agree with the published image in `server/release-versions.json`.
@@ -141,5 +141,5 @@ verified image index receive `1.3.0`, `1.3` and `latest`. Leave the existing
   update `server/release-versions.json`, Helm `appVersion`/image defaults and
   installation commands together, then rerun the version consistency check.
 
-This preparation does not publish an image, create a release tag, deploy a
-service, or qualify a production backup restoration.
+This publication qualifies the recorded synthetic image tests. It does not
+qualify a production backup restoration, deploy a service, or publish SDK packages.

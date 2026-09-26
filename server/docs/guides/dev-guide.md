@@ -7828,7 +7828,7 @@ checklist. Every spoke touched by the change must appear in the diff.
 The version story is deliberately small enough to hold in your head.
 
 **One source of truth.** `[workspace.package] version` in the root
-`server/Cargo.toml` (`1.3.0` for this release preparation). Every crate
+`server/Cargo.toml` (`1.3.0` for this release). Every crate
 takes `version.workspace = true`; `/version` reports
 `CARGO_PKG_VERSION`; the OpenAPI `info.version` carries it.
 

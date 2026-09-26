@@ -75,7 +75,7 @@ kubectl -n munarium rollout status deployment/munarium-server
 The private values file must set `staticTokens` to your comma-separated
 `token:tenant:role` registrations. Using a YAML value avoids Helm interpreting
 the commas as separate `--set` assignments. For the published image, use `image.repository=iokaio/munarium` and
-`image.tag=1.2.1`. Select a qualified candidate explicitly when rehearsing an upgrade.
+`image.tag=1.3.0`. Select a qualified candidate explicitly when rehearsing an upgrade.
 
 Then add what the chart does not wire — the token secret and provider keys —
 as a Kubernetes Secret patched into the deployment's environment (or a
