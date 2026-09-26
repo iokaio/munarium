@@ -377,6 +377,23 @@ impl CustomError {
 /// use (state.rs).
 pub const RUN_LOCKED_PREFIX: &str = "run-locked: ";
 
+pub const COMMAND_UNRESOLVED_PREFIX: &str = "command-unresolved: ";
+
+fn command_unresolved(e: &KernelError) -> Option<CustomError> {
+    let KernelError::InvalidInput(message) = e else {
+        return None;
+    };
+    Some(CustomError {
+        slug: "command-unresolved",
+        status: StatusCode::CONFLICT,
+        // ABORTED can be interpreted as a retryable head conflict by older
+        // clients. An ambiguous effect must never encourage automatic retry.
+        code: tonic::Code::FailedPrecondition,
+        title: "command outcome is unresolved",
+        detail: message.strip_prefix(COMMAND_UNRESOLVED_PREFIX)?.into(),
+    })
+}
+
 fn run_locked_detail(e: &KernelError) -> Option<&str> {
     match e {
         KernelError::InvalidInput(msg) => msg.strip_prefix(RUN_LOCKED_PREFIX),
@@ -452,6 +469,9 @@ pub fn slug(e: &KernelError) -> &'static str {
 }
 
 pub fn to_problem(e: &KernelError) -> (StatusCode, Problem) {
+    if let Some(error) = command_unresolved(e) {
+        return error.to_problem();
+    }
     if let Some(detail) = run_locked_detail(e) {
         return CustomError {
             slug: "run-locked",
@@ -594,6 +614,9 @@ impl std::fmt::Display for ApiError {
 
 pub fn to_status(e: &KernelError) -> tonic::Status {
     use tonic::Code;
+    if let Some(error) = command_unresolved(e) {
+        return error.to_status();
+    }
     if let Some(detail) = run_locked_detail(e) {
         return CustomError {
             slug: "run-locked",

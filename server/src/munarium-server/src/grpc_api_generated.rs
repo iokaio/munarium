@@ -126,6 +126,15 @@ impl pb::server_api_service_server::ServerApiService for ServerApiSvc {
     async fn get_collection(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "GET", "/v1/collections/{id}", "application/json").await
     }
+    async fn command_recovery_policy(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "GET", "/v1/command-recovery", "application/json").await
+    }
+    async fn enable_command_recovery(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "POST", "/v1/command-recovery", "application/json").await
+    }
+    async fn command_recovery_receipt(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "GET", "/v1/command-recovery/receipt", "application/json").await
+    }
     async fn seal(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "POST", "/v1/evidence", "application/json").await
     }

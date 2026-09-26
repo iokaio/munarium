@@ -667,6 +667,43 @@
         "restore": "Preserve identities/provenance; reconcile external bytes separately.",
         "coverage": "History fixtures prove their stated invariants, not general retention deadlines."
       }
+    },
+    "command_recovery": {
+      "retrieval_exclusion": {
+        "read": "Replay response_body can retain historical content independently of search.",
+        "cleanup": "No physical deletion implied.",
+        "holds": "No general source hold API; pins and other collection owners can require content.",
+        "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
+        "coverage": "Gap: no universal exclusion fixture across all surfaces."
+      },
+      "access_revocation": {
+        "read": "Current endpoint authority applies; already delivered copies cannot be recalled.",
+        "cleanup": "Expiry/revocation does not erase bytes.",
+        "holds": "Retention/hold grants no authority.",
+        "restore": "Reconcile restored deny-list, grants and policies before serving.",
+        "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
+      },
+      "logical_removal": {
+        "read": "No general source tombstone API; surface-specific soft state governs availability.",
+        "cleanup": "Lifecycle state changes do not imply deletion.",
+        "holds": "No new hold mechanism.",
+        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "coverage": "Gap: no general logical-removal/restore conformance suite."
+      },
+      "physical_erasure": {
+        "read": "No general source erasure API or deadline.",
+        "cleanup": "Completed command receipts follow MUNARIUM_IDEMPOTENCY_TTL_SECS; unresolved claims and activation policies never expire. This is not source-linked erasure.",
+        "holds": "No per-row hold.",
+        "restore": "No durable erasure journal/replay contract; restored state cannot claim general erasure compliance.",
+        "coverage": "Gap: no all-copy erasure, partial-failure or backup-restore closure fixture."
+      },
+      "protected_retention": {
+        "read": "Retained for provenance/operations under current endpoint authority; not a general regulatory retention API.",
+        "cleanup": "Unresolved claims and tenant activation are retained to prevent accidental re-execution; only completed receipts are TTL-pruned.",
+        "holds": "Evidence holds are separate; other surfaces have no general legal-hold API.",
+        "restore": "Preserve identities/provenance; reconcile external bytes separately.",
+        "coverage": "Guarded command process recovery and two-pool race/TTL fixtures; external effects and backup reconciliation remain separate."
+      }
     }
   },
   "tables": {
@@ -1942,6 +1979,38 @@
         "observation": "Numeric usage, resolution state, conservative units, previous revision, safe operator evidence reference and optional initial price selection.",
         "calculation": "Pinned price identity, currency, decimal micro-unit amount or explicit unknown coverage flags."
       }
+    },
+    "command_recovery_policies": {
+      "owner": "Tenant command operator; management can inspect metadata, original command authority is required for replay.",
+      "policy": "command_recovery",
+      "origins": [
+        "src/munarium-store-pg/migrations/0039_command_recovery.sql"
+      ],
+      "json_content": {},
+      "columns": {
+        "tenant_id": "text",
+        "activated_at": "timestamptz"
+      },
+      "content": "Durable tenant-scoped protocol activation; no command payload."
+    },
+    "command_receipts": {
+      "owner": "Tenant command operator; management can inspect metadata, original command authority is required for replay.",
+      "policy": "command_recovery",
+      "origins": [
+        "src/munarium-store-pg/migrations/0039_command_recovery.sql"
+      ],
+      "json_content": {},
+      "columns": {
+        "tenant_id": "text",
+        "key": "text",
+        "operation": "text",
+        "request_hash": "text",
+        "state": "text",
+        "response_body": "text",
+        "created_at": "timestamptz",
+        "completed_at": "timestamptz"
+      },
+      "content": "Opaque command identity, operation and request hash; response_body retains the original REST JSON or typed gRPC hex wire response. Unresolved claims contain no response."
     }
   },
   "artifacts": {

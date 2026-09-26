@@ -22,6 +22,13 @@ as `coverage: Gap: ...` describe missing assurance, not successful tests.
 
 ## Surfaces and retained content
 
+Guarded command recovery adds durable tenant activation and command claims.
+Completed claims follow the existing receipt TTL; unresolved claims and activation
+records never expire automatically. Claims can retain a response payload after
+completion. Restore must reconcile these records before command writers start;
+see [command recovery](command-recovery.md). These records do not authorize
+source erasure or removal of ledger history.
+
 The JSON inventory is exhaustive for migration columns; this table groups those
 entries and artifact families so operators can trace where content can remain.
 Identifiers, filenames, hashes, labels and operational metadata are included even

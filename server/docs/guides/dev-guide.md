@@ -14255,6 +14255,8 @@ route family needs one rule there.
 | Route | Methods | OpenAPI tag | Where this book teaches it |
 |---|---|---|---|
 | `/healthai` | GET | providers | §11 |
+| `/v1/command-recovery` | GET, POST | command | [Guarded recovery](../ops/command-recovery.md) |
+| `/v1/command-recovery/receipt` | GET | command | [Guarded recovery](../ops/command-recovery.md) |
 | `/healthz` | GET | meta | §5, §11 |
 | `/openapi.json` | GET | meta | rest.md |
 | `/readyz` | GET | meta | §5, §8A (datastore readiness), §11 |

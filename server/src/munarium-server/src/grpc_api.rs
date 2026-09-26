@@ -187,6 +187,7 @@ fn problem_status(status: u16, body: &[u8]) -> Status {
         401 => tonic::Code::Unauthenticated,
         403 => tonic::Code::PermissionDenied,
         404 => tonic::Code::NotFound,
+        409 if slug == "command-unresolved" => tonic::Code::FailedPrecondition,
         409 => tonic::Code::Aborted,
         410 | 412 => tonic::Code::FailedPrecondition,
         413 | 429 => tonic::Code::ResourceExhausted,

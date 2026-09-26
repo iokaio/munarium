@@ -177,6 +177,7 @@ async fn with_idempotency<F, Fut>(
     state: &AppState,
     ctx: &TenantCtx,
     headers: &HeaderMap,
+    operation: String,
     body_hash: String,
     exec: F,
 ) -> ApiResult<axum::response::Response>
@@ -191,7 +192,16 @@ where
     // in the SAME table. Reusing one Idempotency-Key across planes must
     // surface as idempotency-mismatch, never decode the other plane's bytes.
     let body_hash = format!("rest:{body_hash}");
-    if let Some(stored) = state.idem_check(tenant, &key, &body_hash).await? {
+    let admission =
+        crate::command_recovery::begin(state, tenant, &key, &operation, &body_hash).await?;
+    let (guarded, replay) = match admission {
+        crate::command_recovery::Admission::Legacy => {
+            (false, state.idem_check(tenant, &key, &body_hash).await?)
+        }
+        crate::command_recovery::Admission::Claimed => (true, None),
+        crate::command_recovery::Admission::Replay(body) => (true, Some(body)),
+    };
+    if let Some(stored) = replay {
         // Fail closed: a stored record that no longer parses is a server
         // fault, not a null replay.
         let v: serde_json::Value = serde_json::from_str(&stored).map_err(|_| {
@@ -200,9 +210,21 @@ where
         return Ok(Json(v).into_response());
     }
     let value = exec().await?;
-    state
-        .idem_store(tenant, &key, &body_hash, &value.to_string())
-        .await;
+    if guarded {
+        crate::command_recovery::finish(
+            state,
+            tenant,
+            &key,
+            &operation,
+            &body_hash,
+            &value.to_string(),
+        )
+        .await?;
+    } else {
+        state
+            .idem_store(tenant, &key, &body_hash, &value.to_string())
+            .await;
+    }
     Ok(Json(value).into_response())
 }
 
@@ -234,12 +256,19 @@ async fn create_version(
 ) -> ApiResult<axum::response::Response> {
     let (ctx, store) = auth(&state, &headers).await?;
     let hash = idem_body_hash(&req)?;
-    with_idempotency(&state, &ctx, &headers, hash, || async move {
-        let id = store
-            .create_version(req.parent_version_id.as_deref(), req.metadata.clone())
-            .await?;
-        json_value(&dto::CreateVersionResponse { version_id: id })
-    })
+    with_idempotency(
+        &state,
+        &ctx,
+        &headers,
+        "create_version".into(),
+        hash,
+        || async move {
+            let id = store
+                .create_version(req.parent_version_id.as_deref(), req.metadata.clone())
+                .await?;
+            json_value(&dto::CreateVersionResponse { version_id: id })
+        },
+    )
     .await
 }
 
@@ -261,30 +290,37 @@ async fn propose_claim(
         .await?;
     let state2 = state.clone();
     let tenant = ctx.tenant_id.clone();
-    with_idempotency(&state, &ctx, &headers, hash, || async move {
-        let expected = req.expected_head;
-        let out = service::append_events(
-            store.as_ref(),
-            &state2.shapes,
-            &tenant,
-            &version_id,
-            std::slice::from_ref(&req),
-            None,
-            expected,
-            chronology.as_ref(),
-        )
-        .await?;
-        let claim = out.claims.into_iter().next().ok_or_else(|| {
-            ApiError::Mesh(KernelError::Storage(
-                "append returned no claim for a one-claim propose".into(),
-            ))
-        })?;
-        json_value(&dto::ProposeClaimResponse {
-            claim: claim.convert(),
-            findings: out.findings.into_iter().map(convert).collect(),
-            head_seq: out.head_seq,
-        })
-    })
+    with_idempotency(
+        &state,
+        &ctx,
+        &headers,
+        format!("propose_claim:{version_id}"),
+        hash,
+        || async move {
+            let expected = req.expected_head;
+            let out = service::append_events(
+                store.as_ref(),
+                &state2.shapes,
+                &tenant,
+                &version_id,
+                std::slice::from_ref(&req),
+                None,
+                expected,
+                chronology.as_ref(),
+            )
+            .await?;
+            let claim = out.claims.into_iter().next().ok_or_else(|| {
+                ApiError::Mesh(KernelError::Storage(
+                    "append returned no claim for a one-claim propose".into(),
+                ))
+            })?;
+            json_value(&dto::ProposeClaimResponse {
+                claim: claim.convert(),
+                findings: out.findings.into_iter().map(convert).collect(),
+                head_seq: out.head_seq,
+            })
+        },
+    )
     .await
 }
 
@@ -305,24 +341,31 @@ async fn append_events(
         .await?;
     let state2 = state.clone();
     let tenant = ctx.tenant_id.clone();
-    with_idempotency(&state, &ctx, &headers, hash, || async move {
-        let out = service::append_events(
-            store.as_ref(),
-            &state2.shapes,
-            &tenant,
-            &version_id,
-            &req.claims,
-            req.candidate_text.as_deref(),
-            req.expected_head,
-            chronology.as_ref(),
-        )
-        .await?;
-        json_value(&dto::AppendEventsResponse {
-            claims: out.claims.into_iter().map(convert).collect(),
-            findings: out.findings.into_iter().map(convert).collect(),
-            head_seq: out.head_seq,
-        })
-    })
+    with_idempotency(
+        &state,
+        &ctx,
+        &headers,
+        format!("append_events:{version_id}"),
+        hash,
+        || async move {
+            let out = service::append_events(
+                store.as_ref(),
+                &state2.shapes,
+                &tenant,
+                &version_id,
+                &req.claims,
+                req.candidate_text.as_deref(),
+                req.expected_head,
+                chronology.as_ref(),
+            )
+            .await?;
+            json_value(&dto::AppendEventsResponse {
+                claims: out.claims.into_iter().map(convert).collect(),
+                findings: out.findings.into_iter().map(convert).collect(),
+                head_seq: out.head_seq,
+            })
+        },
+    )
     .await
 }
 
@@ -337,19 +380,26 @@ async fn open_promise(
 ) -> ApiResult<axum::response::Response> {
     let (ctx, store) = auth(&state, &headers).await?;
     let hash = idem_body_hash(&req)?;
-    with_idempotency(&state, &ctx, &headers, hash, || async move {
-        let p = store
-            .register_promise(
-                &version_id,
-                &req.key,
-                &req.kind,
-                &req.description,
-                req.origin_scope.as_deref(),
-                req.due_scope.as_deref(),
-            )
-            .await?;
-        json_value(&convert(p))
-    })
+    with_idempotency(
+        &state,
+        &ctx,
+        &headers,
+        format!("open_promise:{version_id}"),
+        hash,
+        || async move {
+            let p = store
+                .register_promise(
+                    &version_id,
+                    &req.key,
+                    &req.kind,
+                    &req.description,
+                    req.origin_scope.as_deref(),
+                    req.due_scope.as_deref(),
+                )
+                .await?;
+            json_value(&convert(p))
+        },
+    )
     .await
 }
 
@@ -362,10 +412,17 @@ async fn fulfill_promise(
 ) -> ApiResult<axum::response::Response> {
     let (ctx, store) = auth(&state, &headers).await?;
     let hash = request_hash(format!("fulfill:{version_id}:{key}").as_bytes());
-    with_idempotency(&state, &ctx, &headers, hash, || async move {
-        let fulfilled = store.fulfill_promise(&version_id, &key).await?;
-        json_value(&dto::FulfillPromiseResponse { fulfilled })
-    })
+    with_idempotency(
+        &state,
+        &ctx,
+        &headers,
+        format!("fulfill_promise:{version_id}"),
+        hash,
+        || async move {
+            let fulfilled = store.fulfill_promise(&version_id, &key).await?;
+            json_value(&dto::FulfillPromiseResponse { fulfilled })
+        },
+    )
     .await
 }
 
@@ -380,19 +437,26 @@ async fn lock_anchor(
 ) -> ApiResult<axum::response::Response> {
     let (ctx, store) = auth(&state, &headers).await?;
     let hash = idem_body_hash(&req)?;
-    with_idempotency(&state, &ctx, &headers, hash, || async move {
-        let a = store
-            .lock_anchor(
-                &version_id,
-                &req.subject,
-                &req.key,
-                &req.value,
-                req.scope_path.as_deref(),
-                req.evidence.clone(),
-            )
-            .await?;
-        json_value(&convert(a))
-    })
+    with_idempotency(
+        &state,
+        &ctx,
+        &headers,
+        format!("lock_anchor:{version_id}"),
+        hash,
+        || async move {
+            let a = store
+                .lock_anchor(
+                    &version_id,
+                    &req.subject,
+                    &req.key,
+                    &req.value,
+                    req.scope_path.as_deref(),
+                    req.evidence.clone(),
+                )
+                .await?;
+            json_value(&convert(a))
+        },
+    )
     .await
 }
 
@@ -829,18 +893,25 @@ async fn record_counts(
 ) -> ApiResult<axum::response::Response> {
     let (ctx, store) = auth(&state, &headers).await?;
     let hash = idem_body_hash(&req)?;
-    with_idempotency(&state, &ctx, &headers, hash, || async move {
-        store
-            .record_counts(
-                &version_id,
-                &req.key,
-                &req.scope_path,
-                req.count,
-                req.budget,
-            )
-            .await?;
-        Ok(serde_json::json!({ "ok": true }))
-    })
+    with_idempotency(
+        &state,
+        &ctx,
+        &headers,
+        format!("record_counts:{version_id}"),
+        hash,
+        || async move {
+            store
+                .record_counts(
+                    &version_id,
+                    &req.key,
+                    &req.scope_path,
+                    req.count,
+                    req.budget,
+                )
+                .await?;
+            Ok(serde_json::json!({ "ok": true }))
+        },
+    )
     .await
 }
 
@@ -1274,6 +1345,14 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/healthai", get(crate::providers_api::healthai))
+        .route(
+            "/v1/command-recovery",
+            get(crate::command_recovery::policy).post(crate::command_recovery::enable),
+        )
+        .route(
+            "/v1/command-recovery/receipt",
+            get(crate::command_recovery::receipt),
+        )
         .route("/version", get(version_info))
         .route("/openapi.json", get(openapi_json))
         .route("/docs", get(docs_page))

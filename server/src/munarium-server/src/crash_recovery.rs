@@ -78,7 +78,10 @@ fn command_receipt_process_recovery() {
     }
 }
 
-async fn endpoint(state: Arc<AppState>, plane: &str) -> (String, tokio::task::JoinHandle<()>) {
+pub(crate) async fn endpoint(
+    state: Arc<AppState>,
+    plane: &str,
+) -> (String, tokio::task::JoinHandle<()>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let task = if plane == "rest" {
@@ -101,7 +104,7 @@ async fn endpoint(state: Arc<AppState>, plane: &str) -> (String, tokio::task::Jo
     (format!("http://{addr}"), task)
 }
 
-async fn command(url: &str, plane: &str, changed: bool) -> Result<String, String> {
+pub(crate) async fn command(url: &str, plane: &str, changed: bool) -> Result<String, String> {
     if plane == "rest" {
         let response = reqwest::Client::new()
             .post(format!("{url}/v1/versions"))

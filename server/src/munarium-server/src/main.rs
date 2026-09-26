@@ -31,6 +31,7 @@ mod budget_api;
 mod charts;
 mod chronology_api;
 mod collections_api;
+mod command_recovery;
 mod config;
 #[cfg(test)]
 mod crash_recovery;

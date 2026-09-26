@@ -92,7 +92,7 @@ Discovery and tests can proceed before these decisions; dependent behavior chang
 |---|---|---|
 | D1: What is capped when no tier resolves? | Adopted: opt-in `budgets.dailyTotalTokens` covers physical gateway completion and embedding attempts, including retries; omission retains legacy behavior | Broader R15 enforcement without assigning a tier to an explicit model; see [token budgets](tokenbudgets.md#dispatch-accounting-inventory) |
 | D2: Is money a Server reporting feature? | Adopted for explicitly scoped PostgreSQL gateway attempts in P14; unrecorded work remains unknown | R16 immutable tariffs, reconciliation and coverage-qualified report; §4.4 |
-| D3: Which fault guarantees are supported? | P08 scope: kill/restart the application while PostgreSQL stays running. Database crashes and power loss need separate qualification; stronger recovery contracts remain open | R13 acceptance and required CI coverage |
+| D3: Which fault guarantees are supported? | P08 scope: kill/restart the application while PostgreSQL stays running. Opt-in tenant command claims preserve unresolved outcomes without resubmission (§9.2). Database crashes and power loss need separate qualification | R13 acceptance and required CI coverage |
 | D4: What does deletion mean? | Preserve current soft-removal and audit retention; design each stronger mode explicitly | R21 cleanup, tombstones, restore behavior |
 | D5: Are embedded crates supported public Rust APIs? | Decided in P15 (2026-09-25): only `munarium-datastore`, as a supported embedded library. It has a declared surface under semantic versioning, is consumed as pinned source, and has minimum Rust 1.92 measured from an isolated consumer. Every other crate is internal ([embedded-support.md](embedded-support.md)) | R31 MSRV/support tier; API shape for R01/R07/R08 |
 | D6: What makes governance useful for a target workload? | Freeze task population, minimum useful effect, cost/latency constraints, and mandatory authorization checks before the final evaluation | R25 quality claims and any paid campaign |
@@ -785,6 +785,23 @@ suites are not claimed as executed. These local results supplement automatic CI.
 
 ### 9.2 Strengthen command recovery only where the contract supports it
 
+**Adopted implementation:** [guarded command recovery](ops/command-recovery.md)
+adds one-way tenant management activation and durable pre-execution claims to
+the existing keyed REST/typed-gRPC commands. Claims bind tenant, operation,
+target, plane and request hash. Concurrent or interrupted execution remains
+unresolved; it never expires into permission to repeat effects. Successful
+responses preserve their wire encoding and existing replay TTL; old receipts
+remain readable without inventing pre-dispatch evidence. Migration 0039 is
+additive. Drain old writers before activation, and retain a compatible-reader
+rollback or roll-forward path. This deliberately chooses ambiguity over an
+unproven atomic mutation/response or exactly-once remote-effect guarantee.
+
+The application-process fixture exercises pre-execution, post-effect and
+post-receipt barriers on both planes, with crash and uninterrupted controls.
+Separate-pool races, authority/tenant/target binding, failed-handler replay,
+native/typed error categories and unresolved retention are local/CI gates.
+No database-crash, power-loss or restored-backup qualification is implied.
+
 The current [REST retry documentation](api/rest.md) describes post-completion receipt behavior. A fault test exposing that window is characterization, not permission to silently impose a new contract across every command.
 
 For a stronger database-only command guarantee, design a durable operation identity and states such as pending/completed/unknown, with tenant/operation/hash binding, concurrent claim ownership, and a recoverable lease/fence if needed. Persist the ledger mutation and its replay result in the same PostgreSQL transaction where feasible. This requires an explicit transaction-aware store boundary; a handler-level mutex would not solve cross-replica recovery. Keep core free of SQLx.
@@ -1372,8 +1389,7 @@ An implementation slice is complete only when its behavior, compatibility, migra
 
 P02–P04 are merged in PR #46 and P16 in PR #63. P01 now includes late token
 reconciliation/reporting and a versioned estimator. Remaining policy-dependent
-work includes D3 for
-stronger command/submission recovery beyond §9.1, D4 for durable source denial
+work includes D4 for durable source denial
 and cleanup, and a new D6 population/model/budget/threshold decision for broader
 qualification. The earlier local D6 rejection remains a completed research result.
 
@@ -1395,7 +1411,7 @@ explicit missing environments, and owned PostgreSQL resources; its
 [runner documentation](../../matrix/README.md#testing) records the local profile
 and external black-box prerequisites. Automatic CI remains enabled.
 
-PR #64 did not adopt D1/D7, D3 or D4 by implication. Subsequent P05 work explicitly adopts the opt-in D1/D7 policies recorded above. Stronger behavior cannot be
+PR #64 did not adopt D1/D7, D3 or D4 by implication. Subsequent P05 work explicitly adopts the opt-in D1/D7 policies recorded above; §9.2 adopts guarded D3 command recovery. Stronger behavior cannot be
 enabled merely because a decision has been pending. Nor does a new test or
 receipt qualify a missing model campaign, release platform, cloud deployment,
 database crash, power loss or restore. Those require the named decision and

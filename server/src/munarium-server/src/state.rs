@@ -394,6 +394,9 @@ impl AppState {
                                 tracing::warn!(error = %e, "idempotency janitor sweep failed")
                             }
                         }
+                        if let Err(e) = crate::command_recovery::prune_completed(&pool, ttl).await {
+                            tracing::warn!(error = %e, "guarded command receipt sweep failed");
+                        }
                         tokio::time::sleep(interval).await;
                     }
                 });
