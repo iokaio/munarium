@@ -14,6 +14,14 @@ pub(crate) async fn test_state_with_auth(
     database_url: Option<String>,
     auth: AuthMode,
 ) -> Arc<AppState> {
+    test_state_with_diagnostics(database_url, auth, false).await
+}
+
+pub(crate) async fn test_state_with_diagnostics(
+    database_url: Option<String>,
+    auth: AuthMode,
+    managed: bool,
+) -> Arc<AppState> {
     AppState::new(Config {
         http_addr: "127.0.0.1:0".into(),
         grpc_addr: None,
@@ -41,6 +49,7 @@ pub(crate) async fn test_state_with_auth(
         registry_ttl_secs: 15,
         session_idle_ttl_secs: 0,
         evidence_purge_interval_secs: 0,
+        managed_provider_diagnostics: managed,
         max_tokens: dto::MaxTokensBudgets::default(),
         instance_id: "usage-test".into(),
         doc_intel: DocIntelConfig::None,

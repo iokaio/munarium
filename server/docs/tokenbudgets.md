@@ -306,8 +306,8 @@ only deliberately before rolling back. No schema migration is needed.
 | Explicit model or fallback without a tier | Rate limits and an opted-in daily total apply. No tier is invented. Naming an explicit model together with a tier still permits tier-cap enforcement. |
 | API embeddings | `op_embed` checks the rate estimate before its cache. Each HTTP attempt on a miss reserves the opted-in daily total and records reported or unknown usage. Hits create no spend record. Existing invocation token projections remain zero, not measured embedding usage; use budget evidence for usage quality. |
 | Index construction | Uses the local embedder independently of API provider embeddings; no hosted completion charge is inferred. |
-| `/healthai` | Authenticated any-role paid diagnostic. Calls default providers directly with `healthai_probe` output ceilings, bypassing rate and daily budgets. No new cap or audience restriction is introduced here. |
-| Provider health and provider listing | Health calls model-list endpoints directly (Ollama uses its local health endpoint); it has no token reservation. Listing is disclosure without a provider call. |
+| `/healthai` | Legacy mode retains authenticated any-role paid default-provider probes. Opt-in managed mode requires management access and uses capped tenant configurations through the gateway; see below. |
+| Provider health and provider listing | Health calls model-list endpoints directly (Ollama uses its local health endpoint); it has no token reservation and requires management access in managed mode. Listing stays free for any authenticated role; aliases require the separate management diagnostics endpoint. |
 
 Hosted and Ollama HTTP adapters retry 429 and 5xx responses at most twice (three
 physical submissions) inside a single logical call, honoring a bounded
@@ -335,3 +335,39 @@ loopback HTTP arrivals for 5xx-then-success, exhausted 429, cancellation after s
 unpolled cancellation, admission denial and an uncapped explicit model, against
 memory and PostgreSQL. `turn_retry_attempts_and_ceiling_are_bounded` exercises real
 session turns and validates event ordinals, ceilings and overflow before retry.
+
+## Operator diagnostics
+
+Set `MUNARIUM_MANAGED_PROVIDER_DIAGNOSTICS=true` to require management access for
+`GET /healthai` and `GET /v1/providers/{name}/health`, including their native and
+typed gRPC counterparts. Omission retains the legacy probe audience and default
+model selection. Development authentication-disabled mode still permits management
+operations; this flag does not replace authentication.
+
+Managed `/healthai` probes applied configurations belonging to the authenticated
+tenant, using their resolved tiers and the tenant's `healthai_probe` output limit.
+A missing `budgets.dailyTotalTokens` or unavailable credential skips that config;
+there is no fallback to a synthesized default. Zero capacity refuses submission.
+Every actual completion and retry passes through the shared gateway's rate, daily
+and usage accounting. Each probe has a 30-second deadline; timed-out work retains
+its unresolved liability. Details identify the config and a bounded outcome,
+without returning raw upstream errors. At least one actual probe must succeed and
+every attempted probe must succeed for `healthy: true`. This is a paid operator
+action, not readiness or a qualification of all configured models.
+
+`GET /v1/providers/{name}/diagnostics` is a separate, **free, management-only**
+REST/native RPC operation. It returns `config_name`, `provider`, `credential_ok`,
+`credential_source` (`env`, `file`, `none`) and optional `credential_alias`.
+Set `spec.credentialAlias` to an intentionally public operator label of 1–64
+letters, digits, dots, underscores or dashes. Never place a secret, environment
+reference or path in that label. Aliases are not inferred from credentials and
+do not appear in the ordinary provider list. This endpoint never calls a provider.
+
+Credential-resolution errors disclose source kind only. Provider request errors
+retain status/category without raw upstream bodies or endpoint URLs; unsafe
+endpoint fingerprints are unavailable. Operators must use their provider's own
+logs when they need detailed upstream diagnostics. No API returns secret suffixes
+or credential hashes. Alias configuration is additive and needs no migration;
+rolling back removes the new audience enforcement, so do not roll back while
+relying on it for paid diagnostic access control. Upgrade all replicas before
+enabling managed mode. Existing token and accounting records remain readable.

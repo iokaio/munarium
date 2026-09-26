@@ -566,8 +566,12 @@ async fn missing_credential_fails_closed_before_any_network() {
         .unwrap_err();
     let msg = err.to_string();
     assert!(
-        msg.contains("MUNARIUM_NEVER_SET_KEY_VAR"),
-        "must name the ref: {msg}"
+        msg.contains("credential unavailable (environment)"),
+        "must identify the failure category before trying HTTP: {msg}"
+    );
+    assert!(
+        !msg.contains("MUNARIUM_NEVER_SET_KEY_VAR"),
+        "credential references are operator-private"
     );
     assert!(!msg.contains("sk-"), "must never leak key material");
 }

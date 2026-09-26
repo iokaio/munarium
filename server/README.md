@@ -185,6 +185,7 @@ All `MUNARIUM_`-prefixed. The contract is stable; unset-but-required vars fail c
 | `MUNARIUM_MAX_TOKENS_QUERY_EXPANSION` | `256` | the `modelQueryExpansion` call (runbook `modelQueryExpansion.maxTokens` overrides) |
 | `MUNARIUM_MAX_TOKENS_COMPLETE_DEFAULT` | `1024` | `POST /v1/providers/{name}/complete` when the request omits `max_tokens` |
 | `MUNARIUM_MAX_TOKENS_HEALTHAI_PROBE` | `512` | each `/healthai` probe completion |
+| `MUNARIUM_MANAGED_PROVIDER_DIAGNOSTICS` | `false` | `true` makes paid `/healthai` and named provider health management-only. Paid probes use applied tenant configs with `budgets.dailyTotalTokens`; no env-default fallback. Free credential aliases have their own management endpoint. See [token budgets](docs/tokenbudgets.md#operator-diagnostics) |
 | `MUNARIUM_MAX_TOKENS_HIERARCHY_CLASSIFIER` | `32` | the evidence hierarchy's question classifier |
 | `MUNARIUM_MAX_TOKENS_HIERARCHY_INTENT` | `480` | the evidence hierarchy's semantic-intent task |
 | `MUNARIUM_MAX_TOKENS_RUNBOOK_ADVISORY` | `2048` | the runbook validation AI advisory pass |

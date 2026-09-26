@@ -302,6 +302,10 @@ impl ServerApiClient {
     pub async fn provider_complete(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("ProviderComplete", "POST", "/v1/providers/{name}/complete", "application/json", request).await
     }
+    /// GET /v1/providers/{name}/diagnostics
+    pub async fn provider_diagnostics(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("ProviderDiagnostics", "GET", "/v1/providers/{name}/diagnostics", "application/json", request).await
+    }
     /// POST /v1/providers/{name}/embed
     pub async fn provider_embed(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("ProviderEmbed", "POST", "/v1/providers/{name}/embed", "application/json", request).await

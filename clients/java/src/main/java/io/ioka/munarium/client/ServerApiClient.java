@@ -230,6 +230,9 @@ public final class ServerApiClient extends ServerApiTransport {
     /** POST /v1/providers/{name}/complete */
     public ApiResponse providerComplete(ApiRequest request) { return call("ProviderComplete", "POST", "/v1/providers/{name}/complete", "application/json", request); }
     public CompletableFuture<ApiResponse> providerCompleteAsync(ApiRequest request) { return async(() -> providerComplete(request)); }
+    /** GET /v1/providers/{name}/diagnostics */
+    public ApiResponse providerDiagnostics(ApiRequest request) { return call("ProviderDiagnostics", "GET", "/v1/providers/{name}/diagnostics", "application/json", request); }
+    public CompletableFuture<ApiResponse> providerDiagnosticsAsync(ApiRequest request) { return async(() -> providerDiagnostics(request)); }
     /** POST /v1/providers/{name}/embed */
     public ApiResponse providerEmbed(ApiRequest request) { return call("ProviderEmbed", "POST", "/v1/providers/{name}/embed", "application/json", request); }
     public CompletableFuture<ApiResponse> providerEmbedAsync(ApiRequest request) { return async(() -> providerEmbed(request)); }

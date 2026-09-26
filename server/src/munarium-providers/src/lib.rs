@@ -74,6 +74,10 @@ pub struct ProviderSpec {
         skip_serializing_if = "Option::is_none"
     )]
     pub credential_ref: Option<CredentialRef>,
+    /// An operator-chosen public label, never derived from secret material or
+    /// its location. Disclosed only by the management diagnostics surface.
+    #[serde(default, rename = "credentialAlias")]
+    pub credential_alias: Option<String>,
     /// Optional explicit OpenRouter downstream. When set, fallback is disabled.
     #[serde(
         default,
@@ -218,6 +222,7 @@ pub fn default_config_doc(provider: &str) -> Option<ProviderConfigDoc> {
             name: format!("default-{provider}"),
         },
         spec: ProviderSpec {
+            credential_alias: None,
             provider: provider.into(),
             endpoint: None,
             models: ProviderModels::default(),
@@ -330,6 +335,17 @@ pub fn parse_provider_config(yaml: &str) -> std::result::Result<ProviderConfigDo
     {
         return Err("dailyTotalTokens must fit a nonnegative signed 64-bit integer".into());
     }
+    if doc.spec.credential_alias.as_ref().is_some_and(|alias| {
+        alias.is_empty()
+            || alias.len() > 64
+            || !alias
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+    }) {
+        return Err(
+            "credentialAlias must be 1-64 letters, digits, dots, underscores or dashes".into(),
+        );
+    }
     if let Some(slug) = &doc.spec.openrouter_provider {
         if doc.spec.provider != "openrouter"
             || slug.is_empty()
@@ -369,15 +385,16 @@ pub fn resolve_config_credential(spec: &ProviderSpec) -> Result<Option<String>> 
     }
 }
 
-/// Resolves the credential at call time. Failure names the ref, never leaks
-/// any material.
+/// Resolves the credential at call time. Errors disclose neither its reference
+/// nor its material; operator diagnostics use a separately supplied alias.
 pub fn resolve_credential(cred: &CredentialRef) -> Result<String> {
     match cred {
-        CredentialRef::Env { env } => std::env::var(env)
-            .map_err(|_| KernelError::Provider(format!("credential env var '{env}' is not set"))),
+        CredentialRef::Env { env } => std::env::var(env).map_err(|_| {
+            KernelError::Provider("provider credential unavailable (environment)".into())
+        }),
         CredentialRef::File { file } => std::fs::read_to_string(file)
             .map(|s| s.trim().to_string())
-            .map_err(|e| KernelError::Provider(format!("credential file '{file}': {e}"))),
+            .map_err(|_| KernelError::Provider("provider credential unavailable (file)".into())),
     }
     .and_then(|k| {
         if k.is_empty() {
@@ -507,13 +524,12 @@ async fn send_with_retry(
     builder: impl Fn() -> reqwest::RequestBuilder,
     max_retries: u32,
 ) -> Result<reqwest::Response> {
-    send_with_retry_impl(builder, max_retries, false).await
+    send_with_retry_impl(builder, max_retries).await
 }
 
 async fn send_with_retry_impl(
     builder: impl Fn() -> reqwest::RequestBuilder,
     max_retries: u32,
-    redact_body: bool,
 ) -> Result<reqwest::Response> {
     let mut attempt = 0;
     loop {
@@ -527,22 +543,16 @@ async fn send_with_retry_impl(
         let resp = request
             .send()
             .await
-            .map_err(|e| KernelError::Provider(format!("request failed: {e}")))?;
+            .map_err(|e| KernelError::Provider(format!("request failed: {}", e.without_url())))?;
         let status = resp.status();
         if status.is_success() {
             return Ok(resp);
         }
         let retryable = status.as_u16() == 429 || status.is_server_error();
         if !retryable || attempt >= max_retries {
-            let body = if redact_body {
-                String::new()
-            } else {
-                resp.text().await.unwrap_or_default()
-            };
-            let detail = format!(
-                "provider returned {status}: {}",
-                body.chars().take(300).collect::<String>()
-            );
+            // Upstream error bodies can echo authorization headers, prompts or
+            // proxy configuration. Retain the status, never the raw body.
+            let detail = format!("provider returned {status}");
             // An exhausted upstream rate limit surfaces as OUR 429, not a
             // 502: the caller's recovery is "slow down", and flattening it
             // into provider-error loses exactly that signal (spending-caps
@@ -723,7 +733,7 @@ impl ModelProvider for AnthropicProvider {
         let v: serde_json::Value = resp
             .json()
             .await
-            .map_err(|e| KernelError::Provider(format!("bad response: {e}")))?;
+            .map_err(|e| KernelError::Provider(format!("bad response: {}", e.without_url())))?;
         let usage = usage_evidence(&v, "input_tokens", "output_tokens");
         accounting::finish("anthropic", &v, false).await?;
         Ok(DetailedCompletionResponse {
@@ -754,7 +764,7 @@ impl ModelProvider for AnthropicProvider {
             .header("anthropic-version", "2023-06-01")
             .send()
             .await
-            .map_err(|e| KernelError::Provider(format!("unreachable: {e}")))?;
+            .map_err(|e| KernelError::Provider(format!("unreachable: {}", e.without_url())))?;
         Ok(ProviderHealth {
             healthy: resp.status().is_success(),
             endpoint_fingerprint: fingerprint(&self.endpoint),
@@ -956,7 +966,7 @@ impl ModelProvider for OpenAiProvider {
         let v: serde_json::Value = resp
             .json()
             .await
-            .map_err(|e| KernelError::Provider(format!("bad response: {e}")))?;
+            .map_err(|e| KernelError::Provider(format!("bad response: {}", e.without_url())))?;
         accounting::finish("openai", &v, false).await?;
         parse_openai_completion(&v, hash)
     }
@@ -971,7 +981,7 @@ impl ModelProvider for OpenAiProvider {
         let v: serde_json::Value = resp
             .json()
             .await
-            .map_err(|e| KernelError::Provider(format!("bad response: {e}")))?;
+            .map_err(|e| KernelError::Provider(format!("bad response: {}", e.without_url())))?;
         accounting::finish("openai", &v, true).await?;
         let vectors: Vec<Vec<f32>> = v["data"]
             .as_array()
@@ -1001,7 +1011,7 @@ impl ModelProvider for OpenAiProvider {
             .authed(self.http.get(&url), &key)
             .send()
             .await
-            .map_err(|e| KernelError::Provider(format!("unreachable: {e}")))?;
+            .map_err(|e| KernelError::Provider(format!("unreachable: {}", e.without_url())))?;
         Ok(ProviderHealth {
             healthy: resp.status().is_success(),
             endpoint_fingerprint: fingerprint(&self.endpoint),
@@ -1011,6 +1021,9 @@ impl ModelProvider for OpenAiProvider {
 }
 
 fn fingerprint(endpoint: &str) -> String {
+    if accounting::route_identity(endpoint, None).is_none() {
+        return "unavailable".into();
+    }
     hex::encode(&sha2::Sha256::digest(endpoint.as_bytes())[..8])
 }
 
@@ -1225,6 +1238,33 @@ spec:
             env: "MUNARIUM_TEST_NOT_SET_EVER".into(),
         };
         assert!(resolve_credential(&missing).is_err());
+    }
+
+    #[test]
+    fn diagnostics_require_explicit_safe_labels_and_never_hash_credential_urls() {
+        for (alias, valid) in [
+            ("", false),
+            ("bad label", false),
+            ("folder/key", false),
+            (&"x".repeat(65), false),
+            ("public-label.1", true),
+            (&"x".repeat(64), true),
+        ] {
+            let yaml = format!("apiVersion: munarium.ioka.io/v1\nkind: ProviderConfig\nmetadata: {{name: fixture}}\nspec:\n  provider: ollama\n  endpoint: http://127.0.0.1:11434\n  credentialAlias: '{alias}'\n");
+            assert_eq!(parse_provider_config(&yaml).is_ok(), valid);
+        }
+        assert_eq!(
+            fingerprint("https://user:fictional-secret@example.invalid"),
+            "unavailable"
+        );
+        assert_eq!(
+            fingerprint("https://example.invalid?key=fictional-secret"),
+            "unavailable"
+        );
+        assert_eq!(
+            fingerprint("https://example.invalid"),
+            hex::encode(&sha2::Sha256::digest(b"https://example.invalid")[..8])
+        );
     }
 
     #[test]

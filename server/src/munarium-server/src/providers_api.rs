@@ -27,6 +27,10 @@ use tonic::{Request, Response, Status};
 #[path = "providers_usage_tests.rs"]
 pub(crate) mod usage_tests;
 
+#[cfg(test)]
+#[path = "providers_diagnostics_tests.rs"]
+mod diagnostics_tests;
+
 /// Reserved config name engaging the default-provider rule.
 pub const DEFAULT_SELECTOR: &str = "default";
 
@@ -372,6 +376,18 @@ async fn complete_with_schema(
     req: dto::CompleteRequest,
     schema: Option<serde_json::Value>,
 ) -> Result<dto::CompleteResponse> {
+    complete_guarded(state, tenant, store, name, req, schema, false).await
+}
+
+async fn complete_guarded(
+    state: &AppState,
+    tenant: &str,
+    store: &dyn munarium_core::storage::StorageBackend,
+    name: &str,
+    req: dto::CompleteRequest,
+    schema: Option<serde_json::Value>,
+    require_daily_total: bool,
+) -> Result<dto::CompleteResponse> {
     let tier = req
         .tier
         .as_deref()
@@ -382,6 +398,13 @@ async fn complete_with_schema(
         .providers
         .resolve(state, tenant, name, req.provider.as_deref())
         .await?;
+    // Bind managed-probe policy to the exact resolved entry that will dispatch,
+    // even if a configuration was replaced after the diagnostics inventory read.
+    if require_daily_total && entry.doc.spec.budgets.daily_total_tokens.is_none() {
+        return Err(KernelError::InvalidInput(
+            "managed probes require dailyTotalTokens".into(),
+        ));
+    }
     // Resolve the lineage BEFORE spending a provider call: a bad version_id
     // must not bill the caller and then throw the completion away.
     if let Some(version_id) = req.version_id.as_deref() {
@@ -698,14 +721,14 @@ pub async fn op_healthai(probe_max_tokens: u32) -> dto::HealthAiResponse {
                 // Every priority family has a built-in config and credential
                 // variable; one that did not would report a failed check
                 // rather than panic its probe task (P15/R32).
-                let (Some(doc), Some(env)) = (default_config_doc(family), default_env_var(family))
+                let (Some(doc), Some(_env)) = (default_config_doc(family), default_env_var(family))
                 else {
                     check.detail = format!("no built-in configuration for provider '{family}'");
                     return check;
                 };
                 if resolve_config_credential(&doc.spec).is_err() {
                     check.skipped = true;
-                    check.detail = format!("credential env var '{env}' is not set");
+                    check.detail = "provider credential unavailable".into();
                     return check;
                 }
                 let provider = match build_provider(&doc) {
@@ -791,6 +814,86 @@ pub async fn op_provider_health(
     })
 }
 
+/// Paid diagnostics under the opted-in operator policy use the same gateway
+/// and caps as tenant work. No synthesized environment default can bypass it.
+async fn managed_healthai(
+    state: &AppState,
+    tenant: &str,
+    probe: u32,
+) -> Result<dto::HealthAiResponse> {
+    let store = state.store_for(tenant).await?;
+    let mut checks = Vec::new();
+    for entry in state.providers.list(state, tenant).await? {
+        for tier in ModelTier::ALL {
+            let Ok(model) = resolve_complete_model(&entry.doc.spec, None, Some(tier)) else {
+                continue;
+            };
+            let mut check = dto::HealthAiCheck {
+                provider: entry.doc.spec.provider.clone(),
+                tier: tier.as_str().into(),
+                model,
+                ok: false,
+                skipped: false,
+                latency_ms: None,
+                detail: String::new(),
+            };
+            let name = &entry.doc.metadata.name;
+            if entry.doc.spec.budgets.daily_total_tokens.is_none() {
+                check.skipped = true;
+                check.detail =
+                    format!("config '{name}': dailyTotalTokens is required for a paid probe");
+            } else if resolve_config_credential(&entry.doc.spec).is_err() {
+                check.skipped = true;
+                check.detail = format!("config '{name}': credential unavailable");
+            } else {
+                let start = std::time::Instant::now();
+                let result = tokio::time::timeout(
+                    std::time::Duration::from_secs(30),
+                    complete_guarded(
+                        state,
+                        tenant,
+                        store.as_ref(),
+                        name,
+                        dto::CompleteRequest {
+                            model: None,
+                            provider: None,
+                            tier: Some(tier.as_str().into()),
+                            system: None,
+                            prompt: Some("Reply with the single word OK.".into()),
+                            max_tokens: Some(probe),
+                            temperature: None,
+                            version_id: None,
+                        },
+                        None,
+                        true,
+                    ),
+                )
+                .await;
+                check.latency_ms = Some(start.elapsed().as_millis() as u64);
+                let detail = match result {
+                    Ok(Ok(response)) if !response.text.trim().is_empty() => {
+                        check.ok = true;
+                        check.provider = response.provider;
+                        check.model = response.model;
+                        "ok"
+                    }
+                    Ok(Ok(_)) => "empty completion",
+                    Ok(Err(KernelError::RateLimited(_))) => {
+                        "admission or provider rate limit reached"
+                    }
+                    Ok(Err(_)) => "provider probe failed",
+                    Err(_) => "timed out after 30s",
+                };
+                check.detail = format!("config '{name}': {detail}");
+            }
+            checks.push(check);
+        }
+    }
+    let healthy =
+        checks.iter().any(|c| !c.skipped) && checks.iter().filter(|c| !c.skipped).all(|c| c.ok);
+    Ok(dto::HealthAiResponse { healthy, checks })
+}
+
 // ---------------------------------------------------------------------------
 // REST
 // ---------------------------------------------------------------------------
@@ -831,6 +934,33 @@ pub async fn list_providers(
     let (ctx, _store) = rest_auth(&state, &headers).await?;
     Ok(Json(dto::ProviderListResponse {
         providers: op_list_providers(&state, &ctx.tenant_id).await?,
+    }))
+}
+
+/// Free operator disclosure. Aliases are explicitly configured labels, never
+/// credential fingerprints or names inferred from the environment/filesystem.
+#[utoipa::path(get, path = "/v1/providers/{name}/diagnostics",
+    params(("name" = String, Path, description = "applied provider config name")),
+    responses((status = 200, body = dto::ProviderDiagnosticsResponse)), tag = "providers")]
+pub async fn provider_diagnostics(
+    State(state): State<Arc<AppState>>,
+    Path(name): Path<String>,
+    headers: HeaderMap,
+) -> ApiResult<Json<dto::ProviderDiagnosticsResponse>> {
+    let ctx = crate::rest::auth_ctx(&state, &headers)?;
+    ctx.require_mgmt()?;
+    let entry = state.providers.get(&state, &ctx.tenant_id, &name).await?;
+    Ok(Json(dto::ProviderDiagnosticsResponse {
+        config_name: entry.doc.metadata.name.clone(),
+        provider: entry.doc.spec.provider.clone(),
+        credential_alias: entry.doc.spec.credential_alias.clone(),
+        credential_source: match entry.doc.spec.credential_ref {
+            Some(munarium_providers::CredentialRef::Env { .. }) => "env",
+            Some(munarium_providers::CredentialRef::File { .. }) => "file",
+            None => "none",
+        }
+        .into(),
+        credential_ok: resolve_config_credential(&entry.doc.spec).is_ok(),
     }))
 }
 
@@ -895,6 +1025,9 @@ pub async fn provider_health(
     headers: HeaderMap,
 ) -> ApiResult<Json<dto::ProviderHealthResponse>> {
     let (ctx, _store) = rest_auth(&state, &headers).await?;
+    if state.config.managed_provider_diagnostics {
+        ctx.require_mgmt()?;
+    }
     Ok(Json(
         op_provider_health(&state, &ctx.tenant_id, &name).await?,
     ))
@@ -944,12 +1077,19 @@ pub async fn healthai(
     headers: HeaderMap,
 ) -> ApiResult<Json<dto::HealthAiResponse>> {
     let (ctx, _store) = rest_auth(&state, &headers).await?;
+    if state.config.managed_provider_diagnostics {
+        ctx.require_mgmt()?;
+    }
     let probe = state
         .max_tokens
         .effective(&state, &ctx.tenant_id)
         .await?
         .healthai_probe;
-    Ok(Json(op_healthai(probe).await))
+    Ok(Json(if state.config.managed_provider_diagnostics {
+        managed_healthai(&state, &ctx.tenant_id, probe).await?
+    } else {
+        op_healthai(probe).await
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -985,6 +1125,9 @@ impl pb::provider_service_server::ProviderService for ProviderSvc {
         req: Request<pb::ProviderHealthRequest>,
     ) -> std::result::Result<Response<pb::ProviderHealthResponse>, Status> {
         let ctx = crate::grpc::authenticate(&self.state, &req).await?;
+        if self.state.config.managed_provider_diagnostics {
+            crate::grpc_platform::mgmt_principal(&self.state, req.metadata())?;
+        }
         let inner = req.into_inner();
         let health = op_provider_health(&self.state, &ctx.tenant_id, &inner.config_name)
             .await

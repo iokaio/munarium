@@ -15,7 +15,8 @@ coverage, tariff semantics and reconciliation.
 
 Server 1.1 accepts `ollama` on the existing provider routes with an explicit base
 endpoint and optional credentials. Named health checks verify configured models;
-`/healthai` continues to cover cloud defaults. See the
+`/healthai` covers cloud defaults in legacy mode, or capped tenant configs in
+[managed diagnostics mode](../tokenbudgets.md#operator-diagnostics). See the
 [Ollama guide](../guides/ollama.md) for configuration, routing and limitations.
 
 Session turns with `complete: true` apply an allowed `model_override` to both
@@ -180,11 +181,20 @@ Request fields on `complete` (and `provider` on `embed`):
   With neither: the config's first `models.complete` entry, else the built-in
   capable model. Responses echo the serving `provider` and resolved `model`.
 
-**`GET /healthai`** (authenticated, any role — each call spends real provider
+**`GET /healthai`** in legacy mode (authenticated, any role — each call spends real provider
 tokens) live-probes all nine built-in models with a tiny completion and returns
 per-check `ok/skipped/latency_ms/detail` plus an overall `healthy` (all
 configured providers passed, at least one credential present). Families whose
 `MUNARIUM_SECRET_*` env var is unset are reported `skipped`.
+
+With `MUNARIUM_MANAGED_PROVIDER_DIAGNOSTICS=true`, `/healthai` and named provider
+health require management access on every transport. Paid probes use applied
+tenant configurations with `budgets.dailyTotalTokens` through the normal gateway;
+missing caps or credentials skip the config, without env-default fallback.
+`GET /v1/providers/{name}/diagnostics` is a free management-only REST/native RPC
+surface for credential readiness, source kind and an explicitly configured
+`credentialAlias`. It never returns the reference or secret. See
+[operator diagnostics](../tokenbudgets.md#operator-diagnostics) for compatibility.
 
 ## Worked example
 

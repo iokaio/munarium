@@ -346,6 +346,7 @@ mod tests {
             source_store: SourceStoreConfig::Mem,
             doc_intel: DocIntelConfig::None,
             max_tokens: MaxTokensBudgets::default(),
+            managed_provider_diagnostics: false,
         }
     }
 

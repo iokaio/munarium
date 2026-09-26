@@ -1993,6 +1993,18 @@ pub struct ProviderListResponse {
     pub providers: Vec<ProviderModelsDto>,
 }
 
+/// Management-only, free provider configuration diagnostics. No credential
+/// reference, path, environment variable name, key fragment or secret hash.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ProviderDiagnosticsResponse {
+    pub config_name: String,
+    pub provider: String,
+    pub credential_alias: Option<String>,
+    /// `env`, `file` or `none`; this is the source kind, never its location.
+    pub credential_source: String,
+    pub credential_ok: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SessionTurnDto {
     pub ordinal: u32,

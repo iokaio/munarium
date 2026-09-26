@@ -602,6 +602,14 @@
       "streaming": false
     },
     {
+      "name": "provider_diagnostics",
+      "rpc": "ProviderDiagnostics",
+      "method": "GET",
+      "path": "/v1/providers/{name}/diagnostics",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
       "name": "provider_embed",
       "rpc": "ProviderEmbed",
       "method": "POST",
