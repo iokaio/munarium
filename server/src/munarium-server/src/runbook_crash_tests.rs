@@ -4,6 +4,27 @@
 use super::*;
 use crate::crash_recovery::{available, harness, state};
 
+async fn acquire_released_run_lock(state: &AppState, tenant: &str, run: &str) -> RunLock {
+    // A completed API call or dead child has dropped its guard, but PostgreSQL
+    // may still be processing the socket close. Retry only that contention;
+    // database errors and a lock that remains held must still fail the test.
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            match acquire_run_lock(state, tenant, run).await {
+                Ok(lock) => return lock,
+                Err(KernelError::InvalidInput(message))
+                    if message.starts_with(crate::error::RUN_LOCKED_PREFIX) =>
+                {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+                Err(error) => panic!("run lock acquisition failed: {error}"),
+            }
+        }
+    })
+    .await
+    .expect("completed executor must release its run lock")
+}
+
 async fn drop_run_lock_and_wait(state: &AppState, mut lock: RunLock) {
     let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
         .fetch_one(&mut lock._conn)
@@ -265,9 +286,7 @@ async fn work() {
     }
     let doc = load_runbook(&state, &tenant, "recovery@1").await.unwrap();
     let next = {
-        let lock = acquire_run_lock(&state, &tenant, &run)
-            .await
-            .expect("dead process released lock");
+        let lock = acquire_released_run_lock(&state, &tenant, &run).await;
         let next = execute(&state, &tenant, &run, &doc, Some(&version), None)
             .await
             .unwrap();
@@ -474,7 +493,7 @@ async fn approval_process_recovery_two_instances() {
         op_apply_runbook(&first, &tenant, BOOK).await.unwrap();
         let (run, status) = op_run_runbook(&first, &tenant, "recovery@1", Some(&version)).await.unwrap();
         assert_eq!(status, "awaiting_approval");
-        let lock = acquire_run_lock(&first, &tenant, &run).await.unwrap();
+        let lock = acquire_released_run_lock(&first, &tenant, &run).await;
         assert!(op_approve_step(&second, &tenant, &run, 3).await.is_err());
         assert_eq!(op_get_run(&first, &tenant, &run).await.unwrap().steps[3].state, "awaiting_approval");
         drop_run_lock_and_wait(&first, lock).await;
