@@ -427,7 +427,7 @@ async fn complete_guarded(
     if schema.is_some() {
         entry.doc.spec.structured_output.require_native(&model)?;
     }
-    let input = CompletionRequest {
+    let mut input = CompletionRequest {
         model: model.clone(),
         system: req.system,
         prompt,
@@ -435,6 +435,15 @@ async fn complete_guarded(
         temperature: req.temperature,
         tools: None,
     };
+    if entry.doc.spec.provider == "anthropic" {
+        entry
+            .doc
+            .spec
+            .anthropic
+            .clone()
+            .unwrap_or_default()
+            .prepare(&mut input)?;
+    }
     let estimate =
         munarium_core::provider::CompletionEstimate::for_request(&input, schema.as_ref())?;
     let estimated_units = estimate.total()?;

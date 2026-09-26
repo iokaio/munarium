@@ -36,6 +36,8 @@ use sha2::Digest as _;
 use std::time::{Duration, Instant};
 
 pub mod accounting;
+mod anthropic_policy;
+pub use anthropic_policy::{AnthropicModelPolicy, AnthropicPolicy, Effort, Thinking};
 mod ollama;
 pub use ollama::OllamaProvider;
 
@@ -88,6 +90,9 @@ pub struct ProviderSpec {
     /// Native structured-output policy. Omitted preserves existing requests.
     #[serde(default, rename = "structuredOutput")]
     pub structured_output: StructuredOutputPolicy,
+    /// Explicit settings keyed by exact resolved Claude model ID.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anthropic: Option<AnthropicPolicy>,
     #[serde(default)]
     pub budgets: Budgets,
 }
@@ -229,6 +234,7 @@ pub fn default_config_doc(provider: &str) -> Option<ProviderConfigDoc> {
             credential_ref: Some(CredentialRef::Env { env: env.into() }),
             openrouter_provider: None,
             structured_output: StructuredOutputPolicy::default(),
+            anthropic: None,
             budgets: Budgets::default(),
         },
     })
@@ -326,6 +332,12 @@ pub fn parse_provider_config(yaml: &str) -> std::result::Result<ProviderConfigDo
         serde_yaml::from_str(yaml).map_err(|e| format!("provider config yaml: {e}"))?;
     if doc.kind != "ProviderConfig" {
         return Err(format!("kind must be ProviderConfig, got '{}'", doc.kind));
+    }
+    if let Some(policy) = &doc.spec.anthropic {
+        if doc.spec.provider != "anthropic" {
+            return Err("anthropic controls require an Anthropic provider".into());
+        }
+        policy.validate().map_err(|e| e.to_string())?;
     }
     if doc
         .spec
@@ -645,6 +657,7 @@ fn usage_evidence(value: &serde_json::Value, input: &str, output: &str) -> Usage
 pub struct AnthropicProvider {
     pub endpoint: String,
     pub cred: CredentialRef,
+    pub policy: AnthropicPolicy,
     output_schema: Option<serde_json::Value>,
     http: reqwest::Client,
 }
@@ -657,6 +670,7 @@ impl AnthropicProvider {
                 .trim_end_matches('/')
                 .into(),
             cred,
+            policy: AnthropicPolicy::default(),
             output_schema: None,
             http: http_client(),
         }
@@ -696,8 +710,9 @@ impl ModelProvider for AnthropicProvider {
 
     async fn complete_detailed(
         &self,
-        req: CompletionRequest,
+        mut req: CompletionRequest,
     ) -> Result<DetailedCompletionResponse> {
+        self.policy.prepare(&mut req)?;
         let key = resolve_credential(&self.cred)?;
         // Optional fields are OMITTED when absent — the Messages API rejects
         // explicit nulls (`system: Input should be a valid array`, found live
@@ -717,6 +732,7 @@ impl ModelProvider for AnthropicProvider {
         if let Some(t) = req.temperature {
             body["temperature"] = serde_json::json!(t);
         }
+        self.policy.apply(&req.model, &mut body);
         let hash = request_hash(&serde_json::json!({"anthropic": &self.endpoint, "body": &body}));
         let url = format!("{}/v1/messages", self.endpoint);
         let resp = send_with_retry(
@@ -1037,7 +1053,12 @@ pub fn build_provider(doc: &ProviderConfigDoc) -> Result<Box<dyn ModelProvider>>
         KernelError::InvalidInput("credentialRef is required for this provider".into())
     })?;
     Ok(match doc.spec.provider.as_str() {
-        "anthropic" => Box::new(AnthropicProvider::new(endpoint, cred)),
+        "anthropic" => {
+            let mut provider = AnthropicProvider::new(endpoint, cred);
+            provider.policy = doc.spec.anthropic.clone().unwrap_or_default();
+            provider.policy.validate()?;
+            Box::new(provider)
+        }
         "openrouter" => {
             let mut provider = OpenAiProvider::openrouter(endpoint, cred);
             provider.downstream_provider = doc.spec.openrouter_provider.clone();

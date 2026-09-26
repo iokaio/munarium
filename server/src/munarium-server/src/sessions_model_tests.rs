@@ -6,6 +6,107 @@ use serde_json::{json, Value};
 use std::sync::Mutex;
 
 #[tokio::test]
+async fn anthropic_turn_retry_preserves_usage_and_rejects_non_exhaustion() {
+    let state =
+        crate::providers_api::usage_tests::test_state_with_auth(None, AuthMode::Disabled).await;
+    std::env::set_var("MUNARIUM_TURN_POLICY_FIXTURE_KEY", "fixture-not-a-real-key");
+    for (scenario, reason, text, cap, expected_calls, success) in [
+        ("thinking", "max_tokens", "", 10000, 2, true),
+        ("partial", "max_tokens", "partial answer", 10000, 2, true),
+        ("empty", "end_turn", "", 10000, 1, false),
+        ("refusal", "refusal", "", 10000, 1, false),
+        ("refusal-text", "refusal", "Cannot answer", 10000, 1, false),
+        ("tool", "tool_use", "", 10000, 1, false),
+        ("malformed", "", "", 10000, 1, false),
+        ("exhausted", "max_tokens", "", 10000, 2, false),
+        ("denied", "max_tokens", "", 250, 1, false),
+        ("ordinary", "end_turn", "Answer", 10000, 1, true),
+    ] {
+        let tenant = format!("turn-policy-{scenario}-{}", uuid::Uuid::new_v4().simple());
+        let calls = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let sink = calls.clone();
+        let app = axum::Router::new().route("/v1/messages", axum::routing::post(move |Json(body): Json<Value>| {
+            let index = { let mut rows = sink.lock().unwrap(); let n = rows.len(); rows.push(body); n };
+            async move {
+                let final_answer = index > 0 && scenario != "exhausted";
+                Json(json!({
+                    "content":[{"type":"thinking","thinking":""},{"type":"text","text":if final_answer { "Answer" } else { text }}],
+                    "stop_reason":if final_answer { "end_turn" } else { reason },
+                    "usage":{"input_tokens":2,"output_tokens":if index == 0 {64} else {5}}
+                }))
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        state.providers.apply(&state, &tenant, &format!("apiVersion: munarium.ioka.io/v1\nkind: ProviderConfig\nmetadata: {{name: fixture}}\nspec:\n  provider: anthropic\n  endpoint: {endpoint}\n  credentialRef: {{env: MUNARIUM_TURN_POLICY_FIXTURE_KEY}}\n  models: {{capable: claude-sonnet-5}}\n  anthropic:\n    models:\n      claude-sonnet-5: {{effort: low, thinking: adaptive}}\n  budgets:\n    dailyTokens: {{capable: {cap}}}\n")).await.unwrap();
+        let store = state.store_for(&tenant).await.unwrap();
+        let version = store.create_version(None, None).await.unwrap();
+        let invoke = |prompt: String, budget| {
+            let version = version.clone();
+            let state = &state;
+            let tenant = &tenant;
+            let store = &store;
+            async move {
+                crate::providers_api::op_complete(state, tenant, store.as_ref(), "fixture",
+                    serde_json::from_value(json!({"prompt":prompt,"max_tokens":budget,"tier":"capable","temperature":0.0,"version_id":version})).unwrap()
+                ).await
+            }
+        };
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let result = complete_turn_answer(invoke, "fixture", 64, &Some(tx)).await;
+        assert_eq!(result.is_ok(), success, "{scenario}");
+        if scenario == "denied" {
+            assert!(matches!(&result, Err(KernelError::RateLimited(_))));
+        }
+        if let Ok(completed) = result {
+            assert_eq!(completed.response.text, "Answer");
+            assert_eq!(completed.input_tokens, 2 * expected_calls as u64);
+            assert_eq!(
+                completed.output_tokens,
+                if expected_calls == 2 { 69 } else { 64 }
+            );
+            assert_eq!(completed.response.stop_reason, "end_turn");
+            let claim = store
+                .get_claim(completed.response.invocation_event_id.as_deref().unwrap())
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(claim.evidence.unwrap()["request_hash"].as_str().is_some());
+        }
+        {
+            let rows = calls.lock().unwrap();
+            assert_eq!(rows.len(), expected_calls, "{scenario}");
+            for (index, body) in rows.iter().enumerate() {
+                assert_eq!(body["max_tokens"], if index == 0 { 64 } else { 256 });
+                assert!(body.get("temperature").is_none());
+                assert_eq!(body["output_config"]["effort"], "low");
+            }
+        }
+        let ledger = state.budgets().ledger(&tenant).await.unwrap();
+        assert_eq!(ledger[0].held_units, 0, "{scenario}");
+        assert_eq!(
+            ledger[0].settled_units,
+            if expected_calls == 2 { 73 } else { 66 },
+            "{scenario}"
+        );
+        let mut attempts = Vec::new();
+        while let Ok(dto::TurnProgressEvent::Completion { attempt, .. }) = rx.try_recv() {
+            attempts.push(attempt);
+        }
+        assert_eq!(
+            attempts,
+            if expected_calls == 2 {
+                vec![0, 1]
+            } else {
+                vec![0]
+            }
+        );
+        task.abort();
+    }
+}
+
+#[tokio::test]
 async fn turn_model_routing_calls_selected_provider_and_rejects_before_spending() {
     let Ok(database_url) = std::env::var("MUNARIUM_TEST_DATABASE_URL") else {
         eprintln!("skipped: requires MUNARIUM_TEST_DATABASE_URL (server/gates.ps1)");

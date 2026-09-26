@@ -95,6 +95,135 @@ fn test_cred() -> CredentialRef {
     }
 }
 
+#[test]
+fn anthropic_controls_reject_unsupported_models_and_combinations() {
+    use munarium_providers::parse_provider_config;
+    for (family, model, controls, valid) in [
+        (
+            "anthropic",
+            "claude-sonnet-5",
+            "effort: medium, thinking: adaptive",
+            true,
+        ),
+        (
+            "anthropic",
+            "claude-sonnet-5-20260630",
+            "effort: low, thinking: disabled",
+            true,
+        ),
+        (
+            "anthropic",
+            "claude-fable-5-1",
+            "effort: max, thinking: adaptive",
+            true,
+        ),
+        ("anthropic", "claude-fable-5-1", "thinking: disabled", false),
+        (
+            "anthropic",
+            "claude-sonnet-5",
+            "effort: xhigh, thinking: disabled",
+            true,
+        ),
+        (
+            "anthropic",
+            "claude-sonnet-5",
+            "effort: max, thinking: disabled",
+            true,
+        ),
+        ("anthropic", "claude-sonnet-5", "effort: extreme", false),
+        ("anthropic", "claude-sonnet-5", "thinking: enabled", false),
+        ("anthropic", "claude-sonnet-5", "effrot: low", false),
+        ("anthropic", "claude-haiku-4-5", "effort: low", false),
+        ("anthropic", "claude-sonnet-50", "effort: low", false),
+        ("anthropic", "future-model", "effort: low", false),
+        ("openai", "claude-sonnet-5", "effort: low", false),
+    ] {
+        let yaml = format!("apiVersion: munarium.ioka.io/v1\nkind: ProviderConfig\nmetadata: {{name: fixture}}\nspec:\n  provider: {family}\n  credentialRef: {{env: UNUSED_FIXTURE_KEY}}\n  anthropic:\n    models:\n      {model}: {{{controls}}}\n");
+        assert_eq!(
+            parse_provider_config(&yaml).is_ok(),
+            valid,
+            "{family} {model} {controls}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn anthropic_controls_preserve_schema_budget_legacy_models_and_request_identity() {
+    use munarium_providers::{build_provider, parse_provider_config};
+    let captured = Arc::new(std::sync::Mutex::new(Vec::<serde_json::Value>::new()));
+    let sink = captured.clone();
+    let app = Router::new().route("/v1/messages", post(move |Json(body): Json<serde_json::Value>| {
+        sink.lock().unwrap().push(body);
+        async { Json(serde_json::json!({"content":[{"type":"thinking","thinking":""},{"type":"text","text":"{}"}],"stop_reason":"end_turn","usage":{"input_tokens":2,"output_tokens":3}})) }
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let _cred = test_cred();
+    let schema = serde_json::json!({"type":"object","properties":{},"additionalProperties":false});
+    let mut hashes = Vec::new();
+    for effort in ["low", "high"] {
+        let doc = parse_provider_config(&format!("apiVersion: munarium.ioka.io/v1\nkind: ProviderConfig\nmetadata: {{name: fixture}}\nspec:\n  provider: anthropic\n  endpoint: {endpoint}\n  credentialRef: {{env: MUNARIUM_TEST_PROVIDER_KEY}}\n  anthropic:\n    models:\n      claude-sonnet-5: {{effort: {effort}, thinking: adaptive}}\n      claude-fable-5-1: {{effort: high}}\n")).unwrap();
+        let provider = build_provider(&doc).unwrap();
+        for model in [
+            "claude-sonnet-5",
+            "claude-fable-5-1",
+            "claude-sonnet-5-20260630",
+            "claude-haiku-4-5",
+            "custom-model",
+        ] {
+            let request = || CompletionRequest {
+                model: model.into(),
+                system: None,
+                prompt: "fixture".into(),
+                max_tokens: 64,
+                temperature: Some(0.0),
+                tools: None,
+            };
+            let response = provider
+                .complete_structured(request(), schema.clone())
+                .await
+                .unwrap();
+            assert_eq!(response.text, "{}");
+            if model == "claude-sonnet-5" {
+                hashes.push(response.request_hash);
+            }
+            provider.complete(request()).await.unwrap();
+        }
+    }
+    let calls = captured.lock().unwrap();
+    for (index, body) in calls.iter().enumerate() {
+        let model = body["model"].as_str().unwrap();
+        assert_eq!(body["max_tokens"], 64);
+        assert_eq!(
+            body.get("temperature").is_some(),
+            matches!(model, "claude-haiku-4-5" | "custom-model")
+        );
+        if index % 2 == 0 {
+            assert_eq!(body["output_config"]["format"]["schema"], schema);
+        } else {
+            assert!(body["output_config"].get("format").is_none());
+        }
+        if model == "claude-sonnet-5" {
+            assert_eq!(body["thinking"]["type"], "adaptive");
+            assert_eq!(
+                body["output_config"]["effort"],
+                if index < 10 { "low" } else { "high" }
+            );
+        } else if model == "claude-fable-5-1" {
+            assert_eq!(body["output_config"]["effort"], "high");
+        } else {
+            assert!(body["output_config"].get("effort").is_none());
+            assert!(body.get("thinking").is_none());
+        }
+    }
+    assert_ne!(
+        hashes[0], hashes[1],
+        "effort must participate in invocation identity"
+    );
+    server.abort();
+}
+
 #[tokio::test]
 async fn legacy_provider_defaults_preserve_structured_override_and_charge_conservatively() {
     use munarium_core::provider::{
