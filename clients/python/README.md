@@ -2,7 +2,7 @@
 
 This checkout also carries the generated Server 1.3 API additions. The image
 release does not republish SDK packages. Source handshakes target 1.3.0
-with the declared 1.3/1.2 range pending release qualification; see [Server 1.3 preparation](../../server/docs/guides/server-1.3.md).
+with the declared 1.3/1.2 range pending release qualification; see [Server 1.3 preparation](https://github.com/iokaio/munarium/blob/main/server/docs/guides/server-1.3.md).
 
 The checkout targets **Munarium Server 1.3.0**; published packages retain their
 historical Server target. Client package **1.1.1** provides the complete `ServerApiClient` over REST and native gRPC, while the existing typed planes retain their Server 1.1 baseline. See the [Server 1.2 guide](../docs/guides/server-1.2.md) for vocabulary, collection queries, publication governance, answers and source references. Transport limitations below apply to the older typed planes.
