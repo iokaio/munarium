@@ -81,8 +81,7 @@ cd matrix
 # offline: unit tests, boundary checks, contract validation. No database.
 ./test.ps1
 
-# + store and conformance against a compose Postgres
-docker compose up -d postgres
+# + store and conformance against an owned disposable Postgres
 ./test.ps1 -Postgres
 
 # the gates a reviewer expects
@@ -166,16 +165,45 @@ be tested exhaustively in milliseconds.
 
 ## Testing
 
-Two tiers, both free.
+Local profiles emit the same source-bound validation receipts as Server. Exit 0
+means every selected requirement passed; 1 means failure; 3 means required
+coverage was unavailable or the source changed. `-ReceiptPath` selects the output;
+otherwise it is under `server/scratch/validation/<run-id>/receipt.json`.
+Ignored and early-return scenarios never establish stateful coverage. The shared
+[receipt contract](../server/docs/guides/validation.md#outcomes-and-receipts)
+and its independent validator apply to Matrix too.
 
 | Tier | Where | Cost | When |
 |---|---|---|---|
 | offline | `./test.ps1` | $0 | every change |
-| compose | `./test.ps1 -Postgres -BlackBox` | $0 | every change, and in CI |
+| PostgreSQL | `./test.ps1 -Postgres` | $0 | database changes |
+| HTTP/gRPC/admin/SQL Server | `./test.ps1 -BlackBox` | $0 for local fixtures | integration changes, and independently in CI |
 
-The compose tier also stands up the MySQL and SQL Server engine tiers from
-compose profiles. Live tiers against analytics platforms belong to Munarium
-Matrix Enterprise and are not part of this repository.
+`-Postgres` creates a UUID-named container from the pinned, already-loaded image,
+copies only tracked fixture SQL, publishes an ephemeral loopback port, and removes
+only its recorded container and anonymous volume. It never reuses or deletes a
+developer's Compose database. The default workspace tier clears test environment
+variables for its children and restores the caller's values afterward.
+
+`-BlackBox` uses an explicitly prepared disposable stack. Set
+`MUNARIUM_MATRIX_TEST_DATABASE_URL`, `_URL`, `_TOKEN`, `_MGMT_TOKEN`, `_GRPC`,
+and `_SQLSERVER` (each with the `MUNARIUM_MATRIX_TEST` prefix). The database must
+contain the tracked `fixtures/t0/sql` schema and CDC fixtures; Matrix needs a
+Server peer for sealing. The runner does not provision or clean up that caller-owned
+stack. Missing configuration yields an incomplete receipt; a configured broken
+service fails. This replaces automatic mutation of fixed-name Compose resources.
+Existing CI provisions its own stack and retains its automatic test gates.
+
+`-MySql` explicitly selects the MySQL tier and requires
+`MUNARIUM_MATRIX_TEST_MYSQL`; an open local port no longer silently selects it.
+`-Browser` requires the URL and both tokens above, with Node/Playwright and Chromium
+installed ahead of time. It does not download dependencies. `-All` selects gates,
+PostgreSQL, black-box and MySQL; browser remains an explicit switch.
+Browser screenshots stay in the receipt directory. The optional measurement
+campaign is explicitly `not_requested`; run its separately frozen harness when
+its workload and environment are ready.
+Offline adapter controls: `py -m unittest discover -s tools -p test_validation.py`.
+Live analytics tiers belong to Munarium Matrix Enterprise.
 
 ## Environment
 

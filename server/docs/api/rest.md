@@ -1,5 +1,11 @@
 # munarium-server REST API
 
+Token accounting evidence uses management-only `GET /v1/budgets/{id}/evidence`,
+`GET /v1/budgets/{id}/adjustments`, `POST /v1/budgets/{id}/adjustments`, and
+`GET /v1/reports/budget-usage?day=YYYY-MM-DD`. See
+[late token evidence](../tokenbudgets.md#late-token-evidence-and-accounting-quality)
+for decimal strings, correction replay, original-day debt and report coverage.
+
 Optional monetary accounting uses `GET /v1/reports/money`,
 `GET /v1/monetary/prices`, `POST /v1/monetary/prices` and
 `POST /v1/monetary/observations` (PostgreSQL, management role). The existing

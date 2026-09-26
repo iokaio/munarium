@@ -80,7 +80,7 @@ pub struct ImdsTokenSource {
     /// User-assigned identity client id. None = system-assigned.
     client_id: Option<String>,
     endpoint: IdentityEndpoint,
-    http: reqwest::Client,
+    http: std::result::Result<reqwest::Client, ()>,
     cached: Mutex<Option<Cached>>,
 }
 
@@ -96,7 +96,7 @@ impl ImdsTokenSource {
                 // network black-holes the IMDS link-local range.
                 .timeout(Duration::from_secs(10))
                 .build()
-                .unwrap_or_default(),
+                .map_err(|_| ()),
             cached: Mutex::new(None),
         }
     }
@@ -150,7 +150,10 @@ impl ImdsTokenSource {
         // other machine.
         const HINT: &str = "assign a managed identity to this workload, \
              or use the key/SAS auth mode (the off-Azure path)";
-        let mut request = self.http.get(self.token_url());
+        let http = self.http.as_ref().map_err(|_| KernelError::Storage(
+            "managed-identity HTTP client initialization failed; no fallback client was created".into()
+        ))?;
+        let mut request = http.get(self.token_url());
         request = match &self.endpoint {
             IdentityEndpoint::Imds => request.header("Metadata", "true"),
             IdentityEndpoint::Platform { header, .. } => {
@@ -249,6 +252,17 @@ pub fn truncate(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn failed_http_initialization_never_falls_back_to_an_unbounded_client() {
+        let mut source = ImdsTokenSource::new(RESOURCE_STORAGE, None);
+        source.http = Err(());
+        let error = source.token().await.unwrap_err();
+        assert!(matches!(error, KernelError::Storage(_)));
+        assert!(error
+            .to_string()
+            .contains("HTTP client initialization failed"));
+    }
 
     fn source_with_endpoint(
         resource: &str,

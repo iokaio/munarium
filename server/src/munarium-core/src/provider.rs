@@ -27,6 +27,61 @@ pub struct CompletionRequest {
     pub tools: Option<serde_json::Value>,
 }
 
+/// Versioned heuristic over the serialized effective request, including system,
+/// tools/schema, JSON escaping and a fixed allowance for provider framing.
+/// It is accounting evidence, never a guaranteed upper bound on billed tokens.
+#[derive(Debug, Clone, Copy)]
+pub struct CompletionEstimate {
+    pub input: u64,
+    pub output: u64,
+}
+
+impl CompletionEstimate {
+    pub const REVISION: &'static str = "effective-json-bytes-v1";
+
+    pub fn for_request(
+        request: &CompletionRequest,
+        schema: Option<&serde_json::Value>,
+    ) -> Result<Self> {
+        let bytes = serde_json::to_vec(&(request, schema)).map_err(|_| {
+            crate::KernelError::InvalidInput("cannot estimate completion request".into())
+        })?;
+        let input = u64::try_from(bytes.len())
+            .ok()
+            .and_then(|n| n.div_ceil(4).checked_add(32))
+            .ok_or_else(|| {
+                crate::KernelError::InvalidInput("completion estimate overflow".into())
+            })?;
+        Ok(Self {
+            input,
+            output: u64::from(request.max_tokens.max(1)),
+        })
+    }
+
+    pub fn total(self) -> Result<u64> {
+        self.input
+            .checked_add(self.output)
+            .ok_or_else(|| crate::KernelError::InvalidInput("completion estimate overflow".into()))
+    }
+
+    pub fn account(self, usage: UsageEvidence) -> Result<u64> {
+        if usage.source == UsageSource::ProviderReported
+            && usage.input_tokens.is_some()
+            && usage.output_tokens.is_some()
+        {
+            return usage.accounted_units(self.total()?);
+        }
+        let subtotal = usage
+            .input_tokens
+            .unwrap_or(self.input)
+            .checked_add(usage.output_tokens.unwrap_or(self.output))
+            .ok_or_else(|| {
+                crate::KernelError::Provider("completion usage total exceeds u64".into())
+            })?;
+        Ok(self.total()?.max(subtotal))
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompletionResponse {
     pub text: String,
@@ -163,6 +218,54 @@ pub trait ModelProvider: Send + Sync {
 #[cfg(test)]
 mod usage_tests {
     use super::*;
+
+    #[test]
+    fn effective_request_estimator_covers_system_schema_tools_and_normalized_output() {
+        let mut request = CompletionRequest {
+            model: "fixture".into(),
+            system: None,
+            prompt: "tiny".into(),
+            max_tokens: 0,
+            temperature: None,
+            tools: None,
+        };
+        let base = CompletionEstimate::for_request(&request, None).unwrap();
+        assert_eq!(base.output, 1);
+        request.system = Some("system instructions".repeat(100));
+        let system = CompletionEstimate::for_request(&request, None).unwrap();
+        assert!(system.input > base.input);
+        request.tools = Some(serde_json::json!({"description": "tool instructions".repeat(100)}));
+        let tools = CompletionEstimate::for_request(&request, None).unwrap();
+        assert!(tools.input > system.input);
+        let schema = serde_json::json!({"description": "schema description".repeat(100)});
+        assert!(
+            CompletionEstimate::for_request(&request, Some(&schema))
+                .unwrap()
+                .input
+                > tools.input
+        );
+        let usage = UsageEvidence {
+            input_tokens: Some(1000),
+            output_tokens: None,
+            source: UsageSource::ProviderReported,
+        };
+        assert_eq!(base.account(usage).unwrap(), 1001);
+        assert_eq!(
+            base.account(UsageEvidence {
+                input_tokens: Some(0),
+                output_tokens: Some(0),
+                source: UsageSource::ProviderReported
+            })
+            .unwrap(),
+            0
+        );
+        assert!(base
+            .account(UsageEvidence {
+                input_tokens: Some(u64::MAX),
+                ..usage
+            })
+            .is_err());
+    }
 
     #[test]
     fn incomplete_usage_never_refunds_known_work_or_the_reservation() {

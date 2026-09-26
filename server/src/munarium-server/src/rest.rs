@@ -1539,6 +1539,18 @@ pub fn router(state: Arc<AppState>) -> Router {
         )
         .route("/v1/reports/budgets", get(crate::reports_api::budgets))
         .route(
+            "/v1/budgets/{id}/evidence",
+            get(crate::budget_api::budget_evidence),
+        )
+        .route(
+            "/v1/budgets/{id}/adjustments",
+            get(crate::budget_api::budget_adjustments).post(crate::budget_api::reconcile_budget),
+        )
+        .route(
+            "/v1/reports/budget-usage",
+            get(crate::budget_api::budget_usage_report),
+        )
+        .route(
             "/v1/max-tokens",
             get(crate::max_tokens_api::get_max_tokens)
                 .post(crate::max_tokens_api::replace_max_tokens),

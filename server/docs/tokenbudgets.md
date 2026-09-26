@@ -187,7 +187,7 @@ plus per-field withers (`withTurnCompletion(long)` …) do the same.
 
 - **A ceiling is not spend.** Raising `turn_completion` costs nothing on a
   model that answers in 140 tokens. It matters for the spending-cap
-  *reservation*, which estimates `prompt/4 + max_tokens` before the call and
+  *reservation*, which estimates the effective request and output ceiling before the call and
   settles to actuals after — oversizing inflates transient holds, not bills.
 - **The retry is part of the budget.** A turn whose stop reason is
   `max_tokens`/`length`, or whose text is empty, is re-asked once at 4× the
@@ -198,6 +198,66 @@ plus per-field withers (`withTurnCompletion(long)` …) do the same.
   that; history-revolution declares 4,096 in its runbook. See
   [guides/retrieval-sizing.md](guides/retrieval-sizing.md) for the runbook
   side and the measurements.
+
+## Late token evidence and accounting quality
+
+The `effective-json-bytes-v1` estimator counts the serialized effective request
+(system text, prompt, tools, schema and settings), rounds bytes up in groups of
+four, adds 32 tokens for framing, then adds the normalized output ceiling.
+It is a versioned heuristic, not a guaranteed upper bound on provider billing.
+Reservations retain its revision; legacy rows retain unknown provenance.
+Complete provider counts can settle below the estimate, including observed zero.
+For partial usage, missing components retain their corresponding estimates and
+the total cannot fall below the original reservation. Provider retries still
+have the physical-attempt limitations in the inventory below.
+
+Management credentials can read `GET /v1/budgets/{id}/evidence`, read immutable
+history at `GET /v1/budgets/{id}/adjustments`, and submit late evidence with
+`POST /v1/budgets/{id}/adjustments`. All are tenant-scoped. The request is:
+
+```json
+{
+  "id": "receipt-001",
+  "expected_revision": "0",
+  "accounted_units": "120",
+  "usage": {"input_tokens": "100", "output_tokens": "20", "source": "provider_reported"},
+  "evidence_ref": "fictional-provider-receipt-001"
+}
+```
+
+Amounts and revisions use canonical unsigned decimal strings, preserving browser
+precision. PostgreSQL accounted amounts are limited to signed 64-bit storage.
+IDs and evidence references accept only letters, digits, dot, dash and underscore,
+at most 160 bytes; supply an opaque receipt identifier, never raw provider data.
+This is operator-attested evidence, not automatic verification of a receipt.
+Unknown fields and malformed numbers are rejected. Only settled reservations can
+be corrected. A live hold must finish, or be conservatively swept after its stale
+deadline, before reconciliation. Released work cannot be charged by this API.
+Partial or unverified late evidence cannot reduce the prior accounted liability
+or undercount its known subtotal; complete observed counts can correct it downward.
+
+An exact repeated correction ID returns its original result even after later
+corrections; changed content returns `idempotency-mismatch`, and stale revisions
+return `head-conflict`. The update and its append-only before/after evidence are
+atomic. A correction retains the original UTC accounting day and can exceed a
+cap: that debt blocks subsequent same-day admissions, rather than rejecting
+truthful usage. It does not consume a different day's fresh allowance.
+
+`GET /v1/reports/budget-usage?day=YYYY-MM-DD` reports complete, partial and unknown
+observations and their reservations for the original day. Its scope is explicitly
+`recorded_token_reservations`; `unrecorded_invocations: null` means unknown, not
+zero. Legacy absent evidence and overflowing totals stay unknown. More than 10,000 reservations is an
+explicit error, never a silently truncated report. This report and corrections
+are separate from the optional monetary ledger.
+
+Migration 0038 adds nullable estimator provenance, revision zero for existing rows,
+and an immutable adjustment table. The unique index can briefly block concurrent
+writes while it is created; size and schedule upgrades accordingly. Already-running
+old writers settle held rows only and do not overwrite corrections to settled
+rows. Restarting an older binary is a separate compatibility question: its embedded
+migrator does not know migration 0038. Retain the schema and use a binary that
+recognizes it; never remove migration history or evidence to make rollback start.
+Prefer a roll-forward fix when these accounting methods or estimator are required.
 
 ## Dispatch accounting inventory
 

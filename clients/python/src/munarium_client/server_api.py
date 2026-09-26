@@ -411,6 +411,45 @@ class ServerApiClient(BaseServerApi):
             request,
         )
 
+    def budget_adjustments(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/budgets/{id}/adjustments"""
+        return self._call(
+            "BudgetAdjustments",
+            "GET",
+            "/v1/budgets/{id}/adjustments",
+            "application/json",
+            request,
+        )
+
+    def reconcile_budget(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """POST /v1/budgets/{id}/adjustments"""
+        return self._call(
+            "ReconcileBudget",
+            "POST",
+            "/v1/budgets/{id}/adjustments",
+            "application/json",
+            request,
+        )
+
+    def budget_evidence(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/budgets/{id}/evidence"""
+        return self._call(
+            "BudgetEvidence",
+            "GET",
+            "/v1/budgets/{id}/evidence",
+            "application/json",
+            request,
+        )
+
     def apply_rules(
         self,
         request: ApiRequest | None = None,
@@ -979,6 +1018,19 @@ class ServerApiClient(BaseServerApi):
             "Audit",
             "GET",
             "/v1/reports/audit",
+            "application/json",
+            request,
+        )
+
+    def budget_usage_report(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/reports/budget-usage"""
+        return self._call(
+            "BudgetUsageReport",
+            "GET",
+            "/v1/reports/budget-usage",
             "application/json",
             request,
         )
@@ -2038,6 +2090,45 @@ class AsyncServerApiClient(BaseAsyncServerApi):
             request,
         )
 
+    async def budget_adjustments(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/budgets/{id}/adjustments"""
+        return await self._call(
+            "BudgetAdjustments",
+            "GET",
+            "/v1/budgets/{id}/adjustments",
+            "application/json",
+            request,
+        )
+
+    async def reconcile_budget(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """POST /v1/budgets/{id}/adjustments"""
+        return await self._call(
+            "ReconcileBudget",
+            "POST",
+            "/v1/budgets/{id}/adjustments",
+            "application/json",
+            request,
+        )
+
+    async def budget_evidence(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/budgets/{id}/evidence"""
+        return await self._call(
+            "BudgetEvidence",
+            "GET",
+            "/v1/budgets/{id}/evidence",
+            "application/json",
+            request,
+        )
+
     async def apply_rules(
         self,
         request: ApiRequest | None = None,
@@ -2606,6 +2697,19 @@ class AsyncServerApiClient(BaseAsyncServerApi):
             "Audit",
             "GET",
             "/v1/reports/audit",
+            "application/json",
+            request,
+        )
+
+    async def budget_usage_report(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/reports/budget-usage"""
+        return await self._call(
+            "BudgetUsageReport",
+            "GET",
+            "/v1/reports/budget-usage",
             "application/json",
             request,
         )

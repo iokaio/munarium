@@ -25,6 +25,71 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+/// Additive token-admission evidence API. Amounts/revisions use exact decimal
+/// strings; existing numeric budget reports retain their wire representation.
+pub mod budget_evidence {
+    use super::*;
+
+    #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+    #[serde(deny_unknown_fields)]
+    pub struct BudgetUsage {
+        pub input_tokens: Option<String>,
+        pub output_tokens: Option<String>,
+        pub source: UsageSource,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+    #[serde(rename_all = "snake_case")]
+    pub enum UsageSource {
+        ProviderReported,
+        LegacyUnverified,
+        Missing,
+        Malformed,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+    pub struct BudgetEvidence {
+        pub reservation_id: String,
+        pub config: String,
+        pub tier: String,
+        pub day: String,
+        pub state: String,
+        pub original_units: Option<String>,
+        pub accounted_units: String,
+        pub usage: Option<BudgetUsage>,
+        pub revision: String,
+        pub estimator_revision: Option<String>,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+    #[serde(deny_unknown_fields)]
+    pub struct BudgetCorrection {
+        pub id: String,
+        pub expected_revision: String,
+        pub accounted_units: String,
+        pub usage: BudgetUsage,
+        pub evidence_ref: String,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+    pub struct BudgetAdjustment {
+        pub correction: BudgetCorrection,
+        pub previous: BudgetEvidence,
+        pub result: BudgetEvidence,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+    pub struct BudgetUsageReport {
+        pub scope: String,
+        pub day: String,
+        pub reservations: Vec<BudgetEvidence>,
+        pub complete_observations: u64,
+        pub partial_observations: u64,
+        pub unknown_observations: u64,
+        pub unrecorded_invocations: Option<u64>,
+    }
+}
+
 /// Optional monetary API wire shapes. Inline so the standalone contract crate
 /// carries the same schemas without a dependency on the domain or stores.
 pub mod monetary {

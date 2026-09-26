@@ -126,6 +126,18 @@ impl ServerApiClient {
     pub async fn get_pattern(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("GetPattern", "GET", "/v1/authoring/patterns/{id}", "application/json", request).await
     }
+    /// GET /v1/budgets/{id}/adjustments
+    pub async fn budget_adjustments(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("BudgetAdjustments", "GET", "/v1/budgets/{id}/adjustments", "application/json", request).await
+    }
+    /// POST /v1/budgets/{id}/adjustments
+    pub async fn reconcile_budget(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("ReconcileBudget", "POST", "/v1/budgets/{id}/adjustments", "application/json", request).await
+    }
+    /// GET /v1/budgets/{id}/evidence
+    pub async fn budget_evidence(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("BudgetEvidence", "GET", "/v1/budgets/{id}/evidence", "application/json", request).await
+    }
     /// POST /v1/chronology-rules
     pub async fn apply_rules(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("ApplyRules", "POST", "/v1/chronology-rules", "text/yaml", request).await
@@ -301,6 +313,10 @@ impl ServerApiClient {
     /// GET /v1/reports/audit
     pub async fn audit(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("Audit", "GET", "/v1/reports/audit", "application/json", request).await
+    }
+    /// GET /v1/reports/budget-usage
+    pub async fn budget_usage_report(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("BudgetUsageReport", "GET", "/v1/reports/budget-usage", "application/json", request).await
     }
     /// GET /v1/reports/budgets
     pub async fn budgets(&self, request: ApiRequest) -> Result<ApiResponse> {

@@ -1786,10 +1786,10 @@ pub async fn turn_stream(
         let event = match result {
             Ok((resp, meta)) => {
                 let (event, data) = done_event_data(&resp);
-                if let Ok(mut o) = outcome_w.lock() {
-                    o.meta = meta;
-                    o.status = Some(if event == "done" { 200 } else { 500 });
-                }
+                outcome_w.publish(crate::middleware::StreamOutcome {
+                    meta,
+                    status: Some(if event == "done" { 200 } else { 500 }),
+                });
                 Event::default().event(event).data(data)
             }
             Err(e) => {
@@ -1797,12 +1797,14 @@ pub async fn turn_stream(
                     ApiError::Mesh(m) => crate::error::to_problem(m),
                     ApiError::Custom(c) => c.to_problem(),
                 };
-                if let Ok(mut o) = outcome_w.lock() {
-                    // The session is known from the path even when the turn
-                    // failed before op_turn could attribute it.
-                    o.meta.session_id = Some(session_for_meta.clone());
-                    o.status = Some(status.as_u16());
-                }
+                // The session is known even when the turn failed before attribution.
+                outcome_w.publish(crate::middleware::StreamOutcome {
+                    meta: crate::interactions::InteractionMeta {
+                        session_id: Some(session_for_meta.clone()),
+                        ..Default::default()
+                    },
+                    status: Some(status.as_u16()),
+                });
                 Event::default()
                     .event("error")
                     .data(problem_event_data(&problem))

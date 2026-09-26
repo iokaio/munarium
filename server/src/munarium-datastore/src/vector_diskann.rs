@@ -937,6 +937,35 @@ mod tests {
     use super::*;
     use crate::vector::FlatVectorIndex;
 
+    #[test]
+    fn poisoned_adjacency_retains_neighbors_and_accepts_a_complete_replacement() {
+        let mut neighbors = AdjacencyList::new();
+        neighbors.extend_from_slice(&[1]);
+        let store = Store {
+            dims: 1,
+            count: 1,
+            data: vec![0.0],
+            start: vec![0.0],
+            adjacency: vec![RwLock::new(neighbors), RwLock::new(AdjacencyList::new())],
+        };
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = store.adjacency[0].write().unwrap();
+            panic!("fixture adjacency poison");
+        }))
+        .is_err());
+        let mut actual = AdjacencyList::new();
+        store.read_neighbors(0, &mut actual).unwrap();
+        assert_eq!(actual.as_ref(), &[1u32]);
+        {
+            let mut next = write_list(&store.adjacency[0]);
+            next.clear();
+            next.extend_from_slice(&[0]);
+        }
+        store.read_neighbors(0, &mut actual).unwrap();
+        assert_eq!(actual.as_ref(), &[0u32]);
+        assert!(store.read_neighbors(2, &mut actual).is_err());
+    }
+
     /// Deterministic pseudo-vectors: splitmix64 over (i, d), so every run and
     /// machine builds the identical corpus AND every vector is distinct. (The
     /// first version of this used a 97-element lattice, which collapsed 2,000

@@ -22,12 +22,32 @@
 
 use async_trait::async_trait;
 use munarium_core::budget::{
-    BudgetEvidence, BudgetLedgerRow, BudgetOutcome, BudgetReservation, BudgetStore,
+    BudgetAdjustment, BudgetCorrection, BudgetEvidence, BudgetLedgerRow, BudgetOutcome,
+    BudgetReservation, BudgetStore,
 };
 use munarium_core::Result;
 use sqlx::{PgPool, Row};
 
 use crate::storage_err;
+
+fn evidence_row(r: &sqlx::postgres::PgRow) -> BudgetEvidence {
+    BudgetEvidence {
+        reservation_id: r.get("id"),
+        original_units: r.get::<Option<i64>, _>("original_units").map(|v| v as u64),
+        accounted_units: r.get::<i64, _>("units") as u64,
+        state: r.get("state"),
+        usage: r
+            .get::<Option<sqlx::types::Json<munarium_core::provider::UsageEvidence>>, _>(
+                "usage_evidence",
+            )
+            .map(|v| v.0),
+        revision: r.get::<i64, _>("evidence_revision") as u64,
+        config: r.get("config_name"),
+        tier: r.get("tier"),
+        day: r.get("original_day"),
+        estimator_revision: r.get("estimator_revision"),
+    }
+}
 
 #[derive(Clone)]
 pub struct PgBudgetStore {
@@ -58,6 +78,28 @@ impl BudgetStore for PgBudgetStore {
         units: u64,
         limit: Option<u64>,
     ) -> Result<BudgetOutcome> {
+        self.reserve_estimated(
+            tenant,
+            config,
+            tier,
+            munarium_core::budget::BudgetEstimate {
+                units,
+                revision: None,
+            },
+            limit,
+        )
+        .await
+    }
+
+    async fn reserve_estimated(
+        &self,
+        tenant: &str,
+        config: &str,
+        tier: &str,
+        estimate: munarium_core::budget::BudgetEstimate<'_>,
+        limit: Option<u64>,
+    ) -> Result<BudgetOutcome> {
+        let units = estimate.units;
         let Some(limit) = limit else {
             return Ok(BudgetOutcome::Unlimited);
         };
@@ -96,8 +138,8 @@ impl BudgetStore for PgBudgetStore {
         let id = uuid::Uuid::new_v4().simple().to_string();
         let day: String = sqlx::query_scalar(
             "INSERT INTO token_budget_reservations
-                (id, tenant_id, config_name, tier, day, units, state, original_units)
-             VALUES ($1, $2, $3, $4, (now() AT TIME ZONE 'utc')::date, $5, 'held', $5)
+                (id, tenant_id, config_name, tier, day, units, state, original_units, estimator_revision)
+             VALUES ($1, $2, $3, $4, (now() AT TIME ZONE 'utc')::date, $5, 'held', $5, $6)
              RETURNING day::text",
         )
         .bind(&id)
@@ -105,6 +147,7 @@ impl BudgetStore for PgBudgetStore {
         .bind(config)
         .bind(tier)
         .bind(stored_units)
+        .bind(estimate.revision)
         .fetch_one(&mut *tx)
         .await
         .map_err(storage_err)?;
@@ -145,11 +188,12 @@ impl BudgetStore for PgBudgetStore {
                  units = COALESCE($2, units),
                  usage_evidence = $3,
                  settled_at = now()
-             WHERE id = $1 AND state = 'held'",
+             WHERE id = $1 AND state = 'held' AND tenant_id = $4",
         )
         .bind(&reservation.id)
         .bind(stored_units)
         .bind(usage.map(sqlx::types::Json))
+        .bind(&reservation.tenant)
         .execute(&self.pool)
         .await
         .map_err(storage_err)?;
@@ -157,28 +201,104 @@ impl BudgetStore for PgBudgetStore {
     }
 
     async fn evidence(&self, tenant: &str, id: &str) -> Result<Option<BudgetEvidence>> {
-        let row = sqlx::query("SELECT id, original_units, units, state, usage_evidence FROM token_budget_reservations WHERE tenant_id = $1 AND id = $2")
+        let row = sqlx::query("SELECT *, day::text AS original_day FROM token_budget_reservations WHERE tenant_id = $1 AND id = $2")
             .bind(tenant).bind(id).fetch_optional(&self.pool).await.map_err(storage_err)?;
-        Ok(row.map(|r| BudgetEvidence {
-            reservation_id: r.get("id"),
-            original_units: r.get::<Option<i64>, _>("original_units").map(|v| v as u64),
-            accounted_units: r.get::<i64, _>("units") as u64,
-            state: r.get("state"),
-            usage: r
-                .get::<Option<sqlx::types::Json<munarium_core::provider::UsageEvidence>>, _>(
-                    "usage_evidence",
-                )
-                .map(|v| v.0),
-        }))
+        Ok(row.as_ref().map(evidence_row))
+    }
+
+    async fn reconcile(
+        &self,
+        tenant: &str,
+        id: &str,
+        correction: &BudgetCorrection,
+    ) -> Result<BudgetEvidence> {
+        let stored_units = i64::try_from(correction.accounted_units).map_err(|_| {
+            munarium_core::KernelError::InvalidInput("budget units exceed PostgreSQL BIGINT".into())
+        })?;
+        let mut tx = self.pool.begin().await.map_err(storage_err)?;
+        let scope = sqlx::query("SELECT config_name, tier FROM token_budget_reservations WHERE tenant_id = $1 AND id = $2")
+            .bind(tenant).bind(id).fetch_optional(&mut *tx).await.map_err(storage_err)?
+            .ok_or_else(|| munarium_core::KernelError::NotFound { kind: "budget-reservation", id: id.into() })?;
+        // The same admission lock: a new reservation sees either the old total
+        // or the committed correction, never a partially applied adjustment.
+        sqlx::query(
+            "SELECT pg_advisory_xact_lock(hashtextextended($1 || '/' || $2 || '/' || $3, 0))",
+        )
+        .bind(tenant)
+        .bind(scope.get::<String, _>("config_name"))
+        .bind(scope.get::<String, _>("tier"))
+        .execute(&mut *tx)
+        .await
+        .map_err(storage_err)?;
+        let row = sqlx::query("SELECT *, day::text AS original_day FROM token_budget_reservations WHERE tenant_id = $1 AND id = $2 FOR UPDATE")
+            .bind(tenant).bind(id).fetch_one(&mut *tx).await.map_err(storage_err)?;
+        let existing: Option<sqlx::types::Json<BudgetAdjustment>> = sqlx::query_scalar("SELECT adjustment FROM token_budget_adjustments WHERE tenant_id = $1 AND reservation_id = $2 AND id = $3")
+            .bind(tenant).bind(id).bind(&correction.id).fetch_optional(&mut *tx).await.map_err(storage_err)?;
+        if let Some(existing) = existing {
+            return if existing.correction == *correction {
+                Ok(existing.result.clone())
+            } else {
+                Err(munarium_core::KernelError::IdempotencyMismatch)
+            };
+        }
+        let previous = evidence_row(&row);
+        correction.validate(&previous)?;
+        let revision = i64::try_from(previous.revision)
+            .ok()
+            .and_then(|v| v.checked_add(1))
+            .ok_or_else(|| {
+                munarium_core::KernelError::Storage("budget revision overflow".into())
+            })?;
+        let mut result = previous.clone();
+        result.revision = revision as u64;
+        result.accounted_units = correction.accounted_units;
+        result.usage = Some(correction.usage);
+        let adjustment = BudgetAdjustment {
+            correction: correction.clone(),
+            previous,
+            result: result.clone(),
+        };
+        sqlx::query("INSERT INTO token_budget_adjustments (tenant_id, reservation_id, id, revision, adjustment) VALUES ($1,$2,$3,$4,$5)")
+            .bind(tenant).bind(id).bind(&correction.id).bind(revision).bind(sqlx::types::Json(adjustment))
+            .execute(&mut *tx).await.map_err(storage_err)?;
+        sqlx::query("UPDATE token_budget_reservations SET units = $3, usage_evidence = $4, evidence_revision = $5 WHERE tenant_id = $1 AND id = $2")
+            .bind(tenant).bind(id).bind(stored_units).bind(sqlx::types::Json(correction.usage)).bind(revision)
+            .execute(&mut *tx).await.map_err(storage_err)?;
+        tx.commit().await.map_err(storage_err)?;
+        Ok(result)
+    }
+
+    async fn adjustments(&self, tenant: &str, id: &str) -> Result<Vec<BudgetAdjustment>> {
+        if self.evidence(tenant, id).await?.is_none() {
+            return Err(munarium_core::KernelError::NotFound {
+                kind: "budget-reservation",
+                id: id.into(),
+            });
+        }
+        let rows: Vec<sqlx::types::Json<BudgetAdjustment>> = sqlx::query_scalar("SELECT adjustment FROM token_budget_adjustments WHERE tenant_id = $1 AND reservation_id = $2 ORDER BY revision")
+            .bind(tenant).bind(id).fetch_all(&self.pool).await.map_err(storage_err)?;
+        Ok(rows.into_iter().map(|v| v.0).collect())
+    }
+
+    async fn evidence_for_day(&self, tenant: &str, day: &str) -> Result<Vec<BudgetEvidence>> {
+        let rows = sqlx::query("SELECT *, day::text AS original_day FROM token_budget_reservations WHERE tenant_id = $1 AND day = $2::text::date ORDER BY id LIMIT 10001")
+            .bind(tenant).bind(day).fetch_all(&self.pool).await.map_err(storage_err)?;
+        if rows.len() > 10000 {
+            return Err(munarium_core::KernelError::InvalidInput(
+                "budget report exceeds 10000 reservations".into(),
+            ));
+        }
+        Ok(rows.iter().map(evidence_row).collect())
     }
 
     async fn release(&self, reservation: &BudgetReservation) -> Result<()> {
         sqlx::query(
             "UPDATE token_budget_reservations
              SET state = 'released', settled_at = now()
-             WHERE id = $1 AND state = 'held'",
+             WHERE id = $1 AND state = 'held' AND tenant_id = $2",
         )
         .bind(&reservation.id)
+        .bind(&reservation.tenant)
         .execute(&self.pool)
         .await
         .map_err(storage_err)?;

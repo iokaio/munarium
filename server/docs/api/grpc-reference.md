@@ -1236,6 +1236,9 @@ no evidence rows appear here.
 | ValidateDraft | ServerApiRequest | ServerApiResponse | POST /v1/authoring/drafts/{draft_id}/validate |
 | ListPatterns | ServerApiRequest | ServerApiResponse | GET /v1/authoring/patterns |
 | GetPattern | ServerApiRequest | ServerApiResponse | GET /v1/authoring/patterns/{id} |
+| BudgetAdjustments | ServerApiRequest | ServerApiResponse | GET /v1/budgets/{id}/adjustments |
+| ReconcileBudget | ServerApiRequest | ServerApiResponse | POST /v1/budgets/{id}/adjustments |
+| BudgetEvidence | ServerApiRequest | ServerApiResponse | GET /v1/budgets/{id}/evidence |
 | ApplyRules | ServerApiRequest | ServerApiResponse | POST /v1/chronology-rules |
 | GetRules | ServerApiRequest | ServerApiResponse | GET /v1/chronology-rules/{name} |
 | GetClaim | ServerApiRequest | ServerApiResponse | GET /v1/claims/{claim_id} |
@@ -1280,6 +1283,7 @@ no evidence rows appear here.
 | ProviderEmbed | ServerApiRequest | ServerApiResponse | POST /v1/providers/{name}/embed |
 | ProviderHealth | ServerApiRequest | ServerApiResponse | GET /v1/providers/{name}/health |
 | Audit | ServerApiRequest | ServerApiResponse | GET /v1/reports/audit |
+| BudgetUsageReport | ServerApiRequest | ServerApiResponse | GET /v1/reports/budget-usage |
 | Budgets | ServerApiRequest | ServerApiResponse | GET /v1/reports/budgets |
 | Cost | ServerApiRequest | ServerApiResponse | GET /v1/reports/cost |
 | Endpoints | ServerApiRequest | ServerApiResponse | GET /v1/reports/endpoints |

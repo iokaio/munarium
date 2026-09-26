@@ -250,6 +250,30 @@
       "streaming": false
     },
     {
+      "name": "budget_adjustments",
+      "rpc": "BudgetAdjustments",
+      "method": "GET",
+      "path": "/v1/budgets/{id}/adjustments",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "reconcile_budget",
+      "rpc": "ReconcileBudget",
+      "method": "POST",
+      "path": "/v1/budgets/{id}/adjustments",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "budget_evidence",
+      "rpc": "BudgetEvidence",
+      "method": "GET",
+      "path": "/v1/budgets/{id}/evidence",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
       "name": "apply_rules",
       "rpc": "ApplyRules",
       "method": "POST",
@@ -598,6 +622,14 @@
       "rpc": "Audit",
       "method": "GET",
       "path": "/v1/reports/audit",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "budget_usage_report",
+      "rpc": "BudgetUsageReport",
+      "method": "GET",
+      "path": "/v1/reports/budget-usage",
       "content_type": "application/json",
       "streaming": false
     },

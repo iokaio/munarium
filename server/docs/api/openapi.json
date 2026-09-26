@@ -1241,6 +1241,129 @@
         }
       }
     },
+    "/v1/budgets/{id}/adjustments": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on every /v1 request (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "budget_adjustments",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BudgetAdjustment"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "reconcile_budget",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetCorrection"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetEvidence"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/budgets/{id}/evidence": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on every /v1 request (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "budget_evidence",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetEvidence"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/chronology-rules": {
       "parameters": [
         {
@@ -3365,6 +3488,48 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AuditResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/reports/budget-usage": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on every /v1 request (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "operationId": "budget_usage_report",
+        "parameters": [
+          {
+            "name": "day",
+            "in": "query",
+            "description": "Original UTC accounting day, YYYY-MM-DD",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetUsageReport"
                 }
               }
             }
@@ -6444,6 +6609,110 @@
           }
         }
       },
+      "BudgetAdjustment": {
+        "type": "object",
+        "required": [
+          "correction",
+          "previous",
+          "result"
+        ],
+        "properties": {
+          "correction": {
+            "$ref": "#/components/schemas/BudgetCorrection"
+          },
+          "previous": {
+            "$ref": "#/components/schemas/BudgetEvidence"
+          },
+          "result": {
+            "$ref": "#/components/schemas/BudgetEvidence"
+          }
+        }
+      },
+      "BudgetCorrection": {
+        "type": "object",
+        "required": [
+          "id",
+          "expected_revision",
+          "accounted_units",
+          "usage",
+          "evidence_ref"
+        ],
+        "properties": {
+          "accounted_units": {
+            "type": "string"
+          },
+          "evidence_ref": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/BudgetUsage"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BudgetEvidence": {
+        "type": "object",
+        "required": [
+          "reservation_id",
+          "config",
+          "tier",
+          "day",
+          "state",
+          "accounted_units",
+          "revision"
+        ],
+        "properties": {
+          "accounted_units": {
+            "type": "string"
+          },
+          "config": {
+            "type": "string"
+          },
+          "day": {
+            "type": "string"
+          },
+          "estimator_revision": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "original_units": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reservation_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "tier": {
+            "type": "string"
+          },
+          "usage": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BudgetUsage"
+              }
+            ]
+          }
+        }
+      },
       "BudgetReportResponse": {
         "type": "object",
         "required": [
@@ -6511,6 +6780,78 @@
           "tier": {
             "type": "string",
             "description": "fast | capable | frontier"
+          }
+        }
+      },
+      "BudgetUsage": {
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "input_tokens": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "output_tokens": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/UsageSource"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BudgetUsageReport": {
+        "type": "object",
+        "required": [
+          "scope",
+          "day",
+          "reservations",
+          "complete_observations",
+          "partial_observations",
+          "unknown_observations"
+        ],
+        "properties": {
+          "complete_observations": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "day": {
+            "type": "string"
+          },
+          "partial_observations": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "reservations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BudgetEvidence"
+            }
+          },
+          "scope": {
+            "type": "string"
+          },
+          "unknown_observations": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "unrecorded_invocations": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
           }
         }
       },
@@ -12650,6 +12991,15 @@
             "description": "Session turns attributed to the key in the window."
           }
         }
+      },
+      "UsageSource": {
+        "type": "string",
+        "enum": [
+          "provider_reported",
+          "legacy_unverified",
+          "missing",
+          "malformed"
+        ]
       },
       "ValidateRunbookResponse": {
         "type": "object",

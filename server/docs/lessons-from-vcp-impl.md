@@ -107,11 +107,11 @@ Each row is a coherent implementation slice; it may require more than one PR whe
 
 | Slice | Deliverable | Dependencies | Relative scope | Exit evidence |
 |---|---|---|---|---|
-| P01 | Provider usage certainty and conservative settlement; first correction merged in PR #44, durable evidence implemented; reconciliation pending | Baseline parser/budget tests | Medium | Explicit zero accepted; absent/partial usage never settles as observed zero; memory/PG parity |
+| P01 | Provider usage certainty, effective-request estimation, immutable late reconciliation and scoped quality reports implemented | Baseline parser/budget tests | Medium | Explicit zero, partial/unknown evidence, memory/PG correction replay, original-day debt and transport authority |
 | P02 | Merged in PR #46: Check outcomes, receipts, checker controls | None; parallel with P01 | Medium | Pass/fail/missing/interrupted fixtures and correct exit precedence |
 | P03 | Merged in PR #46: JSON feature/persistence characterization | None; parallel with P01 | Small–medium | Default and feature-enabled round trips through actual persistence paths |
 | P04 | Merged in PR #46: Verified documentation corrections | Current-source recheck | Small | Current references corrected; historical examples preserved; documentation gates |
-| P05 | Dispatch inventory and retry diagnostics implemented; broader admission and diagnostics pending | P01; D1/D7 for policy changes | Medium–large | Every dispatch has an explicit accounting policy; concurrent/retry/cancellation tests |
+| P05 | Dispatch inventory, retry diagnostics and structured-output capability override implemented; broader admission and diagnostics pending | P01; D1/D7 for policy changes | Medium–large | Every dispatch has an explicit accounting policy; concurrent/retry/cancellation tests |
 | P06 | Injectable clocks/IDs and separated governance baseline implemented | Existing conformance; P02 receipts | Medium | Existing constructors unchanged; reproducible traces and separated timings |
 | P07 | Characterization merged in PR #51; fixes require demonstrated gaps | P06 baseline where relevant | Medium | Exact-oracle comparisons, authorization parity, bounded-work evidence |
 | P08 | Implemented and locally qualified for the D3 application-process scope; atomic runbook checkpoints and retained legacy gaps, §9.1 | D3; P02; existing mirror fault hooks | Large | Named barriers, process termination, reopened-state assertions, reviewed recovery contracts |
@@ -122,9 +122,9 @@ Each row is a coherent implementation slice; it may require more than one PR whe
 | P13 | Frozen evaluation implemented; preregistered local D6 usefulness claim rejected, local latency budgets confirmed; §12.1 | P02/P06/P07; D6 | Medium–large | Offline/live pilots, validated graders, immutable manifests/results, retained rejection and calibrated local timing reports |
 | P14 | Optional monetary accounting | P05/P11; D2 | Medium–large | Unknown-price/usage semantics, immutable prices, checked arithmetic, coverage-qualified reports |
 | P15 | Implemented: panic-boundary policy in every production crate (R32) and the datastore-only embedded tier (D5/R31); locally qualified, §13.4 | D5; measured audit | Medium | Isolated consumer builds/MSRV if adopted; targeted production failure handling |
-| P16 | Shared gate definitions and policy follow-ups | P02 stabilized; maintainer-owned workflow changes | Medium | Same required coverage before/after, automatic CI retained, checker self-tests |
+| P16 | Shared gate definitions and policy follow-ups merged in PR #63 | P02 stabilized; maintainer-owned workflow changes | Medium | Same required coverage before/after, automatic CI retained, checker self-tests |
 
-P02–P06 diagnostics and baseline slices are merged; broader P05 admission and diagnostic access still await D1/D7. P07 retrieval instrumentation and characterization merged in PR #51. P08 ledger characterization merged in PR #52 and broader characterization in PR #53; atomic runbook recovery and local qualification complete the supported D3 scope (§9.1). Keep the outstanding P01 late reconciliation, estimator revisions, and usage-quality reporting separate. Characterization establishes whether retrieval and recovery fixes are needed. A failing authorization, persistence, or compatibility reproduction discovered in any slice takes priority over optimization. Money and embedded support are conditional product work, not prerequisites for fixing shared-code defects.
+P02–P06 diagnostics and baseline slices are merged; broader P05 admission and diagnostic access still await D1/D7. P07 retrieval instrumentation and characterization merged in PR #51. P08 ledger characterization merged in PR #52 and broader characterization in PR #53; atomic runbook recovery and local qualification complete the supported D3 scope (§9.1). P01 now implements late reconciliation, estimator revisions and scoped usage-quality reporting; broader admission remains separate. Characterization establishes whether retrieval and recovery fixes are needed. A failing authorization, persistence, or compatibility reproduction discovered in any slice takes priority over optimization. Money and embedded support are conditional product work, not prerequisites for fixing shared-code defects.
 
 For each PR, record affected invariants, a behavioral example, files changed, focused checks, unavailable evidence, and rollback constraints. Keep one behavior and its tests/documentation together. Avoid a large preliminary refactor merely to make later changes aesthetically uniform.
 
@@ -140,7 +140,12 @@ At the original baseline, `CompletionResponse` contained two mandatory `u64` cou
 
 **Durable evidence slice:** memory and PostgreSQL preserve original reserved units, accounted units, independently optional usage counts and source quality in one settlement. The reservation ID identifies the evidence. Migration 0035 leaves historical original units and usage unknown; it does not relabel historical zeros. Legacy `settle` and custom stores remain source compatible through defaulted methods. Full observation is derived from provider-reported source and both counts; partial/missing/malformed/unverified evidence stays distinct. Duplicate settlement, release and sweep cannot replace settled evidence.
 
-**Still proposed:** an effective-request estimator with revision identity, late reconciliation, broader attempt/admission coverage, and usage-quality reporting. The existing wire counts, metrics, and reports retain their numeric projections. The design and full acceptance matrix below include these follow-ups; PR #44 does not complete all of them.
+**Follow-up implementation:** the [token evidence contract](tokenbudgets.md#late-token-evidence-and-accounting-quality)
+defines the effective-request estimator and revision, management-only late
+reconciliation, immutable before/after history and original-day usage-quality
+reports. Existing wire counts, metrics and reports retain their numeric projections.
+Broader attempt/admission coverage still depends on D1/D7; a scoped quality report
+does not imply every dispatch was recorded. PR #44 alone does not qualify these additions.
 
 **Internal representation and extensions.** The first slice added provider-neutral usage evidence with independently optional input/output counts and a source classification. Add an estimator revision when improved estimates are introduced. Preserve raw observed categories needed for future accounting without conflating overlapping categories. The conceptual shape is:
 
@@ -1106,7 +1111,7 @@ The audit also fixed defects the lint cannot see:
 
 It replaced silent `null`/`{}` defaults with errors. Startup bind failures now
 exit 1 instead of panicking. A serving plane that fails after startup is
-recorded as open gap 30. See [panic-boundaries.md](panic-boundaries.md) and
+recorded as gap 30 and addressed by the follow-up supervisor. See [panic-boundaries.md](panic-boundaries.md) and
 §13.4.
 
 Inventory production `unwrap`/`expect` sites by category: untrusted input, database/I/O, lock poisoning, date arithmetic, guarded invariants, and constant initialization. Existing chronology/date/regex handling and store lock/serialization paths need different remedies.
@@ -1118,6 +1123,28 @@ Introduce scoped non-test lint enforcement crate by crate after fixing fallible 
 Retain the existing human review, DCO, protected-file, and no-autonomous-merge boundaries. A size threshold can trigger review/splitting rationale; raw line count is not evidence of quality. Generated artifacts still require validation even when excluded from the review-size calculation.
 
 Record release input identities and intentional compiler/build overrides in the release-owning workflow after its own audit. Do not import operational configuration or change signing/release behavior here. Locked/offline builds alone do not establish hermetic or byte-reproducible releases.
+
+**Follow-up input audit (coordination, not a release):** Server's source toolchain
+and Docker builder explicitly select Rust 1.98.0. Its Docker build uses `--locked`
+and defaults `FEATURES` to `vector-diskann`; an override changes the build input
+and must be recorded. Matrix's source toolchain is `stable`, and its Docker
+release command does not use `--locked`. The client publication workflow
+[`clientbuild.yml`](../../.github/workflows/clientbuild.yml) is manual, uses Rust
+`stable`, Python 3.11, .NET 10.0.x and Java 21, and intentionally permits a dirty
+proto package after copying protocol inputs. Release owners must retain resolved
+compiler versions, lockfile/input hashes, the exact packaged file list, feature
+overrides and final artifact identities; channel names alone are insufficient.
+Server's CI explicitly places signed image/tag releases outside this repository.
+No external release workflow, signing policy or publication setting is changed
+by this follow-up, and this audit is not evidence of a reproducible release.
+
+| Qualification environment | Availability and ownership record | Remaining authority/evidence |
+|---|---|---|
+| Local memory and owned loopback PostgreSQL | The local validation run owns UUID-scoped fixtures, receipts and exact cleanup IDs | Commands must finish and cleanup must be verified; old receipts do not qualify new source |
+| Hosted Linux CI | Existing automatic repository workflows own their fixtures and runners | Evaluate the actual PR head's results after push; local Windows success is separate |
+| Broader model/governance/performance campaign | Not scheduled; population, model, targets, environment owner and expiry remain unassigned | New D6 manifest frozen before execution, including total spend cap and unresolved liability; retain the prior rejection |
+| Cloud deployment, backup/restore, database crash and power loss | No environment or operator assigned by this task | Named owner, availability/expiry check, explicit operational authorization and independent recovery evidence |
+| Signed Server release / client publication | External release owner / manual client publication workflow | Review the input audit above and the release environment's approvals; preparing a PR does not authorize publication |
 
 Before scheduling a qualification milestone, list its environments, owner, availability check, cost authority, and expiry constraints. A build under emulation is not native runtime qualification. A validation-only infrastructure example is not a completed deployment/backup drill. Size any separately authorized paid campaign to include unresolved liability, without treating that planning number as permission to spend.
 
@@ -1212,9 +1239,10 @@ Deviations:
   lexical index is not byte-reproducible, so the exchange asserts reading
   instead.
 - No production behaviour was weakened to make a test pass.
-- The DiskANN adjacency recovery has no poisoning test (see
-  [panic-boundaries.md](panic-boundaries.md#remaining-boundaries)), and a serving
-  plane that fails after startup remains open gap 30.
+- At this P15 qualification revision, DiskANN adjacency recovery lacked a
+  poisoning test and post-startup serving failure remained gap 30. The follow-up
+  adds both the direct adapter fixture and serving supervision; its evidence is
+  separate from this historical run (see [panic-boundaries.md](panic-boundaries.md#remaining-boundaries)).
 
 Unavailable or not claimed:
 
@@ -1297,7 +1325,7 @@ Rollback must be described at the level of state and semantics. Switching an eng
 
 | ID | Planned treatment | Slice / section |
 |---|---|---|
-| R01 | First missing/partial usage correction merged in PR #44; durable evidence implemented; estimates and reconciliation remain proposed | P01, §4.1 |
+| R01 | First correction merged in PR #44; durable evidence, versioned estimates, late reconciliation and scoped quality reports implemented | P01, §4.1 |
 | R02 | Profile-scoped outcomes and durable local receipts | P02, §5.1; Matrix follow-up |
 | R03 | Fix reverified current drift only | P04, §5.3 |
 | R04 | Checker meaning/limitations guidance, synchronized agent instructions | P16, §5.3 and §13.3; maintainer-owned policy |
@@ -1342,4 +1370,33 @@ This planning task is complete when this document is indexed, its current-source
 
 An implementation slice is complete only when its behavior, compatibility, migration/rollback constraints, tests, and documentation meet its exit criteria. A research slice can complete with rejection or inconclusive evidence if that is an allowed preregistered outcome. An unavailable environment or accepted waiver can permit a separately recorded release decision, but cannot manufacture qualification evidence.
 
-P02–P04 are merged in PR #46. The remaining actionable work includes P01 reconciliation/reporting, D1/D7 decisions for broader P05 changes, and any separately adopted stronger recovery guarantees beyond the P08 application-process scope in §9.1. Their outputs should refine the estimates and contracts for later slices before additional architecture is committed.
+P02–P04 are merged in PR #46 and P16 in PR #63. P01 now includes late token
+reconciliation/reporting and a versioned estimator. Remaining policy-dependent
+work includes D1/D7 for broader P05 admission and diagnostic authority, D3 for
+stronger command/submission recovery beyond §9.1, D4 for durable source denial
+and cleanup, and a new D6 population/model/budget/threshold decision for broader
+qualification. The earlier local D6 rejection remains a completed research result.
+
+### 15.4 Follow-up implementation boundaries
+
+The follow-up combines the requested work in one review. Token evidence uses an
+additive migration and new REST/native RPC methods, with all four generated SDK
+operation surfaces. Corrections retain unknown legacy evidence, serialize with
+admission, preserve their original day, and replay the exact historical result.
+The report's unknown unrecorded coverage stays explicit. Structured-output policy
+can refuse a resolved model before dispatch; omitted configuration preserves
+current requests and response validation.
+
+Serving-plane supervision, Azure client initialization failure, stream outcome
+poison recovery and direct DiskANN adjacency poison controls address the residual
+P15 boundaries. See [panic-boundaries.md](panic-boundaries.md). Matrix adopts the
+shared receipt contract with selected-tier identities, native command failures,
+explicit missing environments, and owned PostgreSQL resources; its
+[runner documentation](../../matrix/README.md#testing) records the local profile
+and external black-box prerequisites. Automatic CI remains enabled.
+
+This does not adopt D1/D7, D3 or D4 by implication. Stronger behavior cannot be
+enabled merely because a decision has been pending. Nor does a new test or
+receipt qualify a missing model campaign, release platform, cloud deployment,
+database crash, power loss or restore. Those require the named decision and
+actual environment evidence under §14.3; retain original missing/failed outcomes.

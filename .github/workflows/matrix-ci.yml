@@ -15,11 +15,13 @@ on:
     paths:
       - 'matrix/**'
       - 'server/contract/matrix/**'
+      - 'server/tools/validation.ps1'
       - '.github/workflows/matrix-ci.yml'
   pull_request:
     paths:
       - 'matrix/**'
       - 'server/contract/matrix/**'
+      - 'server/tools/validation.ps1'
       - '.github/workflows/matrix-ci.yml'
   workflow_dispatch:
 
@@ -47,6 +49,11 @@ jobs:
 
       - name: cargo fmt
         run: cargo fmt --all -- --check
+
+      - name: local receipt adapter controls
+        run: |
+          command -v pwsh
+          python3 -m unittest discover -s tools -p test_validation.py
 
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings

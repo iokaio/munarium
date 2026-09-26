@@ -400,10 +400,22 @@ async fn complete_with_schema(
                 .complete_default
         }
     };
-    entry
-        .budget
-        .check((prompt.len() / 4) as u64 + max_tokens as u64)?;
     let model = resolve_complete_model(&entry.doc.spec, req.model, tier)?;
+    if schema.is_some() {
+        entry.doc.spec.structured_output.require_native(&model)?;
+    }
+    let input = CompletionRequest {
+        model: model.clone(),
+        system: req.system,
+        prompt,
+        max_tokens: max_tokens.max(1),
+        temperature: req.temperature,
+        tools: None,
+    };
+    let estimate =
+        munarium_core::provider::CompletionEstimate::for_request(&input, schema.as_ref())?;
+    let estimated_units = estimate.total()?;
+    entry.budget.check(estimated_units)?;
     // Daily token cap (spending caps, 2026-09-01): reserve BEFORE the
     // provider call at the same estimate the rpm/tpm bucket consumes, settle
     // to the provider's actual counts after. Keyed per tier — an
@@ -413,14 +425,16 @@ async fn complete_with_schema(
     let mut cap_reservation = None;
     if let Some(t) = tier {
         let limit = entry.doc.spec.budgets.daily_tokens.for_tier(t);
-        let estimate = (prompt.len() / 4) as u64 + max_tokens as u64;
         match state
             .budgets()
-            .reserve(
+            .reserve_estimated(
                 tenant,
                 &entry.doc.metadata.name,
                 t.as_str(),
-                estimate,
+                munarium_core::budget::BudgetEstimate {
+                    units: estimated_units,
+                    revision: Some(munarium_core::provider::CompletionEstimate::REVISION),
+                },
                 limit,
             )
             .await?
@@ -443,16 +457,7 @@ async fn complete_with_schema(
         }
     }
     let started = std::time::Instant::now();
-    let input = CompletionRequest {
-        model: model.clone(),
-        system: req.system,
-        prompt,
-        max_tokens,
-        temperature: req.temperature,
-        tools: None,
-    };
-    let estimate = (input.prompt.len() / 4) as u64 + u64::from(max_tokens);
-    let result = crate::money_api::capture(state, tenant, &entry, &model, estimate, async {
+    let result = crate::money_api::capture(state, tenant, &entry, &model, estimated_units, async {
         match schema {
             Some(schema) => {
                 entry
@@ -471,7 +476,7 @@ async fn complete_with_schema(
     // sweep stamps the row later, in the same spent direction.
     if let Some(r) = &cap_reservation {
         let accounted = match result.as_ref() {
-            Ok(out) => match out.usage.accounted_units(r.units) {
+            Ok(out) => match estimate.account(out.usage) {
                 Ok(units) => Some(units),
                 Err(e) => {
                     tracing::warn!(error = %e, "invalid usage total; retaining budget estimate");

@@ -55,10 +55,30 @@ pub struct StreamOutcome {
     pub status: Option<u16>,
 }
 
-pub type StreamOutcomeSlot = Arc<std::sync::Mutex<StreamOutcome>>;
+#[derive(Clone, Default)]
+pub struct StreamOutcomeSlot(Arc<std::sync::Mutex<StreamOutcome>>);
+
+impl StreamOutcomeSlot {
+    // A complete value is built before taking this lock. Recovering poison can
+    // therefore expose only the previous complete outcome, never partial meta.
+    fn lock(&self) -> std::sync::MutexGuard<'_, StreamOutcome> {
+        self.0.lock().unwrap_or_else(|poison| {
+            tracing::warn!("recovering poisoned stream outcome bookkeeping");
+            poison.into_inner()
+        })
+    }
+
+    pub fn publish(&self, outcome: StreamOutcome) {
+        *self.lock() = outcome;
+    }
+
+    fn snapshot(&self) -> StreamOutcome {
+        self.lock().clone()
+    }
+}
 
 pub fn new_stream_outcome_slot() -> StreamOutcomeSlot {
-    Arc::new(std::sync::Mutex::new(StreamOutcome::default()))
+    StreamOutcomeSlot::default()
 }
 
 /// The acting uid, or the `anonymous` sentinel — the ONE place the fallback
@@ -440,12 +460,11 @@ impl Drop for SseCapture {
         record.latency_ms = self.started.elapsed().as_millis().min(i32::MAX as u128) as i32;
         let mut outcome_status: Option<u16> = None;
         if let Some(slot) = &self.slot {
-            if let Ok(outcome) = slot.lock() {
-                record.session_id = outcome.meta.session_id.clone();
-                record.runbook_ref = outcome.meta.runbook_ref.clone();
-                record.collection_ids = outcome.meta.collection_ids.clone();
-                outcome_status = outcome.status;
-            }
+            let outcome = slot.snapshot();
+            record.session_id = outcome.meta.session_id;
+            record.runbook_ref = outcome.meta.runbook_ref;
+            record.collection_ids = outcome.meta.collection_ids;
+            outcome_status = outcome.status;
         }
         // The terminal event's status is the final word (a `done` is 200,
         // an `error` carries its problem status); a stream that ended
@@ -745,6 +764,31 @@ impl Drop for GrpcStatusCapture {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn poisoned_stream_outcome_preserves_attribution_and_accepts_terminal_failure() {
+        let slot = new_stream_outcome_slot();
+        let poisoned = slot.clone();
+        assert!(std::thread::spawn(move || {
+            let _guard = poisoned.0.lock().unwrap();
+            panic!("fixture bookkeeping panic");
+        })
+        .join()
+        .is_err());
+        assert_eq!(slot.snapshot().status, None);
+        slot.publish(StreamOutcome {
+            meta: InteractionMeta {
+                session_id: Some("fictional-session".into()),
+                ..Default::default()
+            },
+            status: Some(403),
+        });
+        assert_eq!(slot.snapshot().status, Some(403));
+        assert_eq!(
+            slot.snapshot().meta.session_id.as_deref(),
+            Some("fictional-session")
+        );
+    }
     use crate::config::{AuthMode, Config, DocIntelConfig, SourceStoreConfig, StoreKind};
     use axum::response::sse::{Event, Sse};
     use axum::routing::get;

@@ -14,6 +14,13 @@ py tools/check_gate_equivalence.py
 ./tools/test-datastore-permissions.ps1
 ```
 
+Matrix's [local runner](../../../matrix/README.md#testing) also uses this execution
+and receipt contract. It defines its own selected requirements and environment
+adapters; the receipt profile names Matrix explicitly. A selected environment
+that is absent is `not_run` with `missing_environment`, while a configured
+service failure remains failed. Optional measurement campaigns stay unselected
+until their separate prerequisites and scope are declared.
+
 `-All` selects every test tier. `-Enterprise` remains accepted as an alias for
 `-Platform`; new examples use `-Platform`. The default profile clears the test
 database URL for workspace tests and restores the caller's value afterward.

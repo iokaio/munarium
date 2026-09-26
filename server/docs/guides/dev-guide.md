@@ -7917,10 +7917,10 @@ number with a one-line retirement note rather than disappearing.
 ### 13.2 Open
 
 **Entry 30 — a serving plane that fails after startup leaves a
-half-alive process.** Open.
-**What's missing:** a supervisor that ends the process when the REST,
+half-alive process.** Follow-up implemented; qualification recorded separately.
+**Original missing behavior:** a supervisor that ends the process when the REST,
 direct gRPC or ops serving task returns an error after its listener bound.
-**Evidence:** `main.rs` spawns each plane and awaits the handles only
+**Original evidence:** `main.rs` spawned each plane and awaited the handles only
 during shutdown (`futures_join_all` ignores their results). Before P15 the
 task panicked with `expect("rest server")`, which ended only that task;
 since P15 it logs `REST plane stopped with an error` (or the gRPC/ops
@@ -7930,7 +7930,13 @@ its other planes, and `/readyz` on the ops plane does not reflect a dead
 data plane. **The shape of the fix:** select over the serving handles
 beside the shutdown signal, and on the first unexpected completion start
 the graceful drain and exit non-zero, with a process-level test that
-forces a serve error. **Status:** open. The discussion is in
+forces a serve error. **Current behavior:** a shared `JoinSet` supervisor marks
+draining, signals all planes, applies the grace deadline, reaps tasks and returns
+failure for the process to exit 1. The child-process fixture injects a serving
+future error alongside a real listener, asserts it closes, and checks exit 1;
+adjacent tests cover normal shutdown, early successful exit, panic and timeout.
+This does not claim recovery from arbitrary process abort or runtime failure.
+The discussion is in
 [panic-boundaries.md](../panic-boundaries.md#remaining-boundaries).
 
 Three sub-items closed *with* their entries stay visible where they are
@@ -14309,6 +14315,9 @@ route family needs one rule there.
 | `/v1/providers/{name}/health` | GET | providers | §11 (BYOK diagnostic), §17 |
 | `/v1/reports/audit` | GET | reports | §20; rest.md Reports rows |
 | `/v1/reports/budgets` | GET | reports | §20 (spend governance) |
+| `/v1/reports/budget-usage` | GET | reports | [Token evidence quality](../tokenbudgets.md#late-token-evidence-and-accounting-quality) |
+| `/v1/budgets/{id}/evidence` | GET | reports | [Reservation evidence](../tokenbudgets.md#late-token-evidence-and-accounting-quality) |
+| `/v1/budgets/{id}/adjustments` | GET · POST | reports | [Late token corrections](../tokenbudgets.md#late-token-evidence-and-accounting-quality) |
 | `/v1/reports/cost` | GET | reports | §20; rest.md Reports rows |
 | `/v1/reports/money` | GET | reports | [Optional monetary accounting](monetary-accounting.md) |
 | `/v1/monetary/prices` | GET, POST | reports | [Immutable monetary tariffs](monetary-accounting.md) |
