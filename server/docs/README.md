@@ -10,9 +10,8 @@ Choose a starting point for your role:
 - **Operating a service:** [container setup](../CONTAINER.md),
   [deployment](ops/deployment-runbook.md) and [backup/restore](ops/backup-restore.md).
 
-Current installation guides target Server 1.3.0 after publication. The
-[1.3 release guide](guides/server-1.3.md) records preparation and upgrade steps;
-1.2.1 remains the last published image. The isolated Ollama evaluation
+Current installation guides use the published Server 1.2.1 image. The
+[1.3 release guide](guides/server-1.3.md) records source preparation and upgrade steps. The isolated Ollama evaluation
 retains its pinned 1.1.1 stack. Dated examples and measurements in the
 developer guide retain their original context; consult the current configuration
 and API references when applying them to a new deployment.

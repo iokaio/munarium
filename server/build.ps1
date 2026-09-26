@@ -29,7 +29,7 @@ if ($Lint) {
     & $cargo fmt --all --check
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     Write-Host '== cargo clippy -D warnings' -ForegroundColor Cyan
-    & $cargo clippy --workspace --all-targets -- -D warnings
+    & $cargo clippy --locked --workspace --all-targets -- -D warnings
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
@@ -47,7 +47,7 @@ if ($Image) {
     if (-not $buildVersion) { throw 'Server package version is missing' }
     $revision = git rev-parse HEAD
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    $sourceChanges = git status --porcelain --untracked-files=no
+    $sourceChanges = git status --porcelain -- .
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     if ($sourceChanges) { $revision = "$revision-dirty" }
     Write-Host "== docker build munarium-server:$ImageTag (musl -> distroless)" -ForegroundColor Cyan

@@ -1,11 +1,7 @@
 # munarium-client (Java)
 
-This checkout also carries the generated Server 1.3 API additions. The image
-release does not republish SDK packages. Source handshakes target 1.3.0
-with the declared 1.3/1.2 range pending release qualification; see [Server 1.3 preparation](../../server/docs/guides/server-1.3.md).
-
-The checkout targets **Munarium Server 1.3.0**; published packages retain their
-historical Server target. Client package **1.1.1** provides the complete `ServerApiClient` over REST and native gRPC, while the existing typed planes retain their Server 1.1 baseline. See the [Server 1.2 guide](../docs/guides/server-1.2.md) for vocabulary, collection queries, publication governance, answers and source references. Transport limitations below apply to the older typed planes.
+Client **1.2.0** targets **Munarium Server 1.3.0** with declared support for
+Server minors **1.3 and 1.2**; see the [compatibility record](https://github.com/iokaio/munarium/blob/main/clients/compatibility.json).
 
 Official Java client for [munarium-server](../../server/): the ten-plane
 surface on both transports (REST via `java.net.http`, gRPC via
@@ -43,6 +39,9 @@ problem-slug registry, and the head-conflict write loop built in.
 
 ## Install
 
+The registry examples below pin the recorded published release. Client 1.2.0
+is unreleased; use the source installation instructions for its Server 1.3 APIs.
+
 Add the published package to your application's Gradle build (Java 21+):
 
 ```kotlin
@@ -61,8 +60,8 @@ For Maven:
 </dependency>
 ```
 
-Maven Central has **1.1.0** as of 2026-09-15; the checkout is **1.1.1** with no
-API changes. The published jar includes the generated gRPC stubs.
+Maven Central's recorded release is **1.1.0** as of 2026-09-15. The published
+jar includes the generated gRPC stubs; the source instructions build **1.2.0**.
 
 ### Install from source
 
@@ -73,7 +72,7 @@ application's Gradle build, adjusting the path for your checkout:
 // settings.gradle.kts
 includeBuild("path/to/munarium/clients/java")
 // build.gradle.kts
-dependencies { implementation("io.ioka.munarium:munarium-client:1.1.1") }
+dependencies { implementation("io.ioka.munarium:munarium-client:1.2.0") }
 ```
 
 ## Quickstart

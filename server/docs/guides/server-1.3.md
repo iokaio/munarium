@@ -40,15 +40,21 @@ cover usage reconciliation, monetary accounting, provider diagnostics, command
 recovery and source retention. Consult the current [REST](../api/rest.md) and
 [native gRPC](../api/grpc-reference.md) references for authority and payloads.
 
-The committed generated client surface describes this source tree. Published
-1.1.1 SDK packages predate the new methods. The source
+The generated client surface and four Server SDK source packages **1.2.0**
+(unreleased) target this source tree. Published 1.1.1 packages retain their
+qualified Server 1.2/1.1 range. The source
 [client compatibility record](../../../clients/compatibility.json) and all four
-version-handshake constants target 1.3.0, with the N/N-1 range 1.3/1.2. These
-are release qualification targets; published packages retain their historical
-metadata. Run all four language conformance suites before publication; a version
-constant alone does not qualify either transport or the support range.
-Checkout Rust clients use the 1.3.0 wire crates; publishing those crates
-and a new SDK package is a separate release action.
+version-handshake constants target 1.3.0, with the N/N-1 range 1.3/1.2.
+Run all four language conformance suites before publication; a version constant
+alone does not qualify either transport or the support range. Matrix clients
+remain 1.1.1 and target Matrix 1.0.
+
+Rust client 1.2.0 requires the 1.3.0 wire crates. Publish `munarium-proto` and
+`munarium-api-types` before publishing the Rust client. A registry-enabled
+manual [`clientbuild`](../../../.github/workflows/clientbuild.yml) run selecting
+Server crates or `all` can publish those crates once this preparation merges;
+merging this PR does not authorize that publication. Keep registry options off
+for a packaging rehearsal, and authorize the package release separately.
 
 ## Database and configuration upgrade
 
@@ -103,6 +109,13 @@ the candidate image tag is `1.3.0-rc.1`. Only after qualification should the sam
 verified image index receive `1.3.0`, `1.3` and `latest`. Leave the existing
 `1.2` and immutable earlier tags unchanged.
 
+- Before tagging, compare the candidate commit with reviewed main `f5212c8`
+  (PR #69). Review every subsequently merged change and extend the table above
+  and upgrade guidance for any added behavior; do not treat this preparation's
+  review cutoff as coverage of later commits.
+- Run `python scripts/check_release_versions.py` from the repository root.
+  Source artifacts must agree with Cargo; Helm defaults and installation commands
+  must agree with the published image in `server/release-versions.json`.
 - Use the reviewed merged source commit. Check the workspace version, Docker
   label, `/version`, OpenAPI version and generated API inventory all report
   1.3.0. Record the exact source revision, toolchain, build features and builder.
@@ -124,7 +137,9 @@ verified image index receive `1.3.0`, `1.3` and `latest`. Leave the existing
   source Git tag points to the tested commit and preserve signing/attestations.
 - Record the 1.3.0 OCI index and platform digests, signing identity, date,
   source SHA and qualification/rollback outcomes in `CONTAINER.md`. Mark the
-  changelog and installation guidance published only when this evidence exists.
+  changelog published only when this evidence exists. In that publication PR,
+  update `server/release-versions.json`, Helm `appVersion`/image defaults and
+  installation commands together, then rerun the version consistency check.
 
 This preparation does not publish an image, create a release tag, deploy a
 service, or qualify a production backup restoration.

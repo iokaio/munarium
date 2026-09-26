@@ -1,6 +1,6 @@
 # munarium-server REST API
 
-This source reference targets **Server 1.3.0** (publication pending). MMP stays
+This source reference targets **Server 1.3.0**. MMP stays
 major 1, and existing `/v1` and `/v1.2` route prefixes remain unchanged. See the
 [1.3 release guide](../guides/server-1.3.md) for new operations and upgrade duties.
 

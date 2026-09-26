@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 name = "munarium-client"
 readme = "README.md"
 authors = [{ name = "Ioka" }]
-version = "1.1.1"
+version = "1.2.0"
 description = "Official Python client for munarium-server: one plane surface, two transports (REST + gRPC), sync and async, typed errors keyed on the problem-slug registry, and the head-conflict write loop built in."
 requires-python = ">=3.11"
 # PEP 639: the SPDX expression lands in the wheel as `License-Expression`, and the

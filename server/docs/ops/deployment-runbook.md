@@ -10,9 +10,8 @@ not a deployment. Status, stated plainly: the chart's first install was
 validated on kind; the AKS module is authored and syntax-checked, not yet
 applied end to end. Expect a shakedown pass on a first cloud install.
 
-This source prepares Server **1.3.0**. Follow the
-[release/upgrade checklist](../guides/server-1.3.md); image publication and
-1.3.0 deployment qualification are pending.
+For an upgrade to Server 1.3, follow the
+[release/upgrade checklist](../guides/server-1.3.md).
 
 ## 0. Preconditions
 
@@ -75,8 +74,8 @@ kubectl -n munarium rollout status deployment/munarium-server
 
 The private values file must set `staticTokens` to your comma-separated
 `token:tenant:role` registrations. Using a YAML value avoids Helm interpreting
-the commas as separate `--set` assignments. After 1.3.0 publication, use `image.repository=iokaio/munarium` and
-`image.tag=1.3.0`; until then select a qualified candidate explicitly.
+the commas as separate `--set` assignments. For the published image, use `image.repository=iokaio/munarium` and
+`image.tag=1.2.1`. Select a qualified candidate explicitly when rehearsing an upgrade.
 
 Then add what the chart does not wire — the token secret and provider keys —
 as a Kubernetes Secret patched into the deployment's environment (or a

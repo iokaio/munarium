@@ -4,7 +4,7 @@ This checkout prepares **Server 1.3.0**. Start with the
 [1.3 release guide](server-1.3.md) for the reviewed changes since the 1.2.1 image,
 migrations 0035–0040, policy activation and rollback constraints. New work covers
 durable recovery, governance, accounting, retention, provider controls, wire
-integrity and embedded-library qualification. Image publication remains pending.
+integrity and embedded-library qualification.
 
 Server 1.2 adds [collection vocabularies](collection-vocabularies.md), checked
 answers and the [complete REST/gRPC API](../../../clients/docs/guides/server-1.2.md).
@@ -7832,9 +7832,15 @@ The version story is deliberately small enough to hold in your head.
 takes `version.workspace = true`; `/version` reports
 `CARGO_PKG_VERSION`; the OpenAPI `info.version` carries it.
 
-The Dockerfile label, Helm app/image versions and generated API inventory must
-agree as well. `build.ps1 -Image -ImageTag 1.3.0` supplies the workspace version
-and source revision as image labels (with `-dirty` for tracked local edits).
+The Dockerfile default, generated API inventory and client Server target must
+agree with the workspace. Helm app/image defaults and installation commands
+track the published image recorded in `server/release-versions.json`; they move
+with publication evidence, not source preparation. Run
+`python scripts/check_release_versions.py` from the repository root; CI enforces
+both sets of versions and tests the check with deliberately inconsistent inputs.
+`build.ps1 -Image -ImageTag 1.3.0` supplies the workspace version and source
+revision as image labels, adding `-dirty` for tracked or untracked changes under
+`server/`; client-only edits and ignored scratch files do not affect that label.
 Regenerate OpenAPI with the built Server
 and run `scripts/generate_server_api.py`; refresh the Server, Rust client and
 isolated embedded-consumer lockfiles without upgrading third-party dependencies.

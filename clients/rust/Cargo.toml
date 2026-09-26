@@ -4,7 +4,7 @@ resolver = "2"
 members = ["munarium-client", "munarium-client-conformance"]
 
 [workspace.package]
-version = "1.1.1"
+version = "1.2.0"
 edition = "2021"
 # Both member crates inherit the license; check_license.py fails CI if any
 # manifest under clients/ says otherwise.

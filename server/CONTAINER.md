@@ -7,10 +7,9 @@ The image runs as a nonroot user. Server platforms are `linux/amd64` and
 
 ## Quick start
 
-These examples target **1.3.0 after publication**. This checkout prepares that
-release; the last published image remains 1.2.1. Use a local build until 1.3.0
-is qualified and published. See the [1.3 release and upgrade guide](docs/guides/server-1.3.md)
-for new behavior, migrations 0035–0040, activation and rollback requirements.
+These examples use the published **1.2.1** image. For source builds and 1.3
+upgrade preparation, see [building from source](#building-from-source) and the
+[1.3 release guide](docs/guides/server-1.3.md).
 
 For an isolated, temporary evaluation from PowerShell:
 
@@ -19,7 +18,7 @@ docker run --rm --name munarium-evaluation `
   -p 127.0.0.1:8080:8080 -p 127.0.0.1:50051:50051 `
   -e MUNARIUM_STORE=memory -e MUNARIUM_AUTH_MODE=static `
   -e MUNARIUM_STATIC_TOKENS=evaluation-token:evaluation:rw `
-  iokaio/munarium:1.3.0
+  iokaio/munarium:1.2.1
 ```
 
 Open `http://127.0.0.1:8080/admin` or `/docs`. Check `/healthz`, `/readyz`,
