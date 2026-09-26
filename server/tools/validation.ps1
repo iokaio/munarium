@@ -196,7 +196,7 @@ function Invoke-ValidationRun {
             } catch {
                 # Do not serialize arbitrary exception messages (they may contain credentials).
                 $reason = $_.Exception.Message
-                if ($reason -in @('missing_tool','missing_database','missing_image')) {
+                if ($reason -in @('missing_tool','missing_database','missing_image','missing_environment')) {
                     $step.outcome = 'not_run'; $step.reason = $reason
                 } else {
                     $step.outcome = 'failed'

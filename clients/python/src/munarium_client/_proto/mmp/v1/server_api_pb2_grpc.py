@@ -189,6 +189,21 @@ class ServerApiServiceStub:
                 request_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
                 response_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
                 _registered_method=True)
+        self.BudgetAdjustments = channel.unary_unary(
+                '/mmp.v1.ServerApiService/BudgetAdjustments',
+                request_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+                response_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+                _registered_method=True)
+        self.ReconcileBudget = channel.unary_unary(
+                '/mmp.v1.ServerApiService/ReconcileBudget',
+                request_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+                response_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+                _registered_method=True)
+        self.BudgetEvidence = channel.unary_unary(
+                '/mmp.v1.ServerApiService/BudgetEvidence',
+                request_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+                response_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+                _registered_method=True)
         self.ApplyRules = channel.unary_unary(
                 '/mmp.v1.ServerApiService/ApplyRules',
                 request_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
@@ -406,6 +421,11 @@ class ServerApiServiceStub:
                 _registered_method=True)
         self.Audit = channel.unary_unary(
                 '/mmp.v1.ServerApiService/Audit',
+                request_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+                response_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+                _registered_method=True)
+        self.BudgetUsageReport = channel.unary_unary(
+                '/mmp.v1.ServerApiService/BudgetUsageReport',
                 request_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
                 response_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
                 _registered_method=True)
@@ -881,6 +901,27 @@ class ServerApiServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def BudgetAdjustments(self, request, context):
+        """GET /v1/budgets/{id}/adjustments
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ReconcileBudget(self, request, context):
+        """POST /v1/budgets/{id}/adjustments
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def BudgetEvidence(self, request, context):
+        """GET /v1/budgets/{id}/evidence
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def ApplyRules(self, request, context):
         """POST /v1/chronology-rules
         """
@@ -1184,6 +1225,13 @@ class ServerApiServiceServicer:
 
     def Audit(self, request, context):
         """GET /v1/reports/audit
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def BudgetUsageReport(self, request, context):
+        """GET /v1/reports/budget-usage
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -1697,6 +1745,21 @@ def add_ServerApiServiceServicer_to_server(servicer, server):
                     request_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.FromString,
                     response_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.SerializeToString,
             ),
+            'BudgetAdjustments': grpc.unary_unary_rpc_method_handler(
+                    servicer.BudgetAdjustments,
+                    request_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.FromString,
+                    response_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.SerializeToString,
+            ),
+            'ReconcileBudget': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReconcileBudget,
+                    request_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.FromString,
+                    response_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.SerializeToString,
+            ),
+            'BudgetEvidence': grpc.unary_unary_rpc_method_handler(
+                    servicer.BudgetEvidence,
+                    request_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.FromString,
+                    response_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.SerializeToString,
+            ),
             'ApplyRules': grpc.unary_unary_rpc_method_handler(
                     servicer.ApplyRules,
                     request_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.FromString,
@@ -1914,6 +1977,11 @@ def add_ServerApiServiceServicer_to_server(servicer, server):
             ),
             'Audit': grpc.unary_unary_rpc_method_handler(
                     servicer.Audit,
+                    request_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.FromString,
+                    response_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.SerializeToString,
+            ),
+            'BudgetUsageReport': grpc.unary_unary_rpc_method_handler(
+                    servicer.BudgetUsageReport,
                     request_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.FromString,
                     response_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.SerializeToString,
             ),
@@ -3003,6 +3071,87 @@ class ServerApiService:
             request,
             target,
             '/mmp.v1.ServerApiService/GetPattern',
+            mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+            mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def BudgetAdjustments(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/mmp.v1.ServerApiService/BudgetAdjustments',
+            mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+            mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ReconcileBudget(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/mmp.v1.ServerApiService/ReconcileBudget',
+            mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+            mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def BudgetEvidence(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/mmp.v1.ServerApiService/BudgetEvidence',
             mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
             mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
             options,
@@ -4191,6 +4340,33 @@ class ServerApiService:
             request,
             target,
             '/mmp.v1.ServerApiService/Audit',
+            mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+            mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def BudgetUsageReport(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/mmp.v1.ServerApiService/BudgetUsageReport',
             mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
             mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
             options,

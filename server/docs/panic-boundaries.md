@@ -84,6 +84,7 @@ store, do not poison and were not affected.
 | Retrieval `L0Cache` | Recovered. Map and deque operations only fail by aborting. At worst a key missing from the eviction order would outlive the count cap. |
 | Server `Metrics` (every request) | Recovered. The maps are append-only, with atomic updates. The unpoisoned path is the same `Ok` branch `expect` took, so the hot path is unchanged. |
 | Server datastore readiness diagnostics | Recovered. The list is replaced whole, and the admission bit is atomic. |
+| Server streaming outcome | Recovered. An encapsulated slot publishes a complete metadata/status value in one assignment; readers retain the previous complete value after poison. An absent terminal status remains unknown. |
 | Shapes registry and validation cache | Recovered. They hold settled `Arc<Shape>` values and cached outcomes. |
 | Azure managed-identity token cache | Recovered. It is one `Option` replaced whole. |
 | Memory-store source blobs | `put`, `get`, `exists` and `delete` return `KernelError::Storage` (fail closed). `len()` is a diagnostic and recovers. |
@@ -186,17 +187,19 @@ pre-fix code, with an adjacent valid control. The run results are in
 - The lint does not cover slice indexing, integer overflow in general, or
   allocation. This work fixed those where untrusted input reaches them, but did
   not audit them exhaustively.
-- A serving task that fails after startup is logged, and the process keeps
-  running without that plane, as it did when the panic ended only that task.
-  This is recorded as open gap 30 in the
-  [dev-guide ledger](guides/dev-guide.md#13-known-gaps-ledger-kept-current-deliberately-last).
-- The DiskANN adjacency recovery has no poisoning test: the store is owned by
-  the `diskann` index and cannot be reached to poison from a unit test. It uses
-  the same idiom as the tested locks.
-- The Azure token source still builds its HTTP client with
-  `unwrap_or_default()`, which drops the ten-second timeout if the TLS backend
-  cannot initialise. That is not a panic, and its constructor is infallible; it
-  is left as recorded.
-- Tolerant `if let Ok(guard) = lock()` sites in Server middleware and session
-  streaming skip their bookkeeping when a lock is poisoned. They do not panic
-  and were left unchanged.
+- Serving tasks are supervised together. An unexpected return or panic marks
+  readiness draining, requests shutdown on the other planes, and exits 1 after
+  the configured grace period. Grace expiry aborts and reaps remaining tasks.
+  `supervision::tests` cover errors, unexpected successful returns, panics,
+  requested shutdown and hung siblings. A child-process fixture injects a failed
+  serving future beside a real listener, verifies drain closes it, and exits 1.
+  Startup ops-port policy is unchanged.
+- DiskANN adjacency recovery now has a direct store fixture: poison retains
+  complete neighbors, a replacement remains readable, and out-of-range node
+  access still fails. This tests the adapter lock, not every DiskANN panic path.
+- Azure's infallible token-source constructor retains HTTP-client initialization
+  failure. Token acquisition returns a typed storage error; it never substitutes
+  an unbounded client. A forced initialization-failure fixture checks this path.
+- Streaming bookkeeping publishes whole outcomes and recovers poisoned locks.
+  A poison fixture checks both unknown status before publication and the terminal
+  failure's status and session attribution afterward.

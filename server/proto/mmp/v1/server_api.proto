@@ -86,6 +86,12 @@ service ServerApiService {
   rpc ListPatterns(ServerApiRequest) returns (ServerApiResponse);
   // GET /v1/authoring/patterns/{id}
   rpc GetPattern(ServerApiRequest) returns (ServerApiResponse);
+  // GET /v1/budgets/{id}/adjustments
+  rpc BudgetAdjustments(ServerApiRequest) returns (ServerApiResponse);
+  // POST /v1/budgets/{id}/adjustments
+  rpc ReconcileBudget(ServerApiRequest) returns (ServerApiResponse);
+  // GET /v1/budgets/{id}/evidence
+  rpc BudgetEvidence(ServerApiRequest) returns (ServerApiResponse);
   // POST /v1/chronology-rules
   rpc ApplyRules(ServerApiRequest) returns (ServerApiResponse);
   // GET /v1/chronology-rules/{name}
@@ -174,6 +180,8 @@ service ServerApiService {
   rpc ProviderHealth(ServerApiRequest) returns (ServerApiResponse);
   // GET /v1/reports/audit
   rpc Audit(ServerApiRequest) returns (ServerApiResponse);
+  // GET /v1/reports/budget-usage
+  rpc BudgetUsageReport(ServerApiRequest) returns (ServerApiResponse);
   // GET /v1/reports/budgets
   rpc Budgets(ServerApiRequest) returns (ServerApiResponse);
   // GET /v1/reports/cost

@@ -17,8 +17,9 @@
 //! Differences from the Matrix original, both deliberate: the window is the
 //! **UTC day** (`date_trunc('day', ...)`), because these are daily spending
 //! caps, and units are **tokens** (input + output combined), reserved at the
-//! same estimate the rpm/tpm `RateBudget` already uses (`prompt/4 +
-//! max_tokens`) and settled to the provider's actual counts — the
+//! same effective-request estimate the rpm/tpm `RateBudget` uses, including
+//! system text, tools, schema and the normalized output ceiling, and settled
+//! to the provider's actual counts — the
 //! `actual_units` argument Matrix defined and never used.
 //!
 //! Separate from [`crate::storage::StorageBackend`] for the same reason the
@@ -26,7 +27,8 @@
 //! report over this table must use the same window expression the enforcer
 //! writes, or the report and the ceiling will disagree.
 
-use crate::Result;
+use crate::{KernelError, Result};
+use serde::{Deserialize, Serialize};
 
 /// One granted reservation — the handle `settle`/`release` act on.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -72,13 +74,84 @@ pub struct BudgetLedgerRow {
 
 /// Evidence for one reservation. Missing original units or usage means unknown.
 /// The reservation ID identifies the evidence; settlement is first-writer-wins.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BudgetEvidence {
     pub reservation_id: String,
     pub original_units: Option<u64>,
     pub accounted_units: u64,
     pub state: String,
     pub usage: Option<crate::provider::UsageEvidence>,
+    pub revision: u64,
+    pub config: String,
+    pub tier: String,
+    pub day: String,
+    pub estimator_revision: Option<String>,
+}
+
+/// An operator-attested correction, distinct from first-writer settlement.
+/// IDs bind an exact request; revisions serialize concurrent late evidence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BudgetCorrection {
+    pub id: String,
+    pub expected_revision: u64,
+    pub accounted_units: u64,
+    pub usage: crate::provider::UsageEvidence,
+    pub evidence_ref: String,
+}
+
+impl BudgetCorrection {
+    pub fn validate(&self, previous: &BudgetEvidence) -> Result<()> {
+        for value in [&self.id, &self.evidence_ref] {
+            if value.is_empty()
+                || value.len() > 160
+                || !value
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+            {
+                return Err(KernelError::InvalidInput("budget evidence requires a safe nonempty identifier (letters, digits, dot, underscore, dash; at most 160 bytes)".into()));
+            }
+        }
+        if previous.state != "settled" {
+            return Err(KernelError::InvalidInput(
+                "only a settled reservation can be reconciled".into(),
+            ));
+        }
+        if self.expected_revision != previous.revision {
+            return Err(KernelError::HeadConflict {
+                expected: self.expected_revision,
+                actual: previous.revision,
+            });
+        }
+        let minimum = self.usage.accounted_units(
+            previous
+                .original_units
+                .unwrap_or(0)
+                .max(previous.accounted_units),
+        )?;
+        if self.accounted_units < minimum {
+            return Err(KernelError::InvalidInput(
+                "budget correction undercounts observed usage or unresolved liability".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Append-only evidence: corrections preserve both the prior estimate and the
+/// result returned to the original caller, including on an idempotent replay.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BudgetAdjustment {
+    pub correction: BudgetCorrection,
+    pub previous: BudgetEvidence,
+    pub result: BudgetEvidence,
+}
+
+/// Estimated liability and the optional identity of the estimator that produced it.
+#[derive(Debug, Clone, Copy)]
+pub struct BudgetEstimate<'a> {
+    pub units: u64,
+    pub revision: Option<&'a str>,
 }
 
 /// Persistence for daily token budgets.
@@ -96,6 +169,20 @@ pub trait BudgetStore: Send + Sync {
         units: u64,
         limit: Option<u64>,
     ) -> Result<BudgetOutcome>;
+
+    /// Persist estimator identity atomically with the reservation when supported.
+    /// Legacy callers/stores retain unknown estimator provenance.
+    async fn reserve_estimated(
+        &self,
+        tenant: &str,
+        config: &str,
+        tier: &str,
+        estimate: BudgetEstimate<'_>,
+        limit: Option<u64>,
+    ) -> Result<BudgetOutcome> {
+        self.reserve(tenant, config, tier, estimate.units, limit)
+            .await
+    }
 
     /// Mark a reservation settled, correcting `units` to `actual_units` when
     /// the caller supplies an accounted amount. The argument name is retained
@@ -123,6 +210,31 @@ pub trait BudgetStore: Send + Sync {
     /// Read tenant-scoped evidence. Unsupported legacy stores return None.
     async fn evidence(&self, _tenant: &str, _id: &str) -> Result<Option<BudgetEvidence>> {
         Ok(None)
+    }
+
+    async fn reconcile(
+        &self,
+        _tenant: &str,
+        _id: &str,
+        _correction: &BudgetCorrection,
+    ) -> Result<BudgetEvidence> {
+        Err(KernelError::InvalidInput(
+            "budget reconciliation is not supported by this store".into(),
+        ))
+    }
+
+    async fn adjustments(&self, _tenant: &str, _id: &str) -> Result<Vec<BudgetAdjustment>> {
+        Err(KernelError::InvalidInput(
+            "budget reconciliation is not supported by this store".into(),
+        ))
+    }
+
+    /// Bounded, tenant-scoped usage evidence for one original UTC accounting day.
+    /// A window over 10,000 reservations is an error, never a partial report.
+    async fn evidence_for_day(&self, _tenant: &str, _day: &str) -> Result<Vec<BudgetEvidence>> {
+        Err(KernelError::InvalidInput(
+            "budget evidence reports are not supported by this store".into(),
+        ))
     }
 
     /// Refund a reservation whose work never started. Idempotent like

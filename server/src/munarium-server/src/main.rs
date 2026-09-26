@@ -27,6 +27,7 @@
 
 mod answers_api;
 mod authoring_api;
+mod budget_api;
 mod charts;
 mod chronology_api;
 mod collections_api;
@@ -77,6 +78,7 @@ mod sessions_api;
 mod shadow_plane;
 mod state;
 mod storage_api;
+mod supervision;
 mod tokens_api;
 #[cfg(test)]
 mod v12_tests;
@@ -154,7 +156,7 @@ async fn main() {
         Ok(s) => s,
         Err(e) => startup_failure(format!("shutdown signal handler: {e}")),
     };
-    let mut tasks: Vec<tokio::task::JoinHandle<()>> = Vec::new();
+    let mut tasks = tokio::task::JoinSet::new();
     tokio::spawn(vocabulary_api::worker(state.clone()));
 
     // Drain visibility: the moment a shutdown signal fires, both planes'
@@ -181,17 +183,12 @@ async fn main() {
         };
         tracing::info!(%addr, "REST plane listening");
         let shutdown = shutdown.clone();
-        tasks.push(tokio::spawn(async move {
-            if let Err(e) = axum::serve(listener, app)
+        tasks.spawn(async move {
+            let result = axum::serve(listener, app)
                 .with_graceful_shutdown(shutdown.wait())
-                .await
-            {
-                // Logged, not panicked. The process stays up with this plane
-                // stopped, as it did when the panic ended only this task
-                // (dev-guide section 13, entry 30).
-                tracing::error!(error = %e, "REST plane stopped with an error");
-            }
-        }));
+                .await;
+            ("REST", result.map_err(|e| e.to_string()))
+        });
     }
 
     // direct gRPC
@@ -264,8 +261,8 @@ async fn main() {
             state: state.clone(),
         };
         let shutdown = shutdown.clone();
-        tasks.push(tokio::spawn(async move {
-            if let Err(e) = tonic::transport::Server::builder()
+        tasks.spawn(async move {
+            let result = tonic::transport::Server::builder()
                 .layer(capture_layer)
                 .add_service(health_service)
                 .add_service(reflection)
@@ -282,11 +279,9 @@ async fn main() {
                     tokio_stream::wrappers::TcpListenerStream::new(listener),
                     shutdown.wait(),
                 )
-                .await
-            {
-                tracing::error!(error = %e, "direct gRPC plane stopped with an error");
-            }
-        }));
+                .await;
+            ("gRPC", result.map_err(|e| e.to_string()))
+        });
     }
 
     // ops
@@ -296,28 +291,20 @@ async fn main() {
         if let Ok(listener) = tokio::net::TcpListener::bind(&addr).await {
             tracing::info!(%addr, "ops listening");
             let shutdown = shutdown.clone();
-            tasks.push(tokio::spawn(async move {
-                if let Err(e) = axum::serve(listener, app)
+            tasks.spawn(async move {
+                let result = axum::serve(listener, app)
                     .with_graceful_shutdown(shutdown.wait())
-                    .await
-                {
-                    tracing::error!(error = %e, "ops plane stopped with an error");
-                }
-            }));
+                    .await;
+                ("ops", result.map_err(|e| e.to_string()))
+            });
         } else {
             tracing::warn!(%addr, "ops port unavailable; continuing without it");
         }
     }
 
-    shutdown.wait().await;
-    tracing::info!("shutdown signal received; draining");
     let grace = std::time::Duration::from_secs(state.config.shutdown_grace_secs);
-    let _ = tokio::time::timeout(grace, futures_join_all(tasks)).await;
-}
-
-async fn futures_join_all(tasks: Vec<tokio::task::JoinHandle<()>>) {
-    for t in tasks {
-        let _ = t.await;
+    if supervision::supervise(tasks, shutdown, &state.draining, grace).await {
+        std::process::exit(1);
     }
 }
 
@@ -339,11 +326,15 @@ fn startup_failure(message: impl std::fmt::Display) -> ! {
 /// through a watch channel. Each plane used to install its own, and an
 /// installation failure was an `expect` inside a serving task (P15/R32).
 #[derive(Clone)]
-struct Shutdown(tokio::sync::watch::Receiver<bool>);
+struct Shutdown {
+    receiver: tokio::sync::watch::Receiver<bool>,
+    sender: tokio::sync::watch::Sender<bool>,
+}
 
 impl Shutdown {
     fn install() -> std::io::Result<Self> {
         let (fired, rx) = tokio::sync::watch::channel(false);
+        let sender = fired.clone();
         #[cfg(unix)]
         let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
         #[cfg(windows)]
@@ -361,12 +352,18 @@ impl Shutdown {
             }
             let _ = fired.send(true);
         });
-        Ok(Self(rx))
+        Ok(Self {
+            receiver: rx,
+            sender,
+        })
     }
 
-    /// Resolves once shutdown has been requested. A listener task that ended
-    /// without sending also counts: nothing could signal shutdown any more.
+    fn request(&self) {
+        self.sender.send_replace(true);
+    }
+
+    /// Resolves once a platform signal or the serving supervisor requests shutdown.
     async fn wait(mut self) {
-        let _ = self.0.wait_for(|fired| *fired).await;
+        let _ = self.receiver.wait_for(|fired| *fired).await;
     }
 }

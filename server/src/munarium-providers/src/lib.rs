@@ -81,6 +81,9 @@ pub struct ProviderSpec {
         skip_serializing_if = "Option::is_none"
     )]
     pub openrouter_provider: Option<String>,
+    /// Native structured-output policy. Omitted preserves existing requests.
+    #[serde(default, rename = "structuredOutput")]
+    pub structured_output: StructuredOutputPolicy,
     #[serde(default)]
     pub budgets: Budgets,
 }
@@ -100,6 +103,40 @@ pub struct ProviderModels {
     /// Optional per-config override of the built-in "frontier" tier model.
     #[serde(default)]
     pub frontier: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StructuredOutputMode {
+    #[default]
+    Compatibility,
+    Native,
+    Unsupported,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StructuredOutputPolicy {
+    #[serde(default)]
+    pub default: StructuredOutputMode,
+    #[serde(default)]
+    pub models: std::collections::BTreeMap<String, StructuredOutputMode>,
+}
+
+impl StructuredOutputPolicy {
+    /// Refuse before admission or network submission. No cost-incurring retry
+    /// or weaker schema mode is implied by an unsupported capability.
+    pub fn require_native(&self, model: &str) -> Result<()> {
+        match self.models.get(model).unwrap_or(&self.default) {
+            StructuredOutputMode::Compatibility | StructuredOutputMode::Native => Ok(()),
+            StructuredOutputMode::Unsupported | StructuredOutputMode::Unknown => {
+                Err(KernelError::InvalidInput(
+                    "native structured output is not enabled for the resolved model".into(),
+                ))
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -186,6 +223,7 @@ pub fn default_config_doc(provider: &str) -> Option<ProviderConfigDoc> {
             models: ProviderModels::default(),
             credential_ref: Some(CredentialRef::Env { env: env.into() }),
             openrouter_provider: None,
+            structured_output: StructuredOutputPolicy::default(),
             budgets: Budgets::default(),
         },
     })

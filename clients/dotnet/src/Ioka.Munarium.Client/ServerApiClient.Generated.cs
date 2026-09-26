@@ -65,6 +65,12 @@ public sealed partial class ServerApiClient {
     public Task<ApiResponse> ListPatternsAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("ListPatterns", "GET", "/v1/authoring/patterns", "application/json", request ?? new(), ct);
     /// <summary>GET /v1/authoring/patterns/{id}</summary>
     public Task<ApiResponse> GetPatternAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("GetPattern", "GET", "/v1/authoring/patterns/{id}", "application/json", request ?? new(), ct);
+    /// <summary>GET /v1/budgets/{id}/adjustments</summary>
+    public Task<ApiResponse> BudgetAdjustmentsAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("BudgetAdjustments", "GET", "/v1/budgets/{id}/adjustments", "application/json", request ?? new(), ct);
+    /// <summary>POST /v1/budgets/{id}/adjustments</summary>
+    public Task<ApiResponse> ReconcileBudgetAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("ReconcileBudget", "POST", "/v1/budgets/{id}/adjustments", "application/json", request ?? new(), ct);
+    /// <summary>GET /v1/budgets/{id}/evidence</summary>
+    public Task<ApiResponse> BudgetEvidenceAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("BudgetEvidence", "GET", "/v1/budgets/{id}/evidence", "application/json", request ?? new(), ct);
     /// <summary>POST /v1/chronology-rules</summary>
     public Task<ApiResponse> ApplyRulesAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("ApplyRules", "POST", "/v1/chronology-rules", "text/yaml", request ?? new(), ct);
     /// <summary>GET /v1/chronology-rules/{name}</summary>
@@ -153,6 +159,8 @@ public sealed partial class ServerApiClient {
     public Task<ApiResponse> ProviderHealthAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("ProviderHealth", "GET", "/v1/providers/{name}/health", "application/json", request ?? new(), ct);
     /// <summary>GET /v1/reports/audit</summary>
     public Task<ApiResponse> AuditAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("Audit", "GET", "/v1/reports/audit", "application/json", request ?? new(), ct);
+    /// <summary>GET /v1/reports/budget-usage</summary>
+    public Task<ApiResponse> BudgetUsageReportAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("BudgetUsageReport", "GET", "/v1/reports/budget-usage", "application/json", request ?? new(), ct);
     /// <summary>GET /v1/reports/budgets</summary>
     public Task<ApiResponse> BudgetsAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("Budgets", "GET", "/v1/reports/budgets", "application/json", request ?? new(), ct);
     /// <summary>GET /v1/reports/cost</summary>

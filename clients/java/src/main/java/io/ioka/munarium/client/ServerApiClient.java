@@ -98,6 +98,15 @@ public final class ServerApiClient extends ServerApiTransport {
     /** GET /v1/authoring/patterns/{id} */
     public ApiResponse getPattern(ApiRequest request) { return call("GetPattern", "GET", "/v1/authoring/patterns/{id}", "application/json", request); }
     public CompletableFuture<ApiResponse> getPatternAsync(ApiRequest request) { return async(() -> getPattern(request)); }
+    /** GET /v1/budgets/{id}/adjustments */
+    public ApiResponse budgetAdjustments(ApiRequest request) { return call("BudgetAdjustments", "GET", "/v1/budgets/{id}/adjustments", "application/json", request); }
+    public CompletableFuture<ApiResponse> budgetAdjustmentsAsync(ApiRequest request) { return async(() -> budgetAdjustments(request)); }
+    /** POST /v1/budgets/{id}/adjustments */
+    public ApiResponse reconcileBudget(ApiRequest request) { return call("ReconcileBudget", "POST", "/v1/budgets/{id}/adjustments", "application/json", request); }
+    public CompletableFuture<ApiResponse> reconcileBudgetAsync(ApiRequest request) { return async(() -> reconcileBudget(request)); }
+    /** GET /v1/budgets/{id}/evidence */
+    public ApiResponse budgetEvidence(ApiRequest request) { return call("BudgetEvidence", "GET", "/v1/budgets/{id}/evidence", "application/json", request); }
+    public CompletableFuture<ApiResponse> budgetEvidenceAsync(ApiRequest request) { return async(() -> budgetEvidence(request)); }
     /** POST /v1/chronology-rules */
     public ApiResponse applyRules(ApiRequest request) { return call("ApplyRules", "POST", "/v1/chronology-rules", "text/yaml", request); }
     public CompletableFuture<ApiResponse> applyRulesAsync(ApiRequest request) { return async(() -> applyRules(request)); }
@@ -230,6 +239,9 @@ public final class ServerApiClient extends ServerApiTransport {
     /** GET /v1/reports/audit */
     public ApiResponse audit(ApiRequest request) { return call("Audit", "GET", "/v1/reports/audit", "application/json", request); }
     public CompletableFuture<ApiResponse> auditAsync(ApiRequest request) { return async(() -> audit(request)); }
+    /** GET /v1/reports/budget-usage */
+    public ApiResponse budgetUsageReport(ApiRequest request) { return call("BudgetUsageReport", "GET", "/v1/reports/budget-usage", "application/json", request); }
+    public CompletableFuture<ApiResponse> budgetUsageReportAsync(ApiRequest request) { return async(() -> budgetUsageReport(request)); }
     /** GET /v1/reports/budgets */
     public ApiResponse budgets(ApiRequest request) { return call("Budgets", "GET", "/v1/reports/budgets", "application/json", request); }
     public CompletableFuture<ApiResponse> budgetsAsync(ApiRequest request) { return async(() -> budgets(request)); }

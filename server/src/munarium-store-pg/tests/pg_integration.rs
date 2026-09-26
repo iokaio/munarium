@@ -851,6 +851,277 @@ mod budget {
     use munarium_store_mem::MemBudgetStore;
     use munarium_store_pg::{PgBudgetStore, PgStore};
 
+    #[tokio::test]
+    async fn late_corrections_preserve_history_enforce_debt_and_replay_exact_results() {
+        use munarium_core::budget::BudgetCorrection;
+        use munarium_core::provider::{UsageEvidence, UsageSource};
+        for (backend, store) in backends().await {
+            let tenant = fresh_tenant("correction");
+            let BudgetOutcome::Granted(r) = store
+                .reserve(&tenant, "cfg", "fast", 100, Some(150))
+                .await
+                .unwrap()
+            else {
+                panic!("grant")
+            };
+            let mut correction = BudgetCorrection {
+                id: "late-1".into(),
+                expected_revision: 0,
+                accounted_units: 180,
+                usage: UsageEvidence {
+                    input_tokens: Some(160),
+                    output_tokens: Some(20),
+                    source: UsageSource::ProviderReported,
+                },
+                evidence_ref: "fictional-receipt-1".into(),
+            };
+            // A late observer must not race a live first settlement or resurrect released work.
+            assert!(
+                store.reconcile(&tenant, &r.id, &correction).await.is_err(),
+                "{backend}"
+            );
+            store.settle(&r, None).await.unwrap();
+            assert!(
+                store
+                    .reconcile("other-tenant", &r.id, &correction)
+                    .await
+                    .is_err(),
+                "{backend}"
+            );
+            let first = store.reconcile(&tenant, &r.id, &correction).await.unwrap();
+            assert_eq!(
+                (first.revision, first.original_units, first.accounted_units),
+                (1, Some(100), 180)
+            );
+            assert_eq!(first.day, r.day);
+            assert!(matches!(
+                store
+                    .reserve(&tenant, "cfg", "fast", 1, Some(150))
+                    .await
+                    .unwrap(),
+                BudgetOutcome::Exhausted { remaining: 0, .. }
+            ));
+            let second = BudgetCorrection {
+                id: "late-2".into(),
+                expected_revision: 1,
+                accounted_units: 120,
+                usage: UsageEvidence {
+                    input_tokens: Some(100),
+                    output_tokens: Some(20),
+                    source: UsageSource::ProviderReported,
+                },
+                ..correction.clone()
+            };
+            let next = store.reconcile(&tenant, &r.id, &second).await.unwrap();
+            assert_eq!(next.revision, 2);
+            assert_eq!(
+                store.reconcile(&tenant, &r.id, &correction).await.unwrap(),
+                first,
+                "replay returns the original revision, not the latest"
+            );
+            correction.accounted_units = 181;
+            assert!(matches!(
+                store.reconcile(&tenant, &r.id, &correction).await,
+                Err(munarium_core::KernelError::IdempotencyMismatch)
+            ));
+            let stale = BudgetCorrection {
+                id: "late-stale".into(),
+                ..correction.clone()
+            };
+            assert!(matches!(
+                store.reconcile(&tenant, &r.id, &stale).await,
+                Err(munarium_core::KernelError::HeadConflict { .. })
+            ));
+            let partial = BudgetCorrection {
+                id: "underestimate".into(),
+                expected_revision: 2,
+                accounted_units: 110,
+                usage: UsageEvidence {
+                    input_tokens: Some(1),
+                    output_tokens: None,
+                    source: UsageSource::Missing,
+                },
+                ..correction
+            };
+            assert!(store.reconcile(&tenant, &r.id, &partial).await.is_err());
+            let history = store.adjustments(&tenant, &r.id).await.unwrap();
+            assert_eq!(history.len(), 2);
+            assert_eq!(history[0].previous.accounted_units, 100);
+            assert_eq!(history[0].previous.usage, None);
+            assert_eq!(history[1].previous, first);
+            assert_eq!(history[1].result, next);
+            assert!(store.adjustments("other-tenant", &r.id).await.is_err());
+            let BudgetOutcome::Granted(released) = store
+                .reserve(&tenant, "cfg", "fast", 1, Some(150))
+                .await
+                .unwrap()
+            else {
+                panic!("grant")
+            };
+            store.release(&released).await.unwrap();
+            let correction = BudgetCorrection {
+                expected_revision: 0,
+                ..second
+            };
+            assert!(store
+                .reconcile(&tenant, &released.id, &correction)
+                .await
+                .is_err());
+            assert_eq!(
+                store
+                    .evidence(&tenant, &released.id)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .state,
+                "released"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn concurrent_late_evidence_has_one_winner() {
+        use munarium_core::budget::BudgetCorrection;
+        use munarium_core::provider::{UsageEvidence, UsageSource};
+        for (_, store) in backends().await {
+            let tenant = fresh_tenant("correction-race");
+            let BudgetOutcome::Granted(r) = store
+                .reserve(&tenant, "cfg", "fast", 10, Some(100))
+                .await
+                .unwrap()
+            else {
+                panic!("grant")
+            };
+            store.settle(&r, None).await.unwrap();
+            let a = BudgetCorrection {
+                id: "a".into(),
+                expected_revision: 0,
+                accounted_units: 20,
+                usage: UsageEvidence {
+                    input_tokens: Some(10),
+                    output_tokens: Some(10),
+                    source: UsageSource::ProviderReported,
+                },
+                evidence_ref: "fixture".into(),
+            };
+            let b = BudgetCorrection {
+                id: "b".into(),
+                ..a.clone()
+            };
+            let (a, b) = tokio::join!(
+                store.reconcile(&tenant, &r.id, &a),
+                store.reconcile(&tenant, &r.id, &b)
+            );
+            assert_eq!(usize::from(a.is_ok()) + usize::from(b.is_ok()), 1);
+            assert_eq!(store.adjustments(&tenant, &r.id).await.unwrap().len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn reconciliation_migration_preserves_prior_schema_rows() {
+        let Some(url) = test_url() else {
+            eprintln!("unavailable: isolated PostgreSQL not configured");
+            return;
+        };
+        let pool = sqlx::PgPool::connect(&url).await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let schema = format!("budget_upgrade_{}", uuid::Uuid::new_v4().simple());
+        // Transaction-owned namespace: the existing migrated database and its
+        // checksum history remain untouched. Rollback cleans all fixture DDL.
+        sqlx::raw_sql(&format!(
+            "CREATE SCHEMA {schema}; SET LOCAL search_path TO {schema};"
+        ))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        sqlx::raw_sql(include_str!("../migrations/0029_token_budgets.sql"))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::raw_sql(include_str!("../migrations/0035_budget_usage_evidence.sql"))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO token_budget_reservations (id,tenant_id,config_name,tier,day,units,state) VALUES ('legacy','t','cfg','fast','2020-01-02',123,'settled')")
+            .execute(&mut *tx).await.unwrap();
+        sqlx::raw_sql(include_str!("../migrations/0038_budget_reconciliation.sql"))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let before: (i64, String, Option<i64>, Option<serde_json::Value>, i64, Option<String>) =
+            sqlx::query_as("SELECT units,day::text,original_units,usage_evidence,evidence_revision,estimator_revision FROM token_budget_reservations WHERE id='legacy'")
+                .fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(before, (123, "2020-01-02".into(), None, None, 0, None));
+        // An old writer still inserts without either new column.
+        sqlx::query("INSERT INTO token_budget_reservations (id,tenant_id,config_name,tier,day,units,state) VALUES ('old-writer','t','cfg','fast','2020-01-03',100,'held')")
+            .execute(&mut *tx).await.unwrap();
+        let revision: i64 = sqlx::query_scalar(
+            "SELECT evidence_revision FROM token_budget_reservations WHERE id='old-writer'",
+        )
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap();
+        assert_eq!(revision, 0);
+        tx.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn correction_survives_reopen_and_preserves_unknown_legacy_originals() {
+        use munarium_core::budget::BudgetCorrection;
+        use munarium_core::provider::{UsageEvidence, UsageSource};
+        let Some(url) = test_url() else {
+            eprintln!("unavailable: isolated PostgreSQL not configured");
+            return;
+        };
+        let tenant = fresh_tenant("legacy-correction");
+        let pg = PgStore::connect(&url, &tenant).await.unwrap();
+        let store = PgBudgetStore::new(pg.pool().clone());
+        let id = uuid::Uuid::new_v4().to_string();
+        sqlx::query("INSERT INTO token_budget_reservations (id,tenant_id,config_name,tier,day,units,state) VALUES ($1,$2,'cfg','fast',CURRENT_DATE - 1,100,'settled')")
+            .bind(&id).bind(&tenant).execute(pg.pool()).await.unwrap();
+        let original = store.evidence(&tenant, &id).await.unwrap().unwrap();
+        assert_eq!(original.original_units, None);
+        assert_eq!(original.estimator_revision, None);
+        let corrected = store
+            .reconcile(
+                &tenant,
+                &id,
+                &BudgetCorrection {
+                    id: "receipt-1".into(),
+                    expected_revision: 0,
+                    accounted_units: 200,
+                    usage: UsageEvidence {
+                        input_tokens: Some(180),
+                        output_tokens: Some(20),
+                        source: UsageSource::ProviderReported,
+                    },
+                    evidence_ref: "fixture".into(),
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(corrected.day, original.day);
+        assert!(store.ledger(&tenant).await.unwrap().is_empty());
+        let reopened = PgStore::connect(&url, &tenant).await.unwrap();
+        let fresh = PgBudgetStore::new(reopened.pool().clone());
+        assert_eq!(
+            fresh.evidence(&tenant, &id).await.unwrap().unwrap(),
+            corrected
+        );
+        assert_eq!(
+            fresh.adjustments(&tenant, &id).await.unwrap()[0].previous,
+            original
+        );
+        assert!(sqlx::query("UPDATE token_budget_adjustments SET id = 'tampered' WHERE tenant_id = $1 AND reservation_id = $2")
+            .bind(&tenant).bind(&id).execute(pg.pool()).await.is_err());
+        assert_eq!(
+            fresh.adjustments(&tenant, &id).await.unwrap()[0]
+                .correction
+                .id,
+            "receipt-1"
+        );
+    }
+
     async fn backends() -> Vec<(&'static str, Box<dyn BudgetStore>)> {
         budget_backends(false).await
     }
@@ -1003,25 +1274,25 @@ mod budget {
             .execute(&pool)
             .await
             .unwrap();
-        let store = PgBudgetStore::new(pool.clone());
-        let row = store
-            .evidence("legacy", "historical")
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(row.original_units, None);
-        assert_eq!(row.usage, None);
-        assert_eq!(row.accounted_units, 0);
+        // This fixture stops at migration 0035. Read that schema directly;
+        // the current adapter requires the subsequent reconciliation migration.
+        let row: (Option<i64>, Option<serde_json::Value>, i64) = sqlx::query_as(
+            "SELECT original_units, usage_evidence, units FROM token_budget_reservations WHERE id = 'historical'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row, (None, None, 0));
         // Old writers can still insert and settle with their original SQL.
         sqlx::query("INSERT INTO token_budget_reservations (id, tenant_id, units, state) VALUES ('old-writer', 'legacy', 10, 'held')").execute(&pool).await.unwrap();
         sqlx::query("UPDATE token_budget_reservations SET units = 0, state = 'settled' WHERE id = 'old-writer'").execute(&pool).await.unwrap();
-        let row = store
-            .evidence("legacy", "old-writer")
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(row.original_units, None);
-        assert_eq!(row.usage, None);
+        let row: (Option<i64>, Option<serde_json::Value>, i64) = sqlx::query_as(
+            "SELECT original_units, usage_evidence, units FROM token_budget_reservations WHERE id = 'old-writer'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(row, (None, None, 0));
         pool.close().await;
     }
 

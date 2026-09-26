@@ -96,6 +96,15 @@ impl pb::server_api_service_server::ServerApiService for ServerApiSvc {
     async fn get_pattern(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "GET", "/v1/authoring/patterns/{id}", "application/json").await
     }
+    async fn budget_adjustments(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "GET", "/v1/budgets/{id}/adjustments", "application/json").await
+    }
+    async fn reconcile_budget(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "POST", "/v1/budgets/{id}/adjustments", "application/json").await
+    }
+    async fn budget_evidence(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "GET", "/v1/budgets/{id}/evidence", "application/json").await
+    }
     async fn apply_rules(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "POST", "/v1/chronology-rules", "text/yaml").await
     }
@@ -227,6 +236,9 @@ impl pb::server_api_service_server::ServerApiService for ServerApiSvc {
     }
     async fn audit(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "GET", "/v1/reports/audit", "application/json").await
+    }
+    async fn budget_usage_report(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "GET", "/v1/reports/budget-usage", "application/json").await
     }
     async fn budgets(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "GET", "/v1/reports/budgets", "application/json").await

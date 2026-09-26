@@ -50,6 +50,101 @@ pub(crate) async fn test_state_with_auth(
 }
 
 struct Abort(tokio::task::JoinHandle<()>);
+
+#[tokio::test]
+async fn structured_capability_refusal_precedes_admission_and_preserves_plain_requests() {
+    let state = test_state(None).await;
+    let bodies = Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
+    let captured = bodies.clone();
+    let app = axum::Router::new().route("/api/chat", axum::routing::post(move |Json(body): Json<Value>| {
+        captured.lock().unwrap().push(body);
+        async { Json(json!({"message":{"content":"{}"},"done":true,"done_reason":"stop","prompt_eval_count":1,"eval_count":1})) }
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    let _server = Abort(tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap()
+    }));
+    let schema = json!({"type":"object","properties":{"answer":{"type":"string"}}});
+    for (policy, permitted) in [
+        ("", true),
+        ("  structuredOutput: {default: native}\n", true),
+        ("  structuredOutput: {default: unknown}\n", false),
+        ("  structuredOutput: {default: unsupported}\n", false),
+        (
+            "  structuredOutput: {default: unknown, models: {fixture: native}}\n",
+            true,
+        ),
+        (
+            "  structuredOutput: {default: native, models: {fixture: unsupported}}\n",
+            false,
+        ),
+    ] {
+        let tenant = format!("capability-{}", uuid::Uuid::new_v4());
+        let rpm = if permitted { 2 } else { 1 };
+        state.providers.apply(&state, &tenant, &format!("apiVersion: munarium.ioka.io/v1\nkind: ProviderConfig\nmetadata: {{name: fixture}}\nspec:\n  provider: ollama\n  endpoint: {endpoint}\n  models: {{fast: fixture}}\n  budgets: {{rpm: {rpm}, dailyTokens: {{fast: 10000}}}}\n{policy}")).await.unwrap();
+        let store = state.store_for(&tenant).await.unwrap();
+        let req = || {
+            serde_json::from_value(
+                json!({"prompt":"Return an object", "tier":"fast", "max_tokens":10}),
+            )
+            .unwrap()
+        };
+        let before = bodies.lock().unwrap().len();
+        let result = op_complete_structured(
+            &state,
+            &tenant,
+            store.as_ref(),
+            "fixture",
+            req(),
+            schema.clone(),
+        )
+        .await;
+        if permitted {
+            result.unwrap();
+            assert_eq!(bodies.lock().unwrap().len(), before + 1);
+            assert_eq!(bodies.lock().unwrap().last().unwrap()["format"], schema);
+        } else {
+            assert!(matches!(result, Err(KernelError::InvalidInput(_))));
+            assert_eq!(bodies.lock().unwrap().len(), before);
+            assert!(state.budgets().ledger(&tenant).await.unwrap().is_empty());
+        }
+        op_complete(&state, &tenant, store.as_ref(), "fixture", req())
+            .await
+            .unwrap();
+        assert!(bodies
+            .lock()
+            .unwrap()
+            .last()
+            .unwrap()
+            .get("format")
+            .is_none());
+    }
+}
+
+enum ExpectedCharge {
+    Estimated,
+    Observed(u64),
+    MissingInput(u64),
+}
+
+fn fixture_estimate(
+    model: &str,
+    schema: Option<&Value>,
+) -> munarium_core::provider::CompletionEstimate {
+    munarium_core::provider::CompletionEstimate::for_request(
+        &CompletionRequest {
+            model: model.into(),
+            system: None,
+            prompt: "test".into(),
+            max_tokens: 9,
+            temperature: None,
+            tools: None,
+        },
+        schema,
+    )
+    .unwrap()
+}
 impl Drop for Abort {
     fn drop(&mut self) {
         self.0.abort();
@@ -61,11 +156,19 @@ async fn settlement_case(
     family: &str,
     structured: bool,
     usage: Option<Value>,
-    accounted: u64,
+    expected: ExpectedCharge,
     input: u64,
     output: u64,
     model: &str,
 ) {
+    let schema = structured.then(|| json!({"type":"object"}));
+    let estimate = fixture_estimate(model, schema.as_ref());
+    let reserved = estimate.total().unwrap();
+    let accounted = match expected {
+        ExpectedCharge::Estimated => reserved,
+        ExpectedCharge::Observed(n) => n,
+        ExpectedCharge::MissingInput(output) => reserved.max(estimate.input + output),
+    };
     let mut response = json!({"choices":[{"message":{"content":"fixture"},"finish_reason":"stop"}],
         "content":[{"type":"text","text":"fixture"}],"stop_reason":"end_turn"});
     if let Some(usage) = usage {
@@ -92,7 +195,7 @@ async fn settlement_case(
     }));
     let tenant = format!("usage-{}", uuid::Uuid::new_v4().simple());
     state.providers.apply(state, &tenant, &format!(
-        "apiVersion: munarium.ioka.io/v1\nkind: ProviderConfig\nmetadata: {{ name: fixture }}\nspec:\n  provider: {family}\n  endpoint: {endpoint}\n  credentialRef: {{ env: MUNARIUM_USAGE_FIXTURE_KEY }}\n  models: {{ fast: {model} }}\n  budgets:\n    dailyTokens: {{ fast: 10 }}\n"
+        "apiVersion: munarium.ioka.io/v1\nkind: ProviderConfig\nmetadata: {{ name: fixture }}\nspec:\n  provider: {family}\n  endpoint: {endpoint}\n  credentialRef: {{ env: MUNARIUM_USAGE_FIXTURE_KEY }}\n  models: {{ fast: {model} }}\n  budgets:\n    dailyTokens: {{ fast: {reserved} }}\n"
     )).await.unwrap();
     let store = state.store_for(&tenant).await.unwrap();
     let version = store.create_version(None, None).await.unwrap();
@@ -102,7 +205,6 @@ async fn settlement_case(
         }))
         .unwrap()
     };
-    let schema = structured.then(|| json!({"type":"object"}));
     let answer = complete_with_schema(
         state,
         &tenant,
@@ -157,7 +259,11 @@ async fn settlement_case(
         let id: String = sqlx::query_scalar("SELECT id FROM token_budget_reservations WHERE tenant_id = $1 ORDER BY created_at LIMIT 1")
             .bind(&tenant).fetch_one(&pool).await.unwrap();
         let stored = reopened.evidence(&tenant, &id).await.unwrap().unwrap();
-        assert_eq!(stored.original_units, Some(10));
+        assert_eq!(stored.original_units, Some(reserved));
+        assert_eq!(
+            stored.estimator_revision.as_deref(),
+            Some(munarium_core::provider::CompletionEstimate::REVISION)
+        );
         assert_eq!(stored.accounted_units, accounted);
         let usage = stored
             .usage
@@ -169,18 +275,19 @@ async fn settlement_case(
 }
 
 async fn settlement_cases(state: Arc<AppState>) {
+    use ExpectedCharge::*;
     for family in ["openai", "openrouter", "anthropic"] {
         for structured in [false, true] {
             for (case, (usage, accounted, input, output)) in [
-                (None, 10, 0, 0),
-                (Some(json!({})), 10, 0, 0),
-                (Some(Value::Null), 10, 0, 0),
-                (Some(json!({"input_tokens":0,"prompt_tokens":0,"output_tokens":0,"completion_tokens":0})), 0, 0, 0),
-                (Some(json!({"input_tokens":3,"prompt_tokens":3})), 10, 3, 0),
-                (Some(json!({"output_tokens":15,"completion_tokens":15})), 15, 0, 15),
-                (Some(json!({"input_tokens":"bad","prompt_tokens":"bad","output_tokens":15,"completion_tokens":15})), 15, 0, 15),
-                (Some(json!({"input_tokens":2,"prompt_tokens":2,"output_tokens":3,"completion_tokens":3})), 5, 2, 3),
-                (Some(json!({"input_tokens":u64::MAX,"prompt_tokens":u64::MAX,"output_tokens":1,"completion_tokens":1})), 10, u64::MAX, 1),
+                (None, Estimated, 0, 0),
+                (Some(json!({})), Estimated, 0, 0),
+                (Some(Value::Null), Estimated, 0, 0),
+                (Some(json!({"input_tokens":0,"prompt_tokens":0,"output_tokens":0,"completion_tokens":0})), Observed(0), 0, 0),
+                (Some(json!({"input_tokens":3,"prompt_tokens":3})), Estimated, 3, 0),
+                (Some(json!({"output_tokens":15,"completion_tokens":15})), MissingInput(15), 0, 15),
+                (Some(json!({"input_tokens":"bad","prompt_tokens":"bad","output_tokens":15,"completion_tokens":15})), MissingInput(15), 0, 15),
+                (Some(json!({"input_tokens":2,"prompt_tokens":2,"output_tokens":3,"completion_tokens":3})), Observed(5), 2, 3),
+                (Some(json!({"input_tokens":u64::MAX,"prompt_tokens":u64::MAX,"output_tokens":1,"completion_tokens":1})), Estimated, u64::MAX, 1),
             ].into_iter().enumerate() {
                 settlement_case(&state, family, structured, usage, accounted, input, output,
                     &format!("fixture-{case}-{structured}")).await;
@@ -261,8 +368,9 @@ async fn dispatch_retries_cancellation_and_uncapped_policy() {
                 axum::serve(listener, app).await.unwrap()
             }));
             let tenant = format!("dispatch-{}", uuid::Uuid::new_v4().simple());
+            let reserved = fixture_estimate("fixture", None).total().unwrap();
             state.providers.apply(&state, &tenant, &format!(
-                "apiVersion: munarium.ioka.io/v1\nkind: ProviderConfig\nmetadata: {{ name: fixture }}\nspec:\n  provider: ollama\n  endpoint: {endpoint}\n  models: {{ fast: fixture, complete: [fixture] }}\n  budgets:\n    dailyTokens: {{ fast: 10 }}\n"
+                "apiVersion: munarium.ioka.io/v1\nkind: ProviderConfig\nmetadata: {{ name: fixture }}\nspec:\n  provider: ollama\n  endpoint: {endpoint}\n  models: {{ fast: fixture, complete: [fixture] }}\n  budgets:\n    dailyTokens: {{ fast: {reserved} }}\n"
             )).await.unwrap();
             if matches!(scenario, "uncapped" | "retry-success") {
                 if let Some(pool) = state.pg_pool() {
@@ -287,7 +395,7 @@ async fn dispatch_retries_cancellation_and_uncapped_policy() {
             if scenario == "denied" {
                 state
                     .budgets()
-                    .reserve(&tenant, "fixture", "fast", 10, Some(10))
+                    .reserve(&tenant, "fixture", "fast", reserved, Some(reserved))
                     .await
                     .unwrap();
             }
@@ -361,16 +469,16 @@ async fn dispatch_retries_cancellation_and_uncapped_policy() {
                 }
                 "denied" => {
                     assert_eq!(physical, 0);
-                    assert_eq!(ledger[0].held_units, 10);
+                    assert_eq!(ledger[0].held_units, reserved);
                 }
                 "cancel" => {
                     assert_eq!(physical, 1);
-                    assert_eq!(ledger[0].held_units, 10);
+                    assert_eq!(ledger[0].held_units, reserved);
                     assert_eq!(ledger[0].settled_units, 0);
                 }
                 "exhausted" => {
                     assert_eq!(physical, 3);
-                    assert_eq!(ledger[0].settled_units, 10);
+                    assert_eq!(ledger[0].settled_units, reserved);
                 }
                 _ => {
                     assert_eq!(physical, 2);

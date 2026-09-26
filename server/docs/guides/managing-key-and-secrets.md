@@ -76,6 +76,27 @@ checked-answer protocols use provider-native structured output, so their selecte
 models must support it. See [collection model policies](collection-vocabularies.md#collection-queries-and-publication-governance-121)
 for external-processing controls and per-clearance routes.
 
+`spec.structuredOutput` can constrain the resolved model before dispatch:
+
+```yaml
+structuredOutput:
+  default: unknown
+  models:
+    fictional-json-model: native
+    fictional-text-model: unsupported
+```
+
+Omission defaults to `compatibility`, preserving existing provider-native schema
+requests. `native` explicitly enables the same request shape. `unknown` and
+`unsupported` reject structured requests before rate checks, token reservation
+or network submission; ordinary text requests are unaffected. Model overrides
+match the exact resolved model name. Unrecognized policy fields/modes are invalid.
+There is no automatic fallback or retry without the schema. Existing response,
+schema and provenance validation still applies; declaring support cannot make
+an invalid response authoritative. Older binaries ignore this additive policy,
+so activate it only after all replicas have upgraded and retain a compatible
+binary if relying on refusal behavior during rollback.
+
 The reserved provider selector `default` tries Anthropic, then OpenAI, then
 OpenRouter, choosing the first family with a resolvable credential. Applied
 tenant configurations take precedence over synthesized defaults within a family.

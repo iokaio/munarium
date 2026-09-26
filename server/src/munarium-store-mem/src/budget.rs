@@ -9,7 +9,8 @@
 use crate::determinism::{random_ids, system_clock, Clock, IdGenerator};
 use async_trait::async_trait;
 use munarium_core::budget::{
-    BudgetEvidence, BudgetLedgerRow, BudgetOutcome, BudgetReservation, BudgetStore,
+    BudgetAdjustment, BudgetCorrection, BudgetEvidence, BudgetLedgerRow, BudgetOutcome,
+    BudgetReservation, BudgetStore,
 };
 use munarium_core::Result;
 use tokio::sync::Mutex;
@@ -26,6 +27,30 @@ struct Row {
     usage: Option<munarium_core::provider::UsageEvidence>,
     state: RowState,
     created_unix: i64,
+    adjustments: Vec<BudgetAdjustment>,
+    estimator_revision: Option<String>,
+}
+
+impl Row {
+    fn evidence(&self) -> BudgetEvidence {
+        BudgetEvidence {
+            reservation_id: self.id.clone(),
+            original_units: Some(self.original_units),
+            accounted_units: self.units,
+            state: match self.state {
+                RowState::Held => "held",
+                RowState::Settled => "settled",
+                RowState::Released => "released",
+            }
+            .into(),
+            usage: self.usage,
+            revision: self.adjustments.len() as u64,
+            config: self.config.clone(),
+            tier: self.tier.clone(),
+            day: self.day.clone(),
+            estimator_revision: self.estimator_revision.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,6 +99,28 @@ impl BudgetStore for MemBudgetStore {
         units: u64,
         limit: Option<u64>,
     ) -> Result<BudgetOutcome> {
+        self.reserve_estimated(
+            tenant,
+            config,
+            tier,
+            munarium_core::budget::BudgetEstimate {
+                units,
+                revision: None,
+            },
+            limit,
+        )
+        .await
+    }
+
+    async fn reserve_estimated(
+        &self,
+        tenant: &str,
+        config: &str,
+        tier: &str,
+        estimate: munarium_core::budget::BudgetEstimate<'_>,
+        limit: Option<u64>,
+    ) -> Result<BudgetOutcome> {
+        let units = estimate.units;
         let Some(limit) = limit else {
             return Ok(BudgetOutcome::Unlimited);
         };
@@ -119,6 +166,8 @@ impl BudgetStore for MemBudgetStore {
             usage: None,
             state: RowState::Held,
             created_unix: now.timestamp(),
+            adjustments: Vec::new(),
+            estimator_revision: estimate.revision.map(str::to_owned),
         });
         Ok(BudgetOutcome::Granted(reservation))
     }
@@ -139,10 +188,9 @@ impl BudgetStore for MemBudgetStore {
         usage: Option<munarium_core::provider::UsageEvidence>,
     ) -> Result<()> {
         let mut rows = self.rows.lock().await;
-        if let Some(row) = rows
-            .iter_mut()
-            .find(|r| r.id == reservation.id && r.state == RowState::Held)
-        {
+        if let Some(row) = rows.iter_mut().find(|r| {
+            r.id == reservation.id && r.tenant == reservation.tenant && r.state == RowState::Held
+        }) {
             row.state = RowState::Settled;
             row.usage = usage;
             if let Some(actual) = actual_units {
@@ -159,26 +207,86 @@ impl BudgetStore for MemBudgetStore {
             .await
             .iter()
             .find(|r| r.tenant == tenant && r.id == id)
-            .map(|r| BudgetEvidence {
-                reservation_id: r.id.clone(),
-                original_units: Some(r.original_units),
-                accounted_units: r.units,
-                state: match r.state {
-                    RowState::Held => "held",
-                    RowState::Settled => "settled",
-                    RowState::Released => "released",
-                }
-                .into(),
-                usage: r.usage,
-            }))
+            .map(Row::evidence))
+    }
+
+    async fn reconcile(
+        &self,
+        tenant: &str,
+        id: &str,
+        correction: &BudgetCorrection,
+    ) -> Result<BudgetEvidence> {
+        let mut rows = self.rows.lock().await;
+        let row = rows
+            .iter_mut()
+            .find(|r| r.tenant == tenant && r.id == id)
+            .ok_or_else(|| munarium_core::KernelError::NotFound {
+                kind: "budget-reservation",
+                id: id.into(),
+            })?;
+        if let Some(existing) = row
+            .adjustments
+            .iter()
+            .find(|a| a.correction.id == correction.id)
+        {
+            return if existing.correction == *correction {
+                Ok(existing.result.clone())
+            } else {
+                Err(munarium_core::KernelError::IdempotencyMismatch)
+            };
+        }
+        let previous = row.evidence();
+        correction.validate(&previous)?;
+        let mut result = previous.clone();
+        result.accounted_units = correction.accounted_units;
+        result.usage = Some(correction.usage);
+        result.revision = previous.revision.checked_add(1).ok_or_else(|| {
+            munarium_core::KernelError::Storage("budget revision overflow".into())
+        })?;
+        row.units = correction.accounted_units;
+        row.usage = Some(correction.usage);
+        row.adjustments.push(BudgetAdjustment {
+            correction: correction.clone(),
+            previous,
+            result: result.clone(),
+        });
+        Ok(result)
+    }
+
+    async fn adjustments(&self, tenant: &str, id: &str) -> Result<Vec<BudgetAdjustment>> {
+        let rows = self.rows.lock().await;
+        let row = rows
+            .iter()
+            .find(|r| r.tenant == tenant && r.id == id)
+            .ok_or_else(|| munarium_core::KernelError::NotFound {
+                kind: "budget-reservation",
+                id: id.into(),
+            })?;
+        Ok(row.adjustments.clone())
+    }
+
+    async fn evidence_for_day(&self, tenant: &str, day: &str) -> Result<Vec<BudgetEvidence>> {
+        let rows = self.rows.lock().await;
+        let mut out: Vec<_> = rows
+            .iter()
+            .filter(|r| r.tenant == tenant && r.day == day)
+            .take(10001)
+            .map(Row::evidence)
+            .collect();
+        if out.len() > 10000 {
+            return Err(munarium_core::KernelError::InvalidInput(
+                "budget report exceeds 10000 reservations".into(),
+            ));
+        }
+        out.sort_by(|a, b| a.reservation_id.cmp(&b.reservation_id));
+        Ok(out)
     }
 
     async fn release(&self, reservation: &BudgetReservation) -> Result<()> {
         let mut rows = self.rows.lock().await;
-        if let Some(row) = rows
-            .iter_mut()
-            .find(|r| r.id == reservation.id && r.state == RowState::Held)
-        {
+        if let Some(row) = rows.iter_mut().find(|r| {
+            r.id == reservation.id && r.tenant == reservation.tenant && r.state == RowState::Held
+        }) {
             row.state = RowState::Released;
         }
         Ok(())
@@ -242,6 +350,63 @@ impl BudgetStore for MemBudgetStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn reconciliation_keeps_original_day_after_midnight() {
+        use munarium_core::provider::{UsageEvidence, UsageSource};
+        use std::sync::{
+            atomic::{AtomicI64, Ordering},
+            Arc,
+        };
+        let time = Arc::new(AtomicI64::new(1_700_000_000));
+        let clock = time.clone();
+        let store = MemBudgetStore::with_dependencies(
+            Arc::new(move || {
+                chrono::DateTime::from_timestamp(clock.load(Ordering::SeqCst), 0).unwrap()
+            }),
+            random_ids(),
+        );
+        let BudgetOutcome::Granted(r) = store
+            .reserve("t", "cfg", "fast", 100, Some(100))
+            .await
+            .unwrap()
+        else {
+            panic!("grant")
+        };
+        store.settle(&r, None).await.unwrap();
+        time.fetch_add(86400, Ordering::SeqCst);
+        let corrected = store
+            .reconcile(
+                "t",
+                &r.id,
+                &BudgetCorrection {
+                    id: "late".into(),
+                    expected_revision: 0,
+                    accounted_units: 200,
+                    usage: UsageEvidence {
+                        input_tokens: Some(180),
+                        output_tokens: Some(20),
+                        source: UsageSource::ProviderReported,
+                    },
+                    evidence_ref: "receipt".into(),
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(corrected.day, r.day);
+        assert!(store.ledger("t").await.unwrap().is_empty());
+        assert_eq!(
+            store.evidence_for_day("t", &r.day).await.unwrap(),
+            vec![corrected]
+        );
+        assert!(matches!(
+            store
+                .reserve("t", "cfg", "fast", 100, Some(100))
+                .await
+                .unwrap(),
+            BudgetOutcome::Granted(_)
+        ));
+    }
 
     #[tokio::test]
     async fn admission_does_not_wrap_after_large_settlement() {

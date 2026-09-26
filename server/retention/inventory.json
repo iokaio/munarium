@@ -1759,7 +1759,9 @@
         "created_at": "timestamptz",
         "settled_at": "timestamptz",
         "original_units": "bigint",
-        "usage_evidence": "jsonb"
+        "usage_evidence": "jsonb",
+        "evidence_revision": "bigint",
+        "estimator_revision": "text"
       },
       "content": "Accounting day/units/state and observed usage evidence. Stale held reservations settle conservatively, not erased.",
       "json_content": {
@@ -1769,7 +1771,27 @@
       "policy": "retained",
       "origins": [
         "src/munarium-store-pg/migrations/0029_token_budgets.sql",
-        "src/munarium-store-pg/migrations/0035_budget_usage_evidence.sql"
+        "src/munarium-store-pg/migrations/0035_budget_usage_evidence.sql",
+        "src/munarium-store-pg/migrations/0038_budget_reconciliation.sql"
+      ]
+    },
+    "token_budget_adjustments": {
+      "columns": {
+        "tenant_id": "text",
+        "reservation_id": "text",
+        "id": "text",
+        "revision": "bigint",
+        "recorded_at": "timestamptz",
+        "adjustment": "jsonb"
+      },
+      "content": "Immutable operator-attested token corrections on the original accounting day; no intended prompt or completion text.",
+      "json_content": {
+        "adjustment": "Exact correction request with safe evidence reference, preceding accounting evidence and replayable result. Numeric usage, config/tier/day and estimator identity; no raw provider receipt."
+      },
+      "owner": "Tenant management authority supplies evidence; database operator retains the append-only accounting history.",
+      "policy": "retained",
+      "origins": [
+        "src/munarium-store-pg/migrations/0038_budget_reconciliation.sql"
       ]
     },
     "max_tokens_budgets": {
