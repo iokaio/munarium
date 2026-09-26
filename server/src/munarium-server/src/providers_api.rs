@@ -457,18 +457,26 @@ async fn complete_with_schema(
         }
     }
     let started = std::time::Instant::now();
-    let result = crate::money_api::capture(state, tenant, &entry, &model, estimated_units, async {
-        match schema {
-            Some(schema) => {
-                entry
-                    .provider
-                    .complete_structured_detailed(input, schema)
-                    .await
+    let (result, admitted) =
+        crate::money_api::capture(state, tenant, &entry, &model, estimated_units, async {
+            match schema {
+                Some(schema) => {
+                    entry
+                        .provider
+                        .complete_structured_detailed(input, schema)
+                        .await
+                }
+                None => entry.provider.complete_detailed(input).await,
             }
-            None => entry.provider.complete_detailed(input).await,
+        })
+        .await;
+    if !admitted {
+        if let Some(r) = cap_reservation.take() {
+            if state.budgets().release(&r).await.is_err() {
+                tracing::warn!("pre-dispatch tier release failed; estimate retained");
+            }
         }
-    })
-    .await;
+    }
     // Settle complete observed counts; incomplete/unverified usage retains at
     // least the estimate and its available subtotal. Failure retains the estimate
     // (the provider may have been reached — spent, never free). A settle
@@ -579,8 +587,20 @@ pub async fn op_embed(
         .ok_or(KernelError::InvalidInput(
             "no embed model given or configured".into(),
         ))?;
-    let est: u64 = inputs.iter().map(|i| (i.len() / 4) as u64).sum();
-    entry.budget.check(est)?;
+    // Account for the effective serialized embedding request, including model
+    // and framing. A nonempty cache miss must never reserve zero by rounding.
+    let encoded = serde_json::to_vec(&EmbeddingRequest {
+        model: model.clone(),
+        inputs: inputs.clone(),
+    })
+    .map_err(|_| KernelError::InvalidInput("embedding request cannot be encoded".into()))?;
+    let est = (encoded.len() as u64).div_ceil(4).saturating_add(32);
+    // Preserve the existing rate-window and cache ordering; the new estimate
+    // is for physical-attempt spending admission only.
+    let rate_est = inputs
+        .iter()
+        .fold(0u64, |n, i| n.saturating_add((i.len() / 4) as u64));
+    entry.budget.check(rate_est)?;
 
     let pre_hash = munarium_providers::request_hash(&serde_json::json!({
         "embed": entry.doc.spec.endpoint, "provider": entry.doc.spec.provider,
@@ -601,7 +621,8 @@ pub async fn op_embed(
                     inputs,
                 }),
             )
-            .await;
+            .await
+            .0;
             // Cache hits are free and never counted; only real provider
             // calls reach the metrics.
             let family = entry.doc.spec.provider.as_str();

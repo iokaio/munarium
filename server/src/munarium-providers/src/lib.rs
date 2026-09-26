@@ -282,6 +282,11 @@ pub struct Budgets {
     pub rpm: Option<u32>,
     #[serde(default)]
     pub tpm: Option<u32>,
+    /// Opt-in shared UTC-day ceiling across completion and embedding HTTP
+    /// attempts, including retries and requests without a tier. Cache hits
+    /// create no attempt. Independent of the legacy per-tier logical cap.
+    #[serde(default, rename = "dailyTotalTokens")]
+    pub daily_total_tokens: Option<u64>,
     /// Daily token ceilings per tier (UTC day, input + output combined),
     /// enforced against the shared store so every replica sees one ledger.
     /// Absent = unlimited, matching the house rule that an undecided policy
@@ -316,6 +321,14 @@ pub fn parse_provider_config(yaml: &str) -> std::result::Result<ProviderConfigDo
         serde_yaml::from_str(yaml).map_err(|e| format!("provider config yaml: {e}"))?;
     if doc.kind != "ProviderConfig" {
         return Err(format!("kind must be ProviderConfig, got '{}'", doc.kind));
+    }
+    if doc
+        .spec
+        .budgets
+        .daily_total_tokens
+        .is_some_and(|n| n > i64::MAX as u64)
+    {
+        return Err("dailyTotalTokens must fit a nonnegative signed 64-bit integer".into());
     }
     if let Some(slug) = &doc.spec.openrouter_provider {
         if doc.spec.provider != "openrouter"

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Optional monetary catalog/reporting. Management-only; token reports and
-//! admission limits retain their existing meaning.
+//! Physical-attempt admission and optional monetary catalog/reporting.
 use crate::{error::ApiError, state::AppState};
 use axum::{
     extract::{Query, State},
@@ -11,7 +10,9 @@ use chrono::{DateTime, Utc};
 use munarium_api_conv::{convert, Convert};
 use munarium_api_types::{json::LiteralValue, monetary as dto};
 use munarium_core::{
+    budget::{BudgetEstimate, BudgetOutcome, BudgetReservation, BudgetStore},
     money::{MoneyUsage, PriceSnapshot},
+    provider::{UsageEvidence, UsageSource},
     KernelError, Result,
 };
 use munarium_providers::accounting::{AttemptObserver, Context, CONTEXT};
@@ -23,7 +24,12 @@ fn store(state: &AppState) -> Result<MoneyStore> {
 }
 
 struct Observer {
-    store: MoneyStore,
+    store: Option<MoneyStore>,
+    budgets: Arc<dyn BudgetStore>,
+    config: String,
+    limit: Option<u64>,
+    reservations: tokio::sync::Mutex<std::collections::HashMap<String, BudgetReservation>>,
+    admitted: Arc<std::sync::atomic::AtomicBool>,
     tenant: String,
     invocation: String,
     provider: String,
@@ -34,18 +40,100 @@ struct Observer {
 #[async_trait::async_trait]
 impl AttemptObserver for Observer {
     async fn begin(&self, route: &str) -> Result<String> {
-        self.store
-            .begin(
+        // This runs before EACH HTTP send, including retries. A cancelled or
+        // failed attempt stays held; the janitor settles its estimate, never
+        // refunds possibly executed work. The reserved scope cannot be a tier.
+        let reservation = match self
+            .budgets
+            .reserve_estimated(
                 &self.tenant,
-                &self.invocation,
-                &self.provider,
-                route,
-                &self.model,
-                self.estimate,
+                &self.config,
+                "all",
+                BudgetEstimate {
+                    units: self.estimate,
+                    revision: Some("physical-attempt-v1"),
+                },
+                self.limit,
             )
-            .await
+            .await?
+        {
+            BudgetOutcome::Unlimited => None,
+            BudgetOutcome::Granted(r) => Some(r),
+            BudgetOutcome::Exhausted { .. } => {
+                return Err(KernelError::RateLimited(format!(
+                    "{}provider config daily total exhausted; resets at midnight UTC",
+                    crate::error::DAILY_CAP_PREFIX,
+                )))
+            }
+        };
+        let attempt = if let Some(store) = &self.store {
+            store
+                .begin(
+                    &self.tenant,
+                    &self.invocation,
+                    &self.provider,
+                    route,
+                    &self.model,
+                    self.estimate,
+                )
+                .await
+        } else {
+            Ok(uuid::Uuid::new_v4().simple().to_string())
+        };
+        match (attempt, reservation) {
+            (Ok(id), Some(r)) => {
+                self.reservations.lock().await.insert(id.clone(), r);
+                self.admitted
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                Ok(id)
+            }
+            (Ok(id), None) => {
+                self.admitted
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                Ok(id)
+            }
+            (Err(e), reservation) => {
+                // The durable money write failed before dispatch. This is the
+                // only refund path: no request has been sent by this attempt.
+                if let Some(r) = reservation {
+                    if self.budgets.release(&r).await.is_err() {
+                        tracing::warn!("pre-dispatch budget release failed; estimate retained");
+                    }
+                }
+                Err(e)
+            }
+        }
     }
     async fn finish(&self, attempt: &str, usage: MoneyUsage) -> Result<()> {
+        if let Some(r) = self.reservations.lock().await.remove(attempt) {
+            let evidence = UsageEvidence {
+                input_tokens: usage.input,
+                output_tokens: usage.output,
+                source: if usage.unknown_categories {
+                    UsageSource::Malformed
+                } else if usage.input.is_none() && usage.output.is_none() {
+                    UsageSource::Missing
+                } else {
+                    UsageSource::ProviderReported
+                },
+            };
+            match evidence.accounted_units(self.estimate) {
+                Ok(units) => {
+                    if self
+                        .budgets
+                        .settle_with_evidence(&r, Some(units), Some(evidence))
+                        .await
+                        .is_err()
+                    {
+                        tracing::warn!("attempt usage not persisted; budget estimate retained");
+                    }
+                }
+                Err(_) => tracing::warn!("attempt usage overflow; budget estimate retained"),
+            }
+        }
+        let Some(store) = &self.store else {
+            return Ok(());
+        };
         let accounted = match (usage.input, usage.output) {
             (Some(i), Some(o)) if !usage.unknown_categories => i.checked_add(o),
             (i, o) => i
@@ -67,12 +155,7 @@ impl AttemptObserver for Observer {
             evidence_ref: "provider-response-v1".into(),
             price_id: None,
         };
-        if self
-            .store
-            .observe(&self.tenant, &observation)
-            .await
-            .is_err()
-        {
+        if store.observe(&self.tenant, &observation).await.is_err() {
             // The durable pre-send attempt survives. A lost post-send write must
             // not turn an already completed provider call into a retry incentive.
             tracing::warn!("monetary observation not persisted; attempt remains unresolved");
@@ -88,19 +171,28 @@ pub(crate) async fn capture<T>(
     model: &str,
     estimate: u64,
     work: impl std::future::Future<Output = T>,
-) -> T {
-    let Some(pool) = state.pg_pool() else {
-        return work.await;
-    };
+) -> (T, bool) {
+    let limit = entry.doc.spec.budgets.daily_total_tokens;
+    if state.pg_pool().is_none() && limit.is_none() {
+        return (work.await, true);
+    }
+    // For opt-in admission, tell the logical tier ledger when no attempt was
+    // permitted at all. Legacy configurations retain their settlement rules.
+    let admitted = Arc::new(std::sync::atomic::AtomicBool::new(limit.is_none()));
     let observer = Observer {
-        store: MoneyStore(pool.clone()),
+        store: state.pg_pool().map(|pool| MoneyStore(pool.clone())),
+        budgets: state.budgets().clone(),
+        config: entry.doc.metadata.name.clone(),
+        limit,
+        reservations: Default::default(),
+        admitted: admitted.clone(),
         tenant: tenant.into(),
         invocation: uuid::Uuid::new_v4().simple().to_string(),
         provider: entry.doc.spec.provider.clone(),
         model: model.into(),
         estimate,
     };
-    CONTEXT
+    let result = CONTEXT
         .scope(
             Context::new(
                 Arc::new(observer),
@@ -108,7 +200,8 @@ pub(crate) async fn capture<T>(
             ),
             work,
         )
-        .await
+        .await;
+    (result, admitted.load(std::sync::atomic::Ordering::SeqCst))
 }
 
 #[utoipa::path(get, path = "/v1/monetary/prices", responses((status = 200, body = [dto::MonetaryPrice])), tag = "reports")]

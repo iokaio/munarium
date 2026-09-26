@@ -90,7 +90,7 @@ Discovery and tests can proceed before these decisions; dependent behavior chang
 
 | Decision | Recommended starting position | Work that depends on it |
 |---|---|---|
-| D1: What is capped when no tier resolves? | Keep existing routing/cap behavior while explicitly reporting the scope. Design an opt-in config-wide cap or explicit missing-tier policy | Broader R15 enforcement; never silently assign a tier to an explicit model |
+| D1: What is capped when no tier resolves? | Adopted: opt-in `budgets.dailyTotalTokens` covers physical gateway completion and embedding attempts, including retries; omission retains legacy behavior | Broader R15 enforcement without assigning a tier to an explicit model; see [token budgets](tokenbudgets.md#dispatch-accounting-inventory) |
 | D2: Is money a Server reporting feature? | Adopted for explicitly scoped PostgreSQL gateway attempts in P14; unrecorded work remains unknown | R16 immutable tariffs, reconciliation and coverage-qualified report; §4.4 |
 | D3: Which fault guarantees are supported? | P08 scope: kill/restart the application while PostgreSQL stays running. Database crashes and power loss need separate qualification; stronger recovery contracts remain open | R13 acceptance and required CI coverage |
 | D4: What does deletion mean? | Preserve current soft-removal and audit retention; design each stronger mode explicitly | R21 cleanup, tombstones, restore behavior |
@@ -196,7 +196,7 @@ The existing `settle` operation is intentionally a no-op after a reservation lea
 
 ### 4.2 P05: make the admission coverage explicit — R15 and R14
 
-**Implemented slice:** [dispatch inventory](tokenbudgets.md#dispatch-accounting-inventory), sequential session completion ordinals, checked truncation retry ceiling, and scripted retry/cancellation tests. New cap policies, physical-attempt accounting and diagnostic audience changes remain subject to D1/D7.
+**Implemented slice:** [dispatch inventory](tokenbudgets.md#dispatch-accounting-inventory), sequential session completion ordinals, checked truncation retry ceiling, and scripted retry/cancellation tests. D1 now adds an opt-in config-wide physical-attempt cap. It reuses atomic memory/PostgreSQL reservations, retains unresolved retry liability, and exposes embedding usage through budget evidence. Diagnostic audience changes remain separate under D7.
 
 **Change locations:** `providers_api.rs::complete_with_schema`, `models.rs`, `sessions_api.rs`, `sessions_model_tests.rs`, `runbooks_api.rs`, `authoring_api.rs`, `evidence_hierarchy.rs`, `answers_api.rs`, `vocabulary_api.rs`, and the existing budget-store implementations.
 

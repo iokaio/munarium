@@ -399,6 +399,7 @@ spec:
   budgets:
     rpm: 300
     dailyTokens: { fast: 1000000, capable: 500000 }     # per-tier daily caps, UTC-day window
+    dailyTotalTokens: 1500000                         # optional shared cap per HTTP attempt, including embeddings/retries
 ```
 
 Keys are **never stored in the ledger, in config maps, in the database, or in Terraform state**. `credentialRef` names an environment variable the deployment injects — from a Secrets Store CSI mount, a Kubernetes Secret, or whatever vault the platform uses — and the server reads it at call time; rotation is a redeploy of that secret, invisible to the ledger. `GET /v1/providers` never echoes a credential, only `credential_ok`. The gateway enforces per-config request-rate budgets and per-tier daily token caps (`rate-limited`, `daily-cap-reached`), retries upstream failures before refusing with `provider-error` (carrying an endpoint fingerprint, never key material), and divides rate budgets across replicas by `MUNARIUM_REPLICA_COUNT`. Egress allowlisting is the platform's job (NetworkPolicy), not the server's.
