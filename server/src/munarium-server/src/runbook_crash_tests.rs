@@ -4,6 +4,34 @@
 use super::*;
 use crate::crash_recovery::{available, harness, state};
 
+async fn drop_run_lock_and_wait(state: &AppState, mut lock: RunLock) {
+    let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut lock._conn)
+        .await
+        .unwrap();
+    drop(lock);
+    // Closing the client socket does not synchronously release the server's
+    // session lock. Observe its release before starting the next test executor;
+    // do not unlock it ourselves or hide a lock that survives connection loss.
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let held: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE pid=$1 AND locktype='advisory')",
+            )
+            .bind(pid)
+            .fetch_one(pool(state).unwrap())
+            .await
+            .unwrap();
+            if !held {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("dropped run connection must release its advisory lock");
+}
+
 const BOOK: &str = "apiVersion: munarium.ioka.io/v1\nkind: Runbook\nmetadata: {name: recovery, version: 1}\nspec:\n  shape: recovery@1\n  steps:\n    - resolveSources: {}\n    - buildIndex: {}\n    - verify: {}\n    - cutover: {approval: required}\n    - retireOld: {keep_versions: 2}\n";
 
 #[test]
@@ -237,12 +265,14 @@ async fn work() {
     }
     let doc = load_runbook(&state, &tenant, "recovery@1").await.unwrap();
     let next = {
-        let _lock = acquire_run_lock(&state, &tenant, &run)
+        let lock = acquire_run_lock(&state, &tenant, &run)
             .await
             .expect("dead process released lock");
-        execute(&state, &tenant, &run, &doc, Some(&version), None)
+        let next = execute(&state, &tenant, &run, &doc, Some(&version), None)
             .await
-            .unwrap()
+            .unwrap();
+        drop_run_lock_and_wait(&state, lock).await;
+        next
     };
     if snapshot.steps[3].state != "done" {
         assert_eq!(
@@ -387,7 +417,7 @@ async fn checkpoint_process_recovery_rollback_and_legacy() {
         let reopened = crate::crash_recovery::state(&tenant).await;
         let book = parse_runbook("apiVersion: munarium.ioka.io/v1\nkind: Runbook\nmetadata: {name: legacy, version: 1}\nspec:\n  shape: recovery@1\n  steps:\n    - resolveSources: {}\n    - buildIndex: {}\n").unwrap();
         for _ in 0..2 {
-            let _lock = acquire_run_lock(&reopened, &tenant, run).await.unwrap();
+            let lock = acquire_run_lock(&reopened, &tenant, run).await.unwrap();
             assert_eq!(execute(&reopened, &tenant, run, &book, Some(&version), None).await.unwrap(), "done");
             let read = op_get_run(&reopened, &tenant, run).await.unwrap();
             assert!(read.steps.iter().all(|s| s.state == "done" && s.detail.as_ref() == Some(&detail)));
@@ -395,6 +425,7 @@ async fn checkpoint_process_recovery_rollback_and_legacy() {
             let legacy_events: i64 = sqlx::query_scalar("SELECT count(*) FROM claims WHERE tenant_id=$1 AND key='step-0-resolveSources-done'")
                 .bind(&tenant).fetch_one(pool(&state).unwrap()).await.unwrap();
             assert_eq!(legacy_events, 0);
+            drop_run_lock_and_wait(&reopened, lock).await;
         }
         // The unchanged wire DTO still decodes old and new checkpoints.
         let read = op_get_run(&reopened, &tenant, run).await.unwrap();
@@ -446,7 +477,7 @@ async fn approval_process_recovery_two_instances() {
         let lock = acquire_run_lock(&first, &tenant, &run).await.unwrap();
         assert!(op_approve_step(&second, &tenant, &run, 3).await.is_err());
         assert_eq!(op_get_run(&first, &tenant, &run).await.unwrap().steps[3].state, "awaiting_approval");
-        drop(lock);
+        drop_run_lock_and_wait(&first, lock).await;
         // Independent pools represent two replicas racing the same approval.
         let (a, b) = tokio::join!(op_approve_step(&first, &tenant, &run, 3), op_approve_step(&second, &tenant, &run, 3));
         assert_eq!(usize::from(a.is_ok()) + usize::from(b.is_ok()), 1);
