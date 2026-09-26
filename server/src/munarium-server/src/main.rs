@@ -77,6 +77,7 @@ mod search_v12;
 mod service;
 mod sessions_api;
 mod shadow_plane;
+mod source_retention_api;
 mod state;
 mod storage_api;
 mod supervision;

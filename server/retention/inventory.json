@@ -78,24 +78,24 @@
     },
     "sources": {
       "retrieval_exclusion": {
-        "read": "Original bytes remain; collection retirement/exclusion does not delete sources shared by another collection.",
+        "read": "Original bytes remain; collection retirement/exclusion does not delete sources shared by another collection. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "No physical deletion implied.",
         "holds": "No general source hold API; pins and other collection owners can require content.",
         "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
         "coverage": "Gap: no universal exclusion fixture across all surfaces."
       },
       "access_revocation": {
-        "read": "Original-reference routes recheck collection authority; raw source/store paths have their own scopes.",
+        "read": "Original-reference routes recheck collection authority; raw source/store paths have their own scopes. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "Expiry/revocation does not erase bytes.",
         "holds": "Retention/hold grants no authority.",
         "restore": "Reconcile restored deny-list, grants and policies before serving.",
         "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
       },
       "logical_removal": {
-        "read": "No general source tombstone API; surface-specific soft state governs availability.",
+        "read": "No general source tombstone API; surface-specific soft state governs availability. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "Lifecycle state changes do not imply deletion.",
         "holds": "No new hold mechanism.",
-        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "restore": "Replay independently exported source-retention holds and denials before serving restored state. An incomplete journal cannot establish the contract; this does not erase retained derived copies.",
         "coverage": "Gap: no general logical-removal/restore conformance suite."
       },
       "physical_erasure": {
@@ -115,24 +115,24 @@
     },
     "chunks": {
       "retrieval_exclusion": {
-        "read": "Current search selects eligible collections/versions; exact historical chunks can remain under pins.",
+        "read": "Current search selects eligible collections/versions; exact historical chunks can remain under pins. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "No physical deletion implied.",
         "holds": "No general source hold API; pins and other collection owners can require content.",
         "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
         "coverage": "mirror_integration::retention_rebuild_excludes_old_text_but_preserves_pins_and_shared_sources checks rebuild exclusion, warm/cold retained text and another collection (PostgreSQL required)."
       },
       "access_revocation": {
-        "read": "Current endpoint authority applies; already delivered copies cannot be recalled.",
+        "read": "Current endpoint authority applies; already delivered copies cannot be recalled. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "Expiry/revocation does not erase bytes.",
         "holds": "Retention/hold grants no authority.",
         "restore": "Reconcile restored deny-list, grants and policies before serving.",
         "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
       },
       "logical_removal": {
-        "read": "No general source tombstone API; surface-specific soft state governs availability.",
+        "read": "No general source tombstone API; surface-specific soft state governs availability. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "Lifecycle state changes do not imply deletion.",
         "holds": "No new hold mechanism.",
-        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "restore": "Replay independently exported source-retention holds and denials before serving restored state. An incomplete journal cannot establish the contract; this does not erase retained derived copies.",
         "coverage": "Gap: no general logical-removal/restore conformance suite."
       },
       "physical_erasure": {
@@ -152,24 +152,24 @@
     },
     "catalog": {
       "retrieval_exclusion": {
-        "read": "Active-pointer changes select current search; catalog/manifests and historical artifacts remain.",
+        "read": "Active-pointer changes select current search; catalog/manifests and historical artifacts remain. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "No physical deletion implied.",
         "holds": "No general source hold API; pins and other collection owners can require content.",
         "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
         "coverage": "Gap: no universal exclusion fixture across all surfaces."
       },
       "access_revocation": {
-        "read": "Current endpoint authority applies; already delivered copies cannot be recalled.",
+        "read": "Current endpoint authority applies; already delivered copies cannot be recalled. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "Expiry/revocation does not erase bytes.",
         "holds": "Retention/hold grants no authority.",
         "restore": "Reconcile restored deny-list, grants and policies before serving.",
         "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
       },
       "logical_removal": {
-        "read": "No general source tombstone API; surface-specific soft state governs availability.",
+        "read": "No general source tombstone API; surface-specific soft state governs availability. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "Lifecycle state changes do not imply deletion.",
         "holds": "No new hold mechanism.",
-        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "restore": "Replay independently exported source-retention holds and denials before serving restored state. An incomplete journal cannot establish the contract; this does not erase retained derived copies.",
         "coverage": "Gap: no general logical-removal/restore conformance suite."
       },
       "physical_erasure": {
@@ -226,24 +226,24 @@
     },
     "sessions": {
       "retrieval_exclusion": {
-        "read": "New turns resolve eligible collections; stored turns retain old query/hit/completion/envelope/hierarchy content.",
+        "read": "New turns resolve eligible collections; stored turns retain old query/hit/completion/envelope/hierarchy content. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "No physical deletion implied.",
         "holds": "No general source hold API; pins and other collection owners can require content.",
         "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
         "coverage": "Gap: no universal exclusion fixture across all surfaces."
       },
       "access_revocation": {
-        "read": "Current endpoint authority applies; already delivered copies cannot be recalled.",
+        "read": "Current endpoint authority applies; already delivered copies cannot be recalled. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "Expiry/revocation does not erase bytes.",
         "holds": "Retention/hold grants no authority.",
         "restore": "Reconcile restored deny-list, grants and policies before serving.",
         "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
       },
       "logical_removal": {
-        "read": "Closed/expired sessions reject turns; expiry and runbook removal retain historical sessions/turns.",
+        "read": "Closed/expired sessions reject turns; expiry and runbook removal retain historical sessions/turns. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "Idle janitor changes state only.",
         "holds": "No new hold mechanism.",
-        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "restore": "Replay independently exported source-retention holds and denials before serving restored state. An incomplete journal cannot establish the contract; this does not erase retained derived copies.",
         "coverage": "Session/platform tests cover unavailable sessions, not erasure."
       },
       "physical_erasure": {
@@ -374,24 +374,24 @@
     },
     "vocabulary": {
       "retrieval_exclusion": {
-        "read": "Generated/authored terms are derived content. Regeneration replaces current JSON; backups/provider/client copies remain.",
+        "read": "Generated/authored terms are derived content. Regeneration replaces current JSON; backups/provider/client copies remain. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "No physical deletion implied.",
         "holds": "No general source hold API; pins and other collection owners can require content.",
         "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
         "coverage": "v12_tests vocabulary_scenario covers authorization and revisions, not all-copy erasure."
       },
       "access_revocation": {
-        "read": "Management controls term text; query clients receive revision stamps for cache invalidation without term text.",
+        "read": "Management controls term text; query clients receive revision stamps for cache invalidation without term text. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "Expiry/revocation does not erase bytes.",
         "holds": "Retention/hold grants no authority.",
         "restore": "Reconcile restored deny-list, grants and policies before serving.",
         "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
       },
       "logical_removal": {
-        "read": "No general source tombstone API; surface-specific soft state governs availability.",
+        "read": "No general source tombstone API; surface-specific soft state governs availability. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "Lifecycle state changes do not imply deletion.",
         "holds": "No new hold mechanism.",
-        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "restore": "Replay independently exported source-retention holds and denials before serving restored state. An incomplete journal cannot establish the contract; this does not erase retained derived copies.",
         "coverage": "Gap: no general logical-removal/restore conformance suite."
       },
       "physical_erasure": {
@@ -448,24 +448,24 @@
     },
     "datastore_bytes": {
       "retrieval_exclusion": {
-        "read": "Immutable records retain citation text; lexical/vector/filter components retain derived content. Routing/authority are separate.",
+        "read": "Immutable records retain citation text; lexical/vector/filter components retain derived content. Routing/authority are separate. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "No physical deletion implied.",
         "holds": "No general source hold API; pins and other collection owners can require content.",
         "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
         "coverage": "retention_rebuild mirror fixture covers warm L0, new executor using L1, cold L1 hydration."
       },
       "access_revocation": {
-        "read": "Current endpoint authority applies; already delivered copies cannot be recalled.",
+        "read": "Current endpoint authority applies; already delivered copies cannot be recalled. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "Expiry/revocation does not erase bytes.",
         "holds": "Retention/hold grants no authority.",
         "restore": "Reconcile restored deny-list, grants and policies before serving.",
         "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
       },
       "logical_removal": {
-        "read": "No general source tombstone API; surface-specific soft state governs availability.",
+        "read": "No general source tombstone API; surface-specific soft state governs availability. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "Lifecycle state changes do not imply deletion.",
         "holds": "No new hold mechanism.",
-        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "restore": "Replay independently exported source-retention holds and denials before serving restored state. An incomplete journal cannot establish the contract; this does not erase retained derived copies.",
         "coverage": "Gap: no general logical-removal/restore conformance suite."
       },
       "physical_erasure": {
@@ -485,24 +485,24 @@
     },
     "cache": {
       "retrieval_exclusion": {
-        "read": "L0 handles/L1 files cache content, not authority. Eligibility must apply regardless of warmth.",
+        "read": "L0 handles/L1 files cache content, not authority. Eligibility must apply regardless of warmth. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "No physical deletion implied.",
         "holds": "No general source hold API; pins and other collection owners can require content.",
         "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
         "coverage": "Gap: no universal exclusion fixture across all surfaces."
       },
       "access_revocation": {
-        "read": "Current endpoint authority applies; already delivered copies cannot be recalled.",
+        "read": "Current endpoint authority applies; already delivered copies cannot be recalled. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "Expiry/revocation does not erase bytes.",
         "holds": "Retention/hold grants no authority.",
         "restore": "Reconcile restored deny-list, grants and policies before serving.",
         "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
       },
       "logical_removal": {
-        "read": "No general source tombstone API; surface-specific soft state governs availability.",
+        "read": "No general source tombstone API; surface-specific soft state governs availability. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "Lifecycle state changes do not imply deletion.",
         "holds": "No new hold mechanism.",
-        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "restore": "Replay independently exported source-retention holds and denials before serving restored state. An incomplete journal cannot establish the contract; this does not erase retained derived copies.",
         "coverage": "Gap: no general logical-removal/restore conformance suite."
       },
       "physical_erasure": {
@@ -522,24 +522,24 @@
     },
     "answers": {
       "retrieval_exclusion": {
-        "read": "Checked answers are responses; no dedicated persisted Server checked-answer cache/table. Interactions/sessions/caller copies are independent.",
+        "read": "Checked answers are responses; no dedicated persisted Server checked-answer cache/table. Interactions/sessions/caller copies are independent. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "No physical deletion implied.",
         "holds": "No general source hold API; pins and other collection owners can require content.",
         "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
         "coverage": "Gap: no universal exclusion fixture across all surfaces."
       },
       "access_revocation": {
-        "read": "Generation checks source authority before provider submission; delivered answers cannot be recalled.",
+        "read": "Generation checks source authority before provider submission; delivered answers cannot be recalled. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "Expiry/revocation does not erase bytes.",
         "holds": "Retention/hold grants no authority.",
         "restore": "Reconcile restored deny-list, grants and policies before serving.",
         "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
       },
       "logical_removal": {
-        "read": "No general source tombstone API; surface-specific soft state governs availability.",
+        "read": "No general source tombstone API; surface-specific soft state governs availability. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "Lifecycle state changes do not imply deletion.",
         "holds": "No new hold mechanism.",
-        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "restore": "Replay independently exported source-retention holds and denials before serving restored state. An incomplete journal cannot establish the contract; this does not erase retained derived copies.",
         "coverage": "Gap: no general logical-removal/restore conformance suite."
       },
       "physical_erasure": {
@@ -633,29 +633,29 @@
     },
     "source_and_evidence_bytes": {
       "retrieval_exclusion": {
-        "read": "Original bytes remain; collection retirement/exclusion does not delete sources shared by another collection.",
+        "read": "Original bytes remain; collection retirement/exclusion does not delete sources shared by another collection. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "No physical deletion implied.",
         "holds": "No general source hold API; pins and other collection owners can require content.",
         "restore": "Reconcile exclusions before serving an older restore; no general denial journal exists.",
         "coverage": "Gap: no universal exclusion fixture across all surfaces."
       },
       "access_revocation": {
-        "read": "Original-reference routes recheck collection authority; raw source/store paths have their own scopes.",
+        "read": "Original-reference routes recheck collection authority; raw source/store paths have their own scopes. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "Expiry/revocation does not erase bytes.",
         "holds": "Retention/hold grants no authority.",
         "restore": "Reconcile restored deny-list, grants and policies before serving.",
         "coverage": "Named transport fixtures cover their endpoints; direct store access remains trusted."
       },
       "logical_removal": {
-        "read": "No general source tombstone API; surface-specific soft state governs availability.",
+        "read": "No general source tombstone API; surface-specific soft state governs availability. Explicit source_retention denial gates supported data-plane reads and bound scopes; independently authorized management audit history remains retained.",
         "cleanup": "Lifecycle state changes do not imply deletion.",
         "holds": "No new hold mechanism.",
-        "restore": "Older backups can resurrect state; replay approved removals before serving.",
+        "restore": "Replay independently exported source-retention holds and denials before serving restored state. An incomplete journal cannot establish the contract; this does not erase retained derived copies.",
         "coverage": "Gap: no general logical-removal/restore conformance suite."
       },
       "physical_erasure": {
         "read": "No general source erasure API or deadline.",
-        "cleanup": "Raw source bytes follow separately authorized operator cleanup with shared-owner review. Reserved evidence/<id> bytes also use this table under pg SourceStore and follow existing delete-before-mark evidence purge; manifests/audit remain in their separate tables.",
+        "cleanup": "Raw source bytes follow separately authorized operator cleanup with shared-owner review. Reserved evidence/<id> bytes also use this table under pg SourceStore and follow existing delete-before-mark evidence purge; manifests/audit remain in their separate tables. Source PostgreSQL originals additionally support explicit durable pending cleanup, atomically deleted and marked completed; source holds and multiple collection bindings block it. This excludes cloud originals and all derived copies.",
         "holds": "No general raw-source hold API. Evidence paths use evidence legal_hold checks with the documented scan/delete race; consult the evidence policy.",
         "restore": "No durable erasure journal/replay contract; restored state cannot claim general erasure compliance.",
         "coverage": "Existing source-store deletion and evidence purge fixtures cover their named paths. Gap: no cross-surface source/evidence/backup erasure closure."
@@ -663,7 +663,7 @@
       "protected_retention": {
         "read": "Raw source copies remain for every owning collection; reserved evidence bytes remain under the evidence-only retention/hold rules.",
         "cleanup": "No universal retention duration/expiry.",
-        "holds": "Evidence holds are separate; other surfaces have no general legal-hold API.",
+        "holds": "Evidence holds are separate; other surfaces have no general legal-hold API. Separate source-original holds serialize with PostgreSQL source cleanup; evidence holds retain their existing contract.",
         "restore": "Preserve identities/provenance; reconcile external bytes separately.",
         "coverage": "History fixtures prove their stated invariants, not general retention deadlines."
       }
@@ -703,6 +703,43 @@
         "holds": "Evidence holds are separate; other surfaces have no general legal-hold API.",
         "restore": "Preserve identities/provenance; reconcile external bytes separately.",
         "coverage": "Guarded command process recovery and two-pool race/TTL fixtures; external effects and backup reconciliation remain separate."
+      }
+    },
+    "source_retention": {
+      "retrieval_exclusion": {
+        "read": "Permanent stable-path denial gates supported source reads, bound scopes, historical pins, vocabulary, new answers and public session copies; independent management audit copies remain protected retention.",
+        "cleanup": "Only explicitly requested PostgreSQL source_blobs originals are deleted, with completion in the same transaction. Other derived copies remain under their own policies. Pending failures are retried; no deadline or all-copy claim.",
+        "holds": "Source-original holds and multiple collection bindings block pending cleanup. Hold and cleanup share a path lock; evidence retention remains separate.",
+        "restore": "Export every journal page independently; isolate restored instances and replay holds then denials and required cleanup before serving. Missing authoritative journal means restore is unqualified.",
+        "coverage": "source_retention storage tests: holds/shared ownership, delete failure rollback, retry, hold race, application restart, controlled restored-state replay. source_denial mirror test: warm/cold/retired pins and rebuild denial. Server retention authority/session/provider fixture. No actual backup or all-copy erasure qualification."
+      },
+      "access_revocation": {
+        "read": "Permanent stable-path denial gates supported source reads, bound scopes, historical pins, vocabulary, new answers and public session copies; independent management audit copies remain protected retention.",
+        "cleanup": "Only explicitly requested PostgreSQL source_blobs originals are deleted, with completion in the same transaction. Other derived copies remain under their own policies. Pending failures are retried; no deadline or all-copy claim.",
+        "holds": "Source-original holds and multiple collection bindings block pending cleanup. Hold and cleanup share a path lock; evidence retention remains separate.",
+        "restore": "Export every journal page independently; isolate restored instances and replay holds then denials and required cleanup before serving. Missing authoritative journal means restore is unqualified.",
+        "coverage": "source_retention storage tests: holds/shared ownership, delete failure rollback, retry, hold race, application restart, controlled restored-state replay. source_denial mirror test: warm/cold/retired pins and rebuild denial. Server retention authority/session/provider fixture. No actual backup or all-copy erasure qualification."
+      },
+      "logical_removal": {
+        "read": "Permanent stable-path denial gates supported source reads, bound scopes, historical pins, vocabulary, new answers and public session copies; independent management audit copies remain protected retention.",
+        "cleanup": "Only explicitly requested PostgreSQL source_blobs originals are deleted, with completion in the same transaction. Other derived copies remain under their own policies. Pending failures are retried; no deadline or all-copy claim.",
+        "holds": "Source-original holds and multiple collection bindings block pending cleanup. Hold and cleanup share a path lock; evidence retention remains separate.",
+        "restore": "Export every journal page independently; isolate restored instances and replay holds then denials and required cleanup before serving. Missing authoritative journal means restore is unqualified.",
+        "coverage": "source_retention storage tests: holds/shared ownership, delete failure rollback, retry, hold race, application restart, controlled restored-state replay. source_denial mirror test: warm/cold/retired pins and rebuild denial. Server retention authority/session/provider fixture. No actual backup or all-copy erasure qualification."
+      },
+      "physical_erasure": {
+        "read": "Permanent stable-path denial gates supported source reads, bound scopes, historical pins, vocabulary, new answers and public session copies; independent management audit copies remain protected retention.",
+        "cleanup": "Only explicitly requested PostgreSQL source_blobs originals are deleted, with completion in the same transaction. Other derived copies remain under their own policies. Pending failures are retried; no deadline or all-copy claim.",
+        "holds": "Source-original holds and multiple collection bindings block pending cleanup. Hold and cleanup share a path lock; evidence retention remains separate.",
+        "restore": "Export every journal page independently; isolate restored instances and replay holds then denials and required cleanup before serving. Missing authoritative journal means restore is unqualified.",
+        "coverage": "source_retention storage tests: holds/shared ownership, delete failure rollback, retry, hold race, application restart, controlled restored-state replay. source_denial mirror test: warm/cold/retired pins and rebuild denial. Server retention authority/session/provider fixture. No actual backup or all-copy erasure qualification."
+      },
+      "protected_retention": {
+        "read": "Permanent stable-path denial gates supported source reads, bound scopes, historical pins, vocabulary, new answers and public session copies; independent management audit copies remain protected retention.",
+        "cleanup": "Only explicitly requested PostgreSQL source_blobs originals are deleted, with completion in the same transaction. Other derived copies remain under their own policies. Pending failures are retried; no deadline or all-copy claim.",
+        "holds": "Source-original holds and multiple collection bindings block pending cleanup. Hold and cleanup share a path lock; evidence retention remains separate.",
+        "restore": "Export every journal page independently; isolate restored instances and replay holds then denials and required cleanup before serving. Missing authoritative journal means restore is unqualified.",
+        "coverage": "source_retention storage tests: holds/shared ownership, delete failure rollback, retry, hold race, application restart, controlled restored-state replay. source_denial mirror test: warm/cold/retired pins and rebuild denial. Server retention authority/session/provider fixture. No actual backup or all-copy erasure qualification."
       }
     }
   },
@@ -2011,6 +2048,25 @@
         "completed_at": "timestamptz"
       },
       "content": "Opaque command identity, operation and request hash; response_body retains the original REST JSON or typed gRPC hex wire response. Unresolved claims contain no response."
+    },
+    "source_retention": {
+      "owner": "Tenant management and backup operator; policy journal is retained without automatic expiry.",
+      "policy": "source_retention",
+      "origins": [
+        "src/munarium-store-pg/migrations/0040_source_retention.sql"
+      ],
+      "json_content": {},
+      "columns": {
+        "tenant_id": "text",
+        "source_id": "text",
+        "path": "text",
+        "denied": "boolean",
+        "hold": "boolean",
+        "cleanup_state": "text",
+        "cleanup_blocked": "text",
+        "updated_at": "timestamptz"
+      },
+      "content": "Tenant identity, stable source id/path, permanent denial, original-byte hold and durable cleanup state; no source text."
     }
   },
   "artifacts": {

@@ -446,6 +446,14 @@ impl ServerApiClient {
     pub async fn apply_shape(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("ApplyShape", "POST", "/v1/shapes", "text/yaml", request).await
     }
+    /// GET /v1/source-retention
+    pub async fn list_source_retention(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("ListSourceRetention", "GET", "/v1/source-retention", "application/json", request).await
+    }
+    /// POST /v1/source-retention
+    pub async fn change_source_retention(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("ChangeSourceRetention", "POST", "/v1/source-retention", "application/json", request).await
+    }
     /// PUT /v1/sources
     pub async fn put_source(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("PutSource", "PUT", "/v1/sources", "application/octet-stream", request).await

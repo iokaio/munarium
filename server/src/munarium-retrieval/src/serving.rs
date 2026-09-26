@@ -108,6 +108,9 @@ impl ServingPlane {
         let mut source_ids: Vec<String> = hits.iter().map(|h| h.source_id.clone()).collect();
         source_ids.sort();
         source_ids.dedup();
+        // This indexed live read is outside L0/L1 artifact caches. Historical
+        // pins cannot bypass a denial even after their PG chunks are retired.
+        pg.assert_sources_readable(&source_ids).await?;
         let missing: Vec<String> = hits
             .iter()
             .filter(|h| h.source_content_hash.is_empty())

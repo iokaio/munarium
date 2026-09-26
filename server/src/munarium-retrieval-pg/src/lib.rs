@@ -253,6 +253,10 @@ impl PgRetrieval {
 
     /// Bytes in the given store (an `munarium-store-objects` backend in production).
     pub fn with_source_store(pool: PgPool, tenant_id: &str, sources: Arc<dyn SourceStore>) -> Self {
+        let sources = Arc::new(munarium_store_pg::source_retention::GuardedSources::new(
+            pool.clone(),
+            sources,
+        ));
         Self {
             pool,
             tenant_id: tenant_id.to_string(),
@@ -272,6 +276,15 @@ impl PgRetrieval {
 
     pub fn source_store(&self) -> &Arc<dyn SourceStore> {
         &self.sources
+    }
+
+    pub async fn assert_sources_readable(&self, ids: &[String]) -> Result<()> {
+        munarium_store_pg::source_retention::assert_sources(&self.pool, &self.tenant_id, ids).await
+    }
+
+    pub async fn assert_scope_readable(&self, kind: &str, id: &str) -> Result<()> {
+        munarium_store_pg::source_retention::assert_scope(&self.pool, &self.tenant_id, kind, id)
+            .await
     }
 
     /// The extractor-set version, which joins the index identity so an
@@ -495,6 +508,8 @@ impl PgRetrieval {
     /// Metadata for one source — the answer to "where did this document
     /// go, and did it index?".
     pub async fn source_info(&self, source_id: &str) -> Result<SourceInfo> {
+        self.assert_sources_readable(&[source_id.to_owned()])
+            .await?;
         let row = sqlx::query(
             "SELECT source_id, filename, media_type, content_hash, bytes_len,
                     storage_backend, blob_uri, extraction_status, extraction_method,
@@ -756,6 +771,7 @@ impl PgRetrieval {
         watermark_seq: u64,
         activate: bool,
     ) -> Result<IndexVersion> {
+        self.assert_scope_readable("shape", shape_ref).await?;
         let watermark_seq = pg_watermark(watermark_seq)?;
         let sources = sqlx::query(
             "SELECT source_id, filename, content_hash, media_type FROM sources
@@ -954,6 +970,7 @@ impl PgRetrieval {
 #[async_trait]
 impl RetrievalBackend for PgRetrieval {
     async fn hybrid_search(&self, q: HybridQuery) -> Result<SearchResult> {
+        self.assert_scope_readable("shape", &q.shape_ref).await?;
         let (index_id, watermark) = self
             .resolve_index(&q.shape_ref, q.index_version.as_deref())
             .await?;
@@ -1002,6 +1019,7 @@ impl RetrievalBackend for PgRetrieval {
         hits.truncate(if q.top_k == 0 { 10 } else { q.top_k });
 
         let envelope = self.envelope_for(&mut hits, index_id, watermark).await?;
+        self.assert_sources_readable(&envelope.source_ids).await?;
         Ok(SearchResult { hits, envelope })
     }
 

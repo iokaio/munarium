@@ -73,6 +73,8 @@ and API references when applying them to a new deployment.
 | [ops/mmctl.md](ops/mmctl.md) | The `mmctl` CLI: runbook apply/list/info/validate, token issuance |
 | [ops/index-deletion-runbook.md](ops/index-deletion-runbook.md) | DBA-only physical deletion of a collection's data — partitions **and** the object-store bytes |
 | [ops/retention-inventory.md](ops/retention-inventory.md) | Declared retention by schema and artifact, removal modes, derived content and tested limits |
+| [ops/source-retention.md](ops/source-retention.md) | Explicit source denial, bounded original cleanup, holds and restore replay |
+| [ops/command-recovery.md](ops/command-recovery.md) | Guarded command activation, unresolved outcomes and compatible rollback |
 | [ops/clustering.md](ops/clustering.md) | Running N instances on one PostgreSQL (2026-08-17): shared-vs-per-instance inventory, pool math, rolling restarts, orphaned-run diagnosis, partition-overflow recovery |
 | [ops/deployment-runbook.md](ops/deployment-runbook.md) | Deploying with what ships: gate → build and push the image → install or upgrade the Helm chart (or the example AKS module) → verify the rollout, not the hostname → roll back → backups |
 | [ops/troubleshooting.md](ops/troubleshooting.md) | Symptom → check → fix: startup exit codes, error slugs, deployed-environment classics, and the look-at-this-first order |

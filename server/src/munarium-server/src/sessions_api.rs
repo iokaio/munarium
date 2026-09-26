@@ -572,6 +572,12 @@ pub(crate) async fn retrieve_documents(
 ) -> ApiResult<DocumentRetrieval> {
     let retrieval_spec = doc.spec.retrieval.clone().unwrap_or_default();
     let permitted = route_collections(&req.query, &retrieval_spec.collection_routes, permitted);
+    for info in &permitted {
+        state
+            .retrieval_for(tenant)?
+            .assert_scope_readable("collection", &info.id)
+            .await?;
+    }
     let final_top_k = req
         .top_k
         .map(|value| value as usize)
@@ -959,6 +965,12 @@ pub async fn op_turn(
         )));
     }
     let doc = session_runbook(state, tenant, &session.runbook_ref).await?;
+    munarium_store_pg::source_retention::assert_session(
+        crate::runbooks_api::pool(state)?,
+        tenant,
+        session_id,
+    )
+    .await?;
 
     // Reject invalid or disallowed selections before retrieval can spend on
     // query expansion, including when expansion is optional.
@@ -984,6 +996,12 @@ pub async fn op_turn(
     )
     .await?;
 
+    for info in &permitted {
+        state
+            .retrieval_for(tenant)?
+            .assert_scope_readable("collection", &info.id)
+            .await?;
+    }
     // The branch. A turn with no profile — no `research_profile` on
     // the request and no `defaultResearchProfile` on the runbook — takes the
     // identical call it always took, so its retrieval, its response bytes and
@@ -1493,6 +1511,10 @@ pub async fn op_turn(
         collection_ids: Some(searched.clone()),
         ..Default::default()
     };
+    state
+        .retrieval_for(tenant)?
+        .assert_sources_readable(&hits.iter().map(|h| h.source_id.clone()).collect::<Vec<_>>())
+        .await?;
     Ok((
         dto::TurnResponse {
             session_id: session_id.to_string(),
@@ -1887,6 +1909,12 @@ pub async fn op_close_session(
     .execute(crate::runbooks_api::pool(state)?)
     .await
     .map_err(|e| KernelError::Storage(e.to_string()))?;
+    munarium_store_pg::source_retention::assert_session(
+        crate::runbooks_api::pool(state)?,
+        tenant,
+        id,
+    )
+    .await?;
     op_get_session(state, tenant, id).await
 }
 
@@ -1923,6 +1951,12 @@ pub async fn get_session(
             )));
         }
     }
+    munarium_store_pg::source_retention::assert_session(
+        crate::runbooks_api::pool(&state)?,
+        &tenant,
+        &id,
+    )
+    .await?;
     Ok(Json(resp))
 }
 

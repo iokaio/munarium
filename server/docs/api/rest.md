@@ -1,5 +1,9 @@
 # munarium-server REST API
 
+Management-only `GET/POST /v1/source-retention` lists durable source policy or
+applies denial, holds and optional PostgreSQL original-byte cleanup. See
+[source retention](../ops/source-retention.md) for exact scope and restore duties.
+
 PostgreSQL management callers can inspect or activate tenant-scoped guarded
 command recovery at `GET/POST /v1/command-recovery`, and inspect claim metadata
 at `GET /v1/command-recovery/receipt?key=...`. See the

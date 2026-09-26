@@ -338,6 +338,12 @@ public final class ServerApiClient extends ServerApiTransport {
     /** POST /v1/shapes */
     public ApiResponse applyShape(ApiRequest request) { return call("ApplyShape", "POST", "/v1/shapes", "text/yaml", request); }
     public CompletableFuture<ApiResponse> applyShapeAsync(ApiRequest request) { return async(() -> applyShape(request)); }
+    /** GET /v1/source-retention */
+    public ApiResponse listSourceRetention(ApiRequest request) { return call("ListSourceRetention", "GET", "/v1/source-retention", "application/json", request); }
+    public CompletableFuture<ApiResponse> listSourceRetentionAsync(ApiRequest request) { return async(() -> listSourceRetention(request)); }
+    /** POST /v1/source-retention */
+    public ApiResponse changeSourceRetention(ApiRequest request) { return call("ChangeSourceRetention", "POST", "/v1/source-retention", "application/json", request); }
+    public CompletableFuture<ApiResponse> changeSourceRetentionAsync(ApiRequest request) { return async(() -> changeSourceRetention(request)); }
     /** PUT /v1/sources */
     public ApiResponse putSource(ApiRequest request) { return call("PutSource", "PUT", "/v1/sources", "application/octet-stream", request); }
     public CompletableFuture<ApiResponse> putSourceAsync(ApiRequest request) { return async(() -> putSource(request)); }

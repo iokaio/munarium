@@ -5039,6 +5039,76 @@
         }
       }
     },
+    "/v1/source-retention": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on every /v1 request (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "retention"
+        ],
+        "operationId": "list_source_retention",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "description": "Last source_id from the previous page",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceRetentionList"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "retention"
+        ],
+        "operationId": "change_source_retention",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceRetentionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceRetentionRecord"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/sources": {
       "parameters": [
         {
@@ -12225,6 +12295,80 @@
             "type": "string"
           }
         }
+      },
+      "SourceRetentionList": {
+        "type": "object",
+        "required": [
+          "records"
+        ],
+        "properties": {
+          "next": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SourceRetentionRecord"
+            }
+          }
+        }
+      },
+      "SourceRetentionRecord": {
+        "type": "object",
+        "required": [
+          "source_id",
+          "path",
+          "denied",
+          "hold",
+          "cleanup_state",
+          "updated_at"
+        ],
+        "properties": {
+          "cleanup_blocked": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cleanup_state": {
+            "type": "string"
+          },
+          "denied": {
+            "type": "boolean"
+          },
+          "hold": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "SourceRetentionRequest": {
+        "type": "object",
+        "required": [
+          "path",
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "deny | deny-and-erase-pg-original | hold | release-hold"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
       },
       "StoredFindingDto": {
         "type": "object",

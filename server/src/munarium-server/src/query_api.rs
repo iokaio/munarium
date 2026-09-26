@@ -119,6 +119,10 @@ pub async fn authorize_publication(
         lexical_domain: String::new(),
     };
     recheck(&state, &headers, &uid, &[snapshot], &[target]).await?;
+    state
+        .retrieval_for(&access.tenant_id)?
+        .assert_sources_readable(std::slice::from_ref(&publication.source_id))
+        .await?;
     Ok(Json(publication))
 }
 struct Snapshot {
@@ -183,6 +187,10 @@ async fn recheck(
         }
     }
     for target in targets {
+        state
+            .retrieval_for(&access.tenant_id)?
+            .assert_scope_readable("collection", &target.info.id)
+            .await?;
         let info = governance_api::collection(state, &access.tenant_id, &target.info.id).await?;
         if info.status != "active"
             || info.access_level > access.level

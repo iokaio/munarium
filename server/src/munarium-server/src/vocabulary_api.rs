@@ -176,6 +176,10 @@ pub async fn settings(state: &AppState, tenant: &str) -> Result<VocabularySettin
     }
 }
 pub async fn load(state: &AppState, tenant: &str, collection: &str) -> Result<Vocabulary> {
+    state
+        .retrieval_for(tenant)?
+        .assert_scope_readable("collection", collection)
+        .await?;
     let row: Option<(serde_json::Value, i64, bool)> = sqlx::query_as("SELECT vocabulary, revision, COALESCE(lease_until>now(),false) FROM collection_vocabularies WHERE tenant_id=$1 AND collection_id=$2")
         .bind(tenant).bind(collection).fetch_optional(crate::runbooks_api::pool(state)?).await.map_err(storage)?;
     match row {

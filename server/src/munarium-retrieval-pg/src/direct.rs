@@ -87,6 +87,8 @@ impl PgRetrieval {
         collection_id: &str,
         max_chars: usize,
     ) -> Result<PreparedBuild> {
+        self.assert_scope_readable("collection", collection_id)
+            .await?;
         let info = self.collection_by_id(collection_id).await?;
         let rows = sqlx::query(
             "SELECT s.source_id, s.filename, s.content_hash, s.media_type

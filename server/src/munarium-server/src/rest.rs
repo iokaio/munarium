@@ -1353,6 +1353,11 @@ pub fn router(state: Arc<AppState>) -> Router {
             "/v1/command-recovery/receipt",
             get(crate::command_recovery::receipt),
         )
+        .route(
+            "/v1/source-retention",
+            get(crate::source_retention_api::list_source_retention)
+                .post(crate::source_retention_api::change_source_retention),
+        )
         .route("/version", get(version_info))
         .route("/openapi.json", get(openapi_json))
         .route("/docs", get(docs_page))
