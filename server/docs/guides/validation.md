@@ -7,6 +7,8 @@ Run these PowerShell 7 commands from `server/`:
 ./test.ps1 -Postgres -BlackBox -Platform -Cluster
 ./gates.ps1
 py -m unittest discover -s tools -p test_validation.py
+py -m unittest discover -s tools -p test_gate_catalog.py
+py tools/check_gate_equivalence.py
 ./tools/test-json-features.ps1
 ./tools/test-json-features.ps1 -Postgres
 ./tools/test-datastore-permissions.ps1
@@ -18,6 +20,53 @@ database URL for workspace tests and restores the caller's value afterward.
 Database integration functions that return early without a URL are not evidence
 of PostgreSQL coverage. The JSON qualification database tests use explicit
 `--ignored` selection and require a URL rather than returning early.
+
+## Shared gates and CI inventory
+
+[gate-catalog.json](../../tools/gate-catalog.json) defines stable portable step
+IDs, argument arrays, working directories, prerequisites, features, dependencies,
+required status and executor adapters. Local receipts register its commands
+through [gate-catalog.ps1](../../tools/gate-catalog.ps1); independent CI steps
+invoke [gate_catalog.py](../../tools/gate_catalog.py). Python uses its running
+interpreter; PowerShell uses `py`. Neither constructs shell command strings.
+The local gate profile now includes the Matrix publisher self-test, DiskANN
+clippy/tests and all-features cargo-deny coverage that CI already required.
+
+Database provisioning, database-scoped test environments, server ownership,
+document comparisons, notices snapshots, and the embedded consumer remain explicit
+platform adapters. Linux keeps its CI service and shell process orchestration;
+local validation keeps disposable owned resources and receipts. The independent
+embedded, cargo-deny action and Terraform jobs remain automatic and unchanged.
+This is shared portable coverage, not a claim that local gates run Terraform or
+that a Windows result qualifies the hosted Linux environment.
+
+[gate-ci-baseline.json](../../tools/gate-ci-baseline.json) records the reviewed
+pre-P16 revision, original migrated CI blocks and expected catalog semantics.
+[check_gate_equivalence.py](../../tools/check_gate_equivalence.py) checks exact
+catalog identities, feature arguments, dependency closure, required status and
+boundary rules. It substitutes the reviewed catalog calls and hashes the rest
+of the workflow, preserving triggers, paths, permissions, runner assignments,
+services, independent jobs and their commands. New runner/checker self-tests are
+explicit additions. It also requires byte-identical root agent guidance.
+
+The baseline is review evidence, never a second execution source. Intentional
+future coverage changes must update it after reviewing old/new commands and
+prerequisites; do not regenerate it merely to clear a failure. Its exact text
+comparison deliberately requires review even for an unrelated workflow comment.
+It cannot prove semantic equivalence of arbitrary programs. The original blocks,
+boundary controls and actual command runs supply that evidence. Original Matrix
+paths ran from root; their catalog paths run from `server/` and resolve to the
+same publisher and vendored directory. The publisher's `--check` rejects a
+missing directory, retaining the original prerequisite check.
+
+Boundary commands reject nonzero `cargo tree`, empty/malformed output and missing
+requested roots. Retrieval and migration checks recurse over their source trees
+and reject missing trees. Fixtures cover every crate rule, nested retrieval
+imports, destructive DDL, resolution failure and valid controls. The migration
+check remains a lexical rule, not a SQL parser or proof of additive schema
+semantics. A dependency scan checks the selected normal graph, not every possible
+feature/platform combination. Semantic answer verification and human review
+remain separate obligations.
 
 ## Outcomes and receipts
 
@@ -159,6 +208,6 @@ The session fixture exercises the no-completion writer/read path. Typed evidence
 blocks have discriminator and precision controls; that does not qualify every
 provider-generated answer or hierarchy workflow. The native gRPC fixture checks
 the actual protobuf byte envelope and DTO decode, not a network listener. The
-broader conformance tiers remain separate requirements. Local `gates.ps1` also
-does not claim CI inventory equivalence: automatic CI retains its own DiskANN,
-dependency and infrastructure jobs.
+broader conformance tiers remain separate requirements. The shared catalog
+preserves the CI inventory; local receipts still establish only their selected
+profile and environment, not hosted CI or infrastructure qualification.

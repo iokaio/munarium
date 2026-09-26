@@ -71,23 +71,15 @@ jobs:
         with:
           workspaces: server
       - name: fmt
-        run: cargo fmt --all --check
+        run: python3 tools/gate_catalog.py runner.regression catalog.regression catalog.equivalence format
       - name: clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-      # Every optional feature, compiled. The `ocr` feature carried an unused
-      # import and an orphaned function for exactly as long as nothing built
-      # it: the default graph does not, and the only other --all-features in
-      # this file are dependency-graph queries that never compile. Matrix had
-      # the same hole and it hid 22 errors.
+        run: python3 tools/gate_catalog.py clippy.default
       - name: cargo clippy (all features, all targets)
-        run: cargo clippy --workspace --all-features --all-targets -- -D warnings
+        run: python3 tools/gate_catalog.py clippy.all-features
       - name: test (includes pg integration via MUNARIUM_TEST_DATABASE_URL)
-        run: cargo test --workspace
+        run: python3 tools/gate_catalog.py tests.workspace
       - name: diskann feature (clippy + tests; off by default, so the workspace run never sees it)
-        run: |
-          cargo clippy -p munarium-datastore -p munarium-retrieval -p munarium-server --features vector-diskann --all-targets -- -D warnings
-          cargo test -p munarium-datastore -p munarium-retrieval --features vector-diskann
+        run: python3 tools/gate_catalog.py clippy.diskann tests.diskann
       - name: conformance (in-process + postgres)
         run: |
           cargo run -p mmp-conformance -- --in-process
@@ -170,42 +162,16 @@ jobs:
           assert a == b, 'docs/api/openapi.json is stale: regenerate with cargo run -p munarium-server -- openapi'
           "
       - name: contract bundle is reproducible
-        # Mirrored in server/gates.ps1 'contract bundle self-test' — change
-        # both in the same commit. The public MMP contract bundle (contract/mmp/)
-        # is cut by a publisher; two cuts of this tree must be byte-identical and
-        # every file must match the lock, or a vendored copy could never be
-        # drift-checked against the tree.
-        run: python3 contract/mmp/publish.py --self-test
+        run: python3 tools/gate_catalog.py contract.mmp
       - name: grpc-reference drift check
         run: |
           cargo run -q -p munarium-proto --bin gen-grpc-docs -- /tmp/grpc-reference.md
           diff -u docs/api/grpc-reference.md /tmp/grpc-reference.md \
             || { echo "::error::docs/api/grpc-reference.md is stale: regenerate with cargo run -p munarium-proto --bin gen-grpc-docs -- docs/api/grpc-reference.md"; exit 1; }
       - name: matrix contract drift check
-        # server/contract/matrix/ is cut from matrix/contract/ by
-        # matrix/contract/publish.py, which writes contract.lock (a sha256 per
-        # file, UTF-8/LF/no BOM). Ground rule 1 still holds: a copy plus
-        # checks, no crate edge. Two proofs, and both run here: the copy must
-        # equal a fresh cut (--check,
-        # the lock's source commit ignored), and munarium-api-types'
-        # matrix_contract test verifies every vendored file against the lock
-        # independently. Mirrored in server/gates.ps1 and
-        # matrix-ci.yml -- change all three in the same commit.
-        working-directory: .
-        run: |
-          if [ ! -d server/contract/matrix ]; then
-            echo "::error::server/contract/matrix is missing; cut it with: py matrix/contract/publish.py --out server/contract/matrix"
-            exit 1
-          fi
-          python3 matrix/contract/publish.py --self-test
-          python3 matrix/contract/publish.py --check server/contract/matrix
-          echo "contract version: $(cat matrix/contract/VERSION)"
+        run: python3 tools/gate_catalog.py contract.matrix
       - name: license gate (manifests, SPDX headers, license texts)
-        # The licence gate: the workspace and every crate declare Apache-2.0,
-        # LICENSE / NOTICE / THIRD_PARTY_NOTICES.md exist, and every source file
-        # that can carry an SPDX line does. check_license.py's docstring is the
-        # rule list; --stamp adds a missing header. Mirrored in server/gates.ps1.
-        run: python3 check_license.py
+        run: python3 tools/gate_catalog.py license
       - name: third-party notices are current for the shipping crate graph
         # THIRD_PARTY_NOTICES.md is generated from the musl-resolved
         # runtime graph and reviewed; a dependency change that is not regenerated
@@ -213,74 +179,13 @@ jobs:
         # --cargo-target x86_64-unknown-linux-musl`, then review the diff.
         run: python3 tools/third_party_notices.py --check --cargo-target x86_64-unknown-linux-musl
       - name: crate boundary check
-        # Mirrored in server/gates.ps1 'crate boundary check' — change
-        # both in the same commit. Three machine-checked boundaries (dev-guide
-        # §4 boundary table):
-        #   munarium-core / munarium-access: never depend on sqlx/axum/tonic/reqwest/utoipa
-        #   munarium-providers: never depends on a storage crate
-        run: |
-          for crate in munarium-core munarium-access; do
-            deps=$(cargo tree -p "$crate" -e normal --prefix none | awk '{print $1}' | sort -u)
-            for banned in sqlx axum tonic reqwest utoipa; do
-              if echo "$deps" | grep -qx "$banned"; then
-                echo "BOUNDARY VIOLATION: $crate depends on $banned"; exit 1
-              fi
-            done
-          done
-          deps=$(cargo tree -p munarium-providers -e normal --prefix none | awk '{print $1}' | sort -u)
-          for banned in munarium-store-pg munarium-store-mem munarium-retrieval-pg; do
-            if echo "$deps" | grep -qx "$banned"; then
-              echo "BOUNDARY VIOLATION: munarium-providers depends on $banned"; exit 1
-            fi
-          done
-          # munarium-api-types ships in the public contract bundle: it may depend on munarium-proto
-          # and on nothing else of the workspace. The core <-> DTO conversions live
-          # in munarium-api-conv.
-          deps=$(cargo tree -p munarium-api-types --all-features -e normal --prefix none | awk '{print $1}' | sort -u)
-          strays=$(echo "$deps" | grep -E '^munarium-' | grep -vx -E 'munarium-api-types|munarium-proto' || true)
-          if [ -n "$strays" ]; then
-            echo "BOUNDARY VIOLATION: munarium-api-types depends on a server crate:"; echo "$strays"; exit 1
-          fi
+        run: python3 tools/gate_catalog.py boundaries.crates
       - name: retrieval boundary check
-        # Mirrored in server/gates.ps1 -- change both in the same commit.
-        #
-        # Cargo has no notion of "a dependency only the composition root may
-        # name", so the retrieval boundary is enforced at source level:
-        # munarium-server may reference munarium_retrieval_pg ONLY in state.rs,
-        # where AppState constructs PgRetrieval and PgSourceStore. Without this
-        # the extraction silently rots -- one `use munarium_retrieval_pg::` in
-        # a new handler and PostgreSQL is the real interface again.
-        run: |
-          strays=$(grep -rln "munarium_retrieval_pg" src/munarium-server/src/                    | grep -v "^src/munarium-server/src/state.rs$" || true)
-          if [ -n "$strays" ]; then
-            echo "::error::munarium-server names munarium_retrieval_pg outside state.rs:"
-            echo "$strays"
-            echo "use munarium_retrieval::Retrieval instead; state.rs is the composition root."
-            exit 1
-          fi
+        run: python3 tools/gate_catalog.py boundaries.retrieval
       - name: datastore boundary check
-        # Mirrored in server/gates.ps1 -- change both in the same commit.
-        #
-        # munarium-datastore must stay independently usable: no Axum, tonic,
-        # SQLx, PostgreSQL, server config, auth or runbooks in its dependency
-        # graph, and no munarium-core either. The premise is a crate
-        # that can be lifted out of this workspace; a boundary nothing enforces
-        # lasts until the first convenient import.
-        run: |
-          deps=$(cargo tree -p munarium-datastore -e normal --prefix none | awk '{print $1}' | sort -u)
-          rc=0
-          for banned in sqlx axum tonic reqwest utoipa munarium-core munarium-store-pg                         munarium-retrieval-pg munarium-server munarium-runbooks; do
-            if echo "$deps" | grep -qx "$banned"; then
-              echo "::error::munarium-datastore depends on $banned"; rc=1
-            fi
-          done
-          exit $rc
+        run: python3 tools/gate_catalog.py boundaries.datastore
       - name: additive-only migrations check
-        # no destructive DDL may ever enter the migration set
-        run: |
-          if grep -riE '^\s*(drop\s+(table|column)|alter\s+table\s+\S+\s+drop)' src/munarium-store-pg/migrations/ 2>/dev/null; then
-            echo "DESTRUCTIVE DDL in migrations"; exit 1
-          fi
+        run: python3 tools/gate_catalog.py migrations.additive
 
   # munarium-datastore's supported embedded tier (server/docs/embedded-support.md),
   # qualified from an isolated consumer. server/tests/embedded-datastore is its
