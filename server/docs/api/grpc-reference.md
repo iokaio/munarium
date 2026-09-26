@@ -1316,6 +1316,8 @@ no evidence rows appear here.
 | Turn | ServerApiRequest | ServerApiResponse | POST /v1/sessions/{id}/turns |
 | TurnStream | ServerApiRequest | stream ServerApiResponse | POST /v1/sessions/{id}/turns/stream |
 | ApplyShape | ServerApiRequest | ServerApiResponse | POST /v1/shapes |
+| ListSourceRetention | ServerApiRequest | ServerApiResponse | GET /v1/source-retention |
+| ChangeSourceRetention | ServerApiRequest | ServerApiResponse | POST /v1/source-retention |
 | PutSource | ServerApiRequest | ServerApiResponse | PUT /v1/sources |
 | GetSource | ServerApiRequest | ServerApiResponse | GET /v1/sources/{source_id} |
 | CreateVersion | ServerApiRequest | ServerApiResponse | POST /v1/versions |

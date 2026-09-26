@@ -295,6 +295,9 @@ pub async fn answer(
         crate::rest::data_plane_access(&state, &headers, &uid, munarium_access::SCOPE_QUERY)
             .await?;
     for collection in &collections {
+        retrieval
+            .assert_scope_readable("collection", &collection.id)
+            .await?;
         let info = retrieval.collection_by_id(&collection.id).await?;
         if info.status != "active" || !current.permits(info.access_level, &info.compartments) {
             return Err(KernelError::Forbidden(
@@ -316,6 +319,15 @@ pub(crate) async fn compose_verified(
     policy: Option<&crate::governance_api::QueryPolicy>,
     review_required: bool,
 ) -> Result<AnswerResponse, ApiError> {
+    state
+        .retrieval_for(tenant)?
+        .assert_sources_readable(
+            &verified
+                .values()
+                .map(|r| r.source_id.clone())
+                .collect::<Vec<_>>(),
+        )
+        .await?;
     let mut config = crate::vocabulary_api::settings(state, tenant).await?;
     if let Some(policy) = policy {
         if let Some(provider) = &policy.provider {
@@ -403,6 +415,15 @@ pub(crate) async fn compose_verified(
         content.status = "review".into();
     }
     let references = cited_references(&content, verified)?;
+    state
+        .retrieval_for(tenant)?
+        .assert_sources_readable(
+            &verified
+                .values()
+                .map(|r| r.source_id.clone())
+                .collect::<Vec<_>>(),
+        )
+        .await?;
     Ok(AnswerResponse {
         api_version: "1.2".into(),
         content,

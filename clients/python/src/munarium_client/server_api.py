@@ -1451,6 +1451,32 @@ class ServerApiClient(BaseServerApi):
             request,
         )
 
+    def list_source_retention(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/source-retention"""
+        return self._call(
+            "ListSourceRetention",
+            "GET",
+            "/v1/source-retention",
+            "application/json",
+            request,
+        )
+
+    def change_source_retention(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """POST /v1/source-retention"""
+        return self._call(
+            "ChangeSourceRetention",
+            "POST",
+            "/v1/source-retention",
+            "application/json",
+            request,
+        )
+
     def put_source(
         self,
         request: ApiRequest | None = None,
@@ -3180,6 +3206,32 @@ class AsyncServerApiClient(BaseAsyncServerApi):
             "POST",
             "/v1/shapes",
             "text/yaml",
+            request,
+        )
+
+    async def list_source_retention(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/source-retention"""
+        return await self._call(
+            "ListSourceRetention",
+            "GET",
+            "/v1/source-retention",
+            "application/json",
+            request,
+        )
+
+    async def change_source_retention(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """POST /v1/source-retention"""
+        return await self._call(
+            "ChangeSourceRetention",
+            "POST",
+            "/v1/source-retention",
+            "application/json",
             request,
         )
 

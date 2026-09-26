@@ -129,6 +129,13 @@ impl PgRetrieval {
             if rows.is_empty() {
                 break;
             }
+            self.assert_sources_readable(
+                &rows
+                    .iter()
+                    .map(|r| r.get::<String, _>("source_id"))
+                    .collect::<Vec<_>>(),
+            )
+            .await?;
             for row in rows {
                 let chunk_id: String = row.get("chunk_id");
                 let text: String = row.get("text");
@@ -235,6 +242,13 @@ impl PgRetrieval {
             if rows.is_empty() {
                 break;
             }
+            self.assert_sources_readable(
+                &rows
+                    .iter()
+                    .map(|r| r.get::<String, _>("source_id"))
+                    .collect::<Vec<_>>(),
+            )
+            .await?;
             for row in rows {
                 let chunk_id: String = row.get("chunk_id");
                 let text: String = row.get("text");
@@ -326,6 +340,13 @@ impl PgRetrieval {
         .await
         .map_err(storage_err)?;
 
+        self.assert_sources_readable(
+            &rows
+                .iter()
+                .map(|r| r.get::<String, _>("source_id"))
+                .collect::<Vec<_>>(),
+        )
+        .await?;
         Ok(rows
             .into_iter()
             .map(|r| ExportedSource {
@@ -358,6 +379,13 @@ impl PgRetrieval {
         .await
         .map_err(storage_err)?;
 
+        self.assert_sources_readable(
+            &rows
+                .iter()
+                .map(|r| r.get::<String, _>("source_id"))
+                .collect::<Vec<_>>(),
+        )
+        .await?;
         Ok(rows
             .into_iter()
             .map(|r| ExportedSource {

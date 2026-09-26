@@ -246,6 +246,10 @@ service ServerApiService {
   rpc TurnStream(ServerApiRequest) returns (stream ServerApiResponse);
   // POST /v1/shapes
   rpc ApplyShape(ServerApiRequest) returns (ServerApiResponse);
+  // GET /v1/source-retention
+  rpc ListSourceRetention(ServerApiRequest) returns (ServerApiResponse);
+  // POST /v1/source-retention
+  rpc ChangeSourceRetention(ServerApiRequest) returns (ServerApiResponse);
   // PUT /v1/sources
   rpc PutSource(ServerApiRequest) returns (ServerApiResponse);
   // GET /v1/sources/{source_id}

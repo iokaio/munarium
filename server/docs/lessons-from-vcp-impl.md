@@ -93,7 +93,7 @@ Discovery and tests can proceed before these decisions; dependent behavior chang
 | D1: What is capped when no tier resolves? | Adopted: opt-in `budgets.dailyTotalTokens` covers physical gateway completion and embedding attempts, including retries; omission retains legacy behavior | Broader R15 enforcement without assigning a tier to an explicit model; see [token budgets](tokenbudgets.md#dispatch-accounting-inventory) |
 | D2: Is money a Server reporting feature? | Adopted for explicitly scoped PostgreSQL gateway attempts in P14; unrecorded work remains unknown | R16 immutable tariffs, reconciliation and coverage-qualified report; §4.4 |
 | D3: Which fault guarantees are supported? | P08 scope: kill/restart the application while PostgreSQL stays running. Opt-in tenant command claims preserve unresolved outcomes without resubmission (§9.2). Database crashes and power loss need separate qualification | R13 acceptance and required CI coverage |
-| D4: What does deletion mean? | Preserve current soft-removal and audit retention; design each stronger mode explicitly | R21 cleanup, tombstones, restore behavior |
+| D4: What does deletion mean? | Adopted: explicit tenant-wide stable-path denial, source-original holds and optional transactional PostgreSQL original-byte cleanup. Derived/audit copies remain declared retention; all-copy/cloud erasure is outside this contract | R21 cleanup, tombstones, restore behavior; [source retention](ops/source-retention.md) |
 | D5: Are embedded crates supported public Rust APIs? | Decided in P15 (2026-09-25): only `munarium-datastore`, as a supported embedded library. It has a declared surface under semantic versioning, is consumed as pinned source, and has minimum Rust 1.92 measured from an isolated consumer. Every other crate is internal ([embedded-support.md](embedded-support.md)) | R31 MSRV/support tier; API shape for R01/R07/R08 |
 | D6: What makes governance useful for a target workload? | Freeze task population, minimum useful effect, cost/latency constraints, and mandatory authorization checks before the final evaluation | R25 quality claims and any paid campaign |
 | D7: Who may trigger paid diagnostics and view credential aliases? | Adopted: opt-in managed probe mode requires management access and capped tenant configs. Aliases use a separate free management-only endpoint; no references or secret-derived identifiers | R28 and health-probe admission policy; [operator diagnostics](tokenbudgets.md#operator-diagnostics) |
@@ -114,13 +114,13 @@ Each row is a coherent implementation slice; it may require more than one PR whe
 | P05 | Dispatch inventory, structured-output policy, opt-in physical-attempt daily total and managed probes/aliases implemented | P01; adopted D1/D7 opt-in policies | Medium–large | Every dispatch has an explicit accounting policy; concurrent/retry/cancellation and cross-transport authority tests |
 | P06 | Injectable clocks/IDs and separated governance baseline implemented | Existing conformance; P02 receipts | Medium | Existing constructors unchanged; reproducible traces and separated timings |
 | P07 | Characterization merged in PR #51; fixes require demonstrated gaps | P06 baseline where relevant | Medium | Exact-oracle comparisons, authorization parity, bounded-work evidence |
-| P08 | Implemented and locally qualified for the D3 application-process scope; atomic runbook checkpoints and retained legacy gaps, §9.1 | D3; P02; existing mirror fault hooks | Large | Named barriers, process termination, reopened-state assertions, reviewed recovery contracts |
+| P08 | Implemented for the D3 application-process scope: atomic runbook checkpoints, retained legacy gaps and opt-in guarded command claims, §9.1–9.2 | Adopted D3; P02; existing mirror fault hooks | Large | Named barriers, process termination, reopened-state assertions, reviewed recovery contracts |
 | P09 | Durable profiles, explicit transitions and Server evaluation locally qualified, §7.3 | D5/D8; P06; contract design | Medium–large | Historical replay unchanged; exact-policy cross-backend/transport tests |
-| P10 | Authority/evidence audit, model-only envelopes and checked retention inventory implemented; qualification below in §10.4 | D4 for stronger retention changes | Medium | Access-path matrix, effect-denial tests, declared derived-content treatment |
-| P11 | Integer/unknown-field protocol characterization | Existing contract publisher/client suites | Medium | N/N−1 fixtures; exact integer tests; no unversioned field-type change |
-| P12 | Restricted-filesystem qualification | Existing datastore build/reopen fixtures | Medium | Supported Linux permissions documented; separate Windows results |
+| P10 | Authority/evidence audit, model-only envelopes, checked inventory and explicit source denial/PG-original cleanup implemented; §10.3–10.4 | Adopted bounded D4 contract | Medium | Access-path matrix, effect-denial tests, declared derived-content treatment, holds/cleanup/restart fixtures |
+| P11 | Integer/unknown-field protocol characterization implemented and locally qualified, §11.3 | Existing contract publisher/client suites | Medium | N/N−1 fixtures; exact integer tests; no unversioned field-type change |
+| P12 | Restricted-filesystem runner and supported Linux qualification implemented, §8.2 | Existing datastore build/reopen fixtures | Medium | Supported Linux permissions documented; separate Windows results |
 | P13 | Frozen evaluation implemented; preregistered local D6 usefulness claim rejected, local latency budgets confirmed; §12.1 | P02/P06/P07; D6 | Medium–large | Offline/live pilots, validated graders, immutable manifests/results, retained rejection and calibrated local timing reports |
-| P14 | Optional monetary accounting | P05/P11; D2 | Medium–large | Unknown-price/usage semantics, immutable prices, checked arithmetic, coverage-qualified reports |
+| P14 | Scoped optional monetary accounting implemented, §4.4 | P05/P11; D2 | Medium–large | Unknown-price/usage semantics, immutable prices, checked arithmetic, coverage-qualified reports |
 | P15 | Implemented: panic-boundary policy in every production crate (R32) and the datastore-only embedded tier (D5/R31); locally qualified, §13.4 | D5; measured audit | Medium | Isolated consumer builds/MSRV if adopted; targeted production failure handling |
 | P16 | Shared gate definitions and policy follow-ups merged in PR #63 | P02 stabilized; maintainer-owned workflow changes | Medium | Same required coverage before/after, automatic CI retained, checker self-tests |
 
@@ -868,8 +868,21 @@ and datastore component kinds and requires policies for declared non-SQL artifac
 Negative controls exercise missing and malformed declarations. Retrieval tests
 characterize replacement/rebuild, warm and reopened caches, inactive PostgreSQL
 chunk retirement, immutable historical citations and shared-source rebuilding.
-Existing evidence hold and claim-once tests remain in force. No new source-erasure
-API, cleanup journal or restore-denial guarantee is introduced.
+Existing evidence hold and claim-once tests remain in force. That initial slice
+introduced no source-erasure API. The subsequent D4 implementation below adds a
+deliberately bounded source-original contract.
+
+**D4 follow-up:** [source retention](ops/source-retention.md) implements durable,
+management-only stable-path denial, holds and optional PostgreSQL original-byte
+cleanup. Live checks outside artifact caches cover warm/cold and retired pins,
+bound scopes, originals, vocabulary, checked answers, public sessions and rebuilds.
+Pending cleanup commits before deletion; the byte delete and completion record
+share a transaction. Holds and multiple collection bindings block cleanup.
+Failure/retry, hold races, application restart and restored-state journal replay
+have named fixtures. The export/replay procedure is required before an older
+restore serves. Missing authoritative policy means an unqualified restore.
+No derived-copy, cloud-original, provider-copy or backup erasure is asserted;
+existing audit retention and sealed-evidence behavior remain separate.
 
 The current [platform guide](guides/platform-features.md) describes runbook soft removal that retains underlying history/data. [Immutable datastore records](../src/munarium-datastore/src/records.rs) preserve historical citation text. [Physical deletion](ops/index-deletion-runbook.md) is an explicit operator procedure with retained surfaces. These are deliberate contracts, not accidental omissions to eliminate wholesale.
 
@@ -1388,10 +1401,12 @@ This planning task is complete when this document is indexed, its current-source
 An implementation slice is complete only when its behavior, compatibility, migration/rollback constraints, tests, and documentation meet its exit criteria. A research slice can complete with rejection or inconclusive evidence if that is an allowed preregistered outcome. An unavailable environment or accepted waiver can permit a separately recorded release decision, but cannot manufacture qualification evidence.
 
 P02–P04 are merged in PR #46 and P16 in PR #63. P01 now includes late token
-reconciliation/reporting and a versioned estimator. Remaining policy-dependent
-work includes D4 for durable source denial
-and cleanup, and a new D6 population/model/budget/threshold decision for broader
-qualification. The earlier local D6 rejection remains a completed research result.
+reconciliation/reporting and a versioned estimator. The follow-up
+implementation now also includes D1/D7 admission and probe authority, D3 guarded
+command recovery and D4 source denial with scoped PostgreSQL original cleanup.
+A new D6 population/model/budget/threshold decision is required only for a new,
+broader qualification campaign. The earlier local D6 rejection remains a completed
+research result, not a passing product claim.
 
 ### 15.4 Follow-up implementation boundaries
 
@@ -1411,8 +1426,33 @@ explicit missing environments, and owned PostgreSQL resources; its
 [runner documentation](../../matrix/README.md#testing) records the local profile
 and external black-box prerequisites. Automatic CI remains enabled.
 
-PR #64 did not adopt D1/D7, D3 or D4 by implication. Subsequent P05 work explicitly adopts the opt-in D1/D7 policies recorded above; §9.2 adopts guarded D3 command recovery. Stronger behavior cannot be
+PR #64 did not adopt D1/D7, D3 or D4 by implication. Subsequent work explicitly adopts the D1/D7 policies above, guarded D3 command recovery (§9.2) and bounded D4 source retention (§10.3). Stronger behavior cannot be
 enabled merely because a decision has been pending. Nor does a new test or
 receipt qualify a missing model campaign, release platform, cloud deployment,
 database crash, power loss or restore. Those require the named decision and
 actual environment evidence under §14.3; retain original missing/failed outcomes.
+
+### 15.5 Implementation closure and qualification limits
+
+P01–P16 now have implementations or the explicitly permitted characterization/
+research disposition above. The post-PR #64 follow-ups are physical-attempt caps
+([PR #65](https://github.com/iokaio/munarium/pull/65)), managed probes and safe
+diagnostics ([PR #66](https://github.com/iokaio/munarium/pull/66)), guarded command
+recovery ([PR #67](https://github.com/iokaio/munarium/pull/67)), and the bounded
+source-retention contract in §10.3. These do not silently strengthen the original
+P07 characterization or turn the P13 rejected usefulness claim into acceptance.
+
+Source-retention validation includes real PostgreSQL deletion failure and retry,
+eight hold/cleanup races, four application restart/control scenarios, warm/cold
+and retired-pin retrieval, shared-source rebuild denial, transport authority and
+zero provider calls after denial. The final local run passed 263 Server tests
+(8 ignored entries, including process children invoked by their parents), all
+25 retrieval mirror integration tests, the dedicated storage retention suite,
+affected Clippy checks, and all four SDK suites. Its PR records exact commands,
+source identity and hosted CI separately.
+
+Release/platform coverage, actual backup restoration, database crashes/power loss,
+cloud/all-copy erasure and a new paid or broader D6 campaign still require their
+own authorized environments and evidence. Historical unavailable/failed outcomes
+remain unchanged. No deployment, policy activation on a real tenant, release or
+paid campaign follows from this implementation closure.

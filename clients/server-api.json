@@ -890,6 +890,22 @@
       "streaming": false
     },
     {
+      "name": "list_source_retention",
+      "rpc": "ListSourceRetention",
+      "method": "GET",
+      "path": "/v1/source-retention",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "change_source_retention",
+      "rpc": "ChangeSourceRetention",
+      "method": "POST",
+      "path": "/v1/source-retention",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
       "name": "put_source",
       "rpc": "PutSource",
       "method": "PUT",

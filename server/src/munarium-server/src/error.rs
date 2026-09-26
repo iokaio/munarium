@@ -394,6 +394,21 @@ fn command_unresolved(e: &KernelError) -> Option<CustomError> {
     })
 }
 
+fn source_denied(e: &KernelError) -> Option<CustomError> {
+    let KernelError::InvalidInput(message) = e else {
+        return None;
+    };
+    Some(CustomError {
+        slug: "source-denied",
+        status: StatusCode::GONE,
+        code: tonic::Code::FailedPrecondition,
+        title: "source content is unavailable",
+        detail: message
+            .strip_prefix(munarium_store_pg::source_retention::DENIED_PREFIX)?
+            .into(),
+    })
+}
+
 fn run_locked_detail(e: &KernelError) -> Option<&str> {
     match e {
         KernelError::InvalidInput(msg) => msg.strip_prefix(RUN_LOCKED_PREFIX),
@@ -470,6 +485,9 @@ pub fn slug(e: &KernelError) -> &'static str {
 
 pub fn to_problem(e: &KernelError) -> (StatusCode, Problem) {
     if let Some(error) = command_unresolved(e) {
+        return error.to_problem();
+    }
+    if let Some(error) = source_denied(e) {
         return error.to_problem();
     }
     if let Some(detail) = run_locked_detail(e) {
@@ -613,6 +631,9 @@ impl std::fmt::Display for ApiError {
 }
 
 pub fn to_status(e: &KernelError) -> tonic::Status {
+    if let Some(error) = source_denied(e) {
+        return error.to_status();
+    }
     use tonic::Code;
     if let Some(error) = command_unresolved(e) {
         return error.to_status();

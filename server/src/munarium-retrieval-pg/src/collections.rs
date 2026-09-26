@@ -821,6 +821,8 @@ impl PgRetrieval {
         watermark_seq: u64,
         activate: bool,
     ) -> Result<munarium_core::retrieval::IndexVersion> {
+        self.assert_scope_readable("collection", collection_id)
+            .await?;
         let watermark_seq = crate::pg_watermark(watermark_seq)?;
         let info = self.collection_by_id(collection_id).await?;
         let sources = sqlx::query(
@@ -1251,6 +1253,8 @@ impl PgRetrieval {
         // A prepared query with no lexical plan still has to name the text it
         // came from; an empty plan is the caller asking for the vector leg
         // alone, which the SQL below already handles as an empty tsquery.
+        self.assert_scope_readable("collection", collection_id)
+            .await?;
         let empty_plan;
         let plan = match prepared.lexical.as_ref() {
             Some(plan) => plan,
@@ -1487,6 +1491,7 @@ impl PgRetrieval {
         let envelope = self
             .envelope_for(&mut hits, index_id, crate::read_watermark(watermark)?)
             .await?;
+        self.assert_sources_readable(&envelope.source_ids).await?;
         Ok(SearchResult { hits, envelope })
     }
 

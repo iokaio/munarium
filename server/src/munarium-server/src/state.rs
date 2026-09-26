@@ -464,6 +464,17 @@ impl AppState {
             });
         }
         let sources = build_source_store(&config, &stores)?;
+        if let StoreRegistry::Pg(base) = &stores {
+            let pool = base.pool().clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                    if let Err(error) = munarium_store_pg::source_retention::sweep(&pool).await {
+                        tracing::warn!(%error, "source original cleanup remains pending");
+                    }
+                }
+            });
+        }
         tracing::info!(backend = sources.backend_id(), "source bytes store");
         // Evidence metadata follows the LEDGER store, not the bytes store: an
         // artifact's authorization class and retention clock are database

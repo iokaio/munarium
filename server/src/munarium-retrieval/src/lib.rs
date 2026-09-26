@@ -184,6 +184,14 @@ impl Retrieval {
         &self.pg
     }
 
+    pub async fn assert_scope_readable(&self, kind: &str, id: &str) -> Result<()> {
+        self.pg.assert_scope_readable(kind, id).await
+    }
+
+    pub async fn assert_sources_readable(&self, ids: &[String]) -> Result<()> {
+        self.pg.assert_sources_readable(ids).await
+    }
+
     /// The letter-prefixed number lexemes the permitted collections' own
     /// indexes hold for these digit runs (2026-08-30, §13.5 entry 25).
     ///
@@ -304,6 +312,9 @@ impl Retrieval {
         prepared: &PreparedSearchQuery,
         index_version: Option<&str>,
     ) -> Result<(SearchResult, &'static str)> {
+        self.pg
+            .assert_scope_readable("collection", collection_id)
+            .await?;
         if self.mode == RetrievalMode::Datastore {
             let Some(plane) = &self.serving else {
                 // Fail closed, not over to PostgreSQL: without the selector
@@ -379,6 +390,7 @@ impl Retrieval {
     /// resolution stays PostgreSQL's (`resolve_index` — the active LEGACY
     /// version, `collection_id IS NULL`, never a collection's).
     pub async fn hybrid_search(&self, q: HybridQuery) -> Result<SearchResult> {
+        self.pg.assert_scope_readable("shape", &q.shape_ref).await?;
         if self.mode == RetrievalMode::Datastore {
             let Some(plane) = &self.serving else {
                 return Err(munarium_core::KernelError::DatastoreUnavailable(

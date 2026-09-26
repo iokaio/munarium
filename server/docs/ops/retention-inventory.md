@@ -2,8 +2,9 @@
 
 Server preserves soft removal and historical evidence. Excluding a source from
 current retrieval does not erase its original bytes, immutable citations, copied
-answers, audit records, exports or backups. This inventory introduces no erasure
-API, cleanup job, retention deadline or change to existing removal behavior.
+answers, audit records, exports or backups. Explicit [source retention](source-retention.md)
+now adds durable denial and optional cleanup of PostgreSQL original bytes. It
+does not establish all-copy erasure or a retention deadline.
 
 The machine-readable [inventory](../../retention/inventory.json) identifies every
 table and column declared by Server migrations, including JSON payloads, and
@@ -16,9 +17,9 @@ as `coverage: Gap: ...` describe missing assurance, not successful tests.
 |---|---|---|
 | Retrieval exclusion | Eligible current retrieval can stop selecting content; rebuilding selects the current source bytes | Removal of historical citations, other collections' versions or originals |
 | Access revocation | Current endpoint authority restricts the caller; see the [authority audit](../authority-audit.md) for exact paths and session snapshot limits | Recall of delivered answers, exported files or provider copies |
-| Logical removal | Existing runbook/draft/session lifecycle states control their supported operations | General source tombstones or cascading content deletion |
-| Physical erasure | Existing evidence-byte purge and separately authorized operator procedures have narrow scopes | General source erasure, all-copy deletion or restore closure |
-| Protected retention | Append-only provenance and evidence-only legal holds preserve their declared surfaces | A general regulatory retention API or uniform duration |
+| Logical removal | Source denial also governs bound scopes, pins, rebuilds and public session copies; existing lifecycle states retain their scope | Cascading removal of independent audit copies |
+| Physical erasure | PostgreSQL source-original cleanup, evidence-byte purge and separately authorized operator procedures have narrow scopes | All-copy deletion, cloud object erasure or operational restore qualification |
+| Protected retention | Append-only provenance, source-original holds and separate evidence legal holds preserve their declared surfaces | A general regulatory retention API or uniform duration |
 
 ## Surfaces and retained content
 
@@ -79,8 +80,10 @@ evidence row. Restoring external storage can also restore previously deleted
 bytes. Keep restored instances isolated until required exclusion, revocation,
 removal, purge and hold decisions have been reconciled.
 
-There is no general durable source-denial/cleanup journal to replay today, so a
-restore cannot claim a general erasure guarantee. A future design must commit
+The durable source-retention journal must be replayed before a restored instance
+serves; its [contract](source-retention.md#restore-upgrade-and-rollback) describes
+the export, holds-first replay and remaining backup limits. This does not prove
+a general erasure guarantee. Any broader mode must commit
 read/retrieval denial and durable pending cleanup before asynchronous erasure,
 use stable identities and idempotent retries, protect shared ownership, define
 holds and deadlines, and account for exports and backups. A pin that must become

@@ -48,6 +48,13 @@ measured.
 
 ## The procedure
 
+Source-denial policy and guarded command claims are additional restore gates.
+Keep the restored service isolated until the independently exported
+[source journal](source-retention.md#restore-upgrade-and-rollback) and
+[command recovery](command-recovery.md#activation-and-compatibility) state have
+been reconciled. Restoring old bytes never clears an approved denial; a missing
+authoritative journal cannot be treated as evidence that no denial existed.
+
 1. **Stop writes.** Scale the deployment to zero
    (`kubectl -n munarium scale deployment/munarium-server --replicas=0`) or
    stop routing at your ingress. Leave PostgreSQL running — the restore reads

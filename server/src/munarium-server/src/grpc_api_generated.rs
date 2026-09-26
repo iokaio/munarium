@@ -337,6 +337,12 @@ impl pb::server_api_service_server::ServerApiService for ServerApiSvc {
     async fn apply_shape(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "POST", "/v1/shapes", "text/yaml").await
     }
+    async fn list_source_retention(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "GET", "/v1/source-retention", "application/json").await
+    }
+    async fn change_source_retention(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "POST", "/v1/source-retention", "application/json").await
+    }
     async fn put_source(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "PUT", "/v1/sources", "application/octet-stream").await
     }

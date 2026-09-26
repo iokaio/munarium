@@ -268,6 +268,13 @@ impl pb::session_service_server::SessionService for SessionSvc {
                 )));
             }
         }
+        munarium_store_pg::source_retention::assert_session(
+            crate::runbooks_api::pool(&self.state).map_err(|e| to_status(&e))?,
+            &tenant,
+            &inner_id,
+        )
+        .await
+        .map_err(|e| to_status(&e))?;
         Ok(Response::new(session_to_pb(resp)))
     }
 

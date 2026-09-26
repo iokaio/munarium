@@ -1122,6 +1122,174 @@ async fn retention_rebuild_excludes_old_text_but_preserves_pins_and_shared_sourc
         .all(|hit| hit.source_content_hash == new_hash));
 }
 
+/// Explicit denial overrides artifact caches and historical pins after rebuild.
+#[tokio::test]
+async fn source_denial_blocks_warm_cold_retired_pins_and_shared_rebuilds() {
+    guard!();
+    use munarium_store_pg::source_retention as retention;
+    let mut h = harness(&unique("source-denial"), 1).await;
+    let old_version = h.version_id.clone();
+    let artifact = match h.mirror().await.unwrap() {
+        MirrorOutcome::Published { artifact_id, .. } => artifact_id,
+        other => panic!("{other:?}"),
+    };
+    h.promote_to_serving(&artifact).await;
+    RolloutSelector::new(h.store.pool().clone(), &h.tenant)
+        .create(
+            "collection",
+            &h.collection_id,
+            RolloutChange {
+                serving: "datastore",
+                prewarm_staged: false,
+                changed_by: "denial-fixture",
+                reason: None,
+            },
+        )
+        .await
+        .unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let warm = h.serving_retrieval(cache.path());
+    let prepared = prepared_for("tea in Boston harbour");
+    let before = warm
+        .search_collection_prepared(&h.collection_id, &prepared, None)
+        .await
+        .unwrap();
+    let hit = before.hits.first().unwrap().clone();
+    let shared =
+        h.pg.ensure_collection("shared-denial", "para", 0, &[], None)
+            .await
+            .unwrap();
+    h.pg.bind_source(&shared.id, &hit.source_id, None)
+        .await
+        .unwrap();
+    h.pg.build_collection_index(&shared.id, 400, 1, true)
+        .await
+        .unwrap();
+    h.pg.put_source(
+        "",
+        "text/markdown",
+        &hit.source_path,
+        Some("para"),
+        b"Fictional replacement orchid nebula.",
+    )
+    .await
+    .unwrap();
+    h.version_id =
+        h.pg.build_collection_index(&h.collection_id, 400, 2, true)
+            .await
+            .unwrap()
+            .id;
+    let next = match h.mirror().await.unwrap() {
+        MirrorOutcome::Published { artifact_id, .. } => artifact_id,
+        other => panic!("{other:?}"),
+    };
+    h.promote_to_serving(&next).await;
+    h.pg.retire_old_collection(&h.collection_id, 0)
+        .await
+        .unwrap();
+    assert!(
+        !warm
+            .search_collection_prepared(&h.collection_id, &prepared, Some(&old_version))
+            .await
+            .unwrap()
+            .hits
+            .is_empty(),
+        "retired pin is available before explicit denial"
+    );
+    retention::change(
+        h.store.pool(),
+        &h.tenant,
+        &hit.source_path,
+        "deny-and-erase-pg-original",
+    )
+    .await
+    .unwrap();
+    let cold = tempfile::tempdir().unwrap();
+    for retrieval in [
+        warm,
+        h.serving_retrieval(cache.path()),
+        h.serving_retrieval(cold.path()),
+    ] {
+        for pin in [
+            None,
+            Some(old_version.as_str()),
+            Some(h.version_id.as_str()),
+        ] {
+            let error = retrieval
+                .search_collection_prepared(&h.collection_id, &prepared, pin)
+                .await
+                .unwrap_err();
+            assert!(error.to_string().contains("source-denied"));
+        }
+    }
+    let reopened = PgStore::connect(&url().unwrap(), &h.tenant).await.unwrap();
+    let pg = PgRetrieval::new(reopened.pool().clone(), &h.tenant);
+    assert!(pg.source_info(&hit.source_id).await.is_err());
+    assert!(pg.source_sample(&hit.source_id, 200).await.is_err());
+    assert!(pg
+        .search_collection_prepared(&shared.id, &prepared, None)
+        .await
+        .is_err());
+    assert!(pg
+        .build_collection_index(&shared.id, 400, 3, true)
+        .await
+        .is_err());
+    assert!(pg
+        .extract_collection_prepared(&shared.id, 400)
+        .await
+        .is_err());
+    assert!(backfill_one(
+        &h.ctx,
+        &pg,
+        MirrorTarget::Collection {
+            collection_id: &h.collection_id
+        },
+        &old_version
+    )
+    .await
+    .is_err());
+    assert!(pg
+        .put_source(
+            "",
+            "text/plain",
+            &hit.source_path,
+            None,
+            b"must not resurrect"
+        )
+        .await
+        .is_err());
+    assert!(
+        !retention::cleanup_one(h.store.pool(), &h.tenant, &hit.source_id)
+            .await
+            .unwrap(),
+        "shared owners retain original bytes"
+    );
+    let control = pg
+        .ensure_collection("allowed-control", "para", 0, &[], None)
+        .await
+        .unwrap();
+    let (id, _, _) = pg
+        .put_source(
+            "",
+            "text/plain",
+            "allowed/control.txt",
+            Some("para"),
+            b"Fictional orchid nebula control.",
+        )
+        .await
+        .unwrap();
+    pg.bind_source(&control.id, &id, None).await.unwrap();
+    pg.build_collection_index(&control.id, 400, 1, true)
+        .await
+        .unwrap();
+    assert!(!pg
+        .search_collection_prepared(&control.id, &prepared_for("orchid nebula"), None)
+        .await
+        .unwrap()
+        .hits
+        .is_empty());
+}
+
 /// The full stage 6 sequence against real infrastructure: mirror → promote
 /// staged→serving → select the scope → the SAME coordinator call the turn
 /// pipeline makes is answered by the datastore, with provenance enriched from

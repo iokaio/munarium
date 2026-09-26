@@ -225,6 +225,10 @@ public sealed partial class ServerApiClient {
     public IAsyncEnumerable<ApiResponse> TurnStreamAsync(ApiRequest? request = null, CancellationToken ct = default) => StreamAsync("TurnStream", "POST", "/v1/sessions/{id}/turns/stream", "application/json", request ?? new(), ct);
     /// <summary>POST /v1/shapes</summary>
     public Task<ApiResponse> ApplyShapeAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("ApplyShape", "POST", "/v1/shapes", "text/yaml", request ?? new(), ct);
+    /// <summary>GET /v1/source-retention</summary>
+    public Task<ApiResponse> ListSourceRetentionAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("ListSourceRetention", "GET", "/v1/source-retention", "application/json", request ?? new(), ct);
+    /// <summary>POST /v1/source-retention</summary>
+    public Task<ApiResponse> ChangeSourceRetentionAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("ChangeSourceRetention", "POST", "/v1/source-retention", "application/json", request ?? new(), ct);
     /// <summary>PUT /v1/sources</summary>
     public Task<ApiResponse> PutSourceAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("PutSource", "PUT", "/v1/sources", "application/octet-stream", request ?? new(), ct);
     /// <summary>GET /v1/sources/{source_id}</summary>

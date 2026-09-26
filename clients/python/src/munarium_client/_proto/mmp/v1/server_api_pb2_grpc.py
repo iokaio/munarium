@@ -589,6 +589,16 @@ class ServerApiServiceStub:
                 request_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
                 response_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
                 _registered_method=True)
+        self.ListSourceRetention = channel.unary_unary(
+                '/mmp.v1.ServerApiService/ListSourceRetention',
+                request_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+                response_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+                _registered_method=True)
+        self.ChangeSourceRetention = channel.unary_unary(
+                '/mmp.v1.ServerApiService/ChangeSourceRetention',
+                request_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+                response_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+                _registered_method=True)
         self.PutSource = channel.unary_unary(
                 '/mmp.v1.ServerApiService/PutSource',
                 request_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
@@ -1481,6 +1491,20 @@ class ServerApiServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ListSourceRetention(self, request, context):
+        """GET /v1/source-retention
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ChangeSourceRetention(self, request, context):
+        """POST /v1/source-retention
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def PutSource(self, request, context):
         """PUT /v1/sources
         """
@@ -2190,6 +2214,16 @@ def add_ServerApiServiceServicer_to_server(servicer, server):
             ),
             'ApplyShape': grpc.unary_unary_rpc_method_handler(
                     servicer.ApplyShape,
+                    request_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.FromString,
+                    response_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.SerializeToString,
+            ),
+            'ListSourceRetention': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListSourceRetention,
+                    request_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.FromString,
+                    response_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.SerializeToString,
+            ),
+            'ChangeSourceRetention': grpc.unary_unary_rpc_method_handler(
+                    servicer.ChangeSourceRetention,
                     request_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.FromString,
                     response_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.SerializeToString,
             ),
@@ -5299,6 +5333,60 @@ class ServerApiService:
             request,
             target,
             '/mmp.v1.ServerApiService/ApplyShape',
+            mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+            mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListSourceRetention(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/mmp.v1.ServerApiService/ListSourceRetention',
+            mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+            mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ChangeSourceRetention(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/mmp.v1.ServerApiService/ChangeSourceRetention',
             mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
             mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
             options,

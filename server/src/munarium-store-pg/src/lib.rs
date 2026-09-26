@@ -64,6 +64,7 @@ pub mod max_tokens;
 pub mod money;
 pub mod partitions;
 pub mod rollout;
+pub mod source_retention;
 pub mod sources;
 pub use artifacts::{ArtifactCatalog, ArtifactState, BindingSlot, InsertOutcome};
 pub use attempts::{AttemptMode, AttemptState, BuildAttempts, ClaimOutcome};

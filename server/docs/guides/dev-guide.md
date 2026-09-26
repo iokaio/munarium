@@ -14257,6 +14257,7 @@ route family needs one rule there.
 | `/healthai` | GET | providers | §11 |
 | `/v1/command-recovery` | GET, POST | command | [Guarded recovery](../ops/command-recovery.md) |
 | `/v1/command-recovery/receipt` | GET | command | [Guarded recovery](../ops/command-recovery.md) |
+| `/v1/source-retention` | GET, POST | retention | [Source retention](../ops/source-retention.md) |
 | `/healthz` | GET | meta | §5, §11 |
 | `/openapi.json` | GET | meta | rest.md |
 | `/readyz` | GET | meta | §5, §8A (datastore readiness), §11 |

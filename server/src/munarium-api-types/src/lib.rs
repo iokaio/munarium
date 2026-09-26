@@ -2024,6 +2024,29 @@ pub struct CommandRecoveryReceipt {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SourceRetentionRequest {
+    pub path: String,
+    /// deny | deny-and-erase-pg-original | hold | release-hold
+    pub action: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct SourceRetentionRecord {
+    pub source_id: String,
+    pub path: String,
+    pub denied: bool,
+    pub hold: bool,
+    pub cleanup_state: String,
+    pub cleanup_blocked: Option<String>,
+    pub updated_at: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct SourceRetentionList {
+    pub records: Vec<SourceRetentionRecord>,
+    pub next: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct SessionTurnDto {
     pub ordinal: u32,
     pub query: String,

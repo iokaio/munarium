@@ -127,6 +127,15 @@ pub async fn backfill_one(
     index_version_id: &str,
 ) -> Result<MirrorOutcome> {
     let facts = pg.version_facts(index_version_id).await?;
+    match target {
+        MirrorTarget::Collection { collection_id } => {
+            pg.assert_scope_readable("collection", collection_id)
+                .await?
+        }
+        MirrorTarget::LegacyShape { shape_ref } => {
+            pg.assert_scope_readable("shape", shape_ref).await?
+        }
+    }
     let sources = match target {
         MirrorTarget::Collection { collection_id } => {
             pg.exported_sources(collection_id, index_version_id).await?
