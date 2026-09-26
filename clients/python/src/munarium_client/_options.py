@@ -6,7 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 #: The server version this client tracks (lockstep with the repo workspace).
-TARGET_SERVER_VERSION = "1.2.1"
+TARGET_SERVER_VERSION = "1.3.0"
 
 
 @dataclass(slots=True)

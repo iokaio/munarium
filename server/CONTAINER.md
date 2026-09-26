@@ -7,6 +7,11 @@ The image runs as a nonroot user. Server platforms are `linux/amd64` and
 
 ## Quick start
 
+These examples target **1.3.0 after publication**. This checkout prepares that
+release; the last published image remains 1.2.1. Use a local build until 1.3.0
+is qualified and published. See the [1.3 release and upgrade guide](docs/guides/server-1.3.md)
+for new behavior, migrations 0035–0040, activation and rollback requirements.
+
 For an isolated, temporary evaluation from PowerShell:
 
 ```powershell
@@ -14,7 +19,7 @@ docker run --rm --name munarium-evaluation `
   -p 127.0.0.1:8080:8080 -p 127.0.0.1:50051:50051 `
   -e MUNARIUM_STORE=memory -e MUNARIUM_AUTH_MODE=static `
   -e MUNARIUM_STATIC_TOKENS=evaluation-token:evaluation:rw `
-  iokaio/munarium:1.2.1
+  iokaio/munarium:1.3.0
 ```
 
 Open `http://127.0.0.1:8080/admin` or `/docs`. Check `/healthz`, `/readyz`,
@@ -74,6 +79,13 @@ The bundled client lists its commands with `docker exec <container> /mmctl`
 
 ## Versions and verification
 
+**1.3.0 is pending publication.** Its immutable tag will be `1.3.0`; only after
+qualification will `1.3` and `latest` point to its verified index. No 1.3.0
+digest, signature or platform acceptance result is asserted here. Keep `1.2`
+on the 1.2 series.
+
+### Last published image: 1.2.1
+
 `1.2.1` identifies one release. `1.2` and `latest` may advance; use a verified
 digest for deployments. Candidate tags such as `1.2.1-rc.1` are evaluation
 builds. Prior numeric release tags remain unchanged.
@@ -131,7 +143,10 @@ licenses. [License](https://github.com/iokaio/munarium/blob/main/LICENSE) and
 
 ## Building from source
 
-Build from a clean, recorded source commit. The pinned compiler cross-compiles
+Build from a clean, recorded source commit whose Server workspace version is
+1.3.0. The OCI export below builds a candidate and does not push it. Use the
+[release checklist](docs/guides/server-1.3.md#build-and-release-checklist) before
+promotion to `1.3.0`, `1.3` or `latest`. The pinned compiler cross-compiles
 both binaries and verifies their architecture and static linkage. A Buildx
 builder using the `docker-container` driver supports the OCI export and attestations:
 
@@ -139,9 +154,10 @@ builder using the `docker-container` driver supports the OCI export and attestat
 docker buildx create --name munarium-builder --driver docker-container
 $revision = git rev-parse HEAD
 docker buildx build --builder munarium-builder --platform linux/amd64,linux/arm64 `
-  --build-arg SOURCE_REVISION=$revision --build-arg BUILD_VERSION=1.2.1 `
+  --build-arg SOURCE_REVISION=$revision --build-arg BUILD_VERSION=1.3.0 `
   --sbom=SELECT_CATALOGERS=+rust-cargo-lock-cataloger --provenance=mode=max `
-  --output type=oci,dest=munarium.oci.tar ./server
+  --tag iokaio/munarium:1.3.0-rc.1 `
+  --output type=oci,dest=munarium-1.3.0.oci.tar ./server
 ```
 
 Building ARM64 does not prove it runs: execute and test each platform before

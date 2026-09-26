@@ -3,7 +3,46 @@
 These are source release notes. See the [container publication record](CONTAINER.md#versions-and-verification)
 for registry availability, digests and public signing instructions.
 
-## Unreleased
+## 1.3.0 — pending publication
+
+Source preparation for the 1.3 series; no 1.3.0 image qualification or registry
+publication is claimed yet. The [1.3 release guide](docs/guides/server-1.3.md)
+reviews all changes since the 1.2.1 image and records the build/release checklist.
+
+- Preserve token reservation origins and usage certainty; reconcile late evidence
+  with append-only adjustments and retain the original accounting day.
+- Add opt-in config-wide `dailyTotalTokens` admission for every physical completion
+  and embedding attempt, including retries. Managed provider diagnostics require
+  management authority and capped tenant configs; free diagnostics expose only
+  explicit safe credential aliases and bounded outcomes.
+- Add per-model Claude effort/thinking controls without increasing output ceilings.
+  Retry session token exhaustion at most once with the larger ceiling; empty text
+  alone no longer triggers that retry. Reject incomplete final answers and preserve
+  accounting. Revise bundled evidence prompts with runbook version increments.
+- Add optional PostgreSQL monetary accounting with immutable tariffs, per-attempt
+  liability and observations, and reports that retain unknown/partial coverage.
+  This does not provide prices, an entire provider bill or a monetary admission cap.
+- Commit runbook checkpoints and transitions atomically, retain Matrix execution
+  receipts, and supervise critical runtime tasks through readiness.
+- Add opt-in `guarded-v1` PostgreSQL command claims: ambiguous outcomes remain
+  unresolved and cannot be automatically executed again. Activation is one-way;
+  the protocol does not guarantee exactly-once remote effects.
+- Add stable-path source denial, holds, and durable retryable PostgreSQL original
+  cleanup. Derived artifacts and external copies remain separately retained.
+- Preserve exact wire integers and reject unknown enum values, qualify JSON
+  persistence/feature combinations and Linux datastore permissions, and expose
+  sparse retrieval candidate work with deterministic baseline fixtures.
+- Add immutable evaluation inputs/results and truthful validation receipts.
+  Share portable local/CI gates while retaining automatic hosted coverage.
+
+**Upgrade:** migrations 0035–0040 follow the 1.2.1 schema. Back up the database,
+sources and artifacts; drain and upgrade every relevant process before activating
+new policies. A legacy image rollback needs the matching pre-upgrade database and
+reconciliation of authoritative recovery/retention records. It is not sufficient
+to restore a backup after new irreversible effects and serve it immediately.
+See [upgrade and rollback](docs/guides/server-1.3.md#database-and-configuration-upgrade).
+MMP stays major 1 and REST paths retain `/v1` and `/v1.2`. Matrix and SDK packages
+are not version-bumped or republished by this container release preparation.
 
 - Add immutable governance profiles for memory versions, opt-in exact string
   comparison, explicit existing-history transitions and retained assessments.

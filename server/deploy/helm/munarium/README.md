@@ -1,7 +1,11 @@
 # Munarium Helm chart
 
 One release = one CNPG Postgres cell + the munarium-server deployment + all three
-API planes (REST, gateway, direct gRPC). Chart version `0.2.1`, app version `1.1.1`.
+API planes (REST, gateway, direct gRPC). Chart version `0.3.0`, app version `1.3.0`.
+
+The 1.3.0 image is pending publication. Use a qualified local/private build
+until it is published; the historical kind test below does not qualify 1.3.0.
+Read the [1.3 upgrade guide](../../../docs/guides/server-1.3.md) before installation.
 
 **Status: first install validated on kind; identity exchange and gateway
 plane still unexercised.** The chart's first `helm install` ran against a
@@ -46,12 +50,12 @@ the kind install ran `replicas: 2` against one cell for real.
 ```bash
 # Run from server/. Supply private production values in your own values file.
 helm install munarium deploy/helm/munarium -n munarium --create-namespace \
-  --set image.repository=iokaio/munarium --set image.tag=1.1.1
+  --set image.repository=iokaio/munarium --set image.tag=1.3.0
 helm upgrade munarium deploy/helm/munarium -n munarium --reuse-values \
-  --set image.tag=1.1.1
+  --set image.tag=1.3.0
 ```
 
-The default `image.tag` is `"1.1.1"`, the current server release — set the
+The default `image.tag` is `"1.3.0"`, the prepared server version — set the
 tag you mean. The current chart constructs `repository:tag` and has no separate
 digest value; use a Helm post-renderer to replace the image with
 `repository@sha256:...` when pinning by digest.
@@ -61,7 +65,7 @@ digest value; use a Helm post-renderer to replace the image with
 | Key | Default | What it does |
 |---|---|---|
 | `image.repository` | _(required)_ | server image; `helm install` refuses without it |
-| `image.tag` | `"1.1.1"` | image tag — the update lever |
+| `image.tag` | `"1.3.0"` | image tag — the update lever |
 | `replicas` | `2` | server pods |
 | `staticTokens` | `demo-rw-token:demo:rw,demo-ro-token:demo:ro` | `MUNARIUM_STATIC_TOKENS` — demo literals; replace them |
 | `workloadIdentity.clientId` | `""` | Azure workload-identity UAMI client id. Set: pods get the `azure.workload.identity/use` label + a `munarium` ServiceAccount annotated for federation. Empty: no annotation, so the chart still installs on a non-Azure cluster |

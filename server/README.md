@@ -27,10 +27,15 @@ deterministically rebuilt under a pin; every retrieval answer carries a provenan
 
 ## About this repository
 
-The published Server version is **1.2.1**. It includes automatic, configurable
+The source version is **1.3.0**, pending image qualification and publication.
+The last published image is **1.2.1**. Server 1.3 adds durable command recovery,
+governance profiles, token reconciliation and per-attempt caps, monetary
+accounting, source retention, and configurable Claude reasoning. Follow the
+[1.3 release and upgrade guide](docs/guides/server-1.3.md) for migrations
+0035–0040, opt-in policies and rollback constraints. It retains configurable
 [collection vocabularies and checked narrative answers](docs/guides/collection-vocabularies.md),
 pinned file locations, and a [complete REST/gRPC API and four SDKs](../clients/docs/guides/server-1.2.md).
-For the next release, follow the [governance-policy upgrade steps](docs/ops/governance-policy-upgrade.md), including collection rebuilds.
+For 1.3, follow the [governance-policy upgrade steps](docs/ops/governance-policy-upgrade.md), including collection rebuilds.
 
 See [release changes](CHANGELOG.md) and [published artifacts](CONTAINER.md#versions-and-verification).
 Version 1.2.1 adds Server-owned collection queries, publication governance and

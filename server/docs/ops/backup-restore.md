@@ -86,6 +86,13 @@ authoritative journal cannot be treated as evidence that no denial existed.
 
 ## After a restore
 
+Server 1.3 adds migrations 0035–0040 for usage evidence, governance, monetary
+accounting, reconciliation, guarded commands and source retention. Follow the
+[1.3 upgrade/rollback requirements](../guides/server-1.3.md#database-and-configuration-upgrade).
+A restored pre-upgrade backup may omit irreversible command effects or later
+source denials; keep it isolated and reconcile authoritative records before
+serving. Prefer a compatible roll-forward after policy activation.
+
 For Server 1.2 upgrades, preserve the pre-upgrade database as well as source and
 artifact storage. Migrations 0032/0033 add provenance and vocabularies; 0034 adds
 governance in 1.2.1. An older Server's migrator rejects unknown migrations, so
@@ -107,7 +114,10 @@ Keep a restored instance isolated from callers until post-backup access changes,
 token revocations (when deny-list checking is enabled), logical removals and
 authorized deletions have been reconciled. A database restore does not roll back
 or purge object-store artifacts, hydrated caches, exports or external backups.
-Current Server has no general source-erasure journal that automatically reapplies
-denial after a restore; a restore alone therefore cannot establish an erasure
-guarantee. The [retention inventory](retention-inventory.md) separates retained
+Server 1.3 retains a [source-denial journal](source-retention.md), but restore
+does not automatically replay later denials. Export every page independently,
+replay holds before denials, requeue applicable cleanup and verify completeness
+before serving. This is not an all-copy erasure guarantee. Preserve and reconcile
+[guarded command claims](command-recovery.md) as well; a missing claim in an old
+backup is not evidence that the command never executed. The [retention inventory](retention-inventory.md) separates retained
 history from current eligibility and records the remaining restore coverage.

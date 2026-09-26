@@ -10,7 +10,9 @@ Choose a starting point for your role:
 - **Operating a service:** [container setup](../CONTAINER.md),
   [deployment](ops/deployment-runbook.md) and [backup/restore](ops/backup-restore.md).
 
-Current installation guides target Server 1.2.1. The isolated Ollama evaluation
+Current installation guides target Server 1.3.0 after publication. The
+[1.3 release guide](guides/server-1.3.md) records preparation and upgrade steps;
+1.2.1 remains the last published image. The isolated Ollama evaluation
 retains its pinned 1.1.1 stack. Dated examples and measurements in the
 developer guide retain their original context; consult the current configuration
 and API references when applying them to a new deployment.
@@ -53,6 +55,7 @@ and API references when applying them to a new deployment.
 | [guides/measuring-performance.md](guides/measuring-performance.md) | Metrics and persisted performance records, repeatable benchmarks, large ingest/index workloads, retrieval and AI query scaling, bottleneck diagnosis and engineering opportunities |
 | [guides/frozen-evaluation.md](guides/frozen-evaluation.md) | Frozen manifests, immutable outcomes and grading receipts, scripted offline pilot and non-blocking latency reports |
 | [guides/validation.md](guides/validation.md) | Selected validation profiles, truthful exits and source receipts, owned test resources, and JSON persistence feature qualification |
+| [guides/server-1.3.md](guides/server-1.3.md) | Server 1.3 changes since the 1.2.1 image, compatibility, migrations, activation/rollback and build/release checklist |
 | [guides/dev-guide.md](guides/dev-guide.md) | Developing Server itself and building corpus applications: setup, test tiers, crate map, recipes, CI and measured application patterns. Includes historical v0.1.2 transcripts; the opening version note identifies the current setup references |
 | [guides/loading-corpora.md](guides/loading-corpora.md) | Getting documents in: filename-as-identity, which sample corpora are public datasets and which are not, the upload-prefix convention, extraction expectations |
 | [guides/creating-a-lab.md](guides/creating-a-lab.md) | A tutorial without code examples for designing a corpus laboratory: independent answer keys, baseline and candidate shapes/runbooks, controlled experiments, failure diagnosis, acceptance and continued improvement |

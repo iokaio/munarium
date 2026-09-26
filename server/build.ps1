@@ -33,15 +33,25 @@ if ($Lint) {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
-$profileArgs = @('build', '--workspace')
+$profileArgs = @('build', '--workspace', '--locked')
 if ($Release) { $profileArgs += '--release' }
 Write-Host "== cargo $($profileArgs -join ' ')" -ForegroundColor Cyan
 & $cargo @profileArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 if ($Image) {
+    $metadataJson = & $cargo metadata --locked --no-deps --format-version 1
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    $metadata = $metadataJson | ConvertFrom-Json
+    $buildVersion = ($metadata.packages | Where-Object name -eq 'munarium-server').version
+    if (-not $buildVersion) { throw 'Server package version is missing' }
+    $revision = git rev-parse HEAD
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    $sourceChanges = git status --porcelain --untracked-files=no
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    if ($sourceChanges) { $revision = "$revision-dirty" }
     Write-Host "== docker build munarium-server:$ImageTag (musl -> distroless)" -ForegroundColor Cyan
-    docker build -t "munarium-server:$ImageTag" .
+    docker build --build-arg "BUILD_VERSION=$buildVersion" --build-arg "SOURCE_REVISION=$revision" -t "munarium-server:$ImageTag" .
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     docker images "munarium-server:$ImageTag" --format 'built {{.Repository}}:{{.Tag}} ({{.Size}})'
 }

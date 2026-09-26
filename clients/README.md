@@ -28,6 +28,15 @@ and is not supported is in [SUPPORT.md](../SUPPORT.md); conduct is the Contribut
 
 **The contract the clients build from is the server's own**: the eleven protos under [`server/proto/mmp/v1/`](../server/proto/mmp/v1/), the REST reference and problem-slug registry under [`server/docs/api/`](../server/docs/api/), and the two Rust wire crates under `server/src/`. A wire change on the server side reaches every client immediately, and `clients-ci` proves them against a server built from the same commit.
 
+## Server 1.3 source preparation
+
+The Server workspace now prepares 1.3.0. Its generated API surface includes the
+new management methods; published SDK packages are not changed by this image
+release. The source target/range moves to 1.3.0 (1.3/1.2) so version handshakes
+match the new Server. Full conformance remains a release qualification gate. Checkout Rust builds use wire crates
+1.3.0 from the adjacent Server tree; registry publication remains separate.
+See the [1.3 compatibility and upgrade guide](../server/docs/guides/server-1.3.md).
+
 ## Installation and publication
 
 All seven client libraries are published. Their source manifests declare
@@ -89,8 +98,8 @@ first one, `1.0.0` on both sides) is a coincidence of that release, not a rule g
 `clients/check_compatibility.py` fails CI if `compatibility.json`'s recorded version for a
 language ever drifts from what that language's own manifest declares.
 
-The four Server client packages are **1.1.1**, targeting **Server 1.2.1**, with
-supported Server minors **1.2 and 1.1** recorded in `compatibility.json`.
+The four Server client packages are **1.1.1**, targeting **Server 1.3.0** in this checkout, with
+supported Server minors **1.3 and 1.2** recorded in `compatibility.json`.
 `ServerApiClient` provides every documented operation over REST and native gRPC,
 including vocabulary, answers, source references and streaming turns. Read the
 [Server 1.2 guide](docs/guides/server-1.2.md) for language examples. Existing typed

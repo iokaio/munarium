@@ -1,6 +1,11 @@
 # Getting started with Munarium Server
 
-This guide takes you from the published Docker image to a small, persistent
+This guide targets Server **1.3.0 after publication**, which is currently pending.
+Until then, use a locally built image or published 1.2.1 for its existing
+capabilities. Read the [1.3 upgrade guide](server-1.3.md) before reusing an
+existing database; migrations and policy activation need a planned cutover.
+
+This guide takes you from the Docker image to a small, persistent
 corpus application. You will write a fact through the API, define a shape and
 runbook, upload two documents, build and approve an index, and retrieve its
 evidence. The main walkthrough makes no model calls and needs no provider keys.
@@ -29,7 +34,7 @@ optional completion asks a configured model to turn that evidence into an answer
 ## 2. Start a persistent local Server
 
 You need PowerShell 7.3 or later and Docker Desktop running Linux containers.
-The public `iokaio/munarium:1.2.1` image supports AMD64 and ARM64 and includes
+The planned `iokaio/munarium:1.3.0` image targets AMD64 and ARM64 and includes
 the Server and `/mmctl` CLI. Matrix and your application UI are separate
 deployments. No source checkout or Rust toolchain is required.
 
@@ -70,7 +75,7 @@ services:
       timeout: 3s
       retries: 20
   server:
-    image: iokaio/munarium:1.2.1
+    image: iokaio/munarium:1.3.0
     depends_on:
       postgres:
         condition: service_healthy
@@ -128,7 +133,7 @@ and `http://localhost:18080/docs` for the API documentation. Direct gRPC is
 available on port 15051; this walkthrough uses REST. If a host port is busy,
 change the left-hand port in Compose and update `$base` accordingly.
 
-`1.2.1` is immutable; `1.2` and `latest` can advance. For deployments you need
+After publication, `1.3.0` is immutable; `1.3` and `latest` can advance. For deployments you need
 to reproduce exactly, pin the verified image digest from the
 [publication record](../../CONTAINER.md#versions-and-verification).
 The [deployment walkthrough](dev-guide.md#deploy-the-published-docker-hub-image)

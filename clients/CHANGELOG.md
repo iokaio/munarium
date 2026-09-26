@@ -1,5 +1,16 @@
 # Munarium clients — release notes
 
+## Unreleased source — Server 1.3 alignment
+
+- Align all four version-handshake constants and the source compatibility target
+  with Server 1.3.0 and the declared N/N-1 range 1.3/1.2. Qualification remains
+  part of the [Server release checklist](../server/docs/guides/server-1.3.md).
+- Resolve checkout Rust wire dependencies at 1.3.0 and refresh their notice rows.
+  Regenerate the API inventory from Server 1.3.0 OpenAPI.
+- Client package versions remain 1.1.1 and Matrix compatibility stays 1.0.
+  These source changes do not modify previously published packages; package
+  publication needs its own versioning, qualification and release.
+
 ## 1.1.1 — first registry releases, crate README
 
 - First public releases on 2026-09-15: Server clients 1.1.0 and Matrix clients
