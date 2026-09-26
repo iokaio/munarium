@@ -66,7 +66,6 @@ impl OllamaProvider {
                 request
             },
             2,
-            true,
         )
         .await?;
         let value: Value = response

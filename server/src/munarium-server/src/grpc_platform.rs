@@ -83,7 +83,10 @@ pub(crate) async fn data_plane_access(
     Ok(access)
 }
 
-fn mgmt_principal(state: &AppState, md: &MetadataMap) -> Result<crate::state::TenantCtx, Status> {
+pub(crate) fn mgmt_principal(
+    state: &AppState,
+    md: &MetadataMap,
+) -> Result<crate::state::TenantCtx, Status> {
     let ctx = state
         .authenticate(meta_bearer(md))
         .map_err(|e| crate::rest::promote_auth_error(e).into_status())?;

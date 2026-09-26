@@ -116,7 +116,7 @@ pub(super) async fn providers(State(state): State<Arc<AppState>>, headers: Heade
         r#"<h2>configured providers</h2><div class="card">{configs}</div>
 <div class="legend">source: applied = a tenant ProviderConfig (POST /v1/providers); default = synthesized from the family's MUNARIUM_SECRET_* env var. The reserved config name <code>default</code> resolves anthropic → openai → openrouter, first usable credential wins. Ollama uses an applied config with an explicit endpoint and model; credential readiness also includes local endpoints that need no key.</div>
 <h2>completion token spend by provider/model (all time)</h2><div class="card">{spend}</div>
-<div class="notice">Token facts only — dollar pricing lives upstream. Live provider probes are <a href="/healthai">/healthai</a> (nine cloud-model completions per call when all keys are configured; applied Ollama configs use their named provider health endpoint).</div>"#
+<div class="notice">Token facts only — dollar pricing lives upstream. Live provider probes are <a href="/healthai">/healthai</a> (legacy mode probes cloud defaults; managed diagnostics mode probes capped tenant configs with management access. Named provider health checks do not request completions).</div>"#
     );
     render(&admin, "providers", "Providers", &body)
 }

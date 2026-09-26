@@ -40,6 +40,7 @@ pub(crate) async fn state(tenant: &str) -> Arc<AppState> {
         registry_ttl_secs: 15,
         session_idle_ttl_secs: 0,
         evidence_purge_interval_secs: 0,
+        managed_provider_diagnostics: false,
         max_tokens: Default::default(),
         instance_id: "p08-fixture".into(),
         source_store: SourceStoreConfig::Pg,

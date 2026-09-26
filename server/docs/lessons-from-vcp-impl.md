@@ -8,7 +8,7 @@
 
 **Input:** [lessons-from-vcp.md](lessons-from-vcp.md), including its R01–R34 recommendation identifiers.
 
-P02–P04 are merged in PR #46: truthful validation results, persistence round-trip tests, and verified documentation corrections. P01 now retains durable reservation and usage evidence; late reconciliation and reporting remain separate follow-ups. P05 dispatch diagnostics and the P06 governance baseline are implemented; use their observations and measure retrieval before optimizing either path. Changes to historical interpretation, recovery guarantees, retention, and the public protocol require explicit compatibility designs before implementation.
+P02–P04 are merged in PR #46: truthful validation results, persistence round-trip tests, and verified documentation corrections. P01 now includes durable usage evidence, late reconciliation and reporting (PR #64). P05 dispatch diagnostics and the P06 governance baseline are implemented; use their observations and measure retrieval before optimizing either path. Changes to historical interpretation, recovery guarantees, retention, and the public protocol require explicit compatibility designs before implementation.
 
 This plan develops the recommendations against the current Munarium source. It does not treat downstream measurements as Server benchmarks or assume that every proposed safeguard is absent. The analysis is newly written for this repository; implementation references below point to this repository, without requiring another project's code or private operational records.
 
@@ -96,7 +96,7 @@ Discovery and tests can proceed before these decisions; dependent behavior chang
 | D4: What does deletion mean? | Preserve current soft-removal and audit retention; design each stronger mode explicitly | R21 cleanup, tombstones, restore behavior |
 | D5: Are embedded crates supported public Rust APIs? | Decided in P15 (2026-09-25): only `munarium-datastore`, as a supported embedded library. It has a declared surface under semantic versioning, is consumed as pinned source, and has minimum Rust 1.92 measured from an isolated consumer. Every other crate is internal ([embedded-support.md](embedded-support.md)) | R31 MSRV/support tier; API shape for R01/R07/R08 |
 | D6: What makes governance useful for a target workload? | Freeze task population, minimum useful effect, cost/latency constraints, and mandatory authorization checks before the final evaluation | R25 quality claims and any paid campaign |
-| D7: Who may trigger paid diagnostics and view credential aliases? | Keep diagnostics free of credential references; review a separately permissioned operator surface | R28 and health-probe admission policy |
+| D7: Who may trigger paid diagnostics and view credential aliases? | Adopted: opt-in managed probe mode requires management access and capped tenant configs. Aliases use a separate free management-only endpoint; no references or secret-derived identifiers | R28 and health-probe admission policy; [operator diagnostics](tokenbudgets.md#operator-diagnostics) |
 | D8: How is comparison policy selected and pinned? | Immutable profiles; legacy default; existing histories transition explicitly to a child revision | R08 writes, replay, exports, and mixed-version operation |
 
 Record decisions with stable identifiers in the existing engineering record. If a release accepts incomplete evidence, use a numbered known-gap entry with the missing gate, risk, owner decision, and follow-up. Do not mark the gate passed.
@@ -111,7 +111,7 @@ Each row is a coherent implementation slice; it may require more than one PR whe
 | P02 | Merged in PR #46: Check outcomes, receipts, checker controls | None; parallel with P01 | Medium | Pass/fail/missing/interrupted fixtures and correct exit precedence |
 | P03 | Merged in PR #46: JSON feature/persistence characterization | None; parallel with P01 | Small–medium | Default and feature-enabled round trips through actual persistence paths |
 | P04 | Merged in PR #46: Verified documentation corrections | Current-source recheck | Small | Current references corrected; historical examples preserved; documentation gates |
-| P05 | Dispatch inventory, retry diagnostics and structured-output capability override implemented; broader admission and diagnostics pending | P01; D1/D7 for policy changes | Medium–large | Every dispatch has an explicit accounting policy; concurrent/retry/cancellation tests |
+| P05 | Dispatch inventory, structured-output policy, opt-in physical-attempt daily total and managed probes/aliases implemented | P01; adopted D1/D7 opt-in policies | Medium–large | Every dispatch has an explicit accounting policy; concurrent/retry/cancellation and cross-transport authority tests |
 | P06 | Injectable clocks/IDs and separated governance baseline implemented | Existing conformance; P02 receipts | Medium | Existing constructors unchanged; reproducible traces and separated timings |
 | P07 | Characterization merged in PR #51; fixes require demonstrated gaps | P06 baseline where relevant | Medium | Exact-oracle comparisons, authorization parity, bounded-work evidence |
 | P08 | Implemented and locally qualified for the D3 application-process scope; atomic runbook checkpoints and retained legacy gaps, §9.1 | D3; P02; existing mirror fault hooks | Large | Named barriers, process termination, reopened-state assertions, reviewed recovery contracts |
@@ -124,7 +124,7 @@ Each row is a coherent implementation slice; it may require more than one PR whe
 | P15 | Implemented: panic-boundary policy in every production crate (R32) and the datastore-only embedded tier (D5/R31); locally qualified, §13.4 | D5; measured audit | Medium | Isolated consumer builds/MSRV if adopted; targeted production failure handling |
 | P16 | Shared gate definitions and policy follow-ups merged in PR #63 | P02 stabilized; maintainer-owned workflow changes | Medium | Same required coverage before/after, automatic CI retained, checker self-tests |
 
-P02–P06 diagnostics and baseline slices are merged; broader P05 admission and diagnostic access still await D1/D7. P07 retrieval instrumentation and characterization merged in PR #51. P08 ledger characterization merged in PR #52 and broader characterization in PR #53; atomic runbook recovery and local qualification complete the supported D3 scope (§9.1). P01 now implements late reconciliation, estimator revisions and scoped usage-quality reporting; broader admission remains separate. Characterization establishes whether retrieval and recovery fixes are needed. A failing authorization, persistence, or compatibility reproduction discovered in any slice takes priority over optimization. Money and embedded support are conditional product work, not prerequisites for fixing shared-code defects.
+P02–P06 diagnostics and baseline slices are merged. P05 now adopts opt-in D1/D7 policies: config-wide physical-attempt caps (PR #65) and management-only capped probes with free credential aliases. P07 retrieval instrumentation and characterization merged in PR #51. P08 ledger characterization merged in PR #52 and broader characterization in PR #53; atomic runbook recovery and local qualification complete the supported D3 scope (§9.1). P01 now implements late reconciliation, estimator revisions and scoped usage-quality reporting; broader admission remains separate. Characterization establishes whether retrieval and recovery fixes are needed. A failing authorization, persistence, or compatibility reproduction discovered in any slice takes priority over optimization. Money and embedded support are conditional product work, not prerequisites for fixing shared-code defects.
 
 For each PR, record affected invariants, a behavioral example, files changed, focused checks, unavailable evidence, and rollback constraints. Keep one behavior and its tests/documentation together. Avoid a large preliminary refactor merely to make later changes aesthetically uniform.
 
@@ -144,7 +144,7 @@ At the original baseline, `CompletionResponse` contained two mandatory `u64` cou
 defines the effective-request estimator and revision, management-only late
 reconciliation, immutable before/after history and original-day usage-quality
 reports. Existing wire counts, metrics and reports retain their numeric projections.
-Broader attempt/admission coverage still depends on D1/D7; a scoped quality report
+Broader attempt/admission coverage uses the opt-in D1/D7 policies in §4.2–§4.3; a scoped quality report
 does not imply every dispatch was recorded. PR #44 alone does not qualify these additions.
 
 **Internal representation and extensions.** The first slice added provider-neutral usage evidence with independently optional input/output counts and a source classification. Add an estimator revision when improved estimates are introduced. Preserve raw observed categories needed for future accounting without conflating overlapping categories. The conceptual shape is:
@@ -1372,7 +1372,7 @@ An implementation slice is complete only when its behavior, compatibility, migra
 
 P02–P04 are merged in PR #46 and P16 in PR #63. P01 now includes late token
 reconciliation/reporting and a versioned estimator. Remaining policy-dependent
-work includes D1/D7 for broader P05 admission and diagnostic authority, D3 for
+work includes D3 for
 stronger command/submission recovery beyond §9.1, D4 for durable source denial
 and cleanup, and a new D6 population/model/budget/threshold decision for broader
 qualification. The earlier local D6 rejection remains a completed research result.
@@ -1395,7 +1395,7 @@ explicit missing environments, and owned PostgreSQL resources; its
 [runner documentation](../../matrix/README.md#testing) records the local profile
 and external black-box prerequisites. Automatic CI remains enabled.
 
-This does not adopt D1/D7, D3 or D4 by implication. Stronger behavior cannot be
+PR #64 did not adopt D1/D7, D3 or D4 by implication. Subsequent P05 work explicitly adopts the opt-in D1/D7 policies recorded above. Stronger behavior cannot be
 enabled merely because a decision has been pending. Nor does a new test or
 receipt qualify a missing model campaign, release platform, cloud deployment,
 database crash, power loss or restore. Those require the named decision and

@@ -228,6 +228,9 @@ impl pb::server_api_service_server::ServerApiService for ServerApiSvc {
     async fn provider_complete(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "POST", "/v1/providers/{name}/complete", "application/json").await
     }
+    async fn provider_diagnostics(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "GET", "/v1/providers/{name}/diagnostics", "application/json").await
+    }
     async fn provider_embed(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "POST", "/v1/providers/{name}/embed", "application/json").await
     }

@@ -1150,6 +1150,7 @@ mod tests {
             registry_ttl_secs: 15,
             session_idle_ttl_secs: 0,
             evidence_purge_interval_secs: 0,
+            managed_provider_diagnostics: false,
             max_tokens: munarium_api_types::MaxTokensBudgets::default(),
             instance_id: "test-instance".into(),
             source_store: SourceStoreConfig::Mem,

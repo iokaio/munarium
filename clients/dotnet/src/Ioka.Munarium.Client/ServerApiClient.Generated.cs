@@ -153,6 +153,8 @@ public sealed partial class ServerApiClient {
     public Task<ApiResponse> ApplyProviderAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("ApplyProvider", "POST", "/v1/providers", "text/yaml", request ?? new(), ct);
     /// <summary>POST /v1/providers/{name}/complete</summary>
     public Task<ApiResponse> ProviderCompleteAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("ProviderComplete", "POST", "/v1/providers/{name}/complete", "application/json", request ?? new(), ct);
+    /// <summary>GET /v1/providers/{name}/diagnostics</summary>
+    public Task<ApiResponse> ProviderDiagnosticsAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("ProviderDiagnostics", "GET", "/v1/providers/{name}/diagnostics", "application/json", request ?? new(), ct);
     /// <summary>POST /v1/providers/{name}/embed</summary>
     public Task<ApiResponse> ProviderEmbedAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("ProviderEmbed", "POST", "/v1/providers/{name}/embed", "application/json", request ?? new(), ct);
     /// <summary>GET /v1/providers/{name}/health</summary>

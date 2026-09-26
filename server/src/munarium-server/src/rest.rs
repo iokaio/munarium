@@ -1369,6 +1369,10 @@ pub fn router(state: Arc<AppState>) -> Router {
             get(crate::providers_api::provider_health),
         )
         .route(
+            "/v1/providers/{name}/diagnostics",
+            get(crate::providers_api::provider_diagnostics),
+        )
+        .route(
             "/v1/providers/{name}/complete",
             post(crate::providers_api::provider_complete),
         )

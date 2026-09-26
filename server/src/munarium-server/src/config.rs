@@ -10,6 +10,9 @@ pub struct Config {
     pub store: StoreKind,
     pub database_url: Option<String>,
     pub auth: AuthMode,
+    /// Opt-in operator-only provider diagnostics. Paid probes use applied
+    /// tenant configurations with a daily total cap instead of env defaults.
+    pub managed_provider_diagnostics: bool,
     pub shutdown_grace_secs: u64,
     /// HS256 secret for capability JWTs. None = token issuance and
     /// JWT auth are unavailable (endpoints answer invalid-input).
@@ -286,6 +289,16 @@ impl Config {
             store,
             database_url,
             auth,
+            managed_provider_diagnostics: match env_or(
+                "MUNARIUM_MANAGED_PROVIDER_DIAGNOSTICS",
+                "false",
+            )
+            .as_str()
+            {
+                "true" | "1" => true,
+                "false" | "0" => false,
+                _ => return Err("MUNARIUM_MANAGED_PROVIDER_DIAGNOSTICS must be true|false".into()),
+            },
             shutdown_grace_secs: env_or("MUNARIUM_SHUTDOWN_GRACE_SECS", "20")
                 .parse()
                 .map_err(|e| format!("MUNARIUM_SHUTDOWN_GRACE_SECS: {e}"))?,

@@ -983,6 +983,19 @@ class ServerApiClient(BaseServerApi):
             request,
         )
 
+    def provider_diagnostics(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/providers/{name}/diagnostics"""
+        return self._call(
+            "ProviderDiagnostics",
+            "GET",
+            "/v1/providers/{name}/diagnostics",
+            "application/json",
+            request,
+        )
+
     def provider_embed(
         self,
         request: ApiRequest | None = None,
@@ -2658,6 +2671,19 @@ class AsyncServerApiClient(BaseAsyncServerApi):
             "ProviderComplete",
             "POST",
             "/v1/providers/{name}/complete",
+            "application/json",
+            request,
+        )
+
+    async def provider_diagnostics(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/providers/{name}/diagnostics"""
+        return await self._call(
+            "ProviderDiagnostics",
+            "GET",
+            "/v1/providers/{name}/diagnostics",
             "application/json",
             request,
         )

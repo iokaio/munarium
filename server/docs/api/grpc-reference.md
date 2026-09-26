@@ -1280,6 +1280,7 @@ no evidence rows appear here.
 | ListProviders | ServerApiRequest | ServerApiResponse | GET /v1/providers |
 | ApplyProvider | ServerApiRequest | ServerApiResponse | POST /v1/providers |
 | ProviderComplete | ServerApiRequest | ServerApiResponse | POST /v1/providers/{name}/complete |
+| ProviderDiagnostics | ServerApiRequest | ServerApiResponse | GET /v1/providers/{name}/diagnostics |
 | ProviderEmbed | ServerApiRequest | ServerApiResponse | POST /v1/providers/{name}/embed |
 | ProviderHealth | ServerApiRequest | ServerApiResponse | GET /v1/providers/{name}/health |
 | Audit | ServerApiRequest | ServerApiResponse | GET /v1/reports/audit |

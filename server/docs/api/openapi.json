@@ -3299,6 +3299,49 @@
         }
       }
     },
+    "/v1/providers/{name}/diagnostics": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on every /v1 request (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "providers"
+        ],
+        "summary": "Free operator disclosure. Aliases are explicitly configured labels, never\ncredential fingerprints or names inferred from the environment/filesystem.",
+        "operationId": "provider_diagnostics",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "applied provider config name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderDiagnosticsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/providers/{name}/embed": {
       "parameters": [
         {
@@ -10712,6 +10755,37 @@
               "type": "string"
             },
             "description": "The logical paths of those sources."
+          }
+        }
+      },
+      "ProviderDiagnosticsResponse": {
+        "type": "object",
+        "description": "Management-only, free provider configuration diagnostics. No credential\nreference, path, environment variable name, key fragment or secret hash.",
+        "required": [
+          "config_name",
+          "provider",
+          "credential_source",
+          "credential_ok"
+        ],
+        "properties": {
+          "config_name": {
+            "type": "string"
+          },
+          "credential_alias": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "credential_ok": {
+            "type": "boolean"
+          },
+          "credential_source": {
+            "type": "string",
+            "description": "`env`, `file` or `none`; this is the source kind, never its location."
+          },
+          "provider": {
+            "type": "string"
           }
         }
       },
