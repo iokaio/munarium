@@ -1,7 +1,9 @@
 # Munarium Server — release notes
 
 These are source release notes. See the [container publication record](CONTAINER.md#versions-and-verification)
-for registry availability, digests and public signing instructions.
+for registry availability, digests and public signing instructions. The detailed
+[Server 1.3.0 release notes](docs/guides/release-notes-1.3.0.md) cover every PR since
+1.2.1 and the subsequent image publication.
 
 ## 1.3.0 — pending publication
 
@@ -26,7 +28,7 @@ reconciliation of authoritative recovery/retention records. It is not sufficient
 to restore a backup after new irreversible effects and serve it immediately.
 See [upgrade and rollback](docs/guides/server-1.3.md#database-and-configuration-upgrade).
 MMP stays major 1 and REST paths retain `/v1` and `/v1.2`. Matrix remains
-unchanged. Server SDK source packages move to unreleased 1.2.0; image and
+unchanged. Server SDK source packages move to unreleased 1.3.0; image and
 package publication remain separate release actions.
 
 - **Upgrade action:** upgrade all writers before adopting a profile, transition
