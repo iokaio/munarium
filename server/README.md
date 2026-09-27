@@ -27,7 +27,7 @@ deterministically rebuilt under a pin; every retrieval answer carries a provenan
 
 ## About this repository
 
-Server **1.3.0** is published. The detailed
+The source version and published image are **1.3.0**. The detailed
 [1.3.0 release notes](docs/guides/release-notes-1.3.0.md) review all 42 PRs since
 1.2.1, the new APIs, compatibility and qualification limits.
 Server 1.3 adds durable command recovery,
