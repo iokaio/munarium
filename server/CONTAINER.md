@@ -7,8 +7,8 @@ The image runs as a nonroot user. Server platforms are `linux/amd64` and
 
 ## Quick start
 
-These examples use the published **1.2.1** image. For source builds and 1.3
-upgrade preparation, see [building from source](#building-from-source) and the
+These examples use the published **1.3.0** image. For source builds and 1.3
+upgrade requirements, see [building from source](#building-from-source) and the
 [1.3 release guide](docs/guides/server-1.3.md).
 
 For an isolated, temporary evaluation from PowerShell:
@@ -18,7 +18,7 @@ docker run --rm --name munarium-evaluation `
   -p 127.0.0.1:8080:8080 -p 127.0.0.1:50051:50051 `
   -e MUNARIUM_STORE=memory -e MUNARIUM_AUTH_MODE=static `
   -e MUNARIUM_STATIC_TOKENS=evaluation-token:evaluation:rw `
-  iokaio/munarium:1.2.1
+  iokaio/munarium:1.3.0
 ```
 
 Open `http://127.0.0.1:8080/admin` or `/docs`. Check `/healthz`, `/readyz`,
@@ -78,22 +78,66 @@ The bundled client lists its commands with `docker exec <container> /mmctl`
 
 ## Versions and verification
 
-**1.3.0 is pending publication.** Its immutable tag will be `1.3.0`; only after
-qualification will `1.3` and `latest` point to its verified index. No 1.3.0
-digest, signature or platform acceptance result is asserted here. Keep `1.2`
-on the 1.2 series.
+### Last published image: 1.3.0
 
-### Last published image: 1.2.1
+Published and verified on **2026-09-26**. `1.3.0` is immutable; `1.3` and `latest`
+may advance. Pin a verified digest for reproducible deployments. The candidate
+`1.3.0-rc.1` was promoted without rebuilding. Earlier numeric tags, including
+the `1.2` alias, retain their previous digests.
 
-`1.2.1` identifies one release. `1.2` and `latest` may advance; use a verified
-digest for deployments. Candidate tags such as `1.2.1-rc.1` are evaluation
-builds. Prior numeric release tags remain unchanged.
+| Artifact | Identity |
+|---|---|
+| Server | `1.3.0`, `1.3`, `latest` on [Docker Hub](https://hub.docker.com/r/iokaio/munarium/tags) |
+| OCI index | `sha256:55078aa474c214dd68d84bfe92d7c6ce2d696fad0f36cc5dd270b160d8c1ec4f` |
+| AMD64 manifest | `sha256:b88fe105781bb1ac477f91b7767b9c38d7ae1bca29c1150e6cc9590addca573e` |
+| ARM64 manifest | `sha256:540da00b6f87a27dea2c88e9ef231e59e494fc29e63fbff74f933798b29724db` |
+| Image and acceptance-suite source | [`eaa04ac6da25cb332b674c6535013a19b87fa0e7`](https://github.com/iokaio/munarium/commit/eaa04ac6da25cb332b674c6535013a19b87fa0e7), tagged [`v1.3.0`](https://github.com/iokaio/munarium/releases/tag/v1.3.0) |
+
+All 12 required main-branch checks passed on this exact source. Both architectures
+passed OCI audits, HIGH/CRITICAL vulnerability and secret scans, readiness/version,
+REST/gRPC authentication, PostgreSQL governance and persistence, and CLI checks.
+Real Ollama completion, embeddings, retrieval and restart persistence passed on
+both local artifacts and both exact platform manifests pulled from Docker Hub.
+AMD64 ran natively; ARM64 ran under emulation, not on physical ARM64 hardware.
+Cargo-inclusive SBOM and build provenance attestations accompany the index.
+
+The synthetic rehearsal preserved 1.2.1 data through upgrade to 1.3.0, then
+restored its pre-upgrade backup into 1.2.1 **before policy activation**. A second
+upgrade activated governance profiles and guarded commands and applied source
+holds/denials. Profile receipts, completed replay, unresolved-command protection
+and denied source reads survived process reopen and an actual database restore
+into 1.3.0, checked against the retained authority records. This does not qualify
+production backup restoration, database crashes, stale backups missing newer
+authority, or exactly-once remote effects.
+
+Migrations 0035–0040 require upgrading every relevant reader and writer before
+new policies are activated. An older image cannot open the migrated database;
+a pre-upgrade backup alone is insufficient after activation or external effects.
+Keep restored systems isolated until authoritative recovery and retention records
+are reconciled, and prefer a compatible roll-forward fix. Follow the
+[1.3 upgrade guide](docs/guides/server-1.3.md) before upgrading an installation.
+
+```console
+docker pull iokaio/munarium@sha256:55078aa474c214dd68d84bfe92d7c6ce2d696fad0f36cc5dd270b160d8c1ec4f
+cosign verify --certificate-identity https://github.com/iokaio/munarium-int/.github/workflows/server-release.yml@refs/heads/release/server-1.3.0 --certificate-oidc-issuer https://token.actions.githubusercontent.com docker.io/iokaio/munarium@sha256:55078aa474c214dd68d84bfe92d7c6ce2d696fad0f36cc5dd270b160d8c1ec4f
+```
+
+The signature, certificate and transparency-log claim were independently verified.
+Anonymous registry retrieval matched the exact certified index bytes and both
+platform digests. The signing identity is public and does not require access to
+the signing repository. Client packages are released separately; this image
+publication does not publish the 1.2.0 SDK source packages.
+
+### Previous image: 1.2.1
+
+The following is the historical 1.2.1 qualification record. `1.2.1` remains
+immutable, and `1.2` still identifies this release. `latest` now identifies 1.3.0.
 
 Published and verified on **2026-09-14**:
 
 | Artifact | Identity |
 |---|---|
-| Server | `1.2.1`, `1.2`, `latest` on [Docker Hub](https://hub.docker.com/r/iokaio/munarium/tags) |
+| Server | `1.2.1`, `1.2` on [Docker Hub](https://hub.docker.com/r/iokaio/munarium/tags) |
 | OCI index | `sha256:8c937f91b5ab952fa080bdfbc748e041fffd5b69270f5ea4052b96afdebb2df7` |
 | AMD64 manifest | `sha256:2515c419524974ca02db10a79631ac75bc451e3253047620b9cacbff69a51141` |
 | ARM64 manifest | `sha256:b5f53e3d0f55598d7a99cbeaa0ce0e068bc40863bd2e50a0cd49ab641b71c760` |

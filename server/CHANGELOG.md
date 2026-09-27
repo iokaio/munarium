@@ -3,11 +3,12 @@
 These are source release notes. See the [container publication record](CONTAINER.md#versions-and-verification)
 for registry availability, digests and public signing instructions.
 
-## 1.3.0 — pending publication
+## 1.3.0 — 2026-09-26
 
-Source preparation for the 1.3 series; no 1.3.0 image qualification or registry
-publication is claimed yet. The [1.3 release guide](docs/guides/server-1.3.md)
-reviews all changes since the 1.2.1 image and records the build/release checklist.
+Published for Linux AMD64 and ARM64. See the [container record](CONTAINER.md#versions-and-verification)
+for exact image/source identities, signature verification and qualification scope.
+The [1.3 release guide](docs/guides/server-1.3.md) reviews changes since the 1.2.1
+image and records upgrade requirements and the build/release checklist.
 
 ### Breaking and upgrade changes
 
