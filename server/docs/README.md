@@ -55,6 +55,7 @@ and API references when applying them to a new deployment.
 | [guides/frozen-evaluation.md](guides/frozen-evaluation.md) | Frozen manifests, immutable outcomes and grading receipts, scripted offline pilot and non-blocking latency reports |
 | [guides/validation.md](guides/validation.md) | Selected validation profiles, truthful exits and source receipts, owned test resources, and JSON persistence feature qualification |
 | [guides/server-1.3.md](guides/server-1.3.md) | Server 1.3 changes since the 1.2.1 image, compatibility, migrations, activation/rollback and build/release checklist |
+| [guides/release-notes-1.3.0.md](guides/release-notes-1.3.0.md) | Detailed Server 1.3.0 release notes: all 42 PRs since 1.2.1, feature improvements, new APIs, upgrade actions and qualification limits |
 | [guides/dev-guide.md](guides/dev-guide.md) | Developing Server itself and building corpus applications: setup, test tiers, crate map, recipes, CI and measured application patterns. Includes historical v0.1.2 transcripts; the opening version note identifies the current setup references |
 | [guides/loading-corpora.md](guides/loading-corpora.md) | Getting documents in: filename-as-identity, which sample corpora are public datasets and which are not, the upload-prefix convention, extraction expectations |
 | [guides/creating-a-lab.md](guides/creating-a-lab.md) | A tutorial without code examples for designing a corpus laboratory: independent answer keys, baseline and candidate shapes/runbooks, controlled experiments, failure diagnosis, acceptance and continued improvement |

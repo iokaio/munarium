@@ -27,7 +27,10 @@ deterministically rebuilt under a pin; every retrieval answer carries a provenan
 
 ## About this repository
 
-The source version and published image are **1.3.0**. Server 1.3 adds durable command recovery,
+The source version and published image are **1.3.0**. The detailed
+[1.3.0 release notes](docs/guides/release-notes-1.3.0.md) review all 42 PRs since
+1.2.1, the new APIs, compatibility and qualification limits.
+Server 1.3 adds durable command recovery,
 governance profiles, token reconciliation and per-attempt caps, monetary
 accounting, source retention, and configurable Claude reasoning. Follow the
 [1.3 release and upgrade guide](docs/guides/server-1.3.md) for migrations

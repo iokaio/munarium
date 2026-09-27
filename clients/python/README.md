@@ -1,6 +1,6 @@
 # munarium-client (Python)
 
-Client **1.2.0** targets **Munarium Server 1.3.0** with declared support for
+Client **1.3.0** targets **Munarium Server 1.3.0** with declared support for
 Server minors **1.3 and 1.2**; see the [compatibility record](https://github.com/iokaio/munarium/blob/main/clients/compatibility.json).
 
 Official Python client for munarium-server: the full ten-plane surface
@@ -14,7 +14,7 @@ Python ≥ 3.11 · fully typed (`py.typed`, mypy --strict clean).
 
 ## Install
 
-The registry examples below pin the recorded published release. Client 1.2.0
+The registry examples below pin the recorded published release. Client 1.3.0
 is unreleased; use the source installation instructions for its Server 1.3 APIs.
 
 Install [munarium-client from PyPI](https://pypi.org/project/munarium-client/)

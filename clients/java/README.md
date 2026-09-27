@@ -1,6 +1,6 @@
 # munarium-client (Java)
 
-Client **1.2.0** targets **Munarium Server 1.3.0** with declared support for
+Client **1.3.0** targets **Munarium Server 1.3.0** with declared support for
 Server minors **1.3 and 1.2**; see the [compatibility record](https://github.com/iokaio/munarium/blob/main/clients/compatibility.json).
 
 Official Java client for [munarium-server](../../server/): the ten-plane
@@ -39,7 +39,7 @@ problem-slug registry, and the head-conflict write loop built in.
 
 ## Install
 
-The registry examples below pin the recorded published release. Client 1.2.0
+The registry examples below pin the recorded published release. Client 1.3.0
 is unreleased; use the source installation instructions for its Server 1.3 APIs.
 
 Add the published package to your application's Gradle build (Java 21+):
@@ -61,7 +61,7 @@ For Maven:
 ```
 
 Maven Central's recorded release is **1.1.0** as of 2026-09-15. The published
-jar includes the generated gRPC stubs; the source instructions build **1.2.0**.
+jar includes the generated gRPC stubs; the source instructions build **1.3.0**.
 
 ### Install from source
 
@@ -72,7 +72,7 @@ application's Gradle build, adjusting the path for your checkout:
 // settings.gradle.kts
 includeBuild("path/to/munarium/clients/java")
 // build.gradle.kts
-dependencies { implementation("io.ioka.munarium:munarium-client:1.2.0") }
+dependencies { implementation("io.ioka.munarium:munarium-client:1.3.0") }
 ```
 
 ## Quickstart
