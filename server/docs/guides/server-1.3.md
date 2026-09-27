@@ -40,7 +40,7 @@ cover usage reconciliation, monetary accounting, provider diagnostics, command
 recovery and source retention. Consult the current [REST](../api/rest.md) and
 [native gRPC](../api/grpc-reference.md) references for authority and payloads.
 
-The generated client surface and four Server SDK source packages **1.2.0**
+The generated client surface and four Server SDK source packages **1.3.0**
 (unreleased) target this source tree. Published 1.1.1 packages retain their
 qualified Server 1.2/1.1 range. The source
 [client compatibility record](../../../clients/compatibility.json) and all four
@@ -49,7 +49,7 @@ Run all four language conformance suites before publication; a version constant
 alone does not qualify either transport or the support range. Matrix clients
 remain 1.1.1 and target Matrix 1.0.
 
-Rust client 1.2.0 requires the 1.3.0 wire crates. Publish `munarium-proto` and
+Rust client 1.3.0 requires the 1.3.0 wire crates. Publish `munarium-proto` and
 `munarium-api-types` before publishing the Rust client. A registry-enabled
 manual [`clientbuild`](../../../.github/workflows/clientbuild.yml) run selecting
 Server crates or `all` can publish those crates once this preparation merges;

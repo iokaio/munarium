@@ -18,7 +18,7 @@ immutable file exports. The separate [Munarium Demo](https://github.com/iokaio/m
 provides six working applications and bundled datasets for evaluation.
 
 **Source versions:** Server **1.3.0 (release preparation)**, Matrix **1.0.0**,
-Server client libraries **1.2.0 (unreleased)**, and Matrix clients **1.1.1**.
+Server client libraries **1.3.0 (unreleased)**, and Matrix clients **1.1.1**.
 Server 1.2 adds configurable collection vocabularies, checked
 narrative answers and the [complete API on REST/gRPC](clients/docs/guides/server-1.2.md).
 Server 1.3 adds durable command recovery, governance profiles, usage and monetary
