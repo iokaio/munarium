@@ -1,0 +1,39 @@
+{
+  "$comment": "How iokaio/munarium-clients-publish builds and publishes the Server's wire crates and client libraries. It runs the gates on the tagged commit, builds each package in its directory, and publishes to the named registries, in the order listed for crates. Publish server-crates before server-clients: munarium-client resolves its wire crates from crates.io.",
+  "schema": 1,
+  "gates": [
+    "python3 clients/check_compatibility.py",
+    "python3 check_license.py",
+    "python3 scripts/private_material_scan.py"
+  ],
+  "artifact_check": "clients/check_license.py",
+  "families": {
+    "server-crates": {
+      "tag": "server-crates-v{version}",
+      "version": {"file": "server/Cargo.toml", "toml": "workspace.package.version"},
+      "copy": [
+        {"from": "server/proto", "to": "server/src/munarium-proto/proto"}
+      ],
+      "packages": [
+        {"registry": "crates", "crate": "munarium-proto", "dir": "server", "package_flags": "--allow-dirty"},
+        {"registry": "crates", "crate": "munarium-api-types", "dir": "server", "package_flags": "--allow-dirty"}
+      ]
+    },
+    "server-clients": {
+      "tag": "clients-v{version}",
+      "version": {"file": "clients/python/pyproject.toml", "toml": "project.version"},
+      "packages": [
+        {
+          "registry": "nuget",
+          "id": "Ioka.Munarium.Client",
+          "dir": "clients/dotnet",
+          "project": "src/Ioka.Munarium.Client",
+          "tests": "tests/Ioka.Munarium.Client.Tests"
+        },
+        {"registry": "pypi", "name": "munarium-client", "dir": "clients/python"},
+        {"registry": "maven", "group": "io.ioka.munarium", "artifact": "munarium-client", "dir": "clients/java"},
+        {"registry": "crates", "crate": "munarium-client", "dir": "clients/rust", "package_flags": ""}
+      ]
+    }
+  }
+}
