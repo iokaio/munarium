@@ -1,10 +1,10 @@
 # munarium client libraries
 
 Official clients for [Munarium Server](../server/) in Rust, Python, .NET and
-Java, with REST and gRPC transports. Separate REST clients for
-[Munarium Matrix](../matrix/) live in `matrix-python/`, `matrix-dotnet/` and
-`matrix-java/`. Transport gaps are listed below; conformance tests exercise
-the supported operations against the services.
+Java, with REST and gRPC transports. Matrix clients are maintained in the
+[standalone Matrix repository](https://github.com/iokaio/munarium-matrix).
+Transport gaps are listed below; conformance tests exercise the supported
+operations against the Server.
 
 New to Munarium? [`docs/concepts/`](docs/concepts/) explains the ideas — the fact ledger,
 sessions and turns, runbooks as the unit of access, capability tokens, evidence, and the
@@ -12,7 +12,7 @@ conformance scenarios read as an executable specification — independent of any
 See ["Trying it"](#trying-it) below for how to see it answer real questions.
 
 **License: Apache-2.0** ([LICENSE](LICENSE), [NOTICE](NOTICE)) — the libraries, the guides
-and the concept pages alike, the same license as the server and Matrix they talk to.
+and the concept pages alike, the same license as the Server they talk to.
 Contributing is a signed-off pull request with no CLA ([CONTRIBUTING.md](../CONTRIBUTING.md));
 suspected vulnerabilities go to the private channel in [SECURITY.md](../SECURITY.md); what is
 and is not supported is in [SUPPORT.md](../SUPPORT.md); conduct is the Contributor Covenant.
@@ -37,9 +37,9 @@ See the [1.3 compatibility and upgrade guide](../server/docs/guides/server-1.3.m
 
 ## Installation and publication
 
-All seven client libraries have published releases. Source manifests prepare
-the four Server clients at **1.3.0 (unreleased)**; the three Matrix clients remain
-**1.1.1**. Published Server client 1.1.1 retains its Server 1.2/1.1 compatibility.
+All four Server client libraries have published releases. Source manifests prepare
+them at **1.3.0 (unreleased)**. Published Server client 1.1.1 retains its Server
+1.2/1.1 compatibility.
 Registry versions verified on **2026-09-15** are listed below; follow each package
 link for its release history and subsequent updates.
 
@@ -49,14 +49,11 @@ link for its release history and subsequent updates.
 | Server | Python | [munarium-client on PyPI](https://pypi.org/project/munarium-client/) | 1.1.1 | [Python](python/README.md#install) |
 | Server | .NET | [Ioka.Munarium.Client on NuGet](https://www.nuget.org/packages/Ioka.Munarium.Client) | 1.1.1 | [.NET](dotnet/README.md#install) |
 | Server | Java | [io.ioka.munarium:munarium-client on Maven Central](https://central.sonatype.com/artifact/io.ioka.munarium/munarium-client) | 1.1.0 | [Java](java/README.md#install) |
-| Matrix | Python | [munarium-matrix on PyPI](https://pypi.org/project/munarium-matrix/) | 1.1.1 | [Python](matrix-python/README.md#install) |
-| Matrix | .NET | [Ioka.Munarium.Matrix.Client on NuGet](https://www.nuget.org/packages/Ioka.Munarium.Matrix.Client) | 1.1.1 | [.NET](matrix-dotnet/README.md#install) |
-| Matrix | Java | [io.ioka.munarium:munarium-matrix-client on Maven Central](https://central.sonatype.com/artifact/io.ioka.munarium/munarium-matrix-client) | 1.0.0 | [Java](matrix-java/README.md#install) |
 
-The first public releases were Server clients **1.1.0** and Matrix clients
-**1.0.0**, also on 2026-09-15. The **1.1.1** release aligns package versions and
-adds the Rust package README, with no API changes. Maven Central still lists
-the initial versions above. The Rust client's wire dependencies are published as
+The first public Server client release was **1.1.0** on 2026-09-15. The
+**1.1.1** release aligns package versions and adds the Rust package README,
+with no API changes. Maven Central still lists the initial version above. The
+Rust client's wire dependencies are published as
 [munarium-proto 1.2.1](https://crates.io/crates/munarium-proto/1.2.1) and
 [munarium-api-types 1.2.1](https://crates.io/crates/munarium-api-types/1.2.1).
 [`compatibility.json`](compatibility.json) records source versions, registries
@@ -71,17 +68,16 @@ sibling `server/` tree for wire types or protobufs.
 Official packages are published by
 [`.github/workflows/clientbuild.yml`](../.github/workflows/clientbuild.yml), a
 manually dispatched workflow and nothing else: no push, tag or schedule runs it.
-A maintainer picks a family (`all`, the default; or `server-clients`,
-`matrix-clients`, or `server-crates`, the two server wire crates the Rust client
+A maintainer picks a family (`all`, the default; or `server-clients` or
+`server-crates`, the two server wire crates the Rust client
 depends on) and ticks the registries to publish to; a dispatch with none ticked
 is a rehearsal that builds every package and runs `check_license.py` over the
 built artifacts. Preflight asks each registry whether the package's version is
 already there: a package that is gets built and skipped, never re-published, so
 `all` with every registry ticked publishes whatever is missing and is safe to
-re-run. Crates go out in dependency order. Every registry push, TestPyPI included, runs in
-the `release` environment (the Matrix Python package uses `release-matrix`, a
-twin, because PyPI allows one pending trusted publisher per environment), which
-accepts `main` only and waits on its required reviewer. Versions are read from the
+re-run. Crates go out in dependency order. Every registry push, TestPyPI included,
+runs in the `release` environment, which accepts `main` only and waits on its
+required reviewer. Versions are read from the
 manifests, which `check_compatibility.py` keeps in step with `compatibility.json`,
 so a release is cut by bumping the manifests and this file, never by a workflow
 input.
@@ -115,7 +111,8 @@ including vocabulary, answers, source references and streaming turns. Read the
 [Server 1.2 guide](docs/guides/server-1.2.md) for language examples. Existing typed
 `MunariumClient` planes retain their Server 1.1 baseline and historical transport
 limitations; the complete API client closes those gaps on Server 1.2. Matrix
-clients remain on **Matrix 1.0**, independently of Server compatibility.
+client compatibility is recorded in its
+[standalone repository](https://github.com/iokaio/munarium-matrix).
 
 Integer JSON fields retain their numeric wire format. The
 [wire inventory and evolution policy](../server/docs/wire-compatibility.md)
@@ -186,7 +183,8 @@ bytes and the citation was real) and `evidence-not-committed` (409).
 The manifest comes back as a raw JSON value in every language
 (`serde_json::Value`, `dict`, `JsonElement`, `JsonNode`) rather than a
 hand-written mirror. It is defined by the cross-tree contract
-(`matrix/contract/evidence-manifest.schema.json`) and returned verbatim; a
+([Matrix contract](https://github.com/iokaio/munarium-matrix/blob/main/contract/evidence-manifest.schema.json))
+and returned verbatim; a
 mirror per language would be four more definitions of a schema these clients
 do not own, and the first thing to drift when the contract adds an optional
 field.
@@ -384,8 +382,7 @@ ships a body the server would refuse.
 
 CI: [clients-ci.yml](../.github/workflows/clients-ci.yml) — lint/type/unit gates per
 language, then the full `{rust, python, dotnet, java} × {rest, grpc}` conformance matrix
-against a server built from the same commit. The Matrix clients run in
-[matrix-ci.yml](../.github/workflows/matrix-ci.yml).
+against a server built from the same commit.
 
 Two stdlib checks run first in CI and take a second locally, all from this directory:
 `python3 check_compatibility.py` (`compatibility.json` matches every client manifest) and

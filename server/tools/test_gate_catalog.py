@@ -5,12 +5,14 @@ import copy
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 import test_validation
+from check_matrix_contract import VENDORED, check as check_matrix_contract
 from check_gate_equivalence import BASELINE, ROOT, check
 from gate_catalog import boundaries, dependency_names, execute, load
 
@@ -84,6 +86,24 @@ class CatalogTests(unittest.TestCase):
                 runner,
             )
         runner.assert_not_called()
+
+    def test_matrix_contract_check_uses_standalone_publisher(self):
+        runner = Mock()
+        source = self.root / "munarium-matrix"
+        check_matrix_contract(source, runner)
+        publisher = source / "contract" / "publish.py"
+        self.assertEqual(
+            runner.call_args_list,
+            [
+                call(
+                    [sys.executable, str(publisher), "--self-test"], check=True
+                ),
+                call(
+                    [sys.executable, str(publisher), "--check", str(VENDORED)],
+                    check=True,
+                ),
+            ],
+        )
 
     @unittest.skipUnless(shutil.which("pwsh"), "PowerShell 7 unavailable")
     def test_local_adapter_retains_commands_and_failure(self):
@@ -241,7 +261,7 @@ class CatalogTests(unittest.TestCase):
             ("arguments: --all-features", 'arguments: ""'),
             ("terraform fmt -check -recursive", "true"),
             ("gate_catalog.py clippy.default", "gate_catalog.py format"),
-            ('"matrix/contract/**"', '"missing/**"'),
+            ("repository: iokaio/munarium-matrix", "repository: missing/matrix"),
             ('cargo +"$MSRV" test', "cargo test"),
         ):
             self.assertIn(old, workflow)

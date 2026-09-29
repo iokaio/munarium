@@ -24,8 +24,6 @@
 #   server-clients  Ioka.Munarium.Client (NuGet), munarium-client (PyPI),
 #                   io.ioka.munarium:munarium-client (Maven Central),
 #                   munarium-client (crates.io)
-#   matrix-clients  Ioka.Munarium.Matrix.Client (NuGet), munarium-matrix (PyPI),
-#                   io.ioka.munarium:munarium-matrix-client (Maven Central)
 #   all             every package above, crates in dependency order
 #
 # Already-published versions are SKIPPED, not failed. Preflight asks each
@@ -41,10 +39,9 @@
 # Credentials, none of which this file contains:
 #   NuGet      OIDC via NuGet/login; repository variable NUGET_USER holds the
 #              NuGet.org profile name that owns the trusted-publishing policy.
-#   PyPI       OIDC via pypa/gh-action-pypi-publish (a trusted publisher per
-#              project name on pypi.org and test.pypi.org: munarium-client
-#              with environment `release`, munarium-matrix with
-#              `release-matrix`; see publish-pypi for why they differ).
+#   PyPI       OIDC via pypa/gh-action-pypi-publish (a trusted publisher for
+#              munarium-client on pypi.org and test.pypi.org, with environment
+#              `release`).
 #   crates.io  OIDC via rust-lang/crates-io-auth-action (a trusted publisher on
 #              each crate's settings page: owner iokaio, repository munarium,
 #              workflow clientbuild.yml, environment release). The first
@@ -57,8 +54,8 @@
 #
 # A real publish is refused unless the run is on `main`; a build-only rehearsal
 # may run from any ref. Every publish job, the TestPyPI one included, runs in
-# the `release` environment (or its `release-matrix` twin), which is configured
-# in the repository settings to accept `main` only and to require a reviewer.
+# the `release` environment, which is configured in the repository settings to
+# accept `main` only and to require a reviewer.
 name: clientbuild
 
 permissions:
@@ -76,7 +73,6 @@ on:
           - all
           - server-crates
           - server-clients
-          - matrix-clients
       publish_nuget:
         description: Publish the .NET package(s) to NuGet.org
         type: boolean
@@ -108,7 +104,7 @@ on:
         type: boolean
         default: false
       create_tag:
-        description: After a successful real publish, tag the commit for each family that published something (clients-vX / matrix-clients-vX / server-crates-vX)
+        description: After a successful real publish, tag the commit for each family that published something (clients-vX / server-crates-vX)
         type: boolean
         default: false
 
@@ -182,8 +178,8 @@ jobs:
                   sys.exit("::error::server/Cargo.toml: no [workspace.package] version")
               return m.group(1)
 
-          families = {"all": ["server-crates", "server-clients", "matrix-clients"]}.get(family, [family])
-          if family not in ("all", "server-crates", "server-clients", "matrix-clients"):
+          families = {"all": ["server-crates", "server-clients"]}.get(family, [family])
+          if family not in ("all", "server-crates", "server-clients"):
               sys.exit(f"::error::unknown family {family}")
 
           dotnet, python, java, rust, tags = [], [], [], [], []
@@ -210,18 +206,6 @@ jobs:
                   rust.append({"crate": "munarium-client", "dir": "clients/rust", "version": v, "family": fam,
                                "copy_protos": False, "package_flags": ""})
                   tags.append({"family": fam, "name": f"clients-v{v}"})
-              elif fam == "matrix-clients":
-                  v = one_version(["matrix-python", "matrix-dotnet", "matrix-java"])
-                  dotnet.append({"id": compat["matrix-dotnet"]["package"], "dir": "clients/matrix-dotnet", "version": v, "family": fam,
-                                 "project": "src/Ioka.Munarium.Matrix.Client", "tests": "tests/Ioka.Munarium.Matrix.Client.Tests"})
-                  # PyPI allows one PENDING trusted publisher per (owner, repo,
-                  # workflow, environment) tuple, so the two Python packages
-                  # were registered against different environments.
-                  python.append({"name": compat["matrix-python"]["package"], "dir": "clients/matrix-python", "version": v, "family": fam,
-                                 "environment": "release-matrix"})
-                  java.append({"artifact": "munarium-matrix-client", "dir": "clients/matrix-java", "version": v, "family": fam})
-                  tags.append({"family": fam, "name": f"matrix-clients-v{v}"})
-
           # --- registry state: which of these versions already exist ----------
           def fetch(url):
               req = urllib.request.Request(url, headers={"User-Agent": "iokaio/munarium clientbuild (github actions)"})
@@ -493,12 +477,7 @@ jobs:
     needs: [preflight, build-python]
     if: inputs.publish_pypi && fromJSON(needs.preflight.outputs.plan).pypi_todo[0] != null
     runs-on: ubuntu-latest
-    # PyPI allows one PENDING trusted publisher per (owner, repo, workflow,
-    # environment) tuple across all not-yet-created project names, so the two
-    # Python packages were registered against different environments:
-    # `release` for munarium-client, `release-matrix` for munarium-matrix.
-    # The plan carries each package's environment; the two are configured
-    # identically (main only, required reviewer).
+    # The plan carries the package's trusted-publisher environment.
     environment: ${{ matrix.environment }}
     permissions:
       contents: read

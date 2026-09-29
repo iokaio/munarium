@@ -10,7 +10,7 @@ private measurement in this repository lived inside `ch19-patterns-map.png`,
 where no text search could reach it.
 
 So the diagrams are text now. This module is the renderer; the specs live
-beside it in `server.py` and `matrix.py`, one dict per figure. Regenerate with:
+beside it in `diagrams_server.py`, one dict per figure. Regenerate with:
 
     py scripts/diagrams.py
 
@@ -171,11 +171,9 @@ def main() -> int:
     root = pathlib.Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
     import diagrams_server
-    import diagrams_matrix
 
     n = 0
-    for mod, base in ((diagrams_server, root / "server/docs/guides/images"),
-                      (diagrams_matrix, root / "matrix/docs/guides/technical/images")):
+    for mod, base in ((diagrams_server, root / "server/docs/guides/images"),):
         for name, fn in mod.FIGURES.items():
             build(fn, base / f"{name}.svg")
             n += 1

@@ -68,39 +68,6 @@ server/*.swp
 server/.DS_Store
 server/Thumbs.db
 
-# ----------------------------------------------------------- matrix/ ---
-matrix/target/
-matrix/*.tfstate
-matrix/*.tfstate.*
-matrix/.terraform/
-matrix/tfplan
-matrix/.mxtest-current.json
-# Conformance results files are committed (they are small and are the
-# evidence), never gitignored. Run transcripts under artifacts/ are not.
-matrix/artifacts/
-
-# Python residue from the tree's own stdlib tools — check_license.py,
-# scripts/third_party_notices.py, scripts/boundaries.py, scripts/doclint.py,
-# contract/publish.py.
-matrix/__pycache__/
-matrix/*.py[cod]
-matrix/.venv/
-matrix/venv/
-
-# Local run artifacts: a saved SBOM, a captured gate log. THIRD_PARTY_NOTICES.md
-# itself is COMMITTED; this is the scratch beside it.
-matrix/*.sbom.json
-matrix/*.cdx.json
-matrix/scratch/
-
-# Editors and operating systems. Committed editor settings would impose one
-# person's toolchain on every contributor; per-clone settings are theirs.
-matrix/.vscode/
-matrix/.idea/
-matrix/*.swp
-matrix/.DS_Store
-matrix/Thumbs.db
-
 # ----------------------------------------------------------- clients/ ---
 # The Munarium client libraries: several language trees, so the rules are the
 # union of what those toolchains leave behind.

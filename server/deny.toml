@@ -91,7 +91,7 @@ ignore = [
     # it reaches us transitively through tonic/reqwest TLS features. Not a
     # vulnerability — re-evaluate when tonic/reqwest drop the dependency.
     #
-    # `matrix/deny.toml` carries the SAME entry for the same reason: the two
+    # Matrix's standalone `deny.toml` carries the SAME entry for the same reason: the two
     # trees pin the same tonic on purpose. Whoever removes it here should look
     # there too, or the gate goes green in one tree and red in the other for a
     # reason nobody wrote down.

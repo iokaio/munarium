@@ -1,7 +1,7 @@
 # Munarium guides that span components
 
 Documentation for each component lives beside its code:
-[server/docs](../server/docs/README.md), [matrix/docs](../matrix/docs/README.md) and
+[server/docs](../server/docs/README.md), [Matrix docs](https://github.com/iokaio/munarium-matrix/tree/main/docs) and
 [clients/docs](../clients/README.md#documentation). This directory holds the guides that do not
 belong to one component because they teach a practice that uses several of them together.
 

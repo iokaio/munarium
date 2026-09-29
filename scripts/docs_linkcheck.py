@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """The root docs gate: every link under docs/ resolves, every page is listed.
 
-The server's `docs_coverage` test checks relative links under server/docs,
-and Matrix's doclint checks matrix/. Nothing checked the repository root or
-the top-level docs/ tree, and CONTRIBUTING.md says an unlisted document is
+The server's `docs_coverage` test checks relative links under server/docs.
+Nothing checked the repository root or the top-level docs/ tree, and
+CONTRIBUTING.md says an unlisted document is
 an unread document and a dead link fails the build. This is that rule for
 the part of the tree the component gates do not reach.
 

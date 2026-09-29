@@ -17,10 +17,8 @@ Four things are checked per client, not one:
                    requires (a maven-publish publication with url/licenses/
                    developers/scm for Maven Central, and so on)
 
-Checking only `version` is how compatibility.json came to promise a PyPI
-package called `munarium-matrix-client` while the pyproject declared
-`munarium-matrix`, and a Maven Central release from a build file whose own
-first comment said it was never published to a registry. Both passed.
+Checking only `version` can let a compatibility record promise a package name
+or registry publication that the package manifest does not support.
 
 Exit 1 on any mismatch or missing entry. Stdlib only (the Directory.Build.props
 read is a regex over XML text, not a full parser -- sufficient for one
@@ -45,34 +43,6 @@ def rust_version() -> str:
 def python_version() -> str:
     d = tomllib.loads((ROOT / "python/pyproject.toml").read_text(encoding="utf-8"))
     return d["project"]["version"]
-
-
-# The Munarium Matrix clients. They speak to Matrix rather than to the Server,
-# so their row names a Matrix range. They can sit in either of two places:
-# `clients/matrix-<lang>` beside the Server's four, or `matrix/clients/<lang>`.
-# `matrix_path` resolves whichever exists, so one script serves both layouts.
-def matrix_path(lang: str, name: str) -> Path:
-    here = ROOT / f"matrix-{lang}" / name
-    return here if here.is_file() else ROOT.parent / "matrix" / "clients" / lang / name
-def matrix_python_version() -> str:
-    d = tomllib.loads(matrix_path("python", "pyproject.toml").read_text(encoding="utf-8"))
-    return d["project"]["version"]
-
-
-def matrix_dotnet_version() -> str:
-    text = matrix_path("dotnet", "Directory.Build.props").read_text(encoding="utf-8")
-    m = re.search(r"<Version>([^<]+)</Version>", text)
-    if not m:
-        raise SystemExit("matrix-dotnet/Directory.Build.props: no <Version> element found")
-    return m.group(1)
-
-
-def matrix_java_version() -> str:
-    text = matrix_path("java", "build.gradle.kts").read_text(encoding="utf-8")
-    m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.M)
-    if not m:
-        raise SystemExit('matrix-java/build.gradle.kts: no top-level version = "..." found')
-    return m.group(1)
 
 
 def dotnet_version() -> str:
@@ -104,11 +74,6 @@ def python_package() -> str:
     return d["project"]["name"]
 
 
-def matrix_python_package() -> str:
-    d = tomllib.loads(matrix_path("python", "pyproject.toml").read_text(encoding="utf-8"))
-    return d["project"]["name"]
-
-
 def _dotnet_package(props: Path, project_glob: str) -> str:
     """NuGet id: an explicit <PackageId>, else the .csproj file name."""
     text = props.read_text(encoding="utf-8")
@@ -125,10 +90,6 @@ def dotnet_package() -> str:
     return _dotnet_package(ROOT / "dotnet/Directory.Build.props", "src/*/*.csproj")
 
 
-def matrix_dotnet_package() -> str:
-    return _dotnet_package(matrix_path("dotnet", "Directory.Build.props"), "src/*/*.csproj")
-
-
 def _gradle_coordinate(path: Path) -> str:
     text = path.read_text(encoding="utf-8")
     group = re.search(r'^group\s*=\s*"([^"]+)"', text, re.M)
@@ -140,10 +101,6 @@ def _gradle_coordinate(path: Path) -> str:
 
 def java_package() -> str:
     return _gradle_coordinate(ROOT / "java/build.gradle.kts")
-
-
-def matrix_java_package() -> str:
-    return _gradle_coordinate(matrix_path("java", "build.gradle.kts"))
 
 
 # ------------------------------------------------------------- publishability
@@ -174,14 +131,12 @@ def registry_problems(lang: str, entry: dict) -> list[str]:
         return [f"{lang}: no registry named in compatibility.json"]
     expected = {
         "rust": "crates.io", "python": "PyPI", "dotnet": "NuGet", "java": "Maven Central",
-        "matrix-python": "PyPI", "matrix-dotnet": "NuGet", "matrix-java": "Maven Central",
     }[lang]
     if registry != expected:
         return [f"{lang}: registry {registry!r} is not this ecosystem's ({expected!r})"]
     if registry != "Maven Central":
         return []
-    path = (ROOT / "java/build.gradle.kts") if lang == "java" \
-        else matrix_path("java", "build.gradle.kts")
+    path = ROOT / "java/build.gradle.kts"
     missing = maven_publishable(path)
     if missing:
         return [f"{lang}: compatibility.json promises Maven Central but "
@@ -194,14 +149,11 @@ READERS = {
     "python": (python_version, python_package),
     "dotnet": (dotnet_version, dotnet_package),
     "java": (java_version, java_package),
-    "matrix-python": (matrix_python_version, matrix_python_package),
-    "matrix-dotnet": (matrix_dotnet_version, matrix_dotnet_package),
-    "matrix-java": (matrix_java_version, matrix_java_package),
 }
 
 
 def server_support_problems(record: dict) -> list[str]:
-    """Keep the patch target and Server N/N-1 ranges consistent, separately from Matrix."""
+    """Keep the patch target and Server N/N-1 ranges consistent."""
     target = record.get("target_server", "")
     if not isinstance(target, str) or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", target):
         return ["target_server must name an exact Server release (major.minor.patch)"]
@@ -216,11 +168,6 @@ def server_support_problems(record: dict) -> list[str]:
             bad.append(f"{lang}: supported_server must be {expected!r} for target {target}")
         if "supported_matrix" in entry or entry.get("speaks_to") == "matrix":
             bad.append(f"{lang}: a Server client must not declare Matrix compatibility")
-    for lang, entry in record["clients"].items():
-        if lang.startswith("matrix-") and (
-            entry.get("speaks_to") != "matrix" or "supported_server" in entry
-        ):
-            bad.append(f"{lang}: Matrix compatibility must remain separate from Server")
     return bad
 
 
@@ -275,9 +222,8 @@ def main() -> int:
 
         bad.extend(registry_problems(lang, entry))
 
-        ranges = entry.get("supported_server") or entry.get("supported_matrix")
-        if not ranges:
-            bad.append(f"{lang}: names neither supported_server nor supported_matrix")
+        if not entry.get("supported_server"):
+            bad.append(f"{lang}: names no supported_server range")
 
     if bad:
         for line in bad:

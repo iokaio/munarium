@@ -9,7 +9,7 @@ load-bearing in the same way.
 
 | Directory | Direction | Source of truth | Owner |
 |---|---|---|---|
-| [`matrix/`](matrix/) | inbound | [`matrix/contract/`](../../matrix/contract/), pinned by the vendored `contract.lock` | Munarium Matrix |
+| [`matrix/`](matrix/) | inbound | [`iokaio/munarium-matrix/contract`](https://github.com/iokaio/munarium-matrix/tree/main/contract), pinned by the vendored `contract.lock` | Munarium Matrix |
 | [`mmp/`](mmp/) | outbound | this tree (`proto/`, `docs/api/`, two crates, `conformance/SCENARIOS.md`) | Munarium Server |
 | [`datastore/`](datastore/) | internal | this directory: the `artifact@1` schemas, the Python reference implementation and the identity vectors | Munarium Server (`munarium-datastore`) |
 
@@ -43,18 +43,18 @@ still matches what this tree cuts with `--check <dir>`.
 
 ## The rule
 
-`server/contract/matrix/` is a **cut** of `matrix/contract/` made by that tree's
-publisher, `matrix/contract/publish.py`: every contract file verbatim (UTF-8, LF, no
+`server/contract/matrix/` is a **cut** of the standalone Matrix repository's
+`contract/`, made by its `contract/publish.py`: every contract file verbatim (UTF-8, LF, no
 BOM, whatever the checkout's line endings), plus a `contract.lock` naming the contract
 version, the source commit, a sha256 per file and a digest over the sorted list. Not a
-subset, not a reformat, not a hand edit. A `diff -r` against `../matrix` would need both
-trees in one checkout, which a standalone checkout of `server/` does not have. Two
+subset, not a reformat, not a hand edit. A recursive diff requires both repositories
+in one workspace. Two
 proofs are used instead:
 
-- **where the sibling exists** — this repository's CI and local gates — the copy must
-  equal a fresh cut, source commit ignored: `server-ci.yml` → *matrix contract drift
-  check*, `matrix-ci.yml` → *the contract cuts reproducibly; the vendored copy matches*,
-  `gates.ps1` → *matrix contract drift check*;
+- **where the standalone Matrix checkout exists** — this repository's CI checks out
+  an audited, pinned `iokaio/munarium-matrix` revision, while local gates find it beside
+  this repository or through `MUNARIUM_MATRIX_ROOT`; the copy must equal a fresh cut,
+  source commit ignored;
 - **everywhere** — `munarium-api-types`' `matrix_contract` test verifies every vendored
   file against `contract.lock` and refuses anything unlisted, with no sibling at all.
 
@@ -65,25 +65,24 @@ publisher's normalization is what makes the bytes the same on every platform, an
 
 ## Changing the contract
 
-Edit `matrix/contract/`, re-cut the copy here in the **same commit**, and move
-`VERSION` according to the compatibility rule stated in
-[`matrix/README.md`](matrix/README.md) (major = wire break, minor = additive,
-patch = examples and prose). A commit that changes the source and not the copy
-fails both trees' CI, which is the entire point of vendoring rather than
-sharing a crate.
+Edit `contract/` in `iokaio/munarium-matrix` and move `VERSION` according to the
+compatibility rule in the
+[Matrix contract documentation](https://github.com/iokaio/munarium-matrix/blob/main/contract/README.md)
+(major = wire break, minor = additive, patch = examples and prose). Then re-cut this
+copy in a coordinated Server pull request. The standalone repository owns the source;
+the pinned Matrix revision in `server-ci.yml` advances with that re-vendoring change.
 
 To re-cut the copy:
 
 ```bash
-rm -rf server/contract/matrix && py matrix/contract/publish.py --out server/contract/matrix
-py matrix/contract/publish.py --check server/contract/matrix   # identical to what the tree cuts
+rm -rf server/contract/matrix && py ../munarium-matrix/contract/publish.py --out server/contract/matrix
+py ../munarium-matrix/contract/publish.py --check server/contract/matrix
 ```
 
 ## Why a copy and not a shared crate
 
-Ground rule 1:
-`matrix/` never depends on a `server/` crate and `server/` never depends on a
-`matrix/` crate. A shared crate would be a dependency edge, and the edge is
+Ground rule 1: Matrix never depends on a Server crate and Server never depends on a
+Matrix crate. A shared crate would be a dependency edge, and the edge is
 what the rule exists to prevent — Matrix ships as its own image on its own
 release cadence, and a shared crate would couple them at build time in exactly
 the way that makes independent deployment a fiction. A vendored copy plus a

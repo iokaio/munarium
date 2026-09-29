@@ -26,7 +26,7 @@ utoipa = { workspace = true }
 # S-1.0: tests/matrix_contract.rs validates the vendored Matrix contract's
 # examples against its schemas, and (phase 2, Server step 4, 2026-09-03)
 # every vendored file against the contract.lock its publisher wrote -- the
-# proof a standalone Server checkout has with no matrix/ sibling. Dev-
+# proof a standalone Server checkout has with no Matrix checkout. Dev-
 # dependencies only: no runtime code in this crate reads the contract, nothing
 # here ships in the image, and the public MMP bundle drops this section.
 jsonschema = { workspace = true }

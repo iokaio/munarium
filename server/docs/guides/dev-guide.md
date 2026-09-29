@@ -6086,10 +6086,10 @@ that comment today; read a few and you will see the pattern.
 
 ### The workflow at a glance
 
-`server-ci.yml` is the server's gate. It is path-scoped to `server/**`,
-plus one sibling tree, `matrix/contract/**`, because `server/contract/matrix/`
-is a byte-for-byte copy of it and a contract-only edit must trigger the
-server half or the two copies drift silently. Three jobs:
+`server-ci.yml` is the server's gate. It is path-scoped to `server/**`; the
+lint job also checks out an audited, commit-pinned revision of the standalone
+`iokaio/munarium-matrix` repository so `server/contract/matrix/` can be compared
+with its source. Three jobs:
 
 - **`lint-test`** is the gate list. It runs on every push/PR.
 - **`cargo-deny`** checks licenses, advisories, bans, and sources. It is also
@@ -6219,11 +6219,12 @@ never be drift-checked against the tree.
 generated `docs/api/grpc-reference.md`.
 
 **13. The Matrix contract drift check.** `server/contract/matrix/` is cut
-from `matrix/contract/` by that tree's publisher, lock included. The step
-self-tests the publisher, then checks the vendored copy against a fresh
-cut; independently, `munarium-api-types`' `matrix_contract` test verifies
-every vendored file against the lock. A copy plus checks, no crate edge
-(§4's ground rule). Mirrored in `gates.ps1` and `matrix-ci.yml`.
+from `iokaio/munarium-matrix`'s `contract/` by that repository's publisher,
+lock included. CI checks out Matrix and the local runner finds a sibling checkout
+or `MUNARIUM_MATRIX_ROOT`; both self-test the publisher and compare the vendored
+copy with a fresh cut. Independently, `munarium-api-types`' `matrix_contract`
+test verifies every vendored file against the lock. A copy plus checks, no crate
+edge (§4's ground rule).
 
 **14. The license gate.** `check_license.py`: the workspace and every crate
 declare Apache-2.0, `LICENSE` / `NOTICE` / `THIRD_PARTY_NOTICES.md` exist,
@@ -6931,7 +6932,7 @@ The whole system, one table:
 
 | Event | lint-test | cargo-deny | terraform | What you get |
 |---|---|---|---|---|
-| Push to main / PR touching `server/**` or `matrix/contract/**` | ✅ | ✅ | ✅ | Green or red; nothing published, ever |
+| Push to main / PR touching `server/**` | ✅ | ✅ | ✅ | Green or red; nothing published, ever |
 | `workflow_dispatch` | ✅ | ✅ | ✅ | The same gates, run by hand |
 | `gates.ps1` (local) | mirror¹ | mirror² | n/a | Local confidence; nothing deployed |
 | `build.ps1 -Image` (local) | n/a | n/a | n/a | A local image you name, tag and push yourself |

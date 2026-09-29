@@ -9,15 +9,15 @@ Checks, in order:
   1. The root texts. LICENSE is byte-for-byte the canonical Apache-2.0 text
      (sha256-pinned below, compared LF-normalized so a Windows checkout passes),
      and NOTICE, TRADEMARK.md and CODE_OF_CONDUCT.md exist and are non-empty.
-  2. Every component's own gate, run in its own directory.
+  2. Each component's own gate, run in its own directory.
 
 Why the second half delegates rather than inlines: each component's checker
-knows things the others do not -- the server and Matrix rule on a Cargo
-workspace and its members, while the clients rule on four packaging ecosystems,
-built artifacts and `cargo package --list`. Folding three different sets of
-domain knowledge into one file would mean rewriting all three, and the value is
-in what they check rather than in how many files do it. This is the one gate a
-contributor runs; those are the three it is made of.
+knows things the other does not -- the server rules on a Cargo workspace and
+its members, while the clients rule on four packaging ecosystems, built
+artifacts and `cargo package --list`. Folding those sets of domain knowledge
+into one file would mean rewriting both, and the value is in what they check
+rather than in how many files do it. This is the one gate a contributor runs;
+those are the two it is made of.
 
 Exit 1 if any of them fails, naming which. Stdlib only.
 """
@@ -31,7 +31,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 APACHE_2_0_SHA256 = "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
 TEXTS = ("LICENSE", "NOTICE", "TRADEMARK.md", "CODE_OF_CONDUCT.md")
-COMPONENTS = ("server", "matrix", "clients")
+COMPONENTS = ("server", "clients")
 
 
 def lf(raw: bytes) -> bytes:
@@ -73,7 +73,7 @@ def main() -> int:
         for b in bad:
             print(f"FAIL: {b}")
         return 1
-    print("check_license: root texts canonical, all three components ok")
+    print("check_license: root texts canonical, both components ok")
     return 0
 
 

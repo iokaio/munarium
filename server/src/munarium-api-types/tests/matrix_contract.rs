@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The vendored Munarium Matrix contract, checked from the server tree.
 //!
-//! `server/contract/matrix/` is a vendored cut of `matrix/contract/`, written by
-//! `matrix/contract/publish.py` together with a `contract.lock` (see
+//! `server/contract/matrix/` is a vendored cut of `iokaio/munarium-matrix`'s
+//! `contract/`, written by its `contract/publish.py` together with a `contract.lock` (see
 //! `server/contract/README.md`). Ground rule 1 forbids a crate dependency
 //! between the two trees, so the boundary is a copy plus checks — a drift
 //! check where the sibling tree exists (`publish.py --check`, both trees' CI),
@@ -17,7 +17,7 @@
 //! and the lock is the whole proof that the copy is what the publisher cut.
 //!
 //! It deliberately reads only from `server/contract/` — never across the tree
-//! boundary into `matrix/` — because a test that reached into the other tree
+//! boundary into a Matrix checkout — because a test that reached into the other repository
 //! would pass in this checkout and fail in the Docker build context, and would
 //! be a dependency edge in everything but name.
 //!
@@ -62,7 +62,7 @@ fn contract_dir() -> PathBuf {
         .canonicalize()
         .expect(
             "server/contract/matrix must exist — cut it with \
-             `py matrix/contract/publish.py --out server/contract/matrix`",
+             `py ../munarium-matrix/contract/publish.py --out server/contract/matrix`",
         )
 }
 
@@ -90,12 +90,12 @@ fn files_under(root: &Path, dir: &Path, out: &mut BTreeSet<String>) {
 
 /// The vendored copy verifies against its own lock, with no sibling tree.
 ///
-/// `contract.lock` is written by `matrix/contract/publish.py` when the copy is
+/// `contract.lock` is written by Matrix's `contract/publish.py` when the copy is
 /// cut: a sha256 per file over the bytes it wrote (UTF-8, LF, no BOM — which
 /// is why `server/contract/**` is pinned `eol=lf` in `.gitattributes`) and a
 /// digest over the sorted list. This is the rule `publish.py --verify` applies,
 /// in the language this tree already tests in, so that a Server checkout with
-/// no `matrix/` beside it still proves its copy is exactly what the publisher
+/// no Matrix checkout beside it still proves its copy is exactly what the publisher
 /// cut: every listed file present and unchanged, nothing unlisted, the digest
 /// and the contract version agreeing with the lock.
 #[test]
@@ -122,7 +122,7 @@ fn the_vendored_copy_matches_its_lock() {
         assert_eq!(
             expected, &actual,
             "{rel} differs from contract.lock — the vendored copy was edited in place; \
-             re-cut it: rm -r server/contract/matrix && py matrix/contract/publish.py \
+             re-cut it: rm -r server/contract/matrix && py ../munarium-matrix/contract/publish.py \
              --out server/contract/matrix"
         );
         on_disk.remove(rel);
@@ -159,7 +159,7 @@ fn read_json(path: &Path) -> Value {
     assert!(
         !text.starts_with('\u{feff}'),
         "{} begins with a UTF-8 BOM; the vendored copy must be byte-identical to \
-         matrix/contract, and a BOM is how a console redirect silently breaks that",
+         the Matrix contract, and a BOM is how a console redirect silently breaks that",
         path.display()
     );
     serde_json::from_str(&text)
@@ -269,7 +269,7 @@ fn every_example_is_paired() {
     assert!(
         unpaired.is_empty(),
         "examples with no schema pairing (add them to PAIRS here and in \
-         matrix/contract/validate_examples.py): {unpaired:?}"
+         iokaio/munarium-matrix's contract/validate_examples.py): {unpaired:?}"
     );
     let missing: Vec<&String> = paired.difference(&on_disk).collect();
     assert!(

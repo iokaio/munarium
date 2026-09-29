@@ -21,8 +21,8 @@
 
 - [ ] Every commit is signed off (`git commit -s`; the DCO, see CONTRIBUTING.md).
 - [ ] The gates for the components this change touches pass locally: `server/gates.ps1`,
-      `matrix/test.ps1` (with `boundaries.py` and `doclint.py`), the client gates for the
-      language(s) touched, and `clients/check_compatibility.py` if a version moved.
+      the client gates for the language(s) touched, and `clients/check_compatibility.py`
+      if a version moved.
 - [ ] New source files carry `SPDX-License-Identifier: Apache-2.0` on the first line; `check_license.py` is green.
 - [ ] Documentation that states the changed behavior is updated in this pull request.
 

@@ -4,21 +4,23 @@
 claims with their history, controls access to source material, and returns evidence
 that applications can show alongside an answer.
 
-Three components, one repository, all under the Apache License 2.0:
+Two components live in this repository, both under the Apache License 2.0. Munarium
+Matrix is developed and released independently from its
+[standalone repository](https://github.com/iokaio/munarium-matrix).
 
 | | What it is | Start here |
 |---|---|---|
 | **[server/](server/)** | The governed-memory service: an append-only fact ledger with governance in the write path, hybrid retrieval carrying a provenance envelope on every answer, declarative runbooks, and bring-your-own-key model providers. REST and gRPC, both speaking the Munarium Memory Protocol. | [server/README.md](server/README.md) |
-| **[matrix/](matrix/)** | Munarium Matrix core: registers formal data sources, materializes governed record collections, executes verified query contracts, and seals the exact typed evidence an answer used. | [matrix/README.md](matrix/README.md) |
-| **[clients/](clients/)** | The official client libraries — Rust, Python, .NET and Java for the Server, and .NET, Java and Python for Matrix — proven against the servers by the same conformance scenarios. | [clients/README.md](clients/README.md) |
+| **[clients/](clients/)** | The official Server client libraries — Rust, Python, .NET and Java — proven against the Server by the same conformance scenarios. | [clients/README.md](clients/README.md) |
 
 Use **Server** for document search, grounded chat and a governed fact ledger. Add
 **Matrix** when answers also need records from PostgreSQL, MySQL, SQL Server or
 immutable file exports. The separate [Munarium Demo](https://github.com/iokaio/munarium-demo)
 provides six working applications and bundled datasets for evaluation.
 
-**Source versions:** Server **1.3.0**, Matrix **1.0.0**,
-Server client libraries **1.3.0 (unreleased)**, and Matrix clients **1.1.1**.
+**Source versions:** Server **1.3.0** and Server client libraries **1.3.0
+(unreleased)**. Matrix and its clients publish on their own cadence from
+[iokaio/munarium-matrix](https://github.com/iokaio/munarium-matrix).
 Server 1.2 adds configurable collection vocabularies, checked
 narrative answers and the [complete API on REST/gRPC](clients/docs/guides/server-1.2.md).
 Server 1.3 adds durable command recovery, governance profiles, usage and monetary
@@ -34,7 +36,7 @@ records publication and qualification. Client libraries are published on
 [crates.io](https://crates.io/crates/munarium-client). See the
 [publication record](server/CONTAINER.md#versions-and-verification) and
 [client installation guide](clients/README.md#installation-and-publication)
-for all seven package links and available versions.
+for the four Server package links and available versions.
 
 ## Guides
 
@@ -63,7 +65,8 @@ see the [source build instructions](server/CONTAINER.md#building-from-source).
 The public [iokaio/munarium image on Docker Hub](https://hub.docker.com/r/iokaio/munarium)
 contains **Munarium Server and the `/mmctl` client**. It supports `linux/amd64` and
 `linux/arm64`; Docker selects the platform automatically. On Windows, use Docker Desktop
-in Linux container mode. Matrix is deployed separately; see [Matrix setup](matrix/README.md).
+in Linux container mode. Matrix is deployed separately; see the
+[Matrix setup guide](https://github.com/iokaio/munarium-matrix#run-it).
 
 ```console
 docker pull iokaio/munarium:1.3.0
@@ -263,11 +266,11 @@ conformance suites, API documentation and deployment assets. The private researc
 and operational history preceding that release is excluded.
 
 **The 1.x compatibility policy** covers additive-only migrations, a stable wire contract under the N/N−1
-policy, a stable `MUNARIUM_*` configuration contract, and Matrix's adapter interface as public API
-under semantic versioning. Commercial support is separate; the open-source license
+policy, and a stable `MUNARIUM_*` configuration contract. Matrix maintains its adapter compatibility
+policy in its [standalone repository](https://github.com/iokaio/munarium-matrix). Commercial support is separate; the open-source license
 does not provide a support service. Current limitations and release changes are in
-[server/CHANGELOG.md](server/CHANGELOG.md), [matrix/CHANGELOG.md](matrix/CHANGELOG.md) and
-[clients/CHANGELOG.md](clients/CHANGELOG.md).
+[server/CHANGELOG.md](server/CHANGELOG.md), [clients/CHANGELOG.md](clients/CHANGELOG.md), and the
+[Matrix changelog](https://github.com/iokaio/munarium-matrix/blob/main/CHANGELOG.md).
 
 ## Licensing
 

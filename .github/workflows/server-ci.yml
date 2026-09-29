@@ -1,12 +1,8 @@
 # CI for the Rust munarium-server tree. Path-scoped to server/** so a change to
-# matrix/ or clients/ does not rebuild it. Jobs: lint-test (fmt, clippy, workspace
+# clients/ does not rebuild it. Jobs: lint-test (fmt, clippy, workspace
 # tests with pg, conformance in-process/pg/black-box/platform, doc drift,
 # boundary + migration checks), cargo-deny, and terraform (the shipped example
 # module must parse and validate).
-#
-# One sibling contract tree is in the path filter: matrix/contract/**, because
-# server/contract/matrix/ is a byte-for-byte copy of it and a contract-only edit
-# must trigger the server half or the two copies drift silently.
 #
 # Releases (signed images and tags) are cut outside this repository.
 name: server-ci
@@ -22,12 +18,10 @@ on:
     branches: [main]
     paths:
       - "server/**"
-      - "matrix/contract/**"
       - ".github/workflows/server-ci.yml"
   pull_request:
     paths:
       - "server/**"
-      - "matrix/contract/**"
       - ".github/workflows/server-ci.yml"
   workflow_dispatch: {}
 
@@ -55,6 +49,13 @@ jobs:
       MUNARIUM_TEST_DATABASE_URL: postgres://munarium:munarium-dev@localhost:5433/munarium
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: checkout Matrix contract source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: iokaio/munarium-matrix
+          ref: 2203173e863931873ed8af0e69d272f58f64021d # PR #2 audited extraction
+          path: munarium-matrix
+          persist-credentials: false
       # The featured (vector-diskann) step below compiles a second
       # configuration of three crates and their test binaries into the same
       # target dir, and the first run of it filled the runner's disk mid-build

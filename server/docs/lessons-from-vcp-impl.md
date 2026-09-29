@@ -1431,7 +1431,7 @@ poison recovery and direct DiskANN adjacency poison controls address the residua
 P15 boundaries. See [panic-boundaries.md](panic-boundaries.md). Matrix adopts the
 shared receipt contract with selected-tier identities, native command failures,
 explicit missing environments, and owned PostgreSQL resources; its
-[runner documentation](../../matrix/README.md#testing) records the local profile
+[runner documentation](https://github.com/iokaio/munarium-matrix#testing) records the local profile
 and external black-box prerequisites. Automatic CI remains enabled.
 
 PR #64 did not adopt D1/D7, D3 or D4 by implication. Subsequent work explicitly adopts the D1/D7 policies above, guarded D3 command recovery (§9.2) and bounded D4 source retention (§10.3). Stronger behavior cannot be
