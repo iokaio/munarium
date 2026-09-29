@@ -86,6 +86,17 @@ manifests, which `check_compatibility.py` keeps in step with `compatibility.json
 so a release is cut by bumping the manifests and this file, never by a workflow
 input.
 
+Publishing is moving to
+[iokaio/munarium-clients-publish](https://github.com/iokaio/munarium-clients-publish),
+which publishes every Munarium client family from one set of credentials.
+[`release.json`](release.json) describes the `server-crates` and
+`server-clients` families to it. There a release is a tag on the merged commit
+(`server-crates-v<version>` or `clients-v<version>`) and a dispatch of its
+`publish.yml`. `clientbuild.yml` stays until that path has published
+successfully, and is then removed. From 1.2.0 the Matrix clients are released
+from [iokaio/munarium-matrix](https://github.com/iokaio/munarium-matrix), not
+from here.
+
 ## Compatibility
 
 **[`compatibility.json`](compatibility.json) is the authoritative compatibility record.**
