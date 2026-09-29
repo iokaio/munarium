@@ -3,7 +3,7 @@
 The normative shape and identity rules for a Munarium search artifact. Three
 canonical documents, one canonicalization, two identifiers.
 
-Unlike [matrix/contract/](../../../matrix/contract/README.md), this is **not** a
+Unlike the [Matrix contract](https://github.com/iokaio/munarium-matrix/tree/main/contract), this is **not** a
 cross-tree boundary — `munarium-datastore` and `munarium-server` live in the
 same workspace (it sits beside the tests that read it). It is a contract for a different reason: `artifact_id` is a
 content hash, so the encoding rules are load-bearing forever. An artifact sealed

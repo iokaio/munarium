@@ -51,11 +51,9 @@ def test_stale_server_range_is_detected(lang: str) -> None:
     assert CHECK.server_support_problems(record)
 
 
-def test_server_upgrade_does_not_require_matrix_upgrade() -> None:
+def test_server_upgrade_updates_every_client_range() -> None:
     record = copy.deepcopy(RECORD)
     record["target_server"] = "1.2.0"
     for lang in ("python", "dotnet", "java", "rust"):
         record["clients"][lang]["supported_server"] = ["1.2", "1.1"]
     assert CHECK.server_support_problems(record) == []
-    record["clients"]["matrix-python"]["supported_server"] = ["1.2"]
-    assert CHECK.server_support_problems(record)

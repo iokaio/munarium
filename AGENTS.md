@@ -18,8 +18,7 @@ code, contracts, tests, and published documentation are the sources of truth;
 do not substitute remembered behavior or assumptions about another checkout.
 
 - `server/`: governed memory, append-only ledger, retrieval, runbooks, REST and gRPC.
-- `matrix/`: governed structured records, query contracts, and sealed evidence.
-- `clients/`: language SDKs and conformance suites for the two services.
+- `clients/`: Server language SDKs and conformance suites.
 - `docs/`: guides spanning components, including the runnable corpus example.
 - `scripts/`: repository hygiene and documentation checks.
 
@@ -70,10 +69,10 @@ local on purpose. The categories that matter:
   stand-ins are `docs/lab/example/.env.example` and
   `server/deploy/terraform/example-aks/example.tfvars`.
 - Infrastructure state that embeds credentials: `*.tfstate*`, every `tfplan*`
-  spelling, `.terraform/`, and `.terraform.lock.hcl` under `server/deploy/terraform/`
-  and `matrix/`. A plan file contains the full state, generated passwords included.
-- Run residue that can hold real data: `server/scratch/`, `matrix/scratch/`,
-  `clients/scratch/`, `matrix/artifacts/`, the corpus example's ingest manifest and
+  spelling, `.terraform/`, and `.terraform.lock.hcl` under `server/deploy/terraform/`.
+  A plan file contains the full state, generated passwords included.
+- Run residue that can hold real data: `server/scratch/`, `clients/scratch/`,
+  the corpus example's ingest manifest and
   results files under `docs/lab/example/`, SBOM dumps, and packed wheels or nupkgs
   left beside a test.
 - The release-time proto copy at `server/src/munarium-proto/proto/`.
@@ -103,8 +102,9 @@ Rules for these files:
 
 ## Architecture and data invariants
 
-- Keep `munarium-core` and `munarium-matrix-core` independent of HTTP, web, database,
-  and provider layers. Matrix must not depend on a Server crate; use the wire contract.
+- Keep `munarium-core` independent of HTTP, web, database, and provider layers.
+  Matrix lives in `iokaio/munarium-matrix`; the services use the wire contract rather
+  than a crate dependency.
 - Preserve tenant isolation, capability attenuation, access levels, compartments,
   per-user audit records, and declared query scopes across every affected path.
   Never bypass authorization to make a test or demonstration succeed.
@@ -173,7 +173,6 @@ directory the component expects. Typical checks are:
 | Root documentation and example scripts | From root: `py scripts/docs_linkcheck.py`; `py -m unittest discover -s scripts -p "test_*.py"` for grader/gate changes |
 | Server | From `server/`: `./gates.ps1`, or the documented `./test.ps1` ladder with relevant PostgreSQL, black-box, enterprise, and cluster tiers |
 | Server documentation only | `cargo test --manifest-path server/Cargo.toml -p munarium-server docs_coverage` from root |
-| Matrix | From `matrix/`: `./test.ps1`; use `-Gates` and relevant black-box tiers as documented |
 | Rust clients | Package-scoped formatting, workspace clippy with warnings denied, and workspace tests per `CONTRIBUTING.md` |
 | Python clients | `ruff check`, `ruff format --check`, `mypy`, `pytest` |
 | .NET clients | `dotnet build` and `dotnet test` with warnings treated as errors |

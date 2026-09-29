@@ -86,4 +86,4 @@ side, and the worked example grades both.
 
 This guide covers Munarium Server. A lab that also measures structured evidence from Munarium
 Matrix uses the same loop with `mmctl matrix verify` for the contract side; start from the
-[Matrix documentation](../../matrix/docs/README.md) for that half.
+[Matrix documentation](https://github.com/iokaio/munarium-matrix/tree/main/docs) for that half.

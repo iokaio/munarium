@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "source_commit": "5fbc92958552c21612f60b6236e6dbc8b8a81ef4",
-  "preserved_sha256": "c8cfec5ff1d9755e08084df5917bf161328e6ada29b3ab59bc9d06493ec0d1c9",
+  "preserved_sha256": "d55e8f2a0d6112bfc243893696d6cc4736334f47073e00a93198e69fb19d4ef4",
   "steps": {
     "fmt": {
       "ids": [
@@ -284,14 +284,7 @@
         "commands": [
           [
             "{python}",
-            "../matrix/contract/publish.py",
-            "--self-test"
-          ],
-          [
-            "{python}",
-            "../matrix/contract/publish.py",
-            "--check",
-            "contract/matrix"
+            "tools/check_matrix_contract.py"
           ]
         ],
         "features": "default",

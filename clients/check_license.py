@@ -11,15 +11,14 @@ server.
 Static checks (every finding printed; exit 1 if there is any):
 
   1. Manifests. rust/Cargo.toml's workspace license and both member crates;
-     python/ and matrix-python/'s PEP 639 `license` plus `license-files`; the .NET
-     `PackageLicenseExpression` in both Directory.Build.props; the Java POM license
-     and the jar manifests' Bundle-License in both build.gradle.kts. All must read
-     Apache-2.0.
+     python/'s PEP 639 `license` plus `license-files`; the .NET
+     `PackageLicenseExpression`; the Java POM license and jar manifest's
+     Bundle-License. All must read Apache-2.0.
   2. Texts. clients/LICENSE is the canonical Apache License 2.0 (sha256 pinned to
      https://www.apache.org/licenses/LICENSE-2.0.txt, compared LF-normalized so a
      Windows checkout passes), every other LICENSE under clients/ is the same text,
      and every NOTICE is byte-identical to clients/NOTICE. Copies exist where a
-     packaging tool cannot reach outside its project root (python/, matrix-python/,
+     packaging tool cannot reach outside its project root (python/ and
      rust/munarium-client/); they may never drift.
   3. Headers. Every Ioka-authored source file carries `SPDX-License-Identifier:
      Apache-2.0` on its first line (second, after a shebang). Exempt, and why:
@@ -82,8 +81,8 @@ EXEMPT = (
     "java/gradle/wrapper/",
 )
 RETIRED_ALLOWED: set[str] = set()
-LICENSE_COPIES = ("python/LICENSE", "matrix-python/LICENSE", "rust/munarium-client/LICENSE")
-NOTICE_COPIES = ("python/NOTICE", "matrix-python/NOTICE", "rust/munarium-client/NOTICE")
+LICENSE_COPIES = ("python/LICENSE", "rust/munarium-client/LICENSE")
+NOTICE_COPIES = ("python/NOTICE", "rust/munarium-client/NOTICE")
 
 
 SKIP_DIRS = {".git", "target", "node_modules", "__pycache__", ".venv", "venv", "bin", "obj", ".gradle", "build", "dist", ".mypy_cache", ".ruff_cache", ".pytest_cache"}
@@ -156,21 +155,6 @@ def check_manifests(bad: list[str]) -> None:
         bad.append("java/build.gradle.kts: the POM licenses block does not name Apache-2.0")
     if '"Bundle-License" to "Apache-2.0"' not in kts:
         bad.append("java/build.gradle.kts: the jar manifest does not carry Bundle-License: Apache-2.0")
-    # The Matrix clients follow the same rules.
-    mpy = tomllib.loads(lf((ROOT / "matrix-python/pyproject.toml").read_bytes()).decode("utf-8"))["project"]
-    if mpy.get("license") != "Apache-2.0":
-        bad.append(f"matrix-python/pyproject.toml: [project] license is {mpy.get('license')!r}, not the PEP 639 string 'Apache-2.0'")
-    for need in ("LICENSE", "NOTICE"):
-        if need not in mpy.get("license-files", []):
-            bad.append(f"matrix-python/pyproject.toml: license-files does not list {need}")
-    mprops = lf((ROOT / "matrix-dotnet/Directory.Build.props").read_bytes()).decode("utf-8")
-    if "<PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>" not in mprops:
-        bad.append("matrix-dotnet/Directory.Build.props: no <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>")
-    mkts = lf((ROOT / "matrix-java/build.gradle.kts").read_bytes()).decode("utf-8")
-    if '"Bundle-License" to "Apache-2.0"' not in mkts:
-        bad.append("matrix-java/build.gradle.kts: the jar manifest does not carry Bundle-License: Apache-2.0")
-
-
 def check_texts(bad: list[str], files: list[str]) -> None:
     def apache(rel: str) -> bool:
         return hashlib.sha256(lf((ROOT / rel).read_bytes())).hexdigest() == APACHE_2_0_SHA256

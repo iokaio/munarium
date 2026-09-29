@@ -9,14 +9,11 @@ the LICENSE file beside this notice.
 use them beyond what is needed to describe the origin of these files. What is
 and is not permitted is in TRADEMARK.md.
 
-This repository holds three components, all under the License above:
+This repository holds two components, both under the License above:
 
   server/    Munarium Server — the governed-memory service and the Munarium
              Memory Protocol (MMP) it speaks over REST and gRPC.
-  matrix/    Munarium Matrix core — the structured-evidence plane: governed
-             record collections, verified query contracts, sealed evidence, and
-             the adapters for the databases an application already runs.
-  clients/   The client libraries for both, in Rust, Python, .NET and Java.
+  clients/   Munarium Server client libraries in Rust, Python, .NET and Java.
 
 Munarium Enterprise is a separate, proprietary distribution built from this
 software: certified builds, supported deployment architectures, a support term,

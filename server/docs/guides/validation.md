@@ -14,7 +14,7 @@ py tools/check_gate_equivalence.py
 ./tools/test-datastore-permissions.ps1
 ```
 
-Matrix's [local runner](../../../matrix/README.md#testing) also uses this execution
+Matrix's [local runner](https://github.com/iokaio/munarium-matrix#testing) also uses this execution
 and receipt contract. It defines its own selected requirements and environment
 adapters; the receipt profile names Matrix explicitly. A selected environment
 that is absent is `not_run` with `missing_environment`, while a configured

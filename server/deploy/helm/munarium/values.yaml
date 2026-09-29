@@ -34,7 +34,7 @@ docIntel:
   endpoint: ""
 
 # Munarium Matrix (the structured-evidence plane), installed as its OWN
-# release beside this one — matrix/deploy/helm/munarium-matrix — never as a
+# release beside this one — from iokaio/munarium-matrix's Helm chart — never as a
 # sub-chart, because ground rule 1 keeps the trees apart. `baseUrl` is where
 # the turn path executes contracts (the QUERY role's Service); `adminUrl` is
 # where a BROWSER reaches Matrix's console, for the /admin/matrix reciprocal

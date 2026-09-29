@@ -44,11 +44,10 @@ You must have the right to submit every file in the pull request.
 | Component | Run before you push |
 |---|---|
 | `server/` | `.\gates.ps1` — everything CI runs, against a compose PostgreSQL. Or the ladder: `.\test.ps1` (offline), `-Postgres`, `-BlackBox`, `-Enterprise`, `-Cluster` |
-| `matrix/` | `.\test.ps1` (offline tier: unit tests, boundaries, contract checks, doclint), `-Gates` for fmt and clippy, `-BlackBox` for the compose tiers |
 | `clients/rust` | `cargo fmt -p munarium-client -p munarium-client-conformance --check` (package-scoped: `--all` reaches the server's wire crates), `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` |
-| `clients/python`, `clients/matrix-python` | `ruff check`, `ruff format --check`, `mypy`, `pytest` |
-| `clients/dotnet`, `clients/matrix-dotnet` | `dotnet build` (warnings are errors), `dotnet test` |
-| `clients/java`, `clients/matrix-java` | `./gradlew build` |
+| `clients/python` | `ruff check`, `ruff format --check`, `mypy`, `pytest` |
+| `clients/dotnet` | `dotnet build` (warnings are errors), `dotnet test` |
+| `clients/java` | `./gradlew build` |
 | Everything | `py check_license.py` and `py clients/check_compatibility.py` from the repository root |
 
 Rules the gates enforce that are easy to trip:
@@ -61,11 +60,11 @@ Rules the gates enforce that are easy to trip:
 - **Migrations are additive-only**, enforced in CI. This repository has been at 1.0 since its first
   release, so an applied migration is never edited: `sqlx` validates a checksum per migration and
   an edit stops the server booting against any existing database.
-- **The kernels stay pure.** CI rejects any change that lets `munarium-core` or
-  `munarium-matrix-core` depend on the web, database or HTTP-client layers.
-- **Matrix never depends on a server crate.** `matrix/scripts/boundaries.py` rules on the shipping
-  dependency graph. The two talk over a wire contract, not a crate edge — one repository does not
-  change that.
+- **The kernel stays pure.** CI rejects any change that lets `munarium-core` depend on the web,
+  database or HTTP-client layers.
+- **Server and Matrix stay independent.** Matrix has its own
+  [repository](https://github.com/iokaio/munarium-matrix); the two talk over a wire contract, not a
+  crate edge.
 - **The contract directories are not hand-edited.** `server/contract/matrix/` is a locked vendored
   copy; a change arrives as a re-cut, not an edit.
 

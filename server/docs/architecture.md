@@ -34,7 +34,7 @@ Three artifacts make up a release:
 2. **The deployment code** — the Helm chart ([`deploy/helm/munarium`](../deploy/helm/munarium/README.md)), the compose profiles ([`docker-compose.yml`](../docker-compose.yml)), and an illustrative Terraform module for AKS ([`deploy/terraform/example-aks`](../deploy/terraform/example-aks/README.md)).
 3. **The runbook system** — declarative, versioned definitions of data shapes and their indexing pipelines ([`runbooks/`](../runbooks/README.md)), applied to a running server without code changes to the core.
 
-Out of scope for this document: the client libraries (they live in [`clients/`](../../clients/) and speak to the server only through the Munarium Protocol), Munarium Matrix (the structured-evidence plane, its own image in [`matrix/`](../../matrix/); the two trees never share a crate), and a Kubernetes operator (nothing here needs CRD-driven provisioning).
+Out of scope for this document: the client libraries (they live in [`clients/`](../../clients/) and speak to the server only through the Munarium Protocol), [Munarium Matrix](https://github.com/iokaio/munarium-matrix) (the structured-evidence plane, with its own image and repository; the two never share a crate), and a Kubernetes operator (nothing here needs CRD-driven provisioning).
 
 ---
 
@@ -128,7 +128,7 @@ Key crate boundaries:
 | `munarium-docintel-az` | munarium-core (DocumentIntelligence trait), munarium-azure-auth, reqwest | storage crates |
 | `munarium-datastore` | serde, serde_json, sha2, hex, thiserror; optional tantivy, rust-stemmers and tempfile (lexical) and diskann (approximate vectors) | munarium-core, axum, tonic, sqlx, reqwest, utoipa — independently usable, and qualified as such from an isolated consumer |
 | `munarium-providers` | munarium-core (types only), reqwest | storage crates |
-| `munarium-server` | everything above | any `matrix/` crate (ground rule 1); scorers, judges, experiment harnesses |
+| `munarium-server` | everything above | any Matrix crate (ground rule 1); scorers, judges, experiment harnesses |
 
 The trait surface in `munarium-core` is the load-bearing element:
 
