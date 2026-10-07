@@ -10,6 +10,8 @@ pub struct Config {
     pub store: StoreKind,
     pub database_url: Option<String>,
     pub auth: AuthMode,
+    /// Explicit platform authority profile; legacy remains the compatibility default.
+    pub platform: Option<crate::platform_api::PlatformConfig>,
     /// Opt-in operator-only provider diagnostics. Paid probes use applied
     /// tenant configurations with a daily total cap instead of env defaults.
     pub managed_provider_diagnostics: bool,
@@ -289,6 +291,7 @@ impl Config {
             store,
             database_url,
             auth,
+            platform: crate::platform_api::PlatformConfig::from_env()?,
             managed_provider_diagnostics: match env_or(
                 "MUNARIUM_MANAGED_PROVIDER_DIAGNOSTICS",
                 "false",

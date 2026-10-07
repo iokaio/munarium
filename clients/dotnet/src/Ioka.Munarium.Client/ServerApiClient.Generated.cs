@@ -153,6 +153,12 @@ public sealed partial class ServerApiClient {
     public Task<ApiResponse> MonetaryPricesAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("MonetaryPrices", "GET", "/v1/monetary/prices", "application/json", request ?? new(), ct);
     /// <summary>POST /v1/monetary/prices</summary>
     public Task<ApiResponse> AddMonetaryPriceAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("AddMonetaryPrice", "POST", "/v1/monetary/prices", "application/json", request ?? new(), ct);
+    /// <summary>GET /v1/platform/{tenant}/authority</summary>
+    public Task<ApiResponse> GetPlatformAuthorityAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("GetPlatformAuthority", "GET", "/v1/platform/{tenant}/authority", "application/json", request ?? new(), ct);
+    /// <summary>POST /v1/platform/{tenant}/authority</summary>
+    public Task<ApiResponse> TransitionPlatformAuthorityAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("TransitionPlatformAuthority", "POST", "/v1/platform/{tenant}/authority", "application/json", request ?? new(), ct);
+    /// <summary>POST /v1/platform/{tenant}/records</summary>
+    public Task<ApiResponse> PlatformRecordsAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("PlatformRecords", "POST", "/v1/platform/{tenant}/records", "application/json", request ?? new(), ct);
     /// <summary>GET /v1/providers</summary>
     public Task<ApiResponse> ListProvidersAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("ListProviders", "GET", "/v1/providers", "application/json", request ?? new(), ct);
     /// <summary>POST /v1/providers</summary>

@@ -1,0 +1,119 @@
+{
+  "profile": "decision-json-v1",
+  "status": "proposed",
+  "cases": [
+    {
+      "id": "empty",
+      "input": "{}",
+      "result": "accept",
+      "canonical": "{}",
+      "digest": "sha256:f4d19df5aee3cade529acd5a19e741327b5780ffc4a54755f91e38770901c900"
+    },
+    {
+      "id": "sort",
+      "input": " { \"z\":2, \"a\":1 } ",
+      "result": "accept",
+      "canonical": "{\"a\":1,\"z\":2}",
+      "digest": "sha256:7ea82109048f2b03eef410b041448b5d2f34438349c39d3ee25e5b20ed2d3abe"
+    },
+    {
+      "id": "escapes",
+      "input": "{\"a\":\"\\u0061\\n\"}",
+      "result": "accept",
+      "canonical": "{\"a\":\"a\\n\"}",
+      "digest": "sha256:2420c6b4ed2ff6aa49c131e090a53b07f576274ccef0340351634ed3a9b0ccb3"
+    },
+    {
+      "id": "unicode",
+      "input": "{\"a\":\"é😀\"}",
+      "result": "accept",
+      "canonical": "{\"a\":\"é😀\"}",
+      "digest": "sha256:50b36511e96d5a757c55a53fa271deecf8065e28ac0a5901c4433ed87eff916f"
+    },
+    {
+      "id": "decomposed",
+      "input": "{\"a\":\"é\"}",
+      "result": "accept",
+      "canonical": "{\"a\":\"é\"}",
+      "digest": "sha256:32a06c3f8b22d2c079c1a1c6fa006b07f355a2e6050f1c74d45098fdd6c15821"
+    },
+    {
+      "id": "array",
+      "input": "{\"a\":[2,1,null,true]}",
+      "result": "accept",
+      "canonical": "{\"a\":[2,1,null,true]}",
+      "digest": "sha256:92ec736eb0c934531d9b4c654b8c61e7c459ddb5e73b41971e68ffaff06069d6"
+    },
+    {
+      "id": "integer-bound",
+      "input": "{\"a\":9007199254740991}",
+      "result": "accept",
+      "canonical": "{\"a\":9007199254740991}",
+      "digest": "sha256:08f4c29afa12fee730c41a3e68ce379802287323c4f11cfe4d109e657ce78049"
+    },
+    {
+      "id": "negative-bound",
+      "input": "{\"a\":-9007199254740991}",
+      "result": "accept",
+      "canonical": "{\"a\":-9007199254740991}",
+      "digest": "sha256:6c051c18ece81d049133221f49dac20973283f6e4bed9f4cc785cefeec253075"
+    },
+    {
+      "id": "null",
+      "input": "{\"a\":null}",
+      "result": "accept",
+      "canonical": "{\"a\":null}",
+      "digest": "sha256:d18ed218a50f5aaa10284241a53f5598bc9f9ab2077990c23875f9a9c769e397"
+    },
+    {
+      "id": "duplicate",
+      "input": "{\"a\":1,\"a\":2}",
+      "result": "reject"
+    },
+    {
+      "id": "escaped-duplicate",
+      "input": "{\"a\":1,\"\\u0061\":2}",
+      "result": "reject"
+    },
+    {
+      "id": "float",
+      "input": "{\"a\":1.0}",
+      "result": "reject"
+    },
+    {
+      "id": "exponent",
+      "input": "{\"a\":1e0}",
+      "result": "reject"
+    },
+    {
+      "id": "negative-zero",
+      "input": "{\"a\":-0}",
+      "result": "reject"
+    },
+    {
+      "id": "overflow",
+      "input": "{\"a\":9007199254740992}",
+      "result": "reject"
+    },
+    {
+      "id": "nan",
+      "input": "{\"a\":NaN}",
+      "result": "reject"
+    },
+    {
+      "id": "surrogate",
+      "input": "{\"a\":\"\\ud800\"}",
+      "result": "reject"
+    },
+    {
+      "id": "unicode-key",
+      "input": "{\"é\":1}",
+      "result": "reject"
+    },
+    {
+      "id": "root-array",
+      "input": "[]",
+      "result": "reject"
+    }
+  ]
+}

@@ -35,6 +35,33 @@ Automatic CI retains its configured build and test suites; local checks suppleme
 that coverage. Recreating every hosted integration environment or manually
 dispatching routine CI is not required. Keep AGENTS.md and CLAUDE.md aligned.
 
+## Stage 1 development authorization
+
+The maintainer has authorized implementation of both Stage 1 rows in the parallel
+build plan and the supporting guidance and CI changes (6 October 2026). See the
+[scope and acceptance boundary](https://github.com/iokaio/munarium-platform/blob/main/docs/stage1-authorization.md). This covers the hub,
+Server, Registry, Warden, Gate and Harness, including required S1 bootstrap authority,
+S2/S3/S4 and minimum S6 foundation work, provider identity admission, authenticated
+service transport and decision-only integration. Proceed with necessary source,
+tests, pinned dependencies, additive migrations, documentation and build/test
+workflow edits without requesting that permission again.
+
+This is the scoped maintainer authorization for affected protected guidance,
+build/test workflows and contract candidate preparation. Record shared semantic
+choices in a hub decision record before consumer implementation. Proposed status
+permits experimental implementation and testing within this packet; preserve
+existing contract versions and golden vectors, and export/re-vendor new candidates
+through the documented process. It does not record human contract acceptance.
+
+Disposable local/CI tests may generate isolated test-only keys, certificates,
+identities, bootstrap authority and operator bindings without production trust.
+Submitted candidates remain inactive; no execution grant or target effect is in
+Stage 1. Keep secrets out of tracked files and logs. Preserve required checks,
+read-only CI permissions, ownership, trusted approval/release workflows and signing
+policy. This grant does not authorize publication, merge, deployment, paid resources
+or production credential operations. Complete implementation and review evidence
+before seeking any separately required acceptance or operational approval.
+
 ## Establish the task and protect existing work
 
 1. Confirm the working directory, Git remote, branch, and working-tree status.

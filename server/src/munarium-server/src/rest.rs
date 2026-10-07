@@ -255,6 +255,13 @@ async fn create_version(
     ProblemJson(req): ProblemJson<dto::CreateVersionRequest>,
 ) -> ApiResult<axum::response::Response> {
     let (ctx, store) = auth(&state, &headers).await?;
+    crate::platform_tls::ordinary_version(
+        &state,
+        store.as_ref(),
+        req.parent_version_id.as_deref(),
+        req.metadata.as_ref(),
+    )
+    .await?;
     let hash = idem_body_hash(&req)?;
     with_idempotency(
         &state,
@@ -1342,6 +1349,16 @@ port-forward with a strict CSP and zero external assets.</p>
 
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
+        .route(
+            "/v1/platform/{tenant}/records",
+            post(crate::platform_records::platform_records)
+                .layer(DefaultBodyLimit::max(16 * 1024 * 1024 + 131072)),
+        )
+        .route(
+            "/v1/platform/{tenant}/authority",
+            get(crate::platform_api::get_platform_authority)
+                .post(crate::platform_api::transition_platform_authority),
+        )
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/healthai", get(crate::providers_api::healthai))
@@ -1736,6 +1753,10 @@ pub fn router(state: Arc<AppState>) -> Router {
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             crate::middleware::capture,
+        ))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            crate::platform_tls::admit,
         ))
         .with_state(state)
 }

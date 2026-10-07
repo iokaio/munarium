@@ -33,15 +33,28 @@ public sealed partial class ServerApiClient : IAsyncDisposable
     private readonly MunariumClientOptions _options;
     private readonly HttpClient? _http;
     private readonly GrpcChannel? _channel;
+    private readonly bool _ownsTransport;
     private ServerApiClient(MunariumClientOptions options, bool grpc)
     {
         _options = options;
+        _ownsTransport = true;
         if (grpc) _channel = GrpcChannel.ForAddress(options.Endpoint, new GrpcChannelOptions { MaxReceiveMessageSize = MaxBytes + 65536, MaxSendMessageSize = MaxBytes + 65536 });
         else _http = new HttpClient(new SocketsHttpHandler { ConnectTimeout = options.ConnectTimeout, AllowAutoRedirect = false }) { Timeout = Timeout.InfiniteTimeSpan };
     }
     public static ServerApiClient Rest(MunariumClientOptions options) => new(options, false);
     public static ServerApiClient Grpc(MunariumClientOptions options) => new(options, true);
-    public ValueTask DisposeAsync() { _http?.Dispose(); _channel?.Dispose(); return ValueTask.CompletedTask; }
+    private ServerApiClient(MunariumClientOptions options, HttpClient? http, GrpcChannel? channel)
+    {
+        _options = options;
+        _http = http;
+        _channel = channel;
+        _ownsTransport = false;
+    }
+    /// <summary>Use a caller-owned HTTP client configured for mTLS. Retain certificate validation and disable redirects.</summary>
+    public static ServerApiClient Rest(MunariumClientOptions options, HttpClient client) => new(options, client ?? throw new ArgumentNullException(nameof(client)), null);
+    /// <summary>Use a caller-owned authenticated gRPC channel. Disposing this API client leaves the channel open.</summary>
+    public static ServerApiClient Grpc(MunariumClientOptions options, GrpcChannel channel) => new(options, null, channel ?? throw new ArgumentNullException(nameof(channel)));
+    public ValueTask DisposeAsync() { if (_ownsTransport) { _http?.Dispose(); _channel?.Dispose(); } return ValueTask.CompletedTask; }
 
     private static string UriFor(string template, ApiRequest request)
     {

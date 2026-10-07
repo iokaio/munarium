@@ -19,6 +19,7 @@ json-arbitrary-precision = ["serde_json/arbitrary_precision"]
 vector-diskann = ["munarium-retrieval/vector-diskann"]
 
 [dependencies]
+munarium-platform-identity = { path = "../munarium-platform-identity" }
 munarium-core = { path = "../munarium-core" }
 munarium-store-mem = { path = "../munarium-store-mem" }
 munarium-store-pg = { path = "../munarium-store-pg" }
@@ -70,6 +71,10 @@ utoipa = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 async-trait = { workspace = true }
+tokio-rustls = { version = "=0.26.4", default-features = false, features = ["ring", "tls12"] }
+rustls-pemfile = "=2.2.0"
 
 [dev-dependencies]
+ed25519-dalek = { workspace = true }
+tempfile = "=3.27.0"
 syn = { version = "2", features = ["full"] }

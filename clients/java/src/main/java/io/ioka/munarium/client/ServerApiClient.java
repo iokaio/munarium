@@ -5,6 +5,10 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 public final class ServerApiClient extends ServerApiTransport {
     public ServerApiClient(MunariumClientOptions options, boolean grpc) { super(options, grpc); }
+    /** Use a caller-owned HTTP client with configured TLS identity and trust. */
+    public ServerApiClient(MunariumClientOptions options, java.net.http.HttpClient http) { super(options, http); }
+    /** Use a caller-owned authenticated gRPC channel. */
+    public ServerApiClient(MunariumClientOptions options, io.grpc.ManagedChannel channel) { super(options, channel); }
     /** GET /healthai */
     public ApiResponse healthai(ApiRequest request) { return call("Healthai", "GET", "/healthai", "application/json", request); }
     public CompletableFuture<ApiResponse> healthaiAsync(ApiRequest request) { return async(() -> healthai(request)); }
@@ -230,6 +234,15 @@ public final class ServerApiClient extends ServerApiTransport {
     /** POST /v1/monetary/prices */
     public ApiResponse addMonetaryPrice(ApiRequest request) { return call("AddMonetaryPrice", "POST", "/v1/monetary/prices", "application/json", request); }
     public CompletableFuture<ApiResponse> addMonetaryPriceAsync(ApiRequest request) { return async(() -> addMonetaryPrice(request)); }
+    /** GET /v1/platform/{tenant}/authority */
+    public ApiResponse getPlatformAuthority(ApiRequest request) { return call("GetPlatformAuthority", "GET", "/v1/platform/{tenant}/authority", "application/json", request); }
+    public CompletableFuture<ApiResponse> getPlatformAuthorityAsync(ApiRequest request) { return async(() -> getPlatformAuthority(request)); }
+    /** POST /v1/platform/{tenant}/authority */
+    public ApiResponse transitionPlatformAuthority(ApiRequest request) { return call("TransitionPlatformAuthority", "POST", "/v1/platform/{tenant}/authority", "application/json", request); }
+    public CompletableFuture<ApiResponse> transitionPlatformAuthorityAsync(ApiRequest request) { return async(() -> transitionPlatformAuthority(request)); }
+    /** POST /v1/platform/{tenant}/records */
+    public ApiResponse platformRecords(ApiRequest request) { return call("PlatformRecords", "POST", "/v1/platform/{tenant}/records", "application/json", request); }
+    public CompletableFuture<ApiResponse> platformRecordsAsync(ApiRequest request) { return async(() -> platformRecords(request)); }
     /** GET /v1/providers */
     public ApiResponse listProviders(ApiRequest request) { return call("ListProviders", "GET", "/v1/providers", "application/json", request); }
     public CompletableFuture<ApiResponse> listProvidersAsync(ApiRequest request) { return async(() -> listProviders(request)); }

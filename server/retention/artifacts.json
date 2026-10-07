@@ -118,6 +118,20 @@
       "origins": [
         "src/munarium-store-mem/src/lib.rs"
       ]
+    },
+    "platform_authority_checkpoint": {
+      "description": "Independently retained local JSON fence/revision and optional pending attestation digest/next fence/revision, OS-locked and synced before authority activation; filesystem snapshots/backups retain independent copies.",
+      "origins": [
+        "src/munarium-server/src/platform_api.rs",
+        "src/munarium-core/src/platform_authority.rs"
+      ]
+    },
+    "platform_decision_records": {
+      "description": "Reserved ledger events and claim projections retain canonical proposals, decisions/refusals, verified origin/actor/kind/assertion digest and exact replay bundles containing resolved evidence, policy, evaluator inputs and source references. PostgreSQL/WAL/backups or memory snapshots retain these copies independently of original source retention.",
+      "origins": [
+        "src/munarium-core/src/platform.rs",
+        "src/munarium-server/src/platform_records.rs"
+      ]
     }
   }
 }

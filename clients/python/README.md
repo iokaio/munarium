@@ -39,16 +39,19 @@ Published versions are recorded in the
 
 ```python
 from munarium_client import (
-    AsyncMunariumClient, ClientOptions, HeadConflictError, MunariumClient,
+    AsyncMunariumClient,
+    ClientOptions,
+    HeadConflictError,
+    MunariumClient,
 )
 
 # sync + REST
-client = MunariumClient.rest(
-    ClientOptions("http://127.0.0.1:8080", token="devtoken", uid="user-1"))
+client = MunariumClient.rest(ClientOptions("http://127.0.0.1:8080", token="devtoken", uid="user-1"))
 # …or sync + gRPC / async + REST / async + gRPC
 client = MunariumClient.grpc(ClientOptions("127.0.0.1:50051", token="devtoken", uid="user-1"))
 aclient = AsyncMunariumClient.rest(
-    ClientOptions("http://127.0.0.1:8080", token="devtoken", uid="user-1"))
+    ClientOptions("http://127.0.0.1:8080", token="devtoken", uid="user-1")
+)
 
 v = client.commands.create_version()
 
@@ -60,7 +63,8 @@ if outcome.is_disputed:
 
 # The write loop: expected_head + fresh idempotency key per attempt.
 outcome = client.propose_claim_with_retry(
-    v, lambda head: {"subject": "hero", "key": "home", "value": "harbor"})
+    v, lambda head: {"subject": "hero", "key": "home", "value": "harbor"}
+)
 
 # One pin bounds all stores.
 page = client.query.facts(v, as_of_seq=1)

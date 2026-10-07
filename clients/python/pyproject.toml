@@ -27,6 +27,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+platform-test = ["cryptography==45.0.6"]
 dev = [
     # PINNED EXACTLY, and the drift check is why. The generated stubs carry a
     # `GRPC_GENERATED_VERSION` stamp, so a floating patch version makes

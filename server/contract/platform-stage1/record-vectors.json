@@ -1,0 +1,189 @@
+{
+  "status": "proposed",
+  "examples": {
+    "principal": {
+      "schema_version": 1,
+      "deployment": "fixture",
+      "tenant": "alpha",
+      "issuer": "fixture-issuer",
+      "audience": "svc-server",
+      "origin": "human-a",
+      "actor": "human-a",
+      "origin_kind": "human",
+      "service": "svc-bootstrap",
+      "purpose": "bootstrap",
+      "scopes": [
+        "govern"
+      ],
+      "resources": [
+        "governance"
+      ],
+      "iat": 900,
+      "nbf": 900,
+      "exp": 1100,
+      "parent_digest": null,
+      "bootstrap": {
+        "epoch": 1,
+        "nonce": "enrollment-1",
+        "action": "install-governance",
+        "artifact_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "expected_revision": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "expected_head": 0
+      }
+    },
+    "request": {
+      "schema_version": 1,
+      "profile": "decision-json-v1",
+      "tenant": "alpha",
+      "operation_id": "op-1",
+      "principal_digest": "sha256:9c55ee330ae7a4c1ed700a7e8e800bd04c593fc58368f10b81dba8b8bdefd11a",
+      "target_id": "fixture-target",
+      "environment": "test",
+      "capability_id": "read-item",
+      "manifest_digest": "sha256:56b743ad4a4bc9dc0de7587143d8530b51e3f5b4d406164ca8eb11f4a4075b19",
+      "policy_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "activation_epoch": 1,
+      "mode": "guard",
+      "parameters": {},
+      "attachments": []
+    },
+    "manifest": {
+      "schema_version": 1,
+      "id": "read-item",
+      "version": "1",
+      "capability_id": "read-item",
+      "target_id": "fixture-target",
+      "environment": "test",
+      "credential_audience": "none",
+      "parameter_schema_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "result_schema_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "base_consequence": "C0",
+      "modifiers": [],
+      "required_inputs": [],
+      "effect": "observation",
+      "idempotency": "none",
+      "compensation": "none"
+    },
+    "lineage": {
+      "tenant": "alpha",
+      "source_id": null,
+      "revision": null,
+      "content_digest": null,
+      "derivation_id": null,
+      "derivation_version": null,
+      "field_path": "item",
+      "observed_at": null,
+      "evidence_ref": null,
+      "trust": "unknown",
+      "verifier_ref": null,
+      "policy_digest": null
+    },
+    "decision": {
+      "schema_version": 1,
+      "tenant": "alpha",
+      "operation_id": "op-1",
+      "request_digest": "sha256:6c932451b9102e17b8df2ed67d26bcf51493bb0bd6701e10a6805f3bccb2f4f0",
+      "principal_digest": "sha256:9c55ee330ae7a4c1ed700a7e8e800bd04c593fc58368f10b81dba8b8bdefd11a",
+      "manifest_digest": "sha256:56b743ad4a4bc9dc0de7587143d8530b51e3f5b4d406164ca8eb11f4a4075b19",
+      "policy_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "evaluator": "cedar",
+      "evaluator_version": "4.13.0",
+      "evaluator_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "activation_epoch": 1,
+      "mode": "guard",
+      "lineage": [
+        {
+          "tenant": "alpha",
+          "source_id": null,
+          "revision": null,
+          "content_digest": null,
+          "derivation_id": null,
+          "derivation_version": null,
+          "field_path": "item",
+          "observed_at": null,
+          "evidence_ref": null,
+          "trust": "unknown",
+          "verifier_ref": null,
+          "policy_digest": null
+        }
+      ],
+      "consequence": "C0",
+      "outcome": "denied",
+      "reasons": [
+        "lineage-unknown"
+      ],
+      "obligations": []
+    },
+    "event": {
+      "schema_version": 1,
+      "convention": "decision-events-v1",
+      "tenant": "alpha",
+      "source_service": "svc-gate",
+      "source_epoch": 1,
+      "event_id": "event-1",
+      "sequence": 1,
+      "prior_event_digest": null,
+      "operation_id": "op-1",
+      "request_digest": "sha256:6c932451b9102e17b8df2ed67d26bcf51493bb0bd6701e10a6805f3bccb2f4f0",
+      "kind": "decision",
+      "recorded_at": 1000,
+      "payload_digest": "sha256:10d5db69cc0147156fa7ce387916baca7a0037647cd88af44182c802cfa5b408",
+      "causation": [],
+      "correlation": [],
+      "payload": {
+        "schema_version": 1,
+        "tenant": "alpha",
+        "operation_id": "op-1",
+        "request_digest": "sha256:6c932451b9102e17b8df2ed67d26bcf51493bb0bd6701e10a6805f3bccb2f4f0",
+        "principal_digest": "sha256:9c55ee330ae7a4c1ed700a7e8e800bd04c593fc58368f10b81dba8b8bdefd11a",
+        "manifest_digest": "sha256:56b743ad4a4bc9dc0de7587143d8530b51e3f5b4d406164ca8eb11f4a4075b19",
+        "policy_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "evaluator": "cedar",
+        "evaluator_version": "4.13.0",
+        "evaluator_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "activation_epoch": 1,
+        "mode": "guard",
+        "lineage": [
+          {
+            "tenant": "alpha",
+            "source_id": null,
+            "revision": null,
+            "content_digest": null,
+            "derivation_id": null,
+            "derivation_version": null,
+            "field_path": "item",
+            "observed_at": null,
+            "evidence_ref": null,
+            "trust": "unknown",
+            "verifier_ref": null,
+            "policy_digest": null
+          }
+        ],
+        "consequence": "C0",
+        "outcome": "denied",
+        "reasons": [
+          "lineage-unknown"
+        ],
+        "obligations": []
+      }
+    },
+    "ack": {
+      "schema_version": 1,
+      "tenant": "alpha",
+      "event_id": "event-1",
+      "payload_digest": "sha256:10d5db69cc0147156fa7ce387916baca7a0037647cd88af44182c802cfa5b408",
+      "event_digest": "sha256:aed6f13d5b83be0497b402a4a2139e231e4cf0fc3378999d69c7e387fb1f46b1",
+      "ledger_id": "ledger-a",
+      "ledger_position": 1
+    },
+    "refusal": {
+      "schema_version": 1,
+      "tenant": "alpha",
+      "operation_id": "op-1",
+      "request_digest": "sha256:6c932451b9102e17b8df2ed67d26bcf51493bb0bd6701e10a6805f3bccb2f4f0",
+      "reasons": [
+        "input-unavailable"
+      ]
+    }
+  }
+}

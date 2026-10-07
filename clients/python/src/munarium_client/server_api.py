@@ -983,6 +983,45 @@ class ServerApiClient(BaseServerApi):
             request,
         )
 
+    def get_platform_authority(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/platform/{tenant}/authority"""
+        return self._call(
+            "GetPlatformAuthority",
+            "GET",
+            "/v1/platform/{tenant}/authority",
+            "application/json",
+            request,
+        )
+
+    def transition_platform_authority(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """POST /v1/platform/{tenant}/authority"""
+        return self._call(
+            "TransitionPlatformAuthority",
+            "POST",
+            "/v1/platform/{tenant}/authority",
+            "application/json",
+            request,
+        )
+
+    def platform_records(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """POST /v1/platform/{tenant}/records"""
+        return self._call(
+            "PlatformRecords",
+            "POST",
+            "/v1/platform/{tenant}/records",
+            "application/json",
+            request,
+        )
+
     def list_providers(
         self,
         request: ApiRequest | None = None,
@@ -2736,6 +2775,45 @@ class AsyncServerApiClient(BaseAsyncServerApi):
             "AddMonetaryPrice",
             "POST",
             "/v1/monetary/prices",
+            "application/json",
+            request,
+        )
+
+    async def get_platform_authority(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/platform/{tenant}/authority"""
+        return await self._call(
+            "GetPlatformAuthority",
+            "GET",
+            "/v1/platform/{tenant}/authority",
+            "application/json",
+            request,
+        )
+
+    async def transition_platform_authority(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """POST /v1/platform/{tenant}/authority"""
+        return await self._call(
+            "TransitionPlatformAuthority",
+            "POST",
+            "/v1/platform/{tenant}/authority",
+            "application/json",
+            request,
+        )
+
+    async def platform_records(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """POST /v1/platform/{tenant}/records"""
+        return await self._call(
+            "PlatformRecords",
+            "POST",
+            "/v1/platform/{tenant}/records",
             "application/json",
             request,
         )

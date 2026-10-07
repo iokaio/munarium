@@ -23,6 +23,7 @@
 pub mod budget;
 pub mod determinism;
 pub mod evidence;
+pub mod platform_authority;
 pub mod sources;
 pub use budget::MemBudgetStore;
 pub use evidence::MemEvidenceStore;

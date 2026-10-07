@@ -24,6 +24,7 @@ pub(crate) async fn state(tenant: &str) -> Arc<AppState> {
         ops_addr: "127.0.0.1:0".into(),
         store: StoreKind::Postgres,
         database_url: Some(harness::setting("MUNARIUM_TEST_DATABASE_URL")),
+        platform: None,
         auth: AuthMode::Static(vec![("p08-test-token".into(), tenant.into(), "rw".into())]),
         shutdown_grace_secs: 1,
         token_secret: None,

@@ -62,9 +62,11 @@ public class ServerApiTransport implements AutoCloseable {
     private final MunariumClientOptions options;
     private final ManagedChannel channel;
     private final HttpClient http;
+    private final boolean ownsTransport;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     protected ServerApiTransport(MunariumClientOptions options, boolean grpc) {
         this.options = options;
+        ownsTransport = true;
         if (grpc) {
             URI uri = URI.create(options.endpoint());
             if (uri.getHost() == null || !(uri.getScheme().equals("http") || uri.getScheme().equals("https"))) throw new InvalidInputException("gRPC endpoint must use http or https");
@@ -73,8 +75,16 @@ public class ServerApiTransport implements AutoCloseable {
             channel = builder.build(); http = null;
         } else { channel = null; http = HttpClient.newBuilder().connectTimeout(options.connectTimeout()).followRedirects(HttpClient.Redirect.NEVER).build(); }
     }
+    /** Caller configures mTLS, hostname verification and disabled redirects; caller retains ownership. */
+    protected ServerApiTransport(MunariumClientOptions options, HttpClient http) {
+        this.options = options; this.http = java.util.Objects.requireNonNull(http); channel = null; ownsTransport = false;
+    }
+    /** Caller configures the authenticated gRPC channel and retains ownership. */
+    protected ServerApiTransport(MunariumClientOptions options, ManagedChannel channel) {
+        this.options = options; this.channel = java.util.Objects.requireNonNull(channel); http = null; ownsTransport = false;
+    }
     protected <T> CompletableFuture<T> async(Supplier<T> task) { return CompletableFuture.supplyAsync(task, executor); }
-    @Override public void close() { if (channel != null) channel.shutdownNow(); if (http != null) http.shutdownNow(); executor.shutdownNow(); }
+    @Override public void close() { if (ownsTransport) { if (channel != null) channel.shutdownNow(); if (http != null) http.shutdownNow(); } executor.shutdownNow(); }
     private static String component(String value) { return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20").replace("%7E", "~").replace("*", "%2A"); }
     private static String uri(String template, ApiRequest input) {
         for (var entry : input.path.entrySet()) {

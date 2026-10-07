@@ -154,6 +154,7 @@ async fn vocabulary_scenario(grpc: bool) {
         ops_addr: "127.0.0.1:0".into(),
         store: StoreKind::Postgres,
         database_url: Some(database_url),
+        platform: None,
         auth: AuthMode::Static(vec![
             ("fixture-rw".into(), tenant.clone(), "rw".into()),
             ("fixture-ro".into(), tenant.clone(), "ro".into()),

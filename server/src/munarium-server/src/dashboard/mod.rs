@@ -507,6 +507,7 @@ mod tests {
             ops_addr: "127.0.0.1:0".into(),
             store: StoreKind::Memory,
             database_url: None,
+            platform: None,
             auth,
             shutdown_grace_secs: 1,
             token_secret: Some("test-secret-for-the-admin-tests".into()),

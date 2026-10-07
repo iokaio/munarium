@@ -302,6 +302,18 @@ impl ServerApiClient {
     pub async fn add_monetary_price(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("AddMonetaryPrice", "POST", "/v1/monetary/prices", "application/json", request).await
     }
+    /// GET /v1/platform/{tenant}/authority
+    pub async fn get_platform_authority(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("GetPlatformAuthority", "GET", "/v1/platform/{tenant}/authority", "application/json", request).await
+    }
+    /// POST /v1/platform/{tenant}/authority
+    pub async fn transition_platform_authority(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("TransitionPlatformAuthority", "POST", "/v1/platform/{tenant}/authority", "application/json", request).await
+    }
+    /// POST /v1/platform/{tenant}/records
+    pub async fn platform_records(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("PlatformRecords", "POST", "/v1/platform/{tenant}/records", "application/json", request).await
+    }
     /// GET /v1/providers
     pub async fn list_providers(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("ListProviders", "GET", "/v1/providers", "application/json", request).await

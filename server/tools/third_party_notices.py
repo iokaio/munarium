@@ -329,7 +329,7 @@ def render(comps: list[Component], product: str, inputs: list[str]) -> str:
               "after removing copyright lines and whitespace).", ""]
     for h, (t, users) in sorted(texts.items(), key=lambda kv: -len(kv[1][1])):
         lines += [f"### Text {h} — {len(users)} component(s)", "", "Used by: " + ", ".join(users), "", "```text", t, "```", ""]
-    return "\n".join(lines) + "\n"
+    return "\n".join(line.rstrip() for line in "\n".join(lines).splitlines()) + "\n"
 
 
 def sbom(comps: list[Component], product: str) -> dict:

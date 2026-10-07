@@ -9,9 +9,9 @@
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 
-/// Declares the uid contract once: every /v1 path takes a required
+/// Declares the legacy uid contract once: legacy /v1 paths take a required
 /// X-Munarium-Uid header (the end-user id asserted by the API-management
-/// layer). Meta routes stay exempt.
+/// layer). Meta routes and signed platform identities stay exempt.
 struct UidHeaderAddon;
 
 impl Modify for UidHeaderAddon {
@@ -23,15 +23,17 @@ impl Modify for UidHeaderAddon {
             .parameter_in(ParameterIn::Header)
             .required(Required::True)
             .description(Some(
-                "End-user id asserted by the API-management layer. Required on every \
-                 /v1 request (400 uid-required without it; MUNARIUM_REQUIRE_UID=false \
+                "End-user id asserted by the API-management layer. Required on legacy \
+                 /v1 requests (400 uid-required without it; MUNARIUM_REQUIRE_UID=false \
                  relaxes to 'anonymous'). When the bearer is a capability JWT, this \
                  must equal the token's sub claim (403 uid-mismatch otherwise).",
             ))
             .schema(Some(ObjectBuilder::new().schema_type(Type::String)))
             .build();
         for (path, item) in openapi.paths.paths.iter_mut() {
-            if path.starts_with("/v1/") || path.starts_with("/v1.2/") {
+            if (path.starts_with("/v1/") || path.starts_with("/v1.2/"))
+                && !path.starts_with("/v1/platform/")
+            {
                 item.parameters
                     .get_or_insert_with(Vec::new)
                     .push(uid_param.clone());
@@ -48,6 +50,11 @@ impl Modify for SecurityAddon {
         let components = openapi
             .components
             .get_or_insert_with(utoipa::openapi::Components::default);
+        components.add_security_scheme(
+            "platformMtls", SecurityScheme::MutualTls {
+                description: Some("Platform profile requires an enrolled client certificate. Governing changes additionally require an enrolled operator signature.".into()), extensions: None,
+            },
+        );
         components.add_security_scheme(
             "bearerAuth",
             SecurityScheme::Http(
@@ -85,6 +92,9 @@ impl Modify for SecurityAddon {
     ),
     modifiers(&SecurityAddon, &UidHeaderAddon),
     paths(
+        crate::platform_api::get_platform_authority,
+        crate::platform_api::transition_platform_authority,
+        crate::platform_records::platform_records,
         crate::answers_api::answer,
         crate::query_api::query_collections,
         crate::query_api::authorize_publication,

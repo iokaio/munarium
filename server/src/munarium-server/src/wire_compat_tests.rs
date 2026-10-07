@@ -20,6 +20,7 @@ async fn state() -> Arc<AppState> {
         ops_addr: "127.0.0.1:0".into(),
         store: StoreKind::Memory,
         database_url: None,
+        platform: None,
         auth: AuthMode::Disabled,
         shutdown_grace_secs: 1,
         token_secret: None,

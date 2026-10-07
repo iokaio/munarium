@@ -68,6 +68,10 @@ mod openapi;
 mod ops;
 #[cfg(test)]
 mod panic_policy;
+mod platform_api;
+mod platform_identity;
+mod platform_records;
+mod platform_tls;
 mod providers_api;
 mod query_api;
 mod reports_api;
@@ -129,6 +133,32 @@ async fn main() {
     };
     tracing::info!(?config.store, http = %config.http_addr, grpc = ?config.grpc_addr, instance = %config.instance_id, "starting");
 
+    if std::env::args().nth(1).as_deref() == Some("platform-enroll") {
+        let settings = config.platform.as_ref().unwrap_or_else(|| {
+            startup_failure("platform-enroll requires platform-v1 configuration")
+        });
+        let pg = if config.store == config::StoreKind::Postgres {
+            let url = config
+                .database_url
+                .as_deref()
+                .unwrap_or_else(|| startup_failure("platform enrollment requires a database"));
+            Some(
+                munarium_store_pg::PgStore::connect(url, munarium_store_pg::DEFAULT_TENANT)
+                    .await
+                    .unwrap_or_else(|_| {
+                        startup_failure("platform enrollment database unavailable")
+                    }),
+            )
+        } else {
+            None
+        };
+        if let Err(e) = platform_api::initialize_checkpoints(settings, pg.as_ref()).await {
+            startup_failure(e);
+        }
+        println!("Platform enrollment checkpoints created; no governing artifact activated.");
+        return;
+    }
+
     // Validate the gRPC address BEFORE any listener binds: a bad
     // MUNARIUM_GRPC_ADDR used to panic only after the REST plane was already
     // up and logged as listening — a half-started process.
@@ -158,6 +188,14 @@ async fn main() {
         Ok(s) => s,
         Err(e) => startup_failure(format!("shutdown signal handler: {e}")),
     };
+    let mut grpc_server = tonic::transport::Server::builder();
+    if let Some(settings) = &config.platform {
+        let tls = platform_tls::grpc_tls(settings)
+            .unwrap_or_else(|_| startup_failure("invalid platform gRPC TLS configuration"));
+        grpc_server = grpc_server
+            .tls_config(tls)
+            .unwrap_or_else(|_| startup_failure("invalid platform gRPC TLS configuration"));
+    }
     let mut tasks = tokio::task::JoinSet::new();
     tokio::spawn(vocabulary_api::worker(state.clone()));
 
@@ -183,14 +221,29 @@ async fn main() {
             Ok(l) => l,
             Err(e) => startup_failure(format!("bind {addr}: {e}")),
         };
-        tracing::info!(%addr, "REST plane listening");
         let shutdown = shutdown.clone();
-        tasks.spawn(async move {
-            let result = axum::serve(listener, app)
+        if let Some(settings) = config.platform.clone() {
+            let listener = platform_tls::MtlsListener::new(listener, settings)
+                .unwrap_or_else(|_| startup_failure("invalid platform REST TLS configuration"));
+            tracing::info!(%addr, "REST plane listening");
+            tasks.spawn(async move {
+                let result = axum::serve(
+                    listener,
+                    app.into_make_service_with_connect_info::<platform_tls::PeerInfo>(),
+                )
                 .with_graceful_shutdown(shutdown.wait())
                 .await;
-            ("REST", result.map_err(|e| e.to_string()))
-        });
+                ("REST", result.map_err(|e| e.to_string()))
+            });
+        } else {
+            tracing::info!(%addr, "REST plane listening");
+            tasks.spawn(async move {
+                let result = axum::serve(listener, app)
+                    .with_graceful_shutdown(shutdown.wait())
+                    .await;
+                ("REST", result.map_err(|e| e.to_string()))
+            });
+        }
     }
 
     // direct gRPC
@@ -264,7 +317,7 @@ async fn main() {
         };
         let shutdown = shutdown.clone();
         tasks.spawn(async move {
-            let result = tonic::transport::Server::builder()
+            let result = grpc_server
                 .layer(capture_layer)
                 .add_service(health_service)
                 .add_service(reflection)

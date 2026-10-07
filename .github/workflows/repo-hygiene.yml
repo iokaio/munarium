@@ -31,6 +31,15 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: agent guidance parity
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import sys
+          if Path("AGENTS.md").read_bytes() != Path("CLAUDE.md").read_bytes():
+              sys.exit("AGENTS.md and CLAUDE.md must be identical")
+          PY
+
       # README.md says the private research behind Munarium is deliberately not
       # carried here. This is what holds that sentence true.
       - name: private material scan

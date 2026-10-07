@@ -15,4 +15,6 @@ tokio = { workspace = true, features = ["sync"] }
 uuid = { workspace = true }
 
 [dev-dependencies]
+base64 = { workspace = true }
+ed25519-dalek = { workspace = true }
 tokio = { workspace = true, features = ["rt", "macros"] }

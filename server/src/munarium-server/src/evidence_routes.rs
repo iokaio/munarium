@@ -328,6 +328,7 @@ mod tests {
             // Static tokens, NOT Disabled: these tests are ABOUT the
             // authorization behavior, and `Disabled` maps every caller to an
             // unrestricted principal that dominates everything.
+            platform: None,
             auth: AuthMode::Static(vec![
                 ("rw-token".into(), "tenant-default".into(), "rw".into()),
                 ("mgmt-token".into(), "tenant-default".into(), "mgmt".into()),

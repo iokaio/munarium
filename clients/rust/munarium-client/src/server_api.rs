@@ -99,6 +99,26 @@ fn uri(template: &str, input: &ApiRequest) -> Result<String> {
     Ok(result)
 }
 impl ServerApiClient {
+    /// Use an application-configured HTTP transport, including a private CA and
+    /// client certificate. Keep certificate validation enabled and redirects disabled.
+    #[cfg(feature = "rest")]
+    pub fn rest_with_client(options: MunariumClientOptions, client: reqwest::Client) -> Self {
+        Self {
+            options,
+            backend: Backend::Rest(client),
+        }
+    }
+    /// Use an authenticated channel configured with tonic's ClientTlsConfig.
+    #[cfg(feature = "grpc")]
+    pub fn grpc_with_channel(
+        options: MunariumClientOptions,
+        channel: tonic::transport::Channel,
+    ) -> Self {
+        Self {
+            options,
+            backend: Backend::Grpc(channel),
+        }
+    }
     #[cfg(feature = "rest")]
     pub fn rest(options: MunariumClientOptions) -> Result<Self> {
         let client = reqwest::Client::builder()

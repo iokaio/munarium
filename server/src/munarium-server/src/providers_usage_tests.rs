@@ -33,6 +33,7 @@ pub(crate) async fn test_state_with_diagnostics(
         },
         source_store: SourceStoreConfig::Mem,
         database_url,
+        platform: None,
         auth,
         shutdown_grace_secs: 1,
         token_secret: None,

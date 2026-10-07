@@ -176,6 +176,20 @@ impl pb::command_service_server::CommandService for CommandSvc {
         ctx.require_rw()?;
         let key = idem_key(&req)?;
         let inner = req.into_inner();
+        if self.state.platform.is_some()
+            && !inner.metadata_json.is_empty()
+            && serde_json::from_str::<serde_json::Value>(&inner.metadata_json).is_err()
+        {
+            return Err(Status::invalid_argument("invalid version metadata"));
+        }
+        crate::platform_tls::ordinary_version(
+            &self.state,
+            ctx.store.as_ref(),
+            none_if_empty(&inner.parent_version_id).as_deref(),
+            parse_json_opt(&inner.metadata_json).as_ref(),
+        )
+        .await
+        .map_err(|e| to_status(&e))?;
         let hash = request_hash(&inner.encode_to_vec());
         with_idempotency(
             &self.state,

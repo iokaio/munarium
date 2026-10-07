@@ -106,6 +106,10 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 public final class ServerApiClient extends ServerApiTransport {
     public ServerApiClient(MunariumClientOptions options, boolean grpc) { super(options, grpc); }
+    /** Use a caller-owned HTTP client with configured TLS identity and trust. */
+    public ServerApiClient(MunariumClientOptions options, java.net.http.HttpClient http) { super(options, http); }
+    /** Use a caller-owned authenticated gRPC channel. */
+    public ServerApiClient(MunariumClientOptions options, io.grpc.ManagedChannel channel) { super(options, channel); }
 '''
     for op in ops:
         args = ", ".join(json.dumps(op[k]) for k in ("rpc", "method", "path", "content_type"))

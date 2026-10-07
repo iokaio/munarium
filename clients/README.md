@@ -114,6 +114,17 @@ limitations; the complete API client closes those gaps on Server 1.2. Matrix
 client compatibility is recorded in its
 [standalone repository](https://github.com/iokaio/munarium-matrix).
 
+For Server's [platform authority profile](../server/docs/platform-stage1.md), the
+complete API clients accept application-configured mTLS transports. Use Python's
+`http_client=` or `channel=`, Rust's `rest_with_client` or `grpc_with_channel`, .NET's
+`Rest(options, HttpClient)` or `Grpc(options, GrpcChannel)`, and Java's
+`ServerApiClient(options, HttpClient)` or `ServerApiClient(options, ManagedChannel)`.
+Configure the private CA, hostname verification and client certificate on that
+transport; disable HTTP redirects. The caller retains ownership and closes it after
+the API client. Rust takes a transport handle that can be cloned. Default constructors
+retain existing behavior. A client certificate authenticates the peer; governance
+still requires the separately signed, enrolled operator attestation.
+
 Integer JSON fields retain their numeric wire format. The
 [wire inventory and evolution policy](../server/docs/wire-compatibility.md)
 records their exact ranges and the offline boundary fixtures. Python validates

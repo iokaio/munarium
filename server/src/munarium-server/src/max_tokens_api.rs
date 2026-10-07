@@ -322,6 +322,7 @@ mod tests {
             ops_addr: "127.0.0.1:0".into(),
             store: StoreKind::Memory,
             database_url: None,
+            platform: None,
             auth: AuthMode::Static(vec![
                 ("rw-token".into(), "tenant-default".into(), "rw".into()),
                 ("mgmt-token".into(), "tenant-default".into(), "mgmt".into()),

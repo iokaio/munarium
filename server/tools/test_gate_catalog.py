@@ -263,6 +263,19 @@ class CatalogTests(unittest.TestCase):
             ("gate_catalog.py clippy.default", "gate_catalog.py format"),
             ("repository: iokaio/munarium-matrix", "repository: missing/matrix"),
             ('cargo +"$MSRV" test', "cargo test"),
+            ('      - "clients/python/tests/test_platform_authority_live.py"\n', ""),
+            ('      - "clients/python/pyproject.toml"\n', ""),
+            ("  platform-authority:\n", "  platform-authority:\n    if: false\n"),
+            (
+                "cargo test --locked -p munarium-store-mem --test platform_authority",
+                "true",
+            ),
+            (
+                "cargo test --locked -p munarium-store-pg --test platform_authority -- --ignored",
+                "cargo test --locked -p munarium-store-pg --test platform_authority",
+            ),
+            ("cargo test --locked -p munarium-server platform_api", "true"),
+            ("python -m pytest tests/test_platform_authority_live.py -q", "true"),
         ):
             self.assertIn(old, workflow)
             with self.assertRaises(ValueError):

@@ -14265,6 +14265,14 @@ from the precedent closest to your *corpus shape*, not just your pattern.
 
 ### Appendix F: Route index
 
+Platform authority: `GET` / `POST /v1/platform/{tenant}/authority` requires the
+explicit mTLS profile and separate signed governance transition described in
+[platform authority](../platform-stage1.md).
+
+Platform records: `POST /v1/platform/{tenant}/records` requires mTLS plus a current
+recipient-bound signed principal. Append/archive require `propose`; lookup/replay
+require `read`, with the exact `records:<tenant>` resource.
+
 Every path the server serves, from the served OpenAPI document, with the
 chapter that teaches it. **Generated** by `docs/route-index.py` (2026-09-02)
 and **enforced**: the server crate's `docs_coverage` tests fail `cargo test`
