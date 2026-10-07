@@ -9,7 +9,6 @@ from pathlib import Path
 
 import grpc
 import pytest
-from cryptography.hazmat.primitives.asymmetric import ed25519
 from test_platform_authority_live import b64, canonical, deployment, digest, signed
 
 from munarium_client import ApiRequest, ClientOptions, ServerApiClient
@@ -23,6 +22,8 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.mark.parametrize("database", ["memory", "postgres"])
 def test_action_records_require_governed_roles_and_current_principals(database):
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
     if database == "postgres" and not os.environ.get("MUNARIUM_PLATFORM_TEST_DATABASE_URL"):
         pytest.skip("isolated PostgreSQL URL not supplied")
     peers = ("svc-council", "svc-registry", "svc-gate")
