@@ -56,6 +56,14 @@ of the workflow, preserving triggers, paths, permissions, runner assignments,
 services, independent jobs and their commands. New runner/checker self-tests are
 explicit additions. It also requires byte-identical root agent guidance.
 
+The Stage 1 baseline update includes the separate `platform-authority` job and
+the Python live-test/dependency path triggers. The job provisions an isolated
+PostgreSQL service, runs memory and PostgreSQL authority tests (explicitly selecting
+the ignored database tests), exercises Server authority handlers, and runs real
+mTLS REST/gRPC tests against the built binary. Existing catalog commands and
+other jobs are unchanged. Negative controls reject removing the new triggers,
+disabling the job, or skipping its authority and live-transport tests.
+
 The baseline is review evidence, never a second execution source. Intentional
 future coverage changes must update it after reviewing old/new commands and
 prerequisites; do not regenerate it merely to clear a failure. Its exact text
