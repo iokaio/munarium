@@ -46,6 +46,7 @@ pub mod ledger;
 pub mod model_evidence;
 pub mod money;
 pub mod platform;
+pub mod platform_actions;
 pub mod platform_authority;
 pub mod promises;
 pub mod provider;

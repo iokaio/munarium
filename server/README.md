@@ -12,6 +12,11 @@ grants any right to it ([SUPPORT.md](../SUPPORT.md)).
 
 The authoritative design is [docs/architecture.md](docs/architecture.md).
 
+The experimental [Stage 2 action-record adapter](docs/platform-stage2.md) adds
+governed archives, lifecycle events and exact acknowledgements to the existing
+platform records API. Its candidate status and remaining component work are
+documented separately from released capabilities.
+
 For Docker Hub images, quick starts, configuration, and source builds, see
 [the container guide](CONTAINER.md).
 

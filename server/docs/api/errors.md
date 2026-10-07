@@ -122,6 +122,15 @@ The gates' dotted rule vocabulary:
 Backfill mode (`mode: backfill`) downgrades blocks to warns — conflicts in an existing corpus are
 surfaced (claims disputed, findings filed) but never block.
 
+## Platform action records
+
+Experimental [Stage 2 records](../platform-stage2.md) use existing error families:
+`invalid-input` for invalid canonical shapes/digests or missing prerequisites,
+`forbidden` for current identity, producer, scope or recovery refusal, and
+`idempotency-mismatch` for changed immutable identities. Exhausted storage
+contention returns a storage failure; no error is an acknowledgement. REST and
+`PlatformRecords` gRPC share these checks and the existing error mapping.
+
 ## Durable governance policies
 
 Memory-version metadata can pin an immutable governance profile; omitted legacy

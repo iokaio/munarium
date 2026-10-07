@@ -19,12 +19,14 @@ on:
     paths:
       - "server/**"
       - "clients/python/tests/test_platform_authority_live.py"
+      - "clients/python/tests/test_platform_actions_live.py"
       - "clients/python/pyproject.toml"
       - ".github/workflows/server-ci.yml"
   pull_request:
     paths:
       - "server/**"
       - "clients/python/tests/test_platform_authority_live.py"
+      - "clients/python/tests/test_platform_actions_live.py"
       - "clients/python/pyproject.toml"
       - ".github/workflows/server-ci.yml"
   workflow_dispatch: {}
@@ -67,6 +69,8 @@ jobs:
         run: |
           cargo test --locked -p munarium-store-mem --test platform_authority
           cargo test --locked -p munarium-store-pg --test platform_authority -- --ignored
+          cargo test --locked -p munarium-core -p munarium-store-mem --test platform_actions
+          cargo test --locked -p munarium-store-pg --test platform_actions -- --ignored
           cargo test --locked -p munarium-server platform_api
           cargo build --locked -p munarium-server
       - name: real mTLS authority over REST and gRPC
@@ -74,7 +78,7 @@ jobs:
         run: |
           python -m pip install -e '.[dev,platform-test]'
           export MUNARIUM_PLATFORM_TEST_BINARY="$GITHUB_WORKSPACE/server/target/debug/munarium-server"
-          python -m pytest tests/test_platform_authority_live.py -q
+          python -m pytest tests/test_platform_authority_live.py tests/test_platform_actions_live.py -q
 
   lint-test:
     runs-on: ubuntu-latest

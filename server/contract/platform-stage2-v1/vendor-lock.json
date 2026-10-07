@@ -1,0 +1,13 @@
+{
+  "bundle_sha256": "8aca66588c87107a0c7a7720c68f921dfd2bdcaecf6433728afa4b1c51420aa6",
+  "files": {
+    "README.md": "baf36596f1a438b95c3b17171877d45d183d3fab651665148bce1cb9916264c1",
+    "profile.json": "a33a63a4e8d28661897c9ce7ba9161c40c40f9b38edba75f29c81c205d9b351b",
+    "schema.json": "9561c230dda912241017188142cf9008800c75b7efeffd63fbad9fbf0b287404",
+    "vectors.json": "fed48cf46286a0145878896034c767b3db0a020c0aff9a3f91349cce90762aa1"
+  },
+  "repository": "iokaio/munarium-platform",
+  "revision": "2fb118909633264fad23ede2e7c9942aba374312",
+  "source_directory": "docs/decisions/stage2-v1",
+  "status": "candidate-not-accepted-not-released"
+}
