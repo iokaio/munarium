@@ -1,0 +1,32 @@
+Munarium Warden
+Copyright (c) 2026 Ioka LLC
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+these files except in compliance with the License. A copy of the License is in
+the LICENSE file beside this notice.
+
+"Munarium" and "Ioka" are trademarks of Ioka LLC. The License grants no right to
+use them beyond what is needed to describe the origin of these files. What is
+and is not permitted is in TRADEMARK.md.
+
+This repository is Munarium Warden: workload identity, delegation, just-in-time credentials, kill switches. It is one
+of the nine components of the Munarium Governance Platform, whose architecture,
+contracts, roadmap and composition evidence are coordinated from the public hub
+iokaio/munarium-platform. It is open source from its first public commit. There
+is no proprietary edition of this component; a capability that arrives later is
+deferred roadmap work, not a commercial restriction.
+
+It builds on Munarium Server (iokaio/munarium) and Munarium Matrix
+(iokaio/munarium-matrix), which are separate repositories under the same
+License. Munarium Enterprise is a separate, proprietary distribution built on
+those two; it contains no part of this component and nothing here is reserved
+for it.
+
+Third-party software
+--------------------
+
+This repository currently contains no third-party software. When dependencies
+arrive, their components, versions and licenses will be listed in
+THIRD_PARTY_NOTICES.md, generated from the shipping dependency graph and
+reviewed at each release. Each component is governed by its own license, which
+takes precedence for that component.

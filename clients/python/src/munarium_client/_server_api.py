@@ -105,10 +105,28 @@ class _Base:
 
 
 class BaseServerApi(_Base):
-    def __init__(self, options: ClientOptions, *, grpc_transport: bool = False) -> None:
+    def __init__(
+        self,
+        options: ClientOptions,
+        *,
+        grpc_transport: bool = False,
+        http_client: httpx.Client | None = None,
+        channel: Any = None,
+    ) -> None:
+        """Optionally borrow an mTLS-configured transport; its caller retains ownership."""
         super().__init__(options, grpc_transport=grpc_transport)
-        self.http = httpx.Client(timeout=httpx.Timeout(None, connect=options.connect_timeout))
-        self.channel: Any = None
+        if (grpc_transport and http_client is not None) or (
+            not grpc_transport and channel is not None
+        ):
+            raise InvalidInputError("custom transport does not match the selected protocol")
+        self._owns_http = http_client is None
+        self._owns_channel = channel is None
+        self.http = (
+            http_client
+            if http_client is not None
+            else httpx.Client(timeout=httpx.Timeout(None, connect=options.connect_timeout))
+        )
+        self.channel: Any = channel
         self.stub: Any = None
         if grpc_transport:
             target, tls = gc.target_from_endpoint(options.endpoint)
@@ -117,15 +135,22 @@ class BaseServerApi(_Base):
                 ("grpc.max_send_message_length", MAX_BYTES + 65536),
             ]
             self.channel = (
-                grpc.secure_channel(target, grpc.ssl_channel_credentials(), options=channel_options)
-                if tls
-                else grpc.insecure_channel(target, options=channel_options)
+                channel
+                if channel is not None
+                else (
+                    grpc.secure_channel(
+                        target, grpc.ssl_channel_credentials(), options=channel_options
+                    )
+                    if tls
+                    else grpc.insecure_channel(target, options=channel_options)
+                )
             )
             self.stub = stubs.ServerApiServiceStub(self.channel)  # type: ignore[no-untyped-call]
 
     def close(self) -> None:
-        self.http.close()
-        if self.channel is not None:
+        if self._owns_http:
+            self.http.close()
+        if self.channel is not None and self._owns_channel:
             self.channel.close()
 
     def _call(
@@ -200,10 +225,28 @@ class BaseServerApi(_Base):
 
 
 class BaseAsyncServerApi(_Base):
-    def __init__(self, options: ClientOptions, *, grpc_transport: bool = False) -> None:
+    def __init__(
+        self,
+        options: ClientOptions,
+        *,
+        grpc_transport: bool = False,
+        http_client: httpx.AsyncClient | None = None,
+        channel: Any = None,
+    ) -> None:
+        """Optionally borrow an mTLS-configured transport; its caller retains ownership."""
         super().__init__(options, grpc_transport=grpc_transport)
-        self.http = httpx.AsyncClient(timeout=httpx.Timeout(None, connect=options.connect_timeout))
-        self.channel: Any = None
+        if (grpc_transport and http_client is not None) or (
+            not grpc_transport and channel is not None
+        ):
+            raise InvalidInputError("custom transport does not match the selected protocol")
+        self._owns_http = http_client is None
+        self._owns_channel = channel is None
+        self.http = (
+            http_client
+            if http_client is not None
+            else httpx.AsyncClient(timeout=httpx.Timeout(None, connect=options.connect_timeout))
+        )
+        self.channel: Any = channel
         self.stub: Any = None
         if grpc_transport:
             target, tls = gc.target_from_endpoint(options.endpoint)
@@ -212,17 +255,22 @@ class BaseAsyncServerApi(_Base):
                 ("grpc.max_send_message_length", MAX_BYTES + 65536),
             ]
             self.channel = (
-                grpc.aio.secure_channel(
-                    target, grpc.ssl_channel_credentials(), options=channel_options
+                channel
+                if channel is not None
+                else (
+                    grpc.aio.secure_channel(
+                        target, grpc.ssl_channel_credentials(), options=channel_options
+                    )
+                    if tls
+                    else grpc.aio.insecure_channel(target, options=channel_options)
                 )
-                if tls
-                else grpc.aio.insecure_channel(target, options=channel_options)
             )
             self.stub = stubs.ServerApiServiceStub(self.channel)  # type: ignore[no-untyped-call]
 
     async def close(self) -> None:
-        await self.http.aclose()
-        if self.channel is not None:
+        if self._owns_http:
+            await self.http.aclose()
+        if self.channel is not None and self._owns_channel:
             await self.channel.close()
 
     async def _call(

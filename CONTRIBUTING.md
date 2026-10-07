@@ -35,8 +35,9 @@ You must have the right to submit every file in the pull request.
    `SPDX-License-Identifier: Apache-2.0` on its first line — the second, after a shebang or an XML
    declaration — and `check_license.py` at the repository root names any file that does not.
 3. Open a pull request against `main`. CI runs the offline suites with no private credential, and
-   builds a server from your branch for the live tiers. Nothing in a pull request can reach a
-   registry or a deployment.
+   builds a server from your branch for the live tiers. Disposable test services may use
+   synthetic identities and test-only keys with no production trust. Pull requests receive
+   no production credentials, deployed-environment access or release authority.
 4. A code owner reviews; Ioka squash-merges.
 
 ## Gates per component
@@ -79,3 +80,9 @@ names — never to a public issue or a proof-of-concept pull request.
 Only Ioka changes `LICENSE`, `NOTICE`, `TRADEMARK.md`, this file, `CODE_OF_CONDUCT.md`,
 `SECURITY.md`, `SUPPORT.md`, anything under `.github/`, the contract directories, and any signing or
 release configuration. A pull request that touches them is declined unless a maintainer opened it.
+
+The [Stage 1 development authorization](AGENTS.md#stage-1-development-authorization)
+is the maintainer's explicit direction to prepare the scoped guidance, build/test
+workflow and contract candidate changes. Contributors carrying out that direction
+may edit those files; protected-file ownership, review and merge requirements still
+apply. It grants no release authority or permission to weaken approval controls.

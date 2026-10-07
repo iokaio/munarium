@@ -122,6 +122,7 @@ pub(crate) fn compiled_engines() -> Vec<String> {
 
 pub struct AppState {
     pub config: Config,
+    pub platform: Option<crate::platform_api::PlatformRuntime>,
     stores: StoreRegistry,
     /// Idempotency records for the MEMORY store only — pg mode is
     /// table-backed (idempotency_keys, shared across instances and pruned
@@ -352,6 +353,39 @@ impl AppState {
                 )
             }
         };
+        let platform = match &config.platform {
+            Some(settings) => {
+                if config.replica_count != 1 {
+                    return Err(KernelError::InvalidInput(
+                        "platform-v1 requires one instance and an external restore checkpoint"
+                            .into(),
+                    ));
+                }
+                let postgres = match &stores {
+                    StoreRegistry::Pg(pg) => Some(pg),
+                    _ => None,
+                };
+                Some(crate::platform_api::PlatformRuntime::open(settings, postgres).await?)
+            }
+            None => {
+                if let StoreRegistry::Pg(pg) = &stores {
+                    let enrolled: bool =
+                        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM platform_authority)")
+                            .fetch_one(pg.pool())
+                            .await
+                            .map_err(|_| {
+                                KernelError::Storage("authority profile check unavailable".into())
+                            })?;
+                    if enrolled {
+                        return Err(KernelError::Forbidden(
+                            "an enrolled platform database cannot start in the legacy profile"
+                                .into(),
+                        ));
+                    }
+                }
+                None
+            }
+        };
         let metrics = Arc::new(crate::metrics::Metrics::default());
         let interactions_tx = crate::interactions::spawn_writer(
             match &stores {
@@ -528,6 +562,7 @@ impl AppState {
         let retrieval_mode = datastore_capabilities.effective_mode;
 
         let state = Arc::new(Self {
+            platform,
             matrix_http,
             matrix_breaker,
             config,

@@ -258,6 +258,7 @@ async fn model_test_state(database_url: String) -> Arc<AppState> {
         ops_addr: "127.0.0.1:0".into(),
         store: StoreKind::Postgres,
         database_url: Some(database_url),
+        platform: None,
         auth: AuthMode::Disabled,
         shutdown_grace_secs: 1,
         token_secret: None,

@@ -63,6 +63,7 @@ pub mod jobs;
 pub mod max_tokens;
 pub mod money;
 pub mod partitions;
+pub mod platform_authority;
 pub mod rollout;
 pub mod source_retention;
 pub mod sources;

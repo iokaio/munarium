@@ -602,6 +602,30 @@
       "streaming": false
     },
     {
+      "name": "get_platform_authority",
+      "rpc": "GetPlatformAuthority",
+      "method": "GET",
+      "path": "/v1/platform/{tenant}/authority",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "transition_platform_authority",
+      "rpc": "TransitionPlatformAuthority",
+      "method": "POST",
+      "path": "/v1/platform/{tenant}/authority",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "platform_records",
+      "rpc": "PlatformRecords",
+      "method": "POST",
+      "path": "/v1/platform/{tenant}/records",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
       "name": "list_providers",
       "rpc": "ListProviders",
       "method": "GET",

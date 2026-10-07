@@ -84,3 +84,28 @@ def test_caller_cannot_replace_credentials_through_source_headers():
             client.get_vocabulary_settings(ApiRequest(source_headers={"authorization": "other"}))
     finally:
         client.close()
+
+
+def test_borrowed_transport_remains_usable_after_client_close():
+    with httpx.Client(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+    ) as http:
+        client = ServerApiClient(ClientOptions("https://fixture.invalid"), http_client=http)
+        client.close()
+        assert not http.is_closed
+        assert http.get("https://fixture.invalid").status_code == 200
+        with pytest.raises(InvalidInputError):
+            ServerApiClient(
+                ClientOptions("https://fixture.invalid"), grpc_transport=True, http_client=http
+            )
+
+
+@pytest.mark.asyncio
+async def test_async_borrowed_transport_remains_usable_after_client_close():
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+    ) as http:
+        client = AsyncServerApiClient(ClientOptions("https://fixture.invalid"), http_client=http)
+        await client.close()
+        assert not http.is_closed
+        assert (await http.get("https://fixture.invalid")).status_code == 200

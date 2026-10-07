@@ -1,0 +1,19 @@
+{
+  "files": {
+    "decision-json-v1-vectors.json": {
+      "sha256": "849033a2d90681b378754603b8129866cc28a5fa400996d8b8807b87fd959775",
+      "source": "docs/decisions/decision-json-v1-vectors.json"
+    },
+    "foundation.schema.json": {
+      "sha256": "dbf067bbcd0f708fd37feff581f323dcb2a2222d101af78c5bc34bf30f1881fb",
+      "source": "docs/decisions/candidates/foundation.schema.json"
+    },
+    "record-vectors.json": {
+      "sha256": "fbe93424547d4dfc4387823ef2cd28d964ff32027c6af84f07d61a5853142d1b",
+      "source": "docs/decisions/candidates/record-vectors.json"
+    }
+  },
+  "repository": "iokaio/munarium-platform",
+  "revision": "6917f8d04e01776141dadb52f537c1176be7d555",
+  "status": "proposed-not-released"
+}

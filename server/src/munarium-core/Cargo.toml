@@ -16,6 +16,9 @@ hex = { workspace = true }
 chrono = { workspace = true }
 regex = { workspace = true }
 async-trait = { workspace = true }
+jsonschema = { workspace = true }
+base64 = { workspace = true }
+ed25519-dalek = { workspace = true }
 
 # Boundary rule (architecture.md §3): this crate must never depend on
 # sqlx, axum, tonic, reqwest, or utoipa. CI greps `cargo tree` for violations.

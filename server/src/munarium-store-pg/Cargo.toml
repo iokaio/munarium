@@ -21,5 +21,7 @@ chrono = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+base64 = { workspace = true }
+ed25519-dalek = { workspace = true }
 munarium-store-mem = { path = "../munarium-store-mem" }
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros"] }

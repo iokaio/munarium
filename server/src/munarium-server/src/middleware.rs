@@ -177,6 +177,20 @@ pub async fn capture(
         }
     };
 
+    if path.starts_with("/v1/platform/") {
+        // mTLS admission supplies identity; signed authority receipts retain attribution.
+        // Preserve the normal concurrency ceiling without capturing signed assertions.
+        let response = next.run(req).await;
+        record_http_metrics(
+            &state,
+            &route,
+            &http_method,
+            response.status().as_u16(),
+            started.elapsed().as_secs_f64(),
+        );
+        return response;
+    }
+
     // Attribution sniff (authorization itself stays in the handlers) + the
     // one middleware-owned authz rule: a JWT's sub must match the asserted uid.
     let bearer = crate::rest::bearer(req.headers()).map(String::from);
@@ -551,6 +565,18 @@ where
         let state = self.state.clone();
         let path = req.uri().path().to_string();
 
+        if path.starts_with("/mmp.v1.") && !crate::platform_tls::legacy_rpc_allowed(&state, &req) {
+            return Box::pin(async move {
+                Ok(grpc_reject(CustomError {
+                    slug: "forbidden",
+                    status: axum::http::StatusCode::FORBIDDEN,
+                    code: tonic::Code::PermissionDenied,
+                    title: "platform authority required",
+                    detail: "platform profile refuses this peer or legacy operation".into(),
+                }))
+            });
+        }
+
         // Only mmp services carry the uid contract; health/reflection pass.
         // The complete API service dispatches through capture in-process. It
         // must not double-charge permits or write a second interaction record.
@@ -804,6 +830,7 @@ mod tests {
             ops_addr: "127.0.0.1:0".into(),
             store: StoreKind::Memory,
             database_url: None,
+            platform: None,
             auth: AuthMode::Disabled,
             shutdown_grace_secs: 1,
             token_secret: None,

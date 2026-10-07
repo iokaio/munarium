@@ -18,11 +18,13 @@ mod generated;
 pub type ApiStream = Pin<Box<dyn Stream<Item = Result<pb::ServerApiResponse, Status>> + Send>>;
 pub struct ServerApiSvc {
     router: axum::Router,
+    state: Arc<AppState>,
 }
 impl ServerApiSvc {
     pub fn new(state: Arc<AppState>) -> Self {
         Self {
-            router: rest::router(state),
+            router: rest::router(state.clone()),
+            state,
         }
     }
 
@@ -33,9 +35,13 @@ impl ServerApiSvc {
         template: &str,
         content_type: &str,
     ) -> Result<http::Response<Body>, Status> {
+        let peer = crate::platform_tls::grpc_peer(&self.state, &request)?;
         let (metadata, _, input) = request.into_parts();
         let uri = request_uri(template, &input)?;
         let mut request = http::Request::builder().method(method).uri(uri);
+        if let Some(peer) = peer {
+            request = request.extension(peer);
+        }
         // Forward only contract metadata. No caller-controlled Host, proxy
         // identity, tenant header or authorization override can enter here.
         for (from, to) in [
