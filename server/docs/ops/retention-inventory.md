@@ -110,6 +110,20 @@ single undifferentiated deletion pass.
 
 ## Keeping the registry current
 
+Stage 1 platform custody includes the current authority projection, immutable
+transition receipts and governing artifacts, and the reserved tenant/version
+mapping for decision records. The inventory also declares the independently
+retained authority checkpoint and decision/replay payloads stored in the reserved
+ledger and claim projections. These payloads can retain evidence and policy inputs
+after an original source is removed; source cleanup does not erase those copies.
+
+Current mTLS and governing authority control admission; record reads additionally
+require current Warden evidence. Authority restore fencing requires the checkpoint
+to survive independently of a database rollback. It does not independently fence
+the decision-ledger head. There is no platform erasure API, automatic expiry or
+general legal-hold contract. See [Stage 1](../platform-stage1.md) for the implemented
+admission, checkpoint recovery and immutable-record guarantees.
+
 Run from the repository root with Python 3.9 or later:
 
 ```powershell

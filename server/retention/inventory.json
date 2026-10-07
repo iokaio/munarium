@@ -741,6 +741,43 @@
         "restore": "Export every journal page independently; isolate restored instances and replay holds then denials and required cleanup before serving. Missing authoritative journal means restore is unqualified.",
         "coverage": "source_retention storage tests: holds/shared ownership, delete failure rollback, retry, hold race, application restart, controlled restored-state replay. source_denial mirror test: warm/cold/retired pins and rebuild denial. Server retention authority/session/provider fixture. No actual backup or all-copy erasure qualification."
       }
+    },
+    "platform_custody": {
+      "retrieval_exclusion": {
+        "read": "Platform authority and reserved decision records are outside ordinary corpus retrieval. Collection exclusion does not remove governing bindings, recorded events or replay inputs.",
+        "cleanup": "No collection cleanup or platform TTL deletes these surfaces.",
+        "holds": "No platform legal-hold API; immutable receipts and decision history remain retained.",
+        "restore": "Retain reserved tenant/version mappings and records with the database; reconcile authority against its independently retained checkpoint before serving.",
+        "coverage": "platform store tests cover immutable records and tenant separation; no all-copy exclusion guarantee."
+      },
+      "access_revocation": {
+        "read": "Current enrolled mTLS peer scope and fenced authority govern admission. Record reads also verify current Warden identity and records:<tenant> scope; historical assertions alone do not grant access.",
+        "cleanup": "Revocation and bootstrap retirement do not delete prior public keys, identities, receipts, bindings, events or replay inputs.",
+        "holds": "Retained history does not confer current authority.",
+        "restore": "A database older than the independent authority checkpoint fails closed; the checkpoint must not be rolled back with the database.",
+        "coverage": "platform_api_tests and the live REST/gRPC authority/records fixtures cover admission and restore fencing; delivered copies cannot be recalled."
+      },
+      "logical_removal": {
+        "read": "Governance transitions replace the current projection while immutable receipts/artifacts retain prior revisions. No tombstone operation exists for receipts, reserved ledger bindings, decision events or replay archives.",
+        "cleanup": "Only verified authority transitions and checkpoint reconciliation update current authority state; these are not deletion operations.",
+        "holds": "No general hold or logical-removal API for platform custody.",
+        "restore": "Preserve nonce receipts, bootstrap retirement and reserved ledger identity. Missing, corrupt, locked or mismatched checkpoints block admission instead of resetting history.",
+        "coverage": "platform_api_tests covers prepared/committed transition recovery and missing/partial/locked checkpoints; no platform removal/restore suite is claimed."
+      },
+      "physical_erasure": {
+        "read": "No platform erasure API or retention deadline; ordinary source erasure does not erase copies embedded in governance bindings or replay inputs.",
+        "cleanup": "Database triggers prevent receipt and ledger-binding mutation/deletion; no checkpoint cleanup is performed while serving. Independently authorized decommissioning must account for database/WAL/backups, checkpoint snapshots, memory dumps and exports.",
+        "holds": "Decommissioning requires owner review of retained history and applicable holds; no automated hold-aware erasure contract exists.",
+        "restore": "No platform erasure journal or all-copy backup deletion contract. Deleting or replacing a checkpoint is not a supported way to resume an old database.",
+        "coverage": "Gap: no all-copy erasure, expiry or decommissioning qualification."
+      },
+      "protected_retention": {
+        "read": "Retain authority provenance, immutable decision evidence and exact replay inputs under current endpoint authority; SQL/filesystem operators remain trusted.",
+        "cleanup": "No automatic expiry; append-only receipts/events persist. The current authority projection and checkpoint advance without erasing receipt history.",
+        "holds": "No platform regulatory retention duration or legal-hold API.",
+        "restore": "The independent checkpoint records deployment, tenant, epoch, minimum head, retirement and revision plus pending transition intent. Preserve it separately from database restores; it does not independently fence the decision-ledger head.",
+        "coverage": "Authority and platform store fixtures cover their stated atomicity, immutability and replay invariants; they do not establish regulatory retention or recovery of every external copy."
+      }
     }
   },
   "tables": {
@@ -2067,6 +2104,57 @@
         "updated_at": "timestamptz"
       },
       "content": "Tenant identity, stable source id/path, permanent denial, original-byte hold and durable cleanup state; no source text."
+    },
+    "platform_authority": {
+      "columns": {
+        "tenant_id": "text",
+        "state": "jsonb"
+      },
+      "content": "Current tenant authority projection with operator enrollment, governing keys, revision/head, retirement and active governance artifact.",
+      "json_content": {
+        "state": "AuthorityConfig (deployment, tenant, audience, epoch, bootstrap public keys and issuer/presenter/subject identities), head/revision, bootstrap_retired, governing public keys and optional GovernanceArtifact with service-specific binding JSON and successor public keys; no private signing keys."
+      },
+      "owner": "Tenant platform governance owner and the database/checkpoint custody operator.",
+      "policy": "platform_custody",
+      "origins": [
+        "src/munarium-store-pg/migrations/0041_platform_authority.sql",
+        "src/munarium-server/src/platform_api.rs"
+      ]
+    },
+    "platform_authority_receipts": {
+      "columns": {
+        "tenant_id": "text",
+        "nonce": "text",
+        "head": "bigint",
+        "receipt": "jsonb",
+        "artifact": "jsonb"
+      },
+      "content": "Immutable nonce/transition receipts and exact governing artifacts retained across subsequent authority changes.",
+      "json_content": {
+        "receipt": "AuthorityReceipt records tenant, nonce, head, prior/current revision, artifact/attestation digests, signer/subject identities and bootstrap retirement.",
+        "artifact": "GovernanceArtifact stores schema version, full service-specific bindings (including identity, manifest and decision policy configuration), retirement flag and successor public keys/identities. Nested binding changes require retention review."
+      },
+      "owner": "Tenant platform governance owner and the database/checkpoint custody operator.",
+      "policy": "platform_custody",
+      "origins": [
+        "src/munarium-store-pg/migrations/0041_platform_authority.sql",
+        "src/munarium-server/src/platform_api.rs"
+      ]
+    },
+    "platform_record_ledgers": {
+      "columns": {
+        "tenant_id": "text",
+        "storage_tenant": "text",
+        "version_id": "text"
+      },
+      "content": "Immutable binding from external platform tenant to reserved physical tenant/version. Decision event/replay bodies live in that reserved ledger and its claim projections, not this mapping table.",
+      "json_content": {},
+      "owner": "Tenant platform governance owner and the database/checkpoint custody operator.",
+      "policy": "platform_custody",
+      "origins": [
+        "src/munarium-store-pg/migrations/0042_platform_records.sql",
+        "src/munarium-server/src/platform_records.rs"
+      ]
     }
   },
   "artifacts": {
@@ -2270,6 +2358,24 @@
       "owner": "Tenant/scope artifact owner and backing-store operator.",
       "origins": [
         "src/munarium-datastore/src/model.rs"
+      ]
+    },
+    "platform_authority_checkpoint": {
+      "content": "Independently retained local JSON fence/revision and optional pending attestation digest/next fence/revision, OS-locked and synced before authority activation; filesystem snapshots/backups retain independent copies.",
+      "policy": "platform_custody",
+      "owner": "Tenant platform governance owner and the database/checkpoint custody operator.",
+      "origins": [
+        "src/munarium-server/src/platform_api.rs",
+        "src/munarium-core/src/platform_authority.rs"
+      ]
+    },
+    "platform_decision_records": {
+      "content": "Reserved ledger events and claim projections retain canonical proposals, decisions/refusals, verified origin/actor/kind/assertion digest and exact replay bundles containing resolved evidence, policy, evaluator inputs and source references. PostgreSQL/WAL/backups or memory snapshots retain these copies independently of original source retention.",
+      "policy": "platform_custody",
+      "owner": "Tenant platform governance owner and the database/checkpoint custody operator.",
+      "origins": [
+        "src/munarium-core/src/platform.rs",
+        "src/munarium-server/src/platform_records.rs"
       ]
     }
   }
