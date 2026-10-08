@@ -108,6 +108,20 @@ and an isolated `MUNARIUM_PLATFORM_TEST_DATABASE_URL`, then run it from
 `clients/python/` with pytest. CI selects both the live PostgreSQL test and transport
 test explicitly. An omitted live environment is skipped, never reported as success.
 
+The [CI inventory baseline](../tools/gate-ci-baseline.json) includes the two
+Stage 2 path triggers, Rust memory/vector and explicit PostgreSQL commands, and
+the combined Stage 1/Stage 2 transport command. Its fingerprint was audited against
+the pre-Stage 2 workflow at `7cc0c97fe124d446064bb8cf0dfcb6d868d04987`: removing
+only those additions restores the previous pinned workflow. The
+[catalog regression controls](../tools/test_gate_catalog.py) refuse removal of
+either transport suite, the new triggers or Rust coverage, and removal of the
+PostgreSQL `--ignored` selection. Run the complete CI formatting entry point from
+`server/` when changing orchestration:
+
+```console
+python tools/gate_catalog.py runner.regression catalog.regression catalog.equivalence format
+```
+
 This adapter scans the protected ledger and is not scale qualified. Stored producer
 assertions do not independently prove human eligibility, evidence authenticity,
 current activation, safe target credentials, absence of duplicate effects or
