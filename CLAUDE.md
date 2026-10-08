@@ -35,6 +35,46 @@ Automatic CI retains its configured build and test suites; local checks suppleme
 that coverage. Recreating every hosted integration environment or manually
 dispatching routine CI is not required. Keep AGENTS.md and CLAUDE.md aligned.
 
+## Server CI changes: coupled files and required preflight
+
+For Server source, test, build or CI changes, choose local checks from the actual
+[Server workflow](.github/workflows/server-ci.yml) and
+[validation guide](server/docs/guides/validation.md). Package-scoped Cargo checks
+alone do not exercise the workflow's runner and coverage-inventory checks.
+
+Before editing Server CI orchestration, read the workflow together with
+`server/tools/gate-catalog.json`, `server/tools/gate-ci-baseline.json`,
+`server/tools/check_gate_equivalence.py` and `server/tools/test_gate_catalog.py`.
+Treat them as a coupled change:
+
+1. Audit the complete old/new workflow diff, including triggers, path filters,
+   commands, feature flags, prerequisites, permissions and independent jobs.
+   The baseline hashes orchestration outside catalog-managed steps; even additive
+   tests or a comment change can require a baseline update.
+2. Update the baseline only after accounting for every difference. Preserve its
+   historical source record and existing coverage. Never regenerate a fingerprint
+   blindly, bypass equivalence, or weaken a requirement to make CI green.
+3. Update command assertions and negative controls alongside intentional coverage
+   changes. They must reject removal or weakening of the new coverage as well as
+   the existing coverage, including explicit `--ignored` database-test selection.
+   Keep the workflow, applicable catalog/baseline, regression controls and audit
+   documentation together in the same change.
+4. Before pushing Server changes, run the complete CI formatting entry point from
+   `server/`, in addition to the relevant build, lint and behavioral checks:
+
+   ```console
+   python tools/gate_catalog.py runner.regression catalog.regression catalog.equivalence format
+   ```
+
+   Inspect its exit status and all selected results. A prerequisite or Git source
+   identity failure is not a pass; resolve the environment or report the check as
+   unavailable. Keep `AGENTS.md` and `CLAUDE.md` byte-identical before running it.
+5. For a CI failure, reproduce the failed job's actual entry point, not just its
+   underlying Cargo command. After the authorized fix is pushed, verify the
+   previously failing job on the exact new PR head. A passing intermediate step
+   does not establish that the entire job passed; report pending checks explicitly
+   and do not describe the CI failure as resolved until that job succeeds.
+
 ## Stage 1 development authorization
 
 The maintainer has authorized implementation of both Stage 1 rows in the parallel
