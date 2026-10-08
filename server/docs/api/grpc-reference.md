@@ -1280,10 +1280,10 @@ no evidence rows appear here.
 | AddMonetaryObservation | ServerApiRequest | ServerApiResponse | POST /v1/monetary/observations |
 | MonetaryPrices | ServerApiRequest | ServerApiResponse | GET /v1/monetary/prices |
 | AddMonetaryPrice | ServerApiRequest | ServerApiResponse | POST /v1/monetary/prices |
+| PlatformActivation | ServerApiRequest | ServerApiResponse | POST /v1/platform/{tenant}/activation |
 | GetPlatformAuthority | ServerApiRequest | ServerApiResponse | GET /v1/platform/{tenant}/authority |
 | TransitionPlatformAuthority | ServerApiRequest | ServerApiResponse | POST /v1/platform/{tenant}/authority |
 | PlatformRecords | ServerApiRequest | ServerApiResponse | POST /v1/platform/{tenant}/records |
-| PlatformActivation | ServerApiRequest | ServerApiResponse | POST /v1/platform/{tenant}/activation |
 | ListProviders | ServerApiRequest | ServerApiResponse | GET /v1/providers |
 | ApplyProvider | ServerApiRequest | ServerApiResponse | POST /v1/providers |
 | ProviderComplete | ServerApiRequest | ServerApiResponse | POST /v1/providers/{name}/complete |
