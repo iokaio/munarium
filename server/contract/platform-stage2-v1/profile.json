@@ -1,0 +1,31 @@
+{
+  "action_cap": 2,
+  "action_event_owners": {
+    "approval-recorded": "council",
+    "claim-created": "gate",
+    "consumption-reserved": "gate",
+    "grant-issued": "warden",
+    "outcome": "gate",
+    "predispatch": "gate",
+    "reconciliation": "gate",
+    "send-intent": "gate"
+  },
+  "action_window_seconds": 3600,
+  "approval_lifetime_seconds": 300,
+  "canonicalization": "decision-json-v1",
+  "capability_operation": "release.publish_approved_artifact",
+  "clock_uncertainty_seconds": 2,
+  "digest_prefix": "munarium:stage2:",
+  "executable_authority": false,
+  "participants": [
+    "gate",
+    "registry",
+    "server",
+    "warden"
+  ],
+  "profile": "stage2-single-cell-v1",
+  "runtime_dependency_pins": "pending-intake",
+  "runtime_direction": "linux-postgresql-single-cell",
+  "schema_version": 1,
+  "status": "candidate-not-qualified"
+}

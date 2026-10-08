@@ -122,7 +122,7 @@ this is separate from a ledger sequence pin. See the
 |---|---|---|
 | Command | `POST /v1/versions` | `CommandService/CreateVersion` |
 | Platform authority | `GET` / `POST /v1/platform/{tenant}/authority` — explicit mTLS platform profile; see [authority ceremony](../platform-stage1.md) | `ServerApiService/GetPlatformAuthority`, `TransitionPlatformAuthority` |
-| Platform records | `POST /v1/platform/{tenant}/records` — authenticated append, lookup, archive and replay | `ServerApiService/PlatformRecords` |
+| Platform records | `POST /v1/platform/{tenant}/records` — authenticated append, lookup, archive and replay; experimental [Stage 2 action operations](../platform-stage2.md) | `ServerApiService/PlatformRecords` |
 | | `POST /v1/versions/{id}/claims` (optional `origin` block — connector provenance, returned on every claim read; `null` on model-extracted claims) | `ProposeClaim` |
 | | `POST /v1/versions/{id}/events` | `AppendEvents` (batch, gated as one unit) |
 | | `POST /v1/versions/{id}/promises` | `OpenPromise` |

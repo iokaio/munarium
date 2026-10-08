@@ -55,7 +55,7 @@ def port():
 
 
 @contextmanager
-def deployment(database, service_peers=()):
+def deployment(database, service_peers=(), record_peers=()):
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import ec, ed25519
@@ -176,12 +176,14 @@ def deployment(database, service_peers=()):
         }
         config_path = directory / "config.json"
         for name, identity in identities.items():
-            if name not in ("svc-warden", "svc-registry", "svc-gate"):
+            if name not in ("svc-warden", "svc-registry", "svc-gate", "svc-council"):
                 continue
             config["peers"][identity[2]] = {
                 "service": name,
                 "tenants": [tenant],
-                "scopes": ["read", "record"] if name == "svc-gate" else ["read"],
+                "scopes": ["read", "record"]
+                if name == "svc-gate" or name in record_peers
+                else ["read"],
             }
         config_path.write_bytes(canonical(config))
         env = {

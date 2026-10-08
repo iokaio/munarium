@@ -264,6 +264,7 @@ class CatalogTests(unittest.TestCase):
             ("repository: iokaio/munarium-matrix", "repository: missing/matrix"),
             ('cargo +"$MSRV" test', "cargo test"),
             ('      - "clients/python/tests/test_platform_authority_live.py"\n', ""),
+            ('      - "clients/python/tests/test_platform_actions_live.py"\n', ""),
             ('      - "clients/python/pyproject.toml"\n', ""),
             ("  platform-authority:\n", "  platform-authority:\n    if: false\n"),
             (
@@ -275,7 +276,22 @@ class CatalogTests(unittest.TestCase):
                 "cargo test --locked -p munarium-store-pg --test platform_authority",
             ),
             ("cargo test --locked -p munarium-server platform_api", "true"),
-            ("python -m pytest tests/test_platform_authority_live.py -q", "true"),
+            (
+                "cargo test --locked -p munarium-core -p munarium-store-mem --test platform_actions",
+                "true",
+            ),
+            (
+                "cargo test --locked -p munarium-store-pg --test platform_actions -- --ignored",
+                "cargo test --locked -p munarium-store-pg --test platform_actions",
+            ),
+            (
+                "python -m pytest tests/test_platform_authority_live.py tests/test_platform_actions_live.py -q",
+                "python -m pytest tests/test_platform_actions_live.py -q",
+            ),
+            (
+                "python -m pytest tests/test_platform_authority_live.py tests/test_platform_actions_live.py -q",
+                "python -m pytest tests/test_platform_authority_live.py -q",
+            ),
         ):
             self.assertIn(old, workflow)
             with self.assertRaises(ValueError):

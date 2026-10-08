@@ -21,6 +21,7 @@ and API references when applying them to a new deployment.
 | Document | What it is |
 |---|---|
 | [platform-stage1.md](platform-stage1.md) | Experimental platform event/replay storage, persistence checks and privileged adapter boundary |
+| [platform-stage2.md](platform-stage2.md) | Experimental action/activation archives and events, exact acknowledgements and bounded recovery admission |
 | [governance-baseline.md](governance-baseline.md) | Injectable memory-store dependencies and separate governance, snapshot, serialization and growing-write measurements |
 | [architecture.md](architecture.md) | The architecture of what ships: layers, crate boundaries, the data and retrieval tiers, shapes and runbooks, the deployment shapes, and the design targets the code does not yet reach. Read this before making structural decisions |
 | [security-posture.md](security-posture.md) | Why the API-management layer is the security boundary; the uid contract, capability JWTs, and credential posture |

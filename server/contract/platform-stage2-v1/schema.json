@@ -1,0 +1,2205 @@
+{
+  "$defs": {
+    "accountability-event": {
+      "additionalProperties": false,
+      "properties": {
+        "causal_parents": {
+          "items": {
+            "maxLength": 71,
+            "minLength": 71,
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "clock": {
+          "const": "bounded-utc-2s",
+          "type": "string"
+        },
+        "event_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "family": {
+          "enum": [
+            "action",
+            "activation"
+          ],
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "approval-recorded",
+            "claim-created",
+            "grant-issued",
+            "consumption-reserved",
+            "predispatch",
+            "send-intent",
+            "outcome",
+            "reconciliation",
+            "activation-applied"
+          ],
+          "type": "string"
+        },
+        "occurred_at": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "payload": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/approval-recorded-payload"
+            },
+            {
+              "$ref": "#/$defs/claim-created-payload"
+            },
+            {
+              "$ref": "#/$defs/grant-issued-payload"
+            },
+            {
+              "$ref": "#/$defs/consumption-reserved-payload"
+            },
+            {
+              "$ref": "#/$defs/predispatch-payload"
+            },
+            {
+              "$ref": "#/$defs/send-intent-payload"
+            },
+            {
+              "$ref": "#/$defs/outcome-payload"
+            },
+            {
+              "$ref": "#/$defs/reconciliation-payload"
+            },
+            {
+              "$ref": "#/$defs/activation-applied-payload"
+            }
+          ]
+        },
+        "payload_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "predecessor": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "producer": {
+          "enum": [
+            "council",
+            "gate",
+            "registry",
+            "server",
+            "warden"
+          ],
+          "type": "string"
+        },
+        "profile": {
+          "const": "stage2-single-cell-v1",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "type": "integer"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "sequence": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "source_generation": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "stream": {
+          "$ref": "#/$defs/stream-ref"
+        },
+        "type": {
+          "const": "accountability-event",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "type",
+        "profile",
+        "scope",
+        "event_id",
+        "producer",
+        "stream",
+        "source_generation",
+        "sequence",
+        "predecessor",
+        "occurred_at",
+        "clock",
+        "family",
+        "kind",
+        "payload_digest",
+        "causal_parents",
+        "payload"
+      ],
+      "type": "object"
+    },
+    "action-approval": {
+      "additionalProperties": false,
+      "properties": {
+        "approval": {
+          "$ref": "#/$defs/approval-ref"
+        },
+        "approver": {
+          "$ref": "#/$defs/principal"
+        },
+        "attempt": {
+          "$ref": "#/$defs/attempt-ref"
+        },
+        "context_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "decision_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "eligibility_revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "expires_at": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "issued_at": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "operation": {
+          "$ref": "#/$defs/operation-ref"
+        },
+        "prior": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/approval-ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "profile": {
+          "const": "stage2-single-cell-v1",
+          "type": "string"
+        },
+        "request_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "type": "integer"
+        },
+        "type": {
+          "const": "action-approval",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "type",
+        "profile",
+        "operation",
+        "attempt",
+        "request_digest",
+        "context_digest",
+        "approval",
+        "decision_digest",
+        "approver",
+        "eligibility_revision",
+        "issued_at",
+        "expires_at",
+        "prior"
+      ],
+      "type": "object"
+    },
+    "action-decision": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt": {
+          "$ref": "#/$defs/attempt-ref"
+        },
+        "context_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "obligations": {
+          "items": {
+            "$ref": "#/$defs/obligation"
+          },
+          "maxItems": 4,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "operation": {
+          "$ref": "#/$defs/operation-ref"
+        },
+        "outcome": {
+          "enum": [
+            "approval-required",
+            "denied"
+          ],
+          "type": "string"
+        },
+        "profile": {
+          "const": "stage2-single-cell-v1",
+          "type": "string"
+        },
+        "reason_codes": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "request_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "type": "integer"
+        },
+        "type": {
+          "const": "action-decision",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "type",
+        "profile",
+        "operation",
+        "attempt",
+        "request_digest",
+        "context_digest",
+        "outcome",
+        "obligations",
+        "reason_codes"
+      ],
+      "type": "object"
+    },
+    "action-request": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt": {
+          "$ref": "#/$defs/attempt-ref"
+        },
+        "context": {
+          "$ref": "#/$defs/context"
+        },
+        "context_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "intent": {
+          "$ref": "#/$defs/intent"
+        },
+        "intent_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "operation": {
+          "$ref": "#/$defs/operation-ref"
+        },
+        "profile": {
+          "const": "stage2-single-cell-v1",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "type": "integer"
+        },
+        "type": {
+          "const": "action-request",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "type",
+        "profile",
+        "operation",
+        "attempt",
+        "intent",
+        "intent_digest",
+        "context",
+        "context_digest"
+      ],
+      "type": "object"
+    },
+    "activation": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_set_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "artifacts": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "digest": {
+                "maxLength": 71,
+                "minLength": 71,
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "kind": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "digest"
+            ],
+            "type": "object"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "expires_at": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "not_before": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "participant_set_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "participants": {
+          "items": {
+            "enum": [
+              "gate",
+              "registry",
+              "server",
+              "warden"
+            ],
+            "type": "string"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "prior_artifact_set_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "prior_epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "profile": {
+          "const": "stage2-single-cell-v1",
+          "type": "string"
+        },
+        "profile_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "ratification": {
+          "$ref": "#/$defs/approval-ref"
+        },
+        "schema_version": {
+          "const": 1,
+          "type": "integer"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "successor_epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "transition": {
+          "$ref": "#/$defs/transition-ref"
+        },
+        "type": {
+          "const": "activation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "type",
+        "profile",
+        "transition",
+        "scope",
+        "profile_digest",
+        "prior_epoch",
+        "successor_epoch",
+        "prior_artifact_set_digest",
+        "artifacts",
+        "artifact_set_digest",
+        "participants",
+        "participant_set_digest",
+        "ratification",
+        "not_before",
+        "expires_at"
+      ],
+      "type": "object"
+    },
+    "activation-applied-payload": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "activation-applied",
+          "type": "string"
+        },
+        "receipt": {
+          "$ref": "#/$defs/activation-receipt"
+        }
+      },
+      "required": [
+        "kind",
+        "receipt"
+      ],
+      "type": "object"
+    },
+    "activation-receipt": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_set_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "participant": {
+          "enum": [
+            "gate",
+            "registry",
+            "server",
+            "warden"
+          ],
+          "type": "string"
+        },
+        "participant_set_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "phase": {
+          "enum": [
+            "paused",
+            "applied"
+          ],
+          "type": "string"
+        },
+        "prior_epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "profile": {
+          "const": "stage2-single-cell-v1",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "type": "integer"
+        },
+        "successor_epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "transition": {
+          "$ref": "#/$defs/transition-ref"
+        },
+        "transition_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "type": {
+          "const": "activation-receipt",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "type",
+        "profile",
+        "transition",
+        "transition_digest",
+        "participant",
+        "phase",
+        "prior_epoch",
+        "successor_epoch",
+        "artifact_set_digest",
+        "participant_set_digest"
+      ],
+      "type": "object"
+    },
+    "approval-recorded-payload": {
+      "additionalProperties": false,
+      "properties": {
+        "activation_epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "approval": {
+          "$ref": "#/$defs/approval-ref"
+        },
+        "approval_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "attempt": {
+          "$ref": "#/$defs/attempt-ref"
+        },
+        "context_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "kind": {
+          "const": "approval-recorded",
+          "type": "string"
+        },
+        "operation": {
+          "$ref": "#/$defs/operation-ref"
+        },
+        "recovery_epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "request_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "operation",
+        "attempt",
+        "request_digest",
+        "context_digest",
+        "activation_epoch",
+        "recovery_epoch",
+        "approval",
+        "approval_digest"
+      ],
+      "type": "object"
+    },
+    "approval-ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "approval",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        }
+      },
+      "required": [
+        "scope",
+        "kind",
+        "id"
+      ],
+      "type": "object"
+    },
+    "attempt-ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "attempt",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        }
+      },
+      "required": [
+        "scope",
+        "kind",
+        "id"
+      ],
+      "type": "object"
+    },
+    "authority-ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "authority",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        }
+      },
+      "required": [
+        "scope",
+        "kind",
+        "id"
+      ],
+      "type": "object"
+    },
+    "claim-created-payload": {
+      "additionalProperties": false,
+      "properties": {
+        "activation_epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "attempt": {
+          "$ref": "#/$defs/attempt-ref"
+        },
+        "claim": {
+          "$ref": "#/$defs/claim-ref"
+        },
+        "context_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "grant_binding_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "kind": {
+          "const": "claim-created",
+          "type": "string"
+        },
+        "operation": {
+          "$ref": "#/$defs/operation-ref"
+        },
+        "recovery_epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "request_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "operation",
+        "attempt",
+        "request_digest",
+        "context_digest",
+        "activation_epoch",
+        "recovery_epoch",
+        "claim",
+        "grant_binding_digest"
+      ],
+      "type": "object"
+    },
+    "claim-ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "claim",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        }
+      },
+      "required": [
+        "scope",
+        "kind",
+        "id"
+      ],
+      "type": "object"
+    },
+    "consumption-reserved-payload": {
+      "additionalProperties": false,
+      "properties": {
+        "activation_epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "attempt": {
+          "$ref": "#/$defs/attempt-ref"
+        },
+        "claim": {
+          "$ref": "#/$defs/claim-ref"
+        },
+        "context_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "grant": {
+          "$ref": "#/$defs/grant-ref"
+        },
+        "kind": {
+          "const": "consumption-reserved",
+          "type": "string"
+        },
+        "operation": {
+          "$ref": "#/$defs/operation-ref"
+        },
+        "recovery_epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "request_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "reservations": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "reservation": {
+                "$ref": "#/$defs/reservation-ref"
+              },
+              "root": {
+                "$ref": "#/$defs/task-ref"
+              },
+              "target": {
+                "$ref": "#/$defs/target-ref"
+              },
+              "units": {
+                "const": 1,
+                "type": "integer"
+              },
+              "window_start": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "reservation",
+              "target",
+              "root",
+              "window_start",
+              "units"
+            ],
+            "type": "object"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "worker": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "worker_fence": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "operation",
+        "attempt",
+        "request_digest",
+        "context_digest",
+        "activation_epoch",
+        "recovery_epoch",
+        "claim",
+        "grant",
+        "worker",
+        "worker_fence",
+        "reservations"
+      ],
+      "type": "object"
+    },
+    "context": {
+      "additionalProperties": false,
+      "properties": {
+        "activation": {
+          "additionalProperties": false,
+          "properties": {
+            "owner": {
+              "const": "registry",
+              "type": "string"
+            },
+            "revision": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            }
+          },
+          "required": [
+            "owner",
+            "scope",
+            "revision"
+          ],
+          "type": "object"
+        },
+        "authority_pins": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "owner": {
+                "$ref": "#/$defs/authority-ref"
+              },
+              "revision": {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "owner",
+              "revision"
+            ],
+            "type": "object"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "evaluator_profile_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/evidence"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "expires_at": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "manifest_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "mode": {
+          "const": "enforce",
+          "type": "string"
+        },
+        "policy_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "recovery": {
+          "additionalProperties": false,
+          "properties": {
+            "revision": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "scope": {
+              "$ref": "#/$defs/scope"
+            }
+          },
+          "required": [
+            "scope",
+            "revision"
+          ],
+          "type": "object"
+        },
+        "valid_from": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "activation",
+        "recovery",
+        "authority_pins",
+        "manifest_digest",
+        "policy_digest",
+        "evaluator_profile_digest",
+        "mode",
+        "evidence",
+        "valid_from",
+        "expires_at"
+      ],
+      "type": "object"
+    },
+    "event-ack": {
+      "additionalProperties": false,
+      "properties": {
+        "event_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "event_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "ledger": {
+          "$ref": "#/$defs/ledger-ref"
+        },
+        "payload_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "position": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "profile": {
+          "const": "stage2-single-cell-v1",
+          "type": "string"
+        },
+        "received_at": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": 1,
+          "type": "integer"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "type": {
+          "const": "event-ack",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "type",
+        "profile",
+        "scope",
+        "event_id",
+        "event_digest",
+        "payload_digest",
+        "ledger",
+        "position",
+        "received_at"
+      ],
+      "type": "object"
+    },
+    "event-ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "event",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        }
+      },
+      "required": [
+        "scope",
+        "kind",
+        "id"
+      ],
+      "type": "object"
+    },
+    "evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "content_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "derivation": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "derivation_version": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "expires_at": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "field": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "observed_at": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "revision": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "source": {
+          "$ref": "#/$defs/evidence-ref"
+        },
+        "trust": {
+          "enum": [
+            "verified",
+            "untrusted",
+            "unknown"
+          ],
+          "type": "string"
+        },
+        "verifier": {
+          "$ref": "#/$defs/authority-ref"
+        }
+      },
+      "required": [
+        "source",
+        "revision",
+        "content_digest",
+        "field",
+        "derivation",
+        "derivation_version",
+        "observed_at",
+        "expires_at",
+        "trust",
+        "verifier"
+      ],
+      "type": "object"
+    },
+    "evidence-ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "evidence",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        }
+      },
+      "required": [
+        "scope",
+        "kind",
+        "id"
+      ],
+      "type": "object"
+    },
+    "grant-issued-payload": {
+      "additionalProperties": false,
+      "properties": {
+        "activation_epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "attempt": {
+          "$ref": "#/$defs/attempt-ref"
+        },
+        "claim": {
+          "$ref": "#/$defs/claim-ref"
+        },
+        "context_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "expires_at": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "grant": {
+          "$ref": "#/$defs/grant-ref"
+        },
+        "kind": {
+          "const": "grant-issued",
+          "type": "string"
+        },
+        "operation": {
+          "$ref": "#/$defs/operation-ref"
+        },
+        "recovery_epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "request_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "operation",
+        "attempt",
+        "request_digest",
+        "context_digest",
+        "activation_epoch",
+        "recovery_epoch",
+        "claim",
+        "grant",
+        "expires_at"
+      ],
+      "type": "object"
+    },
+    "grant-ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "grant",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        }
+      },
+      "required": [
+        "scope",
+        "kind",
+        "id"
+      ],
+      "type": "object"
+    },
+    "intent": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "$ref": "#/$defs/principal"
+        },
+        "attachments": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "bytes": {
+                "maximum": 9007199254740991,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "digest": {
+                "maxLength": 71,
+                "minLength": 71,
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "media_type": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+                "type": "string"
+              }
+            },
+            "required": [
+              "digest",
+              "bytes",
+              "media_type"
+            ],
+            "type": "object"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "capability_operation": {
+          "const": "release.publish_approved_artifact",
+          "type": "string"
+        },
+        "delegation_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "environment": {
+          "const": "disposable",
+          "type": "string"
+        },
+        "origin": {
+          "$ref": "#/$defs/principal"
+        },
+        "parameter_schema_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "artifact_digest": {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "destination": {
+              "const": "synthetic-release",
+              "type": "string"
+            }
+          },
+          "required": [
+            "artifact_digest",
+            "destination"
+          ],
+          "type": "object"
+        },
+        "target": {
+          "$ref": "#/$defs/target-ref"
+        },
+        "target_precondition": {
+          "additionalProperties": false,
+          "properties": {
+            "content_digest": {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "version": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "version",
+            "content_digest"
+          ],
+          "type": "object"
+        },
+        "task": {
+          "$ref": "#/$defs/task"
+        }
+      },
+      "required": [
+        "actor",
+        "origin",
+        "delegation_digest",
+        "task",
+        "target",
+        "environment",
+        "capability_operation",
+        "parameter_schema_digest",
+        "parameters",
+        "attachments",
+        "target_precondition"
+      ],
+      "type": "object"
+    },
+    "invocation-ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "invocation",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        }
+      },
+      "required": [
+        "scope",
+        "kind",
+        "id"
+      ],
+      "type": "object"
+    },
+    "ledger-ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "ledger",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        }
+      },
+      "required": [
+        "scope",
+        "kind",
+        "id"
+      ],
+      "type": "object"
+    },
+    "obligation": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "distinct-approval",
+              "type": "string"
+            },
+            "owner": {
+              "const": "council",
+              "type": "string"
+            },
+            "policy_digest": {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "owner",
+            "policy_digest"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "mandatory-recording",
+              "type": "string"
+            },
+            "owner": {
+              "const": "server",
+              "type": "string"
+            },
+            "phase": {
+              "const": "before-send",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "owner",
+            "phase"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "action-capacity",
+              "type": "string"
+            },
+            "limit": {
+              "const": 2,
+              "type": "integer"
+            },
+            "owner": {
+              "const": "gate",
+              "type": "string"
+            },
+            "target": {
+              "$ref": "#/$defs/target-ref"
+            },
+            "window_seconds": {
+              "const": 3600,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "owner",
+            "target",
+            "limit",
+            "window_seconds"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "audience": {
+              "$ref": "#/$defs/target-ref"
+            },
+            "kind": {
+              "const": "credential-custody",
+              "type": "string"
+            },
+            "owner": {
+              "const": "warden",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "owner",
+            "audience"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "operation-ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "operation",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        }
+      },
+      "required": [
+        "scope",
+        "kind",
+        "id"
+      ],
+      "type": "object"
+    },
+    "outcome-payload": {
+      "additionalProperties": false,
+      "properties": {
+        "activation_epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "attempt": {
+          "$ref": "#/$defs/attempt-ref"
+        },
+        "claim": {
+          "$ref": "#/$defs/claim-ref"
+        },
+        "context_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "effect_key": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "effect_status": {
+          "enum": [
+            "completed",
+            "proven-no-effect",
+            "unresolved"
+          ],
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/evidence-ref"
+          },
+          "maxItems": 32,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "invocation": {
+          "$ref": "#/$defs/invocation-ref"
+        },
+        "kind": {
+          "const": "outcome",
+          "type": "string"
+        },
+        "operation": {
+          "$ref": "#/$defs/operation-ref"
+        },
+        "recovery_epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "request_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "operation",
+        "attempt",
+        "request_digest",
+        "context_digest",
+        "activation_epoch",
+        "recovery_epoch",
+        "claim",
+        "invocation",
+        "effect_key",
+        "effect_status",
+        "evidence"
+      ],
+      "type": "object"
+    },
+    "predispatch-payload": {
+      "additionalProperties": false,
+      "properties": {
+        "activation_epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "attempt": {
+          "$ref": "#/$defs/attempt-ref"
+        },
+        "claim": {
+          "$ref": "#/$defs/claim-ref"
+        },
+        "consumption_event_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "context_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "grant": {
+          "$ref": "#/$defs/grant-ref"
+        },
+        "kind": {
+          "const": "predispatch",
+          "type": "string"
+        },
+        "operation": {
+          "$ref": "#/$defs/operation-ref"
+        },
+        "recovery_epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "request_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "operation",
+        "attempt",
+        "request_digest",
+        "context_digest",
+        "activation_epoch",
+        "recovery_epoch",
+        "claim",
+        "grant",
+        "consumption_event_digest"
+      ],
+      "type": "object"
+    },
+    "principal": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "human",
+            "agent",
+            "service"
+          ],
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "subject": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "subject_generation": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "scope",
+        "subject",
+        "subject_generation",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "reconciliation-payload": {
+      "additionalProperties": false,
+      "properties": {
+        "activation_epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "attempt": {
+          "$ref": "#/$defs/attempt-ref"
+        },
+        "claim": {
+          "$ref": "#/$defs/claim-ref"
+        },
+        "context_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "effect_key": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "effect_status": {
+          "enum": [
+            "completed",
+            "proven-no-effect",
+            "unresolved"
+          ],
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/evidence-ref"
+          },
+          "maxItems": 32,
+          "minItems": 0,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "kind": {
+          "const": "reconciliation",
+          "type": "string"
+        },
+        "operation": {
+          "$ref": "#/$defs/operation-ref"
+        },
+        "prior_outcome_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "recovery_epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "request_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "operation",
+        "attempt",
+        "request_digest",
+        "context_digest",
+        "activation_epoch",
+        "recovery_epoch",
+        "claim",
+        "effect_key",
+        "prior_outcome_digest",
+        "effect_status",
+        "evidence"
+      ],
+      "type": "object"
+    },
+    "reservation-ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "reservation",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        }
+      },
+      "required": [
+        "scope",
+        "kind",
+        "id"
+      ],
+      "type": "object"
+    },
+    "scope": {
+      "additionalProperties": false,
+      "properties": {
+        "cell": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "deployment": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "domain": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "tenant": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        }
+      },
+      "required": [
+        "domain",
+        "tenant",
+        "deployment",
+        "cell"
+      ],
+      "type": "object"
+    },
+    "send-intent-payload": {
+      "additionalProperties": false,
+      "properties": {
+        "activation_epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "attempt": {
+          "$ref": "#/$defs/attempt-ref"
+        },
+        "claim": {
+          "$ref": "#/$defs/claim-ref"
+        },
+        "context_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "effect_key": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "grant": {
+          "$ref": "#/$defs/grant-ref"
+        },
+        "invocation": {
+          "$ref": "#/$defs/invocation-ref"
+        },
+        "kind": {
+          "const": "send-intent",
+          "type": "string"
+        },
+        "operation": {
+          "$ref": "#/$defs/operation-ref"
+        },
+        "predispatch_ack_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "recovery_epoch": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "request_digest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/target-ref"
+        },
+        "worker": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "worker_fence": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "operation",
+        "attempt",
+        "request_digest",
+        "context_digest",
+        "activation_epoch",
+        "recovery_epoch",
+        "claim",
+        "grant",
+        "invocation",
+        "worker",
+        "worker_fence",
+        "predispatch_ack_digest",
+        "effect_key",
+        "target"
+      ],
+      "type": "object"
+    },
+    "stream-ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "stream",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        }
+      },
+      "required": [
+        "scope",
+        "kind",
+        "id"
+      ],
+      "type": "object"
+    },
+    "target-ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "target",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        }
+      },
+      "required": [
+        "scope",
+        "kind",
+        "id"
+      ],
+      "type": "object"
+    },
+    "task": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_instance": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "agent_release": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/task-ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "root": {
+          "$ref": "#/$defs/task-ref"
+        }
+      },
+      "required": [
+        "root",
+        "parent",
+        "agent_release",
+        "agent_instance"
+      ],
+      "type": "object"
+    },
+    "task-ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "task",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        }
+      },
+      "required": [
+        "scope",
+        "kind",
+        "id"
+      ],
+      "type": "object"
+    },
+    "transition-ref": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9:._/-]*(?![\\s\\S])",
+          "type": "string"
+        },
+        "kind": {
+          "const": "transition",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        }
+      },
+      "required": [
+        "scope",
+        "kind",
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "$ref": "#/$defs/action-request"
+    },
+    {
+      "$ref": "#/$defs/action-decision"
+    },
+    {
+      "$ref": "#/$defs/action-approval"
+    },
+    {
+      "$ref": "#/$defs/activation"
+    },
+    {
+      "$ref": "#/$defs/activation-receipt"
+    },
+    {
+      "$ref": "#/$defs/accountability-event"
+    },
+    {
+      "$ref": "#/$defs/event-ack"
+    }
+  ]
+}

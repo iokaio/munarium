@@ -1,0 +1,2203 @@
+{
+  "canonical": {
+    "ack": "{\"event_digest\":\"sha256:e9bf7dc45cb03dc69269055e6d82ccc98bf39b3a3af4e2d3cd576373975d052b\",\"event_id\":\"event-predispatch\",\"ledger\":{\"id\":\"server-ledger\",\"kind\":\"ledger\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"payload_digest\":\"sha256:c3745dbac01b031560af3b24c6396ce6a2e7b5af954b1a75d305751fa7031d27\",\"position\":1,\"profile\":\"stage2-single-cell-v1\",\"received_at\":1001,\"schema_version\":1,\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"},\"type\":\"event-ack\"}",
+    "activation": "{\"artifact_set_digest\":\"sha256:dd37d6de4bc8aeb0d49d947b6a6d605ac4f5f4af6ae9570046db8048baa88bc3\",\"artifacts\":[{\"digest\":\"sha256:05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f\",\"kind\":\"manifest\"},{\"digest\":\"sha256:823412d1eacb67956220e532959f0104603057c88704863ca38e7cd188fda812\",\"kind\":\"policy\"}],\"expires_at\":1300,\"not_before\":990,\"participant_set_digest\":\"sha256:b64c393aeb30eb40c92ca5c1a21bd7a7c0ea5aa8dc1cf6d6a51013ad892be23b\",\"participants\":[\"gate\",\"registry\",\"server\",\"warden\"],\"prior_artifact_set_digest\":\"sha256:79a5d46b415eee4ab3cda5a7ba6118df4c76e6c8c97ec83f7a69117f7326229a\",\"prior_epoch\":1,\"profile\":\"stage2-single-cell-v1\",\"profile_digest\":\"sha256:d38e5ac62254a35357d94ce1d5321c77186fb0c28a2135adbdbd29cf926cb302\",\"ratification\":{\"id\":\"activation-ratification\",\"kind\":\"approval\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"schema_version\":1,\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"},\"successor_epoch\":2,\"transition\":{\"id\":\"transition-a\",\"kind\":\"transition\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"type\":\"activation\"}",
+    "activation-event": "{\"causal_parents\":[],\"clock\":\"bounded-utc-2s\",\"event_id\":\"event-activation\",\"family\":\"activation\",\"kind\":\"activation-applied\",\"occurred_at\":1000,\"payload\":{\"kind\":\"activation-applied\",\"receipt\":{\"artifact_set_digest\":\"sha256:dd37d6de4bc8aeb0d49d947b6a6d605ac4f5f4af6ae9570046db8048baa88bc3\",\"participant\":\"registry\",\"participant_set_digest\":\"sha256:b64c393aeb30eb40c92ca5c1a21bd7a7c0ea5aa8dc1cf6d6a51013ad892be23b\",\"phase\":\"applied\",\"prior_epoch\":1,\"profile\":\"stage2-single-cell-v1\",\"schema_version\":1,\"successor_epoch\":2,\"transition\":{\"id\":\"transition-a\",\"kind\":\"transition\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"transition_digest\":\"sha256:06ce993bb87a7d21e89fefb6bdb146225846408077e2649c6f37a5c799367871\",\"type\":\"activation-receipt\"}},\"payload_digest\":\"sha256:e8822a26c4e69a79ba11ef7268bf774e38690fd27ff65cd1046f71b519ad22cc\",\"predecessor\":null,\"producer\":\"registry\",\"profile\":\"stage2-single-cell-v1\",\"schema_version\":1,\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"},\"sequence\":1,\"source_generation\":1,\"stream\":{\"id\":\"fixture-activation\",\"kind\":\"stream\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"type\":\"accountability-event\"}",
+    "approval": "{\"approval\":{\"id\":\"approval-a\",\"kind\":\"approval\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"approver\":{\"kind\":\"human\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"},\"subject\":\"reviewing-human\",\"subject_generation\":1},\"attempt\":{\"id\":\"attempt-a\",\"kind\":\"attempt\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"context_digest\":\"sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984\",\"decision_digest\":\"sha256:f231d82900e187809b878baf2da4ebeed914ca1c785e78b28c93994e10858365\",\"eligibility_revision\":1,\"expires_at\":1290,\"issued_at\":990,\"operation\":{\"id\":\"publish-artifact\",\"kind\":\"operation\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"prior\":null,\"profile\":\"stage2-single-cell-v1\",\"request_digest\":\"sha256:5dea7f84ecff6393c1a8480e37f7f344e101250f884c3904e990f54383b14fca\",\"schema_version\":1,\"type\":\"action-approval\"}",
+    "approval-recorded": "{\"causal_parents\":[],\"clock\":\"bounded-utc-2s\",\"event_id\":\"event-approval-recorded\",\"family\":\"action\",\"kind\":\"approval-recorded\",\"occurred_at\":1000,\"payload\":{\"activation_epoch\":2,\"approval\":{\"id\":\"approval-a\",\"kind\":\"approval\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"approval_digest\":\"sha256:3f70e57ce7085a6790ca3e2960de928b170791fdc1825925d6ade114e9e5ca2f\",\"attempt\":{\"id\":\"attempt-a\",\"kind\":\"attempt\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"context_digest\":\"sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984\",\"kind\":\"approval-recorded\",\"operation\":{\"id\":\"publish-artifact\",\"kind\":\"operation\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"recovery_epoch\":1,\"request_digest\":\"sha256:5dea7f84ecff6393c1a8480e37f7f344e101250f884c3904e990f54383b14fca\"},\"payload_digest\":\"sha256:5f02c2700c568e73225be85ec7345feada433e36b8ec41070e536903b1be99c8\",\"predecessor\":null,\"producer\":\"council\",\"profile\":\"stage2-single-cell-v1\",\"schema_version\":1,\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"},\"sequence\":1,\"source_generation\":1,\"stream\":{\"id\":\"fixture-approval-recorded\",\"kind\":\"stream\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"type\":\"accountability-event\"}",
+    "claim-created": "{\"causal_parents\":[],\"clock\":\"bounded-utc-2s\",\"event_id\":\"event-claim-created\",\"family\":\"action\",\"kind\":\"claim-created\",\"occurred_at\":1000,\"payload\":{\"activation_epoch\":2,\"attempt\":{\"id\":\"attempt-a\",\"kind\":\"attempt\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"claim\":{\"id\":\"claim-a\",\"kind\":\"claim\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"context_digest\":\"sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984\",\"grant_binding_digest\":\"sha256:5dea7f84ecff6393c1a8480e37f7f344e101250f884c3904e990f54383b14fca\",\"kind\":\"claim-created\",\"operation\":{\"id\":\"publish-artifact\",\"kind\":\"operation\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"recovery_epoch\":1,\"request_digest\":\"sha256:5dea7f84ecff6393c1a8480e37f7f344e101250f884c3904e990f54383b14fca\"},\"payload_digest\":\"sha256:4998a67e23632637f719cd222b2b9d0a213f3719e803c299bc95a5321ce7a6cb\",\"predecessor\":null,\"producer\":\"gate\",\"profile\":\"stage2-single-cell-v1\",\"schema_version\":1,\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"},\"sequence\":1,\"source_generation\":1,\"stream\":{\"id\":\"fixture-claim-created\",\"kind\":\"stream\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"type\":\"accountability-event\"}",
+    "consumption-reserved": "{\"causal_parents\":[],\"clock\":\"bounded-utc-2s\",\"event_id\":\"event-consumption-reserved\",\"family\":\"action\",\"kind\":\"consumption-reserved\",\"occurred_at\":1000,\"payload\":{\"activation_epoch\":2,\"attempt\":{\"id\":\"attempt-a\",\"kind\":\"attempt\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"claim\":{\"id\":\"claim-a\",\"kind\":\"claim\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"context_digest\":\"sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984\",\"grant\":{\"id\":\"grant-a\",\"kind\":\"grant\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"kind\":\"consumption-reserved\",\"operation\":{\"id\":\"publish-artifact\",\"kind\":\"operation\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"recovery_epoch\":1,\"request_digest\":\"sha256:5dea7f84ecff6393c1a8480e37f7f344e101250f884c3904e990f54383b14fca\",\"reservations\":[{\"reservation\":{\"id\":\"reservation-a\",\"kind\":\"reservation\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"root\":{\"id\":\"root-task\",\"kind\":\"task\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"target\":{\"id\":\"synthetic-target\",\"kind\":\"target\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"units\":1,\"window_start\":0}],\"worker\":\"worker-a\",\"worker_fence\":1},\"payload_digest\":\"sha256:de727c4b2bbec879ec4300c18bae7b20f8e48d36cd071e7dd7fa7f9619dcf90b\",\"predecessor\":null,\"producer\":\"gate\",\"profile\":\"stage2-single-cell-v1\",\"schema_version\":1,\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"},\"sequence\":1,\"source_generation\":1,\"stream\":{\"id\":\"fixture-consumption-reserved\",\"kind\":\"stream\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"type\":\"accountability-event\"}",
+    "decision": "{\"attempt\":{\"id\":\"attempt-a\",\"kind\":\"attempt\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"context_digest\":\"sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984\",\"obligations\":[{\"kind\":\"distinct-approval\",\"owner\":\"council\",\"policy_digest\":\"sha256:823412d1eacb67956220e532959f0104603057c88704863ca38e7cd188fda812\"},{\"kind\":\"mandatory-recording\",\"owner\":\"server\",\"phase\":\"before-send\"},{\"kind\":\"action-capacity\",\"limit\":2,\"owner\":\"gate\",\"target\":{\"id\":\"synthetic-target\",\"kind\":\"target\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"window_seconds\":3600},{\"audience\":{\"id\":\"synthetic-target\",\"kind\":\"target\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"kind\":\"credential-custody\",\"owner\":\"warden\"}],\"operation\":{\"id\":\"publish-artifact\",\"kind\":\"operation\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"outcome\":\"approval-required\",\"profile\":\"stage2-single-cell-v1\",\"reason_codes\":[\"distinct-human-required\"],\"request_digest\":\"sha256:5dea7f84ecff6393c1a8480e37f7f344e101250f884c3904e990f54383b14fca\",\"schema_version\":1,\"type\":\"action-decision\"}",
+    "gate-receipt": "{\"artifact_set_digest\":\"sha256:dd37d6de4bc8aeb0d49d947b6a6d605ac4f5f4af6ae9570046db8048baa88bc3\",\"participant\":\"gate\",\"participant_set_digest\":\"sha256:b64c393aeb30eb40c92ca5c1a21bd7a7c0ea5aa8dc1cf6d6a51013ad892be23b\",\"phase\":\"applied\",\"prior_epoch\":1,\"profile\":\"stage2-single-cell-v1\",\"schema_version\":1,\"successor_epoch\":2,\"transition\":{\"id\":\"transition-a\",\"kind\":\"transition\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"transition_digest\":\"sha256:06ce993bb87a7d21e89fefb6bdb146225846408077e2649c6f37a5c799367871\",\"type\":\"activation-receipt\"}",
+    "grant-issued": "{\"causal_parents\":[],\"clock\":\"bounded-utc-2s\",\"event_id\":\"event-grant-issued\",\"family\":\"action\",\"kind\":\"grant-issued\",\"occurred_at\":1000,\"payload\":{\"activation_epoch\":2,\"attempt\":{\"id\":\"attempt-a\",\"kind\":\"attempt\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"claim\":{\"id\":\"claim-a\",\"kind\":\"claim\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"context_digest\":\"sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984\",\"expires_at\":1020,\"grant\":{\"id\":\"grant-a\",\"kind\":\"grant\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"kind\":\"grant-issued\",\"operation\":{\"id\":\"publish-artifact\",\"kind\":\"operation\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"recovery_epoch\":1,\"request_digest\":\"sha256:5dea7f84ecff6393c1a8480e37f7f344e101250f884c3904e990f54383b14fca\"},\"payload_digest\":\"sha256:695757fff2ee5877a0a5bbff5d196f4e65d6442baa0e7357c72cd4748dad4f9b\",\"predecessor\":null,\"producer\":\"warden\",\"profile\":\"stage2-single-cell-v1\",\"schema_version\":1,\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"},\"sequence\":1,\"source_generation\":1,\"stream\":{\"id\":\"fixture-grant-issued\",\"kind\":\"stream\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"type\":\"accountability-event\"}",
+    "outcome": "{\"causal_parents\":[],\"clock\":\"bounded-utc-2s\",\"event_id\":\"event-outcome\",\"family\":\"action\",\"kind\":\"outcome\",\"occurred_at\":1000,\"payload\":{\"activation_epoch\":2,\"attempt\":{\"id\":\"attempt-a\",\"kind\":\"attempt\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"claim\":{\"id\":\"claim-a\",\"kind\":\"claim\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"context_digest\":\"sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984\",\"effect_key\":\"publish-artifact\",\"effect_status\":\"unresolved\",\"evidence\":[],\"invocation\":{\"id\":\"invocation-a\",\"kind\":\"invocation\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"kind\":\"outcome\",\"operation\":{\"id\":\"publish-artifact\",\"kind\":\"operation\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"recovery_epoch\":1,\"request_digest\":\"sha256:5dea7f84ecff6393c1a8480e37f7f344e101250f884c3904e990f54383b14fca\"},\"payload_digest\":\"sha256:e3b53a4a19e3cd72699269a8608f837b1e93a50ac188d95c8018289f6dc68eb6\",\"predecessor\":null,\"producer\":\"gate\",\"profile\":\"stage2-single-cell-v1\",\"schema_version\":1,\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"},\"sequence\":1,\"source_generation\":1,\"stream\":{\"id\":\"fixture-outcome\",\"kind\":\"stream\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"type\":\"accountability-event\"}",
+    "pause": "{\"artifact_set_digest\":\"sha256:dd37d6de4bc8aeb0d49d947b6a6d605ac4f5f4af6ae9570046db8048baa88bc3\",\"participant\":\"gate\",\"participant_set_digest\":\"sha256:b64c393aeb30eb40c92ca5c1a21bd7a7c0ea5aa8dc1cf6d6a51013ad892be23b\",\"phase\":\"paused\",\"prior_epoch\":1,\"profile\":\"stage2-single-cell-v1\",\"schema_version\":1,\"successor_epoch\":2,\"transition\":{\"id\":\"transition-a\",\"kind\":\"transition\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"transition_digest\":\"sha256:06ce993bb87a7d21e89fefb6bdb146225846408077e2649c6f37a5c799367871\",\"type\":\"activation-receipt\"}",
+    "predispatch": "{\"causal_parents\":[],\"clock\":\"bounded-utc-2s\",\"event_id\":\"event-predispatch\",\"family\":\"action\",\"kind\":\"predispatch\",\"occurred_at\":1000,\"payload\":{\"activation_epoch\":2,\"attempt\":{\"id\":\"attempt-a\",\"kind\":\"attempt\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"claim\":{\"id\":\"claim-a\",\"kind\":\"claim\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"consumption_event_digest\":\"sha256:98fef7b0a311e2fc8e105e678c80eda020ab603c9143701706cfe618db660683\",\"context_digest\":\"sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984\",\"grant\":{\"id\":\"grant-a\",\"kind\":\"grant\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"kind\":\"predispatch\",\"operation\":{\"id\":\"publish-artifact\",\"kind\":\"operation\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"recovery_epoch\":1,\"request_digest\":\"sha256:5dea7f84ecff6393c1a8480e37f7f344e101250f884c3904e990f54383b14fca\"},\"payload_digest\":\"sha256:c3745dbac01b031560af3b24c6396ce6a2e7b5af954b1a75d305751fa7031d27\",\"predecessor\":null,\"producer\":\"gate\",\"profile\":\"stage2-single-cell-v1\",\"schema_version\":1,\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"},\"sequence\":1,\"source_generation\":1,\"stream\":{\"id\":\"fixture-predispatch\",\"kind\":\"stream\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"type\":\"accountability-event\"}",
+    "reconciliation": "{\"causal_parents\":[],\"clock\":\"bounded-utc-2s\",\"event_id\":\"event-reconciliation\",\"family\":\"action\",\"kind\":\"reconciliation\",\"occurred_at\":1000,\"payload\":{\"activation_epoch\":2,\"attempt\":{\"id\":\"attempt-a\",\"kind\":\"attempt\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"claim\":{\"id\":\"claim-a\",\"kind\":\"claim\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"context_digest\":\"sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984\",\"effect_key\":\"publish-artifact\",\"effect_status\":\"completed\",\"evidence\":[{\"id\":\"target-receipt\",\"kind\":\"evidence\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}}],\"kind\":\"reconciliation\",\"operation\":{\"id\":\"publish-artifact\",\"kind\":\"operation\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"prior_outcome_digest\":\"sha256:3786cc4dbcb1fe8714ef78ec109cf4f3f11798a9e94c6bf715c546ae4ed443c1\",\"recovery_epoch\":1,\"request_digest\":\"sha256:5dea7f84ecff6393c1a8480e37f7f344e101250f884c3904e990f54383b14fca\"},\"payload_digest\":\"sha256:46a887717348622dfc90c5910934585e32f7619bb9e440ec503845c81d61e0c7\",\"predecessor\":null,\"producer\":\"gate\",\"profile\":\"stage2-single-cell-v1\",\"schema_version\":1,\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"},\"sequence\":1,\"source_generation\":1,\"stream\":{\"id\":\"fixture-reconciliation\",\"kind\":\"stream\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"type\":\"accountability-event\"}",
+    "registry-receipt": "{\"artifact_set_digest\":\"sha256:dd37d6de4bc8aeb0d49d947b6a6d605ac4f5f4af6ae9570046db8048baa88bc3\",\"participant\":\"registry\",\"participant_set_digest\":\"sha256:b64c393aeb30eb40c92ca5c1a21bd7a7c0ea5aa8dc1cf6d6a51013ad892be23b\",\"phase\":\"applied\",\"prior_epoch\":1,\"profile\":\"stage2-single-cell-v1\",\"schema_version\":1,\"successor_epoch\":2,\"transition\":{\"id\":\"transition-a\",\"kind\":\"transition\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"transition_digest\":\"sha256:06ce993bb87a7d21e89fefb6bdb146225846408077e2649c6f37a5c799367871\",\"type\":\"activation-receipt\"}",
+    "request": "{\"attempt\":{\"id\":\"attempt-a\",\"kind\":\"attempt\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"context\":{\"activation\":{\"owner\":\"registry\",\"revision\":2,\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"authority_pins\":[{\"owner\":{\"id\":\"warden\",\"kind\":\"authority\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"revision\":1}],\"evaluator_profile_digest\":\"sha256:27f6343f980c4c0ab821d9c72d211d0eb76b0853825cefd80476a05e43cab27e\",\"evidence\":[{\"content_digest\":\"sha256:1323baf3311519c0cad4b399fa1092aaa2c1a1d73c7d7d0e03fd0745006a9932\",\"derivation\":\"inventory\",\"derivation_version\":1,\"expires_at\":1300,\"field\":\"artifact.digest\",\"observed_at\":990,\"revision\":1,\"source\":{\"id\":\"artifact-inventory\",\"kind\":\"evidence\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"trust\":\"verified\",\"verifier\":{\"id\":\"inventory-verifier\",\"kind\":\"authority\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}}}],\"expires_at\":1300,\"manifest_digest\":\"sha256:05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f\",\"mode\":\"enforce\",\"policy_digest\":\"sha256:823412d1eacb67956220e532959f0104603057c88704863ca38e7cd188fda812\",\"recovery\":{\"revision\":1,\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"valid_from\":990},\"context_digest\":\"sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984\",\"intent\":{\"actor\":{\"kind\":\"agent\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"},\"subject\":\"requesting-agent\",\"subject_generation\":1},\"attachments\":[],\"capability_operation\":\"release.publish_approved_artifact\",\"delegation_digest\":\"sha256:e62ec2c2228e391887d7ec2d2b0250040dd1aa5c70cf7073eacbce57d856f6ca\",\"environment\":\"disposable\",\"origin\":{\"kind\":\"agent\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"},\"subject\":\"requesting-agent\",\"subject_generation\":1},\"parameter_schema_digest\":\"sha256:542c87ded5519dc3c917e1973f514347ce865fc35b3f5c1139ad5fb05f49d93d\",\"parameters\":{\"artifact_digest\":\"sha256:1323baf3311519c0cad4b399fa1092aaa2c1a1d73c7d7d0e03fd0745006a9932\",\"destination\":\"synthetic-release\"},\"target\":{\"id\":\"synthetic-target\",\"kind\":\"target\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"target_precondition\":{\"content_digest\":\"sha256:ce257625a0d881c9200f5f6a617bd596a3b55754e82a35f10bfdff08a00d44ea\",\"version\":1},\"task\":{\"agent_instance\":\"instance-a\",\"agent_release\":\"sha256:a130a0331a56dab80f9a436aeedf78024b0b63130348808b57837e8663d32870\",\"parent\":null,\"root\":{\"id\":\"root-task\",\"kind\":\"task\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}}}},\"intent_digest\":\"sha256:a1e29e1e74ff14c81312a6820eee5ae8dc2106a80db4004225a5f0f9b1165461\",\"operation\":{\"id\":\"publish-artifact\",\"kind\":\"operation\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"profile\":\"stage2-single-cell-v1\",\"schema_version\":1,\"type\":\"action-request\"}",
+    "send-intent": "{\"causal_parents\":[],\"clock\":\"bounded-utc-2s\",\"event_id\":\"event-send-intent\",\"family\":\"action\",\"kind\":\"send-intent\",\"occurred_at\":1000,\"payload\":{\"activation_epoch\":2,\"attempt\":{\"id\":\"attempt-a\",\"kind\":\"attempt\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"claim\":{\"id\":\"claim-a\",\"kind\":\"claim\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"context_digest\":\"sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984\",\"effect_key\":\"publish-artifact\",\"grant\":{\"id\":\"grant-a\",\"kind\":\"grant\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"invocation\":{\"id\":\"invocation-a\",\"kind\":\"invocation\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"kind\":\"send-intent\",\"operation\":{\"id\":\"publish-artifact\",\"kind\":\"operation\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"predispatch_ack_digest\":\"sha256:bcb7b1ad0bceb2c2575b04afc8fcf1fdca5e60bcbdbb994680b9d702dac44247\",\"recovery_epoch\":1,\"request_digest\":\"sha256:5dea7f84ecff6393c1a8480e37f7f344e101250f884c3904e990f54383b14fca\",\"target\":{\"id\":\"synthetic-target\",\"kind\":\"target\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"worker\":\"worker-a\",\"worker_fence\":1},\"payload_digest\":\"sha256:a70e432b8c1b75fcb47d95f51a4b57982c5dfbf40372cbbe8cd709c533e42937\",\"predecessor\":null,\"producer\":\"gate\",\"profile\":\"stage2-single-cell-v1\",\"schema_version\":1,\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"},\"sequence\":1,\"source_generation\":1,\"stream\":{\"id\":\"fixture-send-intent\",\"kind\":\"stream\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"type\":\"accountability-event\"}",
+    "server-receipt": "{\"artifact_set_digest\":\"sha256:dd37d6de4bc8aeb0d49d947b6a6d605ac4f5f4af6ae9570046db8048baa88bc3\",\"participant\":\"server\",\"participant_set_digest\":\"sha256:b64c393aeb30eb40c92ca5c1a21bd7a7c0ea5aa8dc1cf6d6a51013ad892be23b\",\"phase\":\"applied\",\"prior_epoch\":1,\"profile\":\"stage2-single-cell-v1\",\"schema_version\":1,\"successor_epoch\":2,\"transition\":{\"id\":\"transition-a\",\"kind\":\"transition\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"transition_digest\":\"sha256:06ce993bb87a7d21e89fefb6bdb146225846408077e2649c6f37a5c799367871\",\"type\":\"activation-receipt\"}",
+    "warden-receipt": "{\"artifact_set_digest\":\"sha256:dd37d6de4bc8aeb0d49d947b6a6d605ac4f5f4af6ae9570046db8048baa88bc3\",\"participant\":\"warden\",\"participant_set_digest\":\"sha256:b64c393aeb30eb40c92ca5c1a21bd7a7c0ea5aa8dc1cf6d6a51013ad892be23b\",\"phase\":\"applied\",\"prior_epoch\":1,\"profile\":\"stage2-single-cell-v1\",\"schema_version\":1,\"successor_epoch\":2,\"transition\":{\"id\":\"transition-a\",\"kind\":\"transition\",\"scope\":{\"cell\":\"cell-a\",\"deployment\":\"fixture-deployment\",\"domain\":\"fixture-domain\",\"tenant\":\"tenant-a\"}},\"transition_digest\":\"sha256:06ce993bb87a7d21e89fefb6bdb146225846408077e2649c6f37a5c799367871\",\"type\":\"activation-receipt\"}"
+  },
+  "cases": [
+    {
+      "changes": {
+        "context_digest": "sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984",
+        "intent_digest": "sha256:a1e29e1e74ff14c81312a6820eee5ae8dc2106a80db4004225a5f0f9b1165461",
+        "operation.scope.tenant": "tenant-b"
+      },
+      "context_changes": {},
+      "expected": "Unauthorized",
+      "id": "foreign-tenant",
+      "record": "request"
+    },
+    {
+      "changes": {
+        "context_digest": "sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984",
+        "intent.target.scope.cell": "cell-b",
+        "intent_digest": "sha256:755e0296850be95e14b825fe1ec1d6284d5b131b0771ee08cc85584ec3f7bcae"
+      },
+      "context_changes": {},
+      "expected": "Unauthorized",
+      "id": "foreign-cell",
+      "record": "request"
+    },
+    {
+      "changes": {
+        "context_digest": "sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984",
+        "intent.actor.subject_generation": 2,
+        "intent_digest": "sha256:855ee234fadcae110835deb4fd08ff5eab71f5797611f1a12c5ecf65d855ad76"
+      },
+      "context_changes": {},
+      "expected": "Unauthorized",
+      "id": "subject-generation",
+      "record": "request"
+    },
+    {
+      "changes": {
+        "context_digest": "sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984",
+        "intent.task.root.id": "new-root",
+        "intent_digest": "sha256:a3aabc6d24cfa65e9a3226ae877476b56d5562b758dd3e3e57c49d791d4784fb"
+      },
+      "context_changes": {},
+      "expected": "Unauthorized",
+      "id": "forged-root",
+      "record": "request"
+    },
+    {
+      "changes": {
+        "context_digest": "sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984",
+        "intent.task.parent": null,
+        "intent_digest": "sha256:a1e29e1e74ff14c81312a6820eee5ae8dc2106a80db4004225a5f0f9b1165461"
+      },
+      "context_changes": {
+        "task.parent": {
+          "id": "required-parent",
+          "kind": "task",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        }
+      },
+      "expected": "Unauthorized",
+      "id": "omitted-parent",
+      "record": "request"
+    },
+    {
+      "changes": {
+        "context_digest": "sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984",
+        "intent_digest": "sha256:a1e29e1e74ff14c81312a6820eee5ae8dc2106a80db4004225a5f0f9b1165461"
+      },
+      "context_changes": {
+        "now": 1001
+      },
+      "expected": "accept",
+      "id": "refreshed-proof",
+      "record": "request"
+    },
+    {
+      "changes": {
+        "context.activation.revision": 1,
+        "context_digest": "sha256:f8f32f622d7eb0170aed65426b6a509a882a3a2ba6c8886fd7a1e13cca0b4759",
+        "intent_digest": "sha256:a1e29e1e74ff14c81312a6820eee5ae8dc2106a80db4004225a5f0f9b1165461"
+      },
+      "context_changes": {},
+      "expected": "StaleContext",
+      "id": "stale-activation",
+      "record": "request"
+    },
+    {
+      "changes": {
+        "context.evidence.0.trust": "untrusted",
+        "context_digest": "sha256:3af765493a1b2bdde9fbaf50209048ea3a41247d06e8c0495436f51403ea3f27",
+        "intent_digest": "sha256:a1e29e1e74ff14c81312a6820eee5ae8dc2106a80db4004225a5f0f9b1165461"
+      },
+      "context_changes": {},
+      "expected": "UnavailableEvidence",
+      "id": "untrusted-evidence",
+      "record": "request"
+    },
+    {
+      "changes": {
+        "context.evidence.0.content_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "context_digest": "sha256:4a6756dc6672b86e6cea0a228caae75885a61f35bb114d8c97c9d1c08c40dc90",
+        "intent_digest": "sha256:a1e29e1e74ff14c81312a6820eee5ae8dc2106a80db4004225a5f0f9b1165461"
+      },
+      "context_changes": {},
+      "expected": "UnavailableEvidence",
+      "id": "forged-verified-evidence",
+      "record": "request"
+    },
+    {
+      "changes": {
+        "context_digest": "sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984",
+        "intent_digest": "sha256:a1e29e1e74ff14c81312a6820eee5ae8dc2106a80db4004225a5f0f9b1165461"
+      },
+      "context_changes": {
+        "now": 1300
+      },
+      "expected": "UnavailableEvidence",
+      "id": "expired-evidence",
+      "record": "request"
+    },
+    {
+      "changes": {
+        "intent_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "context_changes": {},
+      "expected": "InvalidBinding",
+      "id": "wrong-intent-digest",
+      "record": "request"
+    },
+    {
+      "changes": {
+        "context.mode": "observe",
+        "context_digest": "sha256:694cf9091f05710a963cbaf5f3b77bb8aa5a9e694ce33928fd3a2289434b04de",
+        "intent_digest": "sha256:a1e29e1e74ff14c81312a6820eee5ae8dc2106a80db4004225a5f0f9b1165461"
+      },
+      "context_changes": {},
+      "expected": "InvalidShape",
+      "id": "shadow-mode",
+      "record": "request"
+    },
+    {
+      "changes": {
+        "context_digest": "sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984",
+        "intent_digest": "sha256:a1e29e1e74ff14c81312a6820eee5ae8dc2106a80db4004225a5f0f9b1165461",
+        "schema_version": 2
+      },
+      "context_changes": {},
+      "expected": "InvalidShape",
+      "id": "unknown-version",
+      "record": "request"
+    },
+    {
+      "changes": {
+        "context_digest": "sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984",
+        "intent_digest": "sha256:a1e29e1e74ff14c81312a6820eee5ae8dc2106a80db4004225a5f0f9b1165461",
+        "profile": "future-profile"
+      },
+      "context_changes": {},
+      "expected": "InvalidShape",
+      "id": "unknown-profile",
+      "record": "request"
+    },
+    {
+      "changes": {
+        "context_digest": "sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984",
+        "grant_authority": true,
+        "intent_digest": "sha256:a1e29e1e74ff14c81312a6820eee5ae8dc2106a80db4004225a5f0f9b1165461"
+      },
+      "context_changes": {},
+      "expected": "InvalidShape",
+      "id": "extra-authority",
+      "record": "request"
+    },
+    {
+      "changes": {
+        "context_digest": "sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984",
+        "intent_digest": "sha256:a1e29e1e74ff14c81312a6820eee5ae8dc2106a80db4004225a5f0f9b1165461",
+        "operation.kind": "capability"
+      },
+      "context_changes": {},
+      "expected": "InvalidShape",
+      "id": "manifest-operation-confusion",
+      "record": "request"
+    },
+    {
+      "changes": {
+        "obligations.0.kind": "future-allow"
+      },
+      "context_changes": {},
+      "expected": "InvalidShape",
+      "id": "unknown-obligation",
+      "record": "decision"
+    },
+    {
+      "changes": {
+        "obligations": []
+      },
+      "context_changes": {},
+      "expected": "InvalidBinding",
+      "id": "missing-obligation",
+      "record": "decision"
+    },
+    {
+      "changes": {
+        "approver": {
+          "kind": "agent",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          },
+          "subject": "requesting-agent",
+          "subject_generation": 1
+        }
+      },
+      "context_changes": {},
+      "expected": "Unauthorized",
+      "id": "self-approval",
+      "record": "approval"
+    },
+    {
+      "changes": {},
+      "context_changes": {
+        "requester_chain": [
+          {
+            "kind": "human",
+            "scope": {
+              "cell": "cell-a",
+              "deployment": "fixture-deployment",
+              "domain": "fixture-domain",
+              "tenant": "tenant-a"
+            },
+            "subject": "reviewing-human",
+            "subject_generation": 1
+          }
+        ]
+      },
+      "expected": "Unauthorized",
+      "id": "approver-in-requester-chain",
+      "record": "approval"
+    },
+    {
+      "changes": {
+        "decision_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "context_changes": {},
+      "expected": "InvalidBinding",
+      "id": "changed-decision",
+      "record": "approval"
+    },
+    {
+      "changes": {},
+      "context_changes": {
+        "approval_status": "cancelled"
+      },
+      "expected": "Denied",
+      "id": "withdrawn-approval",
+      "record": "approval"
+    },
+    {
+      "changes": {},
+      "context_changes": {
+        "now": 1289
+      },
+      "expected": "Expired",
+      "id": "expired-approval",
+      "record": "approval"
+    },
+    {
+      "changes": {
+        "eligibility_revision": 2
+      },
+      "context_changes": {},
+      "expected": "Unauthorized",
+      "id": "stale-eligibility",
+      "record": "approval"
+    },
+    {
+      "changes": {
+        "participants": [
+          "gate",
+          "registry",
+          "warden"
+        ]
+      },
+      "context_changes": {},
+      "expected": "InvalidShape",
+      "id": "missing-participant",
+      "record": "activation"
+    },
+    {
+      "changes": {
+        "participants.0": "gateway"
+      },
+      "context_changes": {},
+      "expected": "InvalidShape",
+      "id": "unknown-participant",
+      "record": "activation"
+    },
+    {
+      "changes": {
+        "successor_epoch": 1
+      },
+      "context_changes": {},
+      "expected": "StaleContext",
+      "id": "reused-epoch",
+      "record": "activation"
+    },
+    {
+      "changes": {
+        "prior_artifact_set_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "context_changes": {},
+      "expected": "StaleContext",
+      "id": "stale-prior-head",
+      "record": "activation"
+    },
+    {
+      "changes": {},
+      "context_changes": {
+        "ratified_transition_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expected": "Unauthorized",
+      "id": "unratified-transition",
+      "record": "activation"
+    },
+    {
+      "changes": {},
+      "context_changes": {
+        "now": 991
+      },
+      "expected": "Expired",
+      "id": "early-activation",
+      "record": "activation"
+    },
+    {
+      "changes": {
+        "transition_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "context_changes": {},
+      "expected": "InvalidBinding",
+      "id": "receipt-wrong-transition",
+      "record": "registry-receipt"
+    },
+    {
+      "changes": {
+        "phase": "paused"
+      },
+      "context_changes": {},
+      "expected": "Unauthorized",
+      "id": "non-gate-pause",
+      "record": "registry-receipt"
+    },
+    {
+      "changes": {},
+      "context_changes": {
+        "authenticated_receipt_digests": []
+      },
+      "expected": "Unauthorized",
+      "id": "unattested-receipt",
+      "record": "registry-receipt"
+    },
+    {
+      "changes": {
+        "payload_digest": "sha256:e3b53a4a19e3cd72699269a8608f837b1e93a50ac188d95c8018289f6dc68eb6",
+        "producer": "council"
+      },
+      "context_changes": {},
+      "expected": "Unauthorized",
+      "id": "wrong-event-owner",
+      "record": "outcome"
+    },
+    {
+      "changes": {
+        "payload_digest": "sha256:e3b53a4a19e3cd72699269a8608f837b1e93a50ac188d95c8018289f6dc68eb6"
+      },
+      "context_changes": {
+        "authenticated_event_digests": []
+      },
+      "expected": "Unauthorized",
+      "id": "unattested-event",
+      "record": "outcome"
+    },
+    {
+      "changes": {
+        "payload_digest": "sha256:e3b53a4a19e3cd72699269a8608f837b1e93a50ac188d95c8018289f6dc68eb6",
+        "sequence": 3
+      },
+      "context_changes": {},
+      "expected": "InvalidSequence",
+      "id": "sequence-gap",
+      "record": "outcome"
+    },
+    {
+      "changes": {
+        "payload_digest": "sha256:e3b53a4a19e3cd72699269a8608f837b1e93a50ac188d95c8018289f6dc68eb6",
+        "predecessor": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "context_changes": {},
+      "expected": "InvalidSequence",
+      "id": "invented-predecessor",
+      "record": "outcome"
+    },
+    {
+      "changes": {
+        "payload_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "context_changes": {},
+      "expected": "InvalidBinding",
+      "id": "wrong-payload-digest",
+      "record": "outcome"
+    },
+    {
+      "changes": {
+        "payload.effect_status": "completed",
+        "payload_digest": "sha256:e0f75998ed34a0e39e9eb9196b0ef119c7fcb3887449e512e42750d061739c4c"
+      },
+      "context_changes": {},
+      "expected": "UnavailableEvidence",
+      "id": "outcome-without-evidence",
+      "record": "outcome"
+    },
+    {
+      "changes": {
+        "kind": "model-call",
+        "payload_digest": "sha256:e3b53a4a19e3cd72699269a8608f837b1e93a50ac188d95c8018289f6dc68eb6"
+      },
+      "context_changes": {},
+      "expected": "InvalidShape",
+      "id": "unknown-event-kind",
+      "record": "outcome"
+    },
+    {
+      "changes": {
+        "family": "action",
+        "payload_digest": "sha256:e8822a26c4e69a79ba11ef7268bf774e38690fd27ff65cd1046f71b519ad22cc"
+      },
+      "context_changes": {},
+      "expected": "InvalidBinding",
+      "id": "activation-not-action",
+      "record": "activation-event"
+    },
+    {
+      "changes": {
+        "event_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "context_changes": {},
+      "expected": "InvalidBinding",
+      "id": "wrong-ack-digest",
+      "record": "ack"
+    },
+    {
+      "changes": {
+        "ledger.scope.tenant": "tenant-b"
+      },
+      "context_changes": {},
+      "expected": "Unauthorized",
+      "id": "foreign-ledger",
+      "record": "ack"
+    },
+    {
+      "changes": {},
+      "context_changes": {
+        "authenticated_ack_digests": []
+      },
+      "expected": "Unauthorized",
+      "id": "unattested-ack",
+      "record": "ack"
+    },
+    {
+      "changes": {
+        "payload_digest": "sha256:e3b53a4a19e3cd72699269a8608f837b1e93a50ac188d95c8018289f6dc68eb6"
+      },
+      "context_changes": {
+        "streams.fixture-outcome.generation": 2
+      },
+      "expected": "Unauthorized",
+      "id": "historical-without-proof",
+      "record": "outcome"
+    },
+    {
+      "changes": {
+        "payload_digest": "sha256:e3b53a4a19e3cd72699269a8608f837b1e93a50ac188d95c8018289f6dc68eb6"
+      },
+      "context_changes": {
+        "historical_events": [
+          "sha256:3786cc4dbcb1fe8714ef78ec109cf4f3f11798a9e94c6bf715c546ae4ed443c1"
+        ],
+        "recovery_recorder_authorized": true,
+        "streams.fixture-outcome.generation": 2
+      },
+      "expected": "accept",
+      "id": "historical-audit-only",
+      "record": "outcome"
+    },
+    {
+      "changes": {
+        "payload_digest": "sha256:e3b53a4a19e3cd72699269a8608f837b1e93a50ac188d95c8018289f6dc68eb6"
+      },
+      "context_changes": {
+        "historical_cursors": {},
+        "historical_events": [
+          "sha256:3786cc4dbcb1fe8714ef78ec109cf4f3f11798a9e94c6bf715c546ae4ed443c1"
+        ],
+        "recovery_recorder_authorized": true,
+        "streams.fixture-outcome.generation": 2
+      },
+      "expected": "Unauthorized",
+      "id": "historical-missing-cursor",
+      "record": "outcome"
+    }
+  ],
+  "digests": {
+    "ack": "sha256:bcb7b1ad0bceb2c2575b04afc8fcf1fdca5e60bcbdbb994680b9d702dac44247",
+    "activation": "sha256:06ce993bb87a7d21e89fefb6bdb146225846408077e2649c6f37a5c799367871",
+    "activation-event": "sha256:accb9dd712e9af65969438d31ce488b82737f5d4fcaee492939b026c35dcb4dd",
+    "approval": "sha256:3f70e57ce7085a6790ca3e2960de928b170791fdc1825925d6ade114e9e5ca2f",
+    "approval-recorded": "sha256:5a2729226e957c694b8ffcf2a85f8904e1548b502fdadb9463cdad518fb111e3",
+    "claim-created": "sha256:f188afc18f44e6a9b50150d0d85762670f205f9afe867b8aa4277d77364f6276",
+    "consumption-reserved": "sha256:98fef7b0a311e2fc8e105e678c80eda020ab603c9143701706cfe618db660683",
+    "decision": "sha256:f231d82900e187809b878baf2da4ebeed914ca1c785e78b28c93994e10858365",
+    "gate-receipt": "sha256:1bbf1fa5277636b4f5633d66eb1e4d1d49127a46b6560b915816614f19d5fe37",
+    "grant-issued": "sha256:ac6f1f7b20599bfef7764bf1d71306505f7f2c0f31303f435c602283a4872c2c",
+    "outcome": "sha256:3786cc4dbcb1fe8714ef78ec109cf4f3f11798a9e94c6bf715c546ae4ed443c1",
+    "pause": "sha256:d42c74db1938db9b110dee23df7f6238a88e9d4eccef8a28dd24c5d11c4ba82a",
+    "predispatch": "sha256:e9bf7dc45cb03dc69269055e6d82ccc98bf39b3a3af4e2d3cd576373975d052b",
+    "reconciliation": "sha256:2d75b092ebbb4bdfbd2bb9a458f5a915854dab0845f843c512950dfcc873d744",
+    "registry-receipt": "sha256:6afc10d01348b09a05bb563b2992ef5001121e8d40a2ce7873c0ae1a7dfce86f",
+    "request": "sha256:5dea7f84ecff6393c1a8480e37f7f344e101250f884c3904e990f54383b14fca",
+    "send-intent": "sha256:1afa53de5f860b54ca8341c07de0b8cd49435393e9accd70c822b712131949a9",
+    "server-receipt": "sha256:e4c8ad829cb8382d1f7d54d30f1e51230ae2a441fe834fd30e424a4c5046f526",
+    "warden-receipt": "sha256:27634503285796c7cbd7fa68aaa5d94ec9e0ff17bf5fd8cec2159f2455ed600c"
+  },
+  "profile": "stage2-single-cell-v1",
+  "records": {
+    "ack": {
+      "event_digest": "sha256:e9bf7dc45cb03dc69269055e6d82ccc98bf39b3a3af4e2d3cd576373975d052b",
+      "event_id": "event-predispatch",
+      "ledger": {
+        "id": "server-ledger",
+        "kind": "ledger",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "payload_digest": "sha256:c3745dbac01b031560af3b24c6396ce6a2e7b5af954b1a75d305751fa7031d27",
+      "position": 1,
+      "profile": "stage2-single-cell-v1",
+      "received_at": 1001,
+      "schema_version": 1,
+      "scope": {
+        "cell": "cell-a",
+        "deployment": "fixture-deployment",
+        "domain": "fixture-domain",
+        "tenant": "tenant-a"
+      },
+      "type": "event-ack"
+    },
+    "activation": {
+      "artifact_set_digest": "sha256:dd37d6de4bc8aeb0d49d947b6a6d605ac4f5f4af6ae9570046db8048baa88bc3",
+      "artifacts": [
+        {
+          "digest": "sha256:05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f",
+          "kind": "manifest"
+        },
+        {
+          "digest": "sha256:823412d1eacb67956220e532959f0104603057c88704863ca38e7cd188fda812",
+          "kind": "policy"
+        }
+      ],
+      "expires_at": 1300,
+      "not_before": 990,
+      "participant_set_digest": "sha256:b64c393aeb30eb40c92ca5c1a21bd7a7c0ea5aa8dc1cf6d6a51013ad892be23b",
+      "participants": [
+        "gate",
+        "registry",
+        "server",
+        "warden"
+      ],
+      "prior_artifact_set_digest": "sha256:79a5d46b415eee4ab3cda5a7ba6118df4c76e6c8c97ec83f7a69117f7326229a",
+      "prior_epoch": 1,
+      "profile": "stage2-single-cell-v1",
+      "profile_digest": "sha256:d38e5ac62254a35357d94ce1d5321c77186fb0c28a2135adbdbd29cf926cb302",
+      "ratification": {
+        "id": "activation-ratification",
+        "kind": "approval",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "schema_version": 1,
+      "scope": {
+        "cell": "cell-a",
+        "deployment": "fixture-deployment",
+        "domain": "fixture-domain",
+        "tenant": "tenant-a"
+      },
+      "successor_epoch": 2,
+      "transition": {
+        "id": "transition-a",
+        "kind": "transition",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "type": "activation"
+    },
+    "activation-event": {
+      "causal_parents": [],
+      "clock": "bounded-utc-2s",
+      "event_id": "event-activation",
+      "family": "activation",
+      "kind": "activation-applied",
+      "occurred_at": 1000,
+      "payload": {
+        "kind": "activation-applied",
+        "receipt": {
+          "artifact_set_digest": "sha256:dd37d6de4bc8aeb0d49d947b6a6d605ac4f5f4af6ae9570046db8048baa88bc3",
+          "participant": "registry",
+          "participant_set_digest": "sha256:b64c393aeb30eb40c92ca5c1a21bd7a7c0ea5aa8dc1cf6d6a51013ad892be23b",
+          "phase": "applied",
+          "prior_epoch": 1,
+          "profile": "stage2-single-cell-v1",
+          "schema_version": 1,
+          "successor_epoch": 2,
+          "transition": {
+            "id": "transition-a",
+            "kind": "transition",
+            "scope": {
+              "cell": "cell-a",
+              "deployment": "fixture-deployment",
+              "domain": "fixture-domain",
+              "tenant": "tenant-a"
+            }
+          },
+          "transition_digest": "sha256:06ce993bb87a7d21e89fefb6bdb146225846408077e2649c6f37a5c799367871",
+          "type": "activation-receipt"
+        }
+      },
+      "payload_digest": "sha256:e8822a26c4e69a79ba11ef7268bf774e38690fd27ff65cd1046f71b519ad22cc",
+      "predecessor": null,
+      "producer": "registry",
+      "profile": "stage2-single-cell-v1",
+      "schema_version": 1,
+      "scope": {
+        "cell": "cell-a",
+        "deployment": "fixture-deployment",
+        "domain": "fixture-domain",
+        "tenant": "tenant-a"
+      },
+      "sequence": 1,
+      "source_generation": 1,
+      "stream": {
+        "id": "fixture-activation",
+        "kind": "stream",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "type": "accountability-event"
+    },
+    "approval": {
+      "approval": {
+        "id": "approval-a",
+        "kind": "approval",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "approver": {
+        "kind": "human",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        },
+        "subject": "reviewing-human",
+        "subject_generation": 1
+      },
+      "attempt": {
+        "id": "attempt-a",
+        "kind": "attempt",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "context_digest": "sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984",
+      "decision_digest": "sha256:f231d82900e187809b878baf2da4ebeed914ca1c785e78b28c93994e10858365",
+      "eligibility_revision": 1,
+      "expires_at": 1290,
+      "issued_at": 990,
+      "operation": {
+        "id": "publish-artifact",
+        "kind": "operation",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "prior": null,
+      "profile": "stage2-single-cell-v1",
+      "request_digest": "sha256:5dea7f84ecff6393c1a8480e37f7f344e101250f884c3904e990f54383b14fca",
+      "schema_version": 1,
+      "type": "action-approval"
+    },
+    "approval-recorded": {
+      "causal_parents": [],
+      "clock": "bounded-utc-2s",
+      "event_id": "event-approval-recorded",
+      "family": "action",
+      "kind": "approval-recorded",
+      "occurred_at": 1000,
+      "payload": {
+        "activation_epoch": 2,
+        "approval": {
+          "id": "approval-a",
+          "kind": "approval",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "approval_digest": "sha256:3f70e57ce7085a6790ca3e2960de928b170791fdc1825925d6ade114e9e5ca2f",
+        "attempt": {
+          "id": "attempt-a",
+          "kind": "attempt",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "context_digest": "sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984",
+        "kind": "approval-recorded",
+        "operation": {
+          "id": "publish-artifact",
+          "kind": "operation",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "recovery_epoch": 1,
+        "request_digest": "sha256:5dea7f84ecff6393c1a8480e37f7f344e101250f884c3904e990f54383b14fca"
+      },
+      "payload_digest": "sha256:5f02c2700c568e73225be85ec7345feada433e36b8ec41070e536903b1be99c8",
+      "predecessor": null,
+      "producer": "council",
+      "profile": "stage2-single-cell-v1",
+      "schema_version": 1,
+      "scope": {
+        "cell": "cell-a",
+        "deployment": "fixture-deployment",
+        "domain": "fixture-domain",
+        "tenant": "tenant-a"
+      },
+      "sequence": 1,
+      "source_generation": 1,
+      "stream": {
+        "id": "fixture-approval-recorded",
+        "kind": "stream",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "type": "accountability-event"
+    },
+    "claim-created": {
+      "causal_parents": [],
+      "clock": "bounded-utc-2s",
+      "event_id": "event-claim-created",
+      "family": "action",
+      "kind": "claim-created",
+      "occurred_at": 1000,
+      "payload": {
+        "activation_epoch": 2,
+        "attempt": {
+          "id": "attempt-a",
+          "kind": "attempt",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "claim": {
+          "id": "claim-a",
+          "kind": "claim",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "context_digest": "sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984",
+        "grant_binding_digest": "sha256:5dea7f84ecff6393c1a8480e37f7f344e101250f884c3904e990f54383b14fca",
+        "kind": "claim-created",
+        "operation": {
+          "id": "publish-artifact",
+          "kind": "operation",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "recovery_epoch": 1,
+        "request_digest": "sha256:5dea7f84ecff6393c1a8480e37f7f344e101250f884c3904e990f54383b14fca"
+      },
+      "payload_digest": "sha256:4998a67e23632637f719cd222b2b9d0a213f3719e803c299bc95a5321ce7a6cb",
+      "predecessor": null,
+      "producer": "gate",
+      "profile": "stage2-single-cell-v1",
+      "schema_version": 1,
+      "scope": {
+        "cell": "cell-a",
+        "deployment": "fixture-deployment",
+        "domain": "fixture-domain",
+        "tenant": "tenant-a"
+      },
+      "sequence": 1,
+      "source_generation": 1,
+      "stream": {
+        "id": "fixture-claim-created",
+        "kind": "stream",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "type": "accountability-event"
+    },
+    "consumption-reserved": {
+      "causal_parents": [],
+      "clock": "bounded-utc-2s",
+      "event_id": "event-consumption-reserved",
+      "family": "action",
+      "kind": "consumption-reserved",
+      "occurred_at": 1000,
+      "payload": {
+        "activation_epoch": 2,
+        "attempt": {
+          "id": "attempt-a",
+          "kind": "attempt",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "claim": {
+          "id": "claim-a",
+          "kind": "claim",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "context_digest": "sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984",
+        "grant": {
+          "id": "grant-a",
+          "kind": "grant",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "kind": "consumption-reserved",
+        "operation": {
+          "id": "publish-artifact",
+          "kind": "operation",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "recovery_epoch": 1,
+        "request_digest": "sha256:5dea7f84ecff6393c1a8480e37f7f344e101250f884c3904e990f54383b14fca",
+        "reservations": [
+          {
+            "reservation": {
+              "id": "reservation-a",
+              "kind": "reservation",
+              "scope": {
+                "cell": "cell-a",
+                "deployment": "fixture-deployment",
+                "domain": "fixture-domain",
+                "tenant": "tenant-a"
+              }
+            },
+            "root": {
+              "id": "root-task",
+              "kind": "task",
+              "scope": {
+                "cell": "cell-a",
+                "deployment": "fixture-deployment",
+                "domain": "fixture-domain",
+                "tenant": "tenant-a"
+              }
+            },
+            "target": {
+              "id": "synthetic-target",
+              "kind": "target",
+              "scope": {
+                "cell": "cell-a",
+                "deployment": "fixture-deployment",
+                "domain": "fixture-domain",
+                "tenant": "tenant-a"
+              }
+            },
+            "units": 1,
+            "window_start": 0
+          }
+        ],
+        "worker": "worker-a",
+        "worker_fence": 1
+      },
+      "payload_digest": "sha256:de727c4b2bbec879ec4300c18bae7b20f8e48d36cd071e7dd7fa7f9619dcf90b",
+      "predecessor": null,
+      "producer": "gate",
+      "profile": "stage2-single-cell-v1",
+      "schema_version": 1,
+      "scope": {
+        "cell": "cell-a",
+        "deployment": "fixture-deployment",
+        "domain": "fixture-domain",
+        "tenant": "tenant-a"
+      },
+      "sequence": 1,
+      "source_generation": 1,
+      "stream": {
+        "id": "fixture-consumption-reserved",
+        "kind": "stream",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "type": "accountability-event"
+    },
+    "decision": {
+      "attempt": {
+        "id": "attempt-a",
+        "kind": "attempt",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "context_digest": "sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984",
+      "obligations": [
+        {
+          "kind": "distinct-approval",
+          "owner": "council",
+          "policy_digest": "sha256:823412d1eacb67956220e532959f0104603057c88704863ca38e7cd188fda812"
+        },
+        {
+          "kind": "mandatory-recording",
+          "owner": "server",
+          "phase": "before-send"
+        },
+        {
+          "kind": "action-capacity",
+          "limit": 2,
+          "owner": "gate",
+          "target": {
+            "id": "synthetic-target",
+            "kind": "target",
+            "scope": {
+              "cell": "cell-a",
+              "deployment": "fixture-deployment",
+              "domain": "fixture-domain",
+              "tenant": "tenant-a"
+            }
+          },
+          "window_seconds": 3600
+        },
+        {
+          "audience": {
+            "id": "synthetic-target",
+            "kind": "target",
+            "scope": {
+              "cell": "cell-a",
+              "deployment": "fixture-deployment",
+              "domain": "fixture-domain",
+              "tenant": "tenant-a"
+            }
+          },
+          "kind": "credential-custody",
+          "owner": "warden"
+        }
+      ],
+      "operation": {
+        "id": "publish-artifact",
+        "kind": "operation",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "outcome": "approval-required",
+      "profile": "stage2-single-cell-v1",
+      "reason_codes": [
+        "distinct-human-required"
+      ],
+      "request_digest": "sha256:5dea7f84ecff6393c1a8480e37f7f344e101250f884c3904e990f54383b14fca",
+      "schema_version": 1,
+      "type": "action-decision"
+    },
+    "gate-receipt": {
+      "artifact_set_digest": "sha256:dd37d6de4bc8aeb0d49d947b6a6d605ac4f5f4af6ae9570046db8048baa88bc3",
+      "participant": "gate",
+      "participant_set_digest": "sha256:b64c393aeb30eb40c92ca5c1a21bd7a7c0ea5aa8dc1cf6d6a51013ad892be23b",
+      "phase": "applied",
+      "prior_epoch": 1,
+      "profile": "stage2-single-cell-v1",
+      "schema_version": 1,
+      "successor_epoch": 2,
+      "transition": {
+        "id": "transition-a",
+        "kind": "transition",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "transition_digest": "sha256:06ce993bb87a7d21e89fefb6bdb146225846408077e2649c6f37a5c799367871",
+      "type": "activation-receipt"
+    },
+    "grant-issued": {
+      "causal_parents": [],
+      "clock": "bounded-utc-2s",
+      "event_id": "event-grant-issued",
+      "family": "action",
+      "kind": "grant-issued",
+      "occurred_at": 1000,
+      "payload": {
+        "activation_epoch": 2,
+        "attempt": {
+          "id": "attempt-a",
+          "kind": "attempt",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "claim": {
+          "id": "claim-a",
+          "kind": "claim",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "context_digest": "sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984",
+        "expires_at": 1020,
+        "grant": {
+          "id": "grant-a",
+          "kind": "grant",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "kind": "grant-issued",
+        "operation": {
+          "id": "publish-artifact",
+          "kind": "operation",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "recovery_epoch": 1,
+        "request_digest": "sha256:5dea7f84ecff6393c1a8480e37f7f344e101250f884c3904e990f54383b14fca"
+      },
+      "payload_digest": "sha256:695757fff2ee5877a0a5bbff5d196f4e65d6442baa0e7357c72cd4748dad4f9b",
+      "predecessor": null,
+      "producer": "warden",
+      "profile": "stage2-single-cell-v1",
+      "schema_version": 1,
+      "scope": {
+        "cell": "cell-a",
+        "deployment": "fixture-deployment",
+        "domain": "fixture-domain",
+        "tenant": "tenant-a"
+      },
+      "sequence": 1,
+      "source_generation": 1,
+      "stream": {
+        "id": "fixture-grant-issued",
+        "kind": "stream",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "type": "accountability-event"
+    },
+    "outcome": {
+      "causal_parents": [],
+      "clock": "bounded-utc-2s",
+      "event_id": "event-outcome",
+      "family": "action",
+      "kind": "outcome",
+      "occurred_at": 1000,
+      "payload": {
+        "activation_epoch": 2,
+        "attempt": {
+          "id": "attempt-a",
+          "kind": "attempt",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "claim": {
+          "id": "claim-a",
+          "kind": "claim",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "context_digest": "sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984",
+        "effect_key": "publish-artifact",
+        "effect_status": "unresolved",
+        "evidence": [],
+        "invocation": {
+          "id": "invocation-a",
+          "kind": "invocation",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "kind": "outcome",
+        "operation": {
+          "id": "publish-artifact",
+          "kind": "operation",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "recovery_epoch": 1,
+        "request_digest": "sha256:5dea7f84ecff6393c1a8480e37f7f344e101250f884c3904e990f54383b14fca"
+      },
+      "payload_digest": "sha256:e3b53a4a19e3cd72699269a8608f837b1e93a50ac188d95c8018289f6dc68eb6",
+      "predecessor": null,
+      "producer": "gate",
+      "profile": "stage2-single-cell-v1",
+      "schema_version": 1,
+      "scope": {
+        "cell": "cell-a",
+        "deployment": "fixture-deployment",
+        "domain": "fixture-domain",
+        "tenant": "tenant-a"
+      },
+      "sequence": 1,
+      "source_generation": 1,
+      "stream": {
+        "id": "fixture-outcome",
+        "kind": "stream",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "type": "accountability-event"
+    },
+    "pause": {
+      "artifact_set_digest": "sha256:dd37d6de4bc8aeb0d49d947b6a6d605ac4f5f4af6ae9570046db8048baa88bc3",
+      "participant": "gate",
+      "participant_set_digest": "sha256:b64c393aeb30eb40c92ca5c1a21bd7a7c0ea5aa8dc1cf6d6a51013ad892be23b",
+      "phase": "paused",
+      "prior_epoch": 1,
+      "profile": "stage2-single-cell-v1",
+      "schema_version": 1,
+      "successor_epoch": 2,
+      "transition": {
+        "id": "transition-a",
+        "kind": "transition",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "transition_digest": "sha256:06ce993bb87a7d21e89fefb6bdb146225846408077e2649c6f37a5c799367871",
+      "type": "activation-receipt"
+    },
+    "predispatch": {
+      "causal_parents": [],
+      "clock": "bounded-utc-2s",
+      "event_id": "event-predispatch",
+      "family": "action",
+      "kind": "predispatch",
+      "occurred_at": 1000,
+      "payload": {
+        "activation_epoch": 2,
+        "attempt": {
+          "id": "attempt-a",
+          "kind": "attempt",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "claim": {
+          "id": "claim-a",
+          "kind": "claim",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "consumption_event_digest": "sha256:98fef7b0a311e2fc8e105e678c80eda020ab603c9143701706cfe618db660683",
+        "context_digest": "sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984",
+        "grant": {
+          "id": "grant-a",
+          "kind": "grant",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "kind": "predispatch",
+        "operation": {
+          "id": "publish-artifact",
+          "kind": "operation",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "recovery_epoch": 1,
+        "request_digest": "sha256:5dea7f84ecff6393c1a8480e37f7f344e101250f884c3904e990f54383b14fca"
+      },
+      "payload_digest": "sha256:c3745dbac01b031560af3b24c6396ce6a2e7b5af954b1a75d305751fa7031d27",
+      "predecessor": null,
+      "producer": "gate",
+      "profile": "stage2-single-cell-v1",
+      "schema_version": 1,
+      "scope": {
+        "cell": "cell-a",
+        "deployment": "fixture-deployment",
+        "domain": "fixture-domain",
+        "tenant": "tenant-a"
+      },
+      "sequence": 1,
+      "source_generation": 1,
+      "stream": {
+        "id": "fixture-predispatch",
+        "kind": "stream",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "type": "accountability-event"
+    },
+    "reconciliation": {
+      "causal_parents": [],
+      "clock": "bounded-utc-2s",
+      "event_id": "event-reconciliation",
+      "family": "action",
+      "kind": "reconciliation",
+      "occurred_at": 1000,
+      "payload": {
+        "activation_epoch": 2,
+        "attempt": {
+          "id": "attempt-a",
+          "kind": "attempt",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "claim": {
+          "id": "claim-a",
+          "kind": "claim",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "context_digest": "sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984",
+        "effect_key": "publish-artifact",
+        "effect_status": "completed",
+        "evidence": [
+          {
+            "id": "target-receipt",
+            "kind": "evidence",
+            "scope": {
+              "cell": "cell-a",
+              "deployment": "fixture-deployment",
+              "domain": "fixture-domain",
+              "tenant": "tenant-a"
+            }
+          }
+        ],
+        "kind": "reconciliation",
+        "operation": {
+          "id": "publish-artifact",
+          "kind": "operation",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "prior_outcome_digest": "sha256:3786cc4dbcb1fe8714ef78ec109cf4f3f11798a9e94c6bf715c546ae4ed443c1",
+        "recovery_epoch": 1,
+        "request_digest": "sha256:5dea7f84ecff6393c1a8480e37f7f344e101250f884c3904e990f54383b14fca"
+      },
+      "payload_digest": "sha256:46a887717348622dfc90c5910934585e32f7619bb9e440ec503845c81d61e0c7",
+      "predecessor": null,
+      "producer": "gate",
+      "profile": "stage2-single-cell-v1",
+      "schema_version": 1,
+      "scope": {
+        "cell": "cell-a",
+        "deployment": "fixture-deployment",
+        "domain": "fixture-domain",
+        "tenant": "tenant-a"
+      },
+      "sequence": 1,
+      "source_generation": 1,
+      "stream": {
+        "id": "fixture-reconciliation",
+        "kind": "stream",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "type": "accountability-event"
+    },
+    "registry-receipt": {
+      "artifact_set_digest": "sha256:dd37d6de4bc8aeb0d49d947b6a6d605ac4f5f4af6ae9570046db8048baa88bc3",
+      "participant": "registry",
+      "participant_set_digest": "sha256:b64c393aeb30eb40c92ca5c1a21bd7a7c0ea5aa8dc1cf6d6a51013ad892be23b",
+      "phase": "applied",
+      "prior_epoch": 1,
+      "profile": "stage2-single-cell-v1",
+      "schema_version": 1,
+      "successor_epoch": 2,
+      "transition": {
+        "id": "transition-a",
+        "kind": "transition",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "transition_digest": "sha256:06ce993bb87a7d21e89fefb6bdb146225846408077e2649c6f37a5c799367871",
+      "type": "activation-receipt"
+    },
+    "request": {
+      "attempt": {
+        "id": "attempt-a",
+        "kind": "attempt",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "context": {
+        "activation": {
+          "owner": "registry",
+          "revision": 2,
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "authority_pins": [
+          {
+            "owner": {
+              "id": "warden",
+              "kind": "authority",
+              "scope": {
+                "cell": "cell-a",
+                "deployment": "fixture-deployment",
+                "domain": "fixture-domain",
+                "tenant": "tenant-a"
+              }
+            },
+            "revision": 1
+          }
+        ],
+        "evaluator_profile_digest": "sha256:27f6343f980c4c0ab821d9c72d211d0eb76b0853825cefd80476a05e43cab27e",
+        "evidence": [
+          {
+            "content_digest": "sha256:1323baf3311519c0cad4b399fa1092aaa2c1a1d73c7d7d0e03fd0745006a9932",
+            "derivation": "inventory",
+            "derivation_version": 1,
+            "expires_at": 1300,
+            "field": "artifact.digest",
+            "observed_at": 990,
+            "revision": 1,
+            "source": {
+              "id": "artifact-inventory",
+              "kind": "evidence",
+              "scope": {
+                "cell": "cell-a",
+                "deployment": "fixture-deployment",
+                "domain": "fixture-domain",
+                "tenant": "tenant-a"
+              }
+            },
+            "trust": "verified",
+            "verifier": {
+              "id": "inventory-verifier",
+              "kind": "authority",
+              "scope": {
+                "cell": "cell-a",
+                "deployment": "fixture-deployment",
+                "domain": "fixture-domain",
+                "tenant": "tenant-a"
+              }
+            }
+          }
+        ],
+        "expires_at": 1300,
+        "manifest_digest": "sha256:05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f",
+        "mode": "enforce",
+        "policy_digest": "sha256:823412d1eacb67956220e532959f0104603057c88704863ca38e7cd188fda812",
+        "recovery": {
+          "revision": 1,
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "valid_from": 990
+      },
+      "context_digest": "sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984",
+      "intent": {
+        "actor": {
+          "kind": "agent",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          },
+          "subject": "requesting-agent",
+          "subject_generation": 1
+        },
+        "attachments": [],
+        "capability_operation": "release.publish_approved_artifact",
+        "delegation_digest": "sha256:e62ec2c2228e391887d7ec2d2b0250040dd1aa5c70cf7073eacbce57d856f6ca",
+        "environment": "disposable",
+        "origin": {
+          "kind": "agent",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          },
+          "subject": "requesting-agent",
+          "subject_generation": 1
+        },
+        "parameter_schema_digest": "sha256:542c87ded5519dc3c917e1973f514347ce865fc35b3f5c1139ad5fb05f49d93d",
+        "parameters": {
+          "artifact_digest": "sha256:1323baf3311519c0cad4b399fa1092aaa2c1a1d73c7d7d0e03fd0745006a9932",
+          "destination": "synthetic-release"
+        },
+        "target": {
+          "id": "synthetic-target",
+          "kind": "target",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "target_precondition": {
+          "content_digest": "sha256:ce257625a0d881c9200f5f6a617bd596a3b55754e82a35f10bfdff08a00d44ea",
+          "version": 1
+        },
+        "task": {
+          "agent_instance": "instance-a",
+          "agent_release": "sha256:a130a0331a56dab80f9a436aeedf78024b0b63130348808b57837e8663d32870",
+          "parent": null,
+          "root": {
+            "id": "root-task",
+            "kind": "task",
+            "scope": {
+              "cell": "cell-a",
+              "deployment": "fixture-deployment",
+              "domain": "fixture-domain",
+              "tenant": "tenant-a"
+            }
+          }
+        }
+      },
+      "intent_digest": "sha256:a1e29e1e74ff14c81312a6820eee5ae8dc2106a80db4004225a5f0f9b1165461",
+      "operation": {
+        "id": "publish-artifact",
+        "kind": "operation",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "profile": "stage2-single-cell-v1",
+      "schema_version": 1,
+      "type": "action-request"
+    },
+    "send-intent": {
+      "causal_parents": [],
+      "clock": "bounded-utc-2s",
+      "event_id": "event-send-intent",
+      "family": "action",
+      "kind": "send-intent",
+      "occurred_at": 1000,
+      "payload": {
+        "activation_epoch": 2,
+        "attempt": {
+          "id": "attempt-a",
+          "kind": "attempt",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "claim": {
+          "id": "claim-a",
+          "kind": "claim",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "context_digest": "sha256:6d65170ab02c4f80694c67f63feaf5e0e954d675685ad81f596e51b56ef2a984",
+        "effect_key": "publish-artifact",
+        "grant": {
+          "id": "grant-a",
+          "kind": "grant",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "invocation": {
+          "id": "invocation-a",
+          "kind": "invocation",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "kind": "send-intent",
+        "operation": {
+          "id": "publish-artifact",
+          "kind": "operation",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "predispatch_ack_digest": "sha256:bcb7b1ad0bceb2c2575b04afc8fcf1fdca5e60bcbdbb994680b9d702dac44247",
+        "recovery_epoch": 1,
+        "request_digest": "sha256:5dea7f84ecff6393c1a8480e37f7f344e101250f884c3904e990f54383b14fca",
+        "target": {
+          "id": "synthetic-target",
+          "kind": "target",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "worker": "worker-a",
+        "worker_fence": 1
+      },
+      "payload_digest": "sha256:a70e432b8c1b75fcb47d95f51a4b57982c5dfbf40372cbbe8cd709c533e42937",
+      "predecessor": null,
+      "producer": "gate",
+      "profile": "stage2-single-cell-v1",
+      "schema_version": 1,
+      "scope": {
+        "cell": "cell-a",
+        "deployment": "fixture-deployment",
+        "domain": "fixture-domain",
+        "tenant": "tenant-a"
+      },
+      "sequence": 1,
+      "source_generation": 1,
+      "stream": {
+        "id": "fixture-send-intent",
+        "kind": "stream",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "type": "accountability-event"
+    },
+    "server-receipt": {
+      "artifact_set_digest": "sha256:dd37d6de4bc8aeb0d49d947b6a6d605ac4f5f4af6ae9570046db8048baa88bc3",
+      "participant": "server",
+      "participant_set_digest": "sha256:b64c393aeb30eb40c92ca5c1a21bd7a7c0ea5aa8dc1cf6d6a51013ad892be23b",
+      "phase": "applied",
+      "prior_epoch": 1,
+      "profile": "stage2-single-cell-v1",
+      "schema_version": 1,
+      "successor_epoch": 2,
+      "transition": {
+        "id": "transition-a",
+        "kind": "transition",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "transition_digest": "sha256:06ce993bb87a7d21e89fefb6bdb146225846408077e2649c6f37a5c799367871",
+      "type": "activation-receipt"
+    },
+    "warden-receipt": {
+      "artifact_set_digest": "sha256:dd37d6de4bc8aeb0d49d947b6a6d605ac4f5f4af6ae9570046db8048baa88bc3",
+      "participant": "warden",
+      "participant_set_digest": "sha256:b64c393aeb30eb40c92ca5c1a21bd7a7c0ea5aa8dc1cf6d6a51013ad892be23b",
+      "phase": "applied",
+      "prior_epoch": 1,
+      "profile": "stage2-single-cell-v1",
+      "schema_version": 1,
+      "successor_epoch": 2,
+      "transition": {
+        "id": "transition-a",
+        "kind": "transition",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "transition_digest": "sha256:06ce993bb87a7d21e89fefb6bdb146225846408077e2649c6f37a5c799367871",
+      "type": "activation-receipt"
+    }
+  },
+  "trusted": {
+    "actor": {
+      "kind": "agent",
+      "scope": {
+        "cell": "cell-a",
+        "deployment": "fixture-deployment",
+        "domain": "fixture-domain",
+        "tenant": "tenant-a"
+      },
+      "subject": "requesting-agent",
+      "subject_generation": 1
+    },
+    "approval_digest": "sha256:3f70e57ce7085a6790ca3e2960de928b170791fdc1825925d6ade114e9e5ca2f",
+    "approval_status": "approved",
+    "approver": {
+      "kind": "human",
+      "scope": {
+        "cell": "cell-a",
+        "deployment": "fixture-deployment",
+        "domain": "fixture-domain",
+        "tenant": "tenant-a"
+      },
+      "subject": "reviewing-human",
+      "subject_generation": 1
+    },
+    "authenticated_ack_digests": [
+      "sha256:bcb7b1ad0bceb2c2575b04afc8fcf1fdca5e60bcbdbb994680b9d702dac44247"
+    ],
+    "authenticated_event_digests": [
+      "sha256:5a2729226e957c694b8ffcf2a85f8904e1548b502fdadb9463cdad518fb111e3",
+      "sha256:f188afc18f44e6a9b50150d0d85762670f205f9afe867b8aa4277d77364f6276",
+      "sha256:ac6f1f7b20599bfef7764bf1d71306505f7f2c0f31303f435c602283a4872c2c",
+      "sha256:98fef7b0a311e2fc8e105e678c80eda020ab603c9143701706cfe618db660683",
+      "sha256:e9bf7dc45cb03dc69269055e6d82ccc98bf39b3a3af4e2d3cd576373975d052b",
+      "sha256:1afa53de5f860b54ca8341c07de0b8cd49435393e9accd70c822b712131949a9",
+      "sha256:3786cc4dbcb1fe8714ef78ec109cf4f3f11798a9e94c6bf715c546ae4ed443c1",
+      "sha256:2d75b092ebbb4bdfbd2bb9a458f5a915854dab0845f843c512950dfcc873d744",
+      "sha256:accb9dd712e9af65969438d31ce488b82737f5d4fcaee492939b026c35dcb4dd"
+    ],
+    "authenticated_producers": [
+      "gate",
+      "registry",
+      "server",
+      "warden",
+      "council"
+    ],
+    "authenticated_receipt_digests": [
+      "sha256:1bbf1fa5277636b4f5633d66eb1e4d1d49127a46b6560b915816614f19d5fe37",
+      "sha256:6afc10d01348b09a05bb563b2992ef5001121e8d40a2ce7873c0ae1a7dfce86f",
+      "sha256:e4c8ad829cb8382d1f7d54d30f1e51230ae2a441fe834fd30e424a4c5046f526",
+      "sha256:27634503285796c7cbd7fa68aaa5d94ec9e0ff17bf5fd8cec2159f2455ed600c",
+      "sha256:d42c74db1938db9b110dee23df7f6238a88e9d4eccef8a28dd24c5d11c4ba82a"
+    ],
+    "context": {
+      "activation": {
+        "owner": "registry",
+        "revision": 2,
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "authority_pins": [
+        {
+          "owner": {
+            "id": "warden",
+            "kind": "authority",
+            "scope": {
+              "cell": "cell-a",
+              "deployment": "fixture-deployment",
+              "domain": "fixture-domain",
+              "tenant": "tenant-a"
+            }
+          },
+          "revision": 1
+        }
+      ],
+      "evaluator_profile_digest": "sha256:27f6343f980c4c0ab821d9c72d211d0eb76b0853825cefd80476a05e43cab27e",
+      "evidence": [
+        {
+          "content_digest": "sha256:1323baf3311519c0cad4b399fa1092aaa2c1a1d73c7d7d0e03fd0745006a9932",
+          "derivation": "inventory",
+          "derivation_version": 1,
+          "expires_at": 1300,
+          "field": "artifact.digest",
+          "observed_at": 990,
+          "revision": 1,
+          "source": {
+            "id": "artifact-inventory",
+            "kind": "evidence",
+            "scope": {
+              "cell": "cell-a",
+              "deployment": "fixture-deployment",
+              "domain": "fixture-domain",
+              "tenant": "tenant-a"
+            }
+          },
+          "trust": "verified",
+          "verifier": {
+            "id": "inventory-verifier",
+            "kind": "authority",
+            "scope": {
+              "cell": "cell-a",
+              "deployment": "fixture-deployment",
+              "domain": "fixture-domain",
+              "tenant": "tenant-a"
+            }
+          }
+        }
+      ],
+      "expires_at": 1300,
+      "manifest_digest": "sha256:05b3abf2579a5eb66403cd78be557fd860633a1fe2103c7642030defe32c657f",
+      "mode": "enforce",
+      "policy_digest": "sha256:823412d1eacb67956220e532959f0104603057c88704863ca38e7cd188fda812",
+      "recovery": {
+        "revision": 1,
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      },
+      "valid_from": 990
+    },
+    "delegation_digest": "sha256:e62ec2c2228e391887d7ec2d2b0250040dd1aa5c70cf7073eacbce57d856f6ca",
+    "effect_evidence": [
+      {
+        "id": "target-receipt",
+        "kind": "evidence",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      }
+    ],
+    "eligible_revision": 1,
+    "evidence": [
+      {
+        "content_digest": "sha256:1323baf3311519c0cad4b399fa1092aaa2c1a1d73c7d7d0e03fd0745006a9932",
+        "derivation": "inventory",
+        "derivation_version": 1,
+        "expires_at": 1300,
+        "field": "artifact.digest",
+        "observed_at": 990,
+        "revision": 1,
+        "source": {
+          "id": "artifact-inventory",
+          "kind": "evidence",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "trust": "verified",
+        "verifier": {
+          "id": "inventory-verifier",
+          "kind": "authority",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        }
+      }
+    ],
+    "historical_cursors": {
+      "fixture-activation": {
+        "generation": 1,
+        "last_digest": null,
+        "last_sequence": 0,
+        "producer": "registry"
+      },
+      "fixture-approval-recorded": {
+        "generation": 1,
+        "last_digest": null,
+        "last_sequence": 0,
+        "producer": "council"
+      },
+      "fixture-claim-created": {
+        "generation": 1,
+        "last_digest": null,
+        "last_sequence": 0,
+        "producer": "gate"
+      },
+      "fixture-consumption-reserved": {
+        "generation": 1,
+        "last_digest": null,
+        "last_sequence": 0,
+        "producer": "gate"
+      },
+      "fixture-grant-issued": {
+        "generation": 1,
+        "last_digest": null,
+        "last_sequence": 0,
+        "producer": "warden"
+      },
+      "fixture-outcome": {
+        "generation": 1,
+        "last_digest": null,
+        "last_sequence": 0,
+        "producer": "gate"
+      },
+      "fixture-predispatch": {
+        "generation": 1,
+        "last_digest": null,
+        "last_sequence": 0,
+        "producer": "gate"
+      },
+      "fixture-reconciliation": {
+        "generation": 1,
+        "last_digest": null,
+        "last_sequence": 0,
+        "producer": "gate"
+      },
+      "fixture-send-intent": {
+        "generation": 1,
+        "last_digest": null,
+        "last_sequence": 0,
+        "producer": "gate"
+      }
+    },
+    "historical_events": [],
+    "ledger": {
+      "id": "server-ledger",
+      "kind": "ledger",
+      "scope": {
+        "cell": "cell-a",
+        "deployment": "fixture-deployment",
+        "domain": "fixture-domain",
+        "tenant": "tenant-a"
+      }
+    },
+    "now": 1000,
+    "obligations": [
+      {
+        "kind": "distinct-approval",
+        "owner": "council",
+        "policy_digest": "sha256:823412d1eacb67956220e532959f0104603057c88704863ca38e7cd188fda812"
+      },
+      {
+        "kind": "mandatory-recording",
+        "owner": "server",
+        "phase": "before-send"
+      },
+      {
+        "kind": "action-capacity",
+        "limit": 2,
+        "owner": "gate",
+        "target": {
+          "id": "synthetic-target",
+          "kind": "target",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "window_seconds": 3600
+      },
+      {
+        "audience": {
+          "id": "synthetic-target",
+          "kind": "target",
+          "scope": {
+            "cell": "cell-a",
+            "deployment": "fixture-deployment",
+            "domain": "fixture-domain",
+            "tenant": "tenant-a"
+          }
+        },
+        "kind": "credential-custody",
+        "owner": "warden"
+      }
+    ],
+    "origin": {
+      "kind": "agent",
+      "scope": {
+        "cell": "cell-a",
+        "deployment": "fixture-deployment",
+        "domain": "fixture-domain",
+        "tenant": "tenant-a"
+      },
+      "subject": "requesting-agent",
+      "subject_generation": 1
+    },
+    "parameter_schema_digest": "sha256:542c87ded5519dc3c917e1973f514347ce865fc35b3f5c1139ad5fb05f49d93d",
+    "paused_transition_digest": "sha256:06ce993bb87a7d21e89fefb6bdb146225846408077e2649c6f37a5c799367871",
+    "prior_artifact_set_digest": "sha256:79a5d46b415eee4ab3cda5a7ba6118df4c76e6c8c97ec83f7a69117f7326229a",
+    "prior_epoch": 1,
+    "ratification": {
+      "id": "activation-ratification",
+      "kind": "approval",
+      "scope": {
+        "cell": "cell-a",
+        "deployment": "fixture-deployment",
+        "domain": "fixture-domain",
+        "tenant": "tenant-a"
+      }
+    },
+    "ratified_transition_digest": "sha256:06ce993bb87a7d21e89fefb6bdb146225846408077e2649c6f37a5c799367871",
+    "recovery_cutoff": 1000,
+    "recovery_recorder_authorized": false,
+    "requester_chain": [
+      {
+        "kind": "agent",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        },
+        "subject": "requesting-agent",
+        "subject_generation": 1
+      }
+    ],
+    "scope": {
+      "cell": "cell-a",
+      "deployment": "fixture-deployment",
+      "domain": "fixture-domain",
+      "tenant": "tenant-a"
+    },
+    "streams": {
+      "fixture-activation": {
+        "generation": 1,
+        "last_digest": null,
+        "last_sequence": 0,
+        "producer": "registry"
+      },
+      "fixture-approval-recorded": {
+        "generation": 1,
+        "last_digest": null,
+        "last_sequence": 0,
+        "producer": "council"
+      },
+      "fixture-claim-created": {
+        "generation": 1,
+        "last_digest": null,
+        "last_sequence": 0,
+        "producer": "gate"
+      },
+      "fixture-consumption-reserved": {
+        "generation": 1,
+        "last_digest": null,
+        "last_sequence": 0,
+        "producer": "gate"
+      },
+      "fixture-grant-issued": {
+        "generation": 1,
+        "last_digest": null,
+        "last_sequence": 0,
+        "producer": "warden"
+      },
+      "fixture-outcome": {
+        "generation": 1,
+        "last_digest": null,
+        "last_sequence": 0,
+        "producer": "gate"
+      },
+      "fixture-predispatch": {
+        "generation": 1,
+        "last_digest": null,
+        "last_sequence": 0,
+        "producer": "gate"
+      },
+      "fixture-reconciliation": {
+        "generation": 1,
+        "last_digest": null,
+        "last_sequence": 0,
+        "producer": "gate"
+      },
+      "fixture-send-intent": {
+        "generation": 1,
+        "last_digest": null,
+        "last_sequence": 0,
+        "producer": "gate"
+      }
+    },
+    "target": {
+      "id": "synthetic-target",
+      "kind": "target",
+      "scope": {
+        "cell": "cell-a",
+        "deployment": "fixture-deployment",
+        "domain": "fixture-domain",
+        "tenant": "tenant-a"
+      }
+    },
+    "target_precondition": {
+      "content_digest": "sha256:ce257625a0d881c9200f5f6a617bd596a3b55754e82a35f10bfdff08a00d44ea",
+      "version": 1
+    },
+    "task": {
+      "agent_instance": "instance-a",
+      "agent_release": "sha256:a130a0331a56dab80f9a436aeedf78024b0b63130348808b57837e8663d32870",
+      "parent": null,
+      "root": {
+        "id": "root-task",
+        "kind": "task",
+        "scope": {
+          "cell": "cell-a",
+          "deployment": "fixture-deployment",
+          "domain": "fixture-domain",
+          "tenant": "tenant-a"
+        }
+      }
+    }
+  }
+}

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Protected Stage 1 records: current signed identity, mTLS peer, and separate ledger custody.
+//! Protected platform records: current signed identity, mTLS peer, and separate ledger custody.
 use crate::{error::ApiError, platform_api::AuthenticatedPeer, state::AppState};
 use axum::{
     extract::{Path, State},
@@ -7,6 +7,7 @@ use axum::{
 };
 use munarium_core::{
     platform::{EventLedger, RecorderContext},
+    platform_actions::{ActionAdmission, ActionLedger, ActionPolicy},
     storage::StorageBackend,
     KernelError,
 };
@@ -84,6 +85,11 @@ pub enum Operation {
     Lookup { operation_id: String },
     Archive { bundle: String },
     Replay { operation_id: String },
+    ActionArchive { record: String },
+    ActionAppend { event: String },
+    ActionLookup { operation_id: String },
+    ActionTransition { transition_id: String },
+    ActionSourceHead { stream_id: String, generation: u64 },
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -104,25 +110,92 @@ pub async fn platform_records(
     let peer = peer.ok_or_else(denied)?.0;
     let write = matches!(
         &request.action,
-        Operation::Append { .. } | Operation::Archive { .. }
+        Operation::Append { .. }
+            | Operation::Archive { .. }
+            | Operation::ActionArchive { .. }
+            | Operation::ActionAppend { .. }
+    );
+    let action_record = matches!(
+        &request.action,
+        Operation::ActionArchive { .. }
+            | Operation::ActionAppend { .. }
+            | Operation::ActionLookup { .. }
+            | Operation::ActionTransition { .. }
+            | Operation::ActionSourceHead { .. }
     );
     let runtime = state.platform.as_ref().ok_or_else(denied)?;
     let authority = runtime.tenant(&peer, &tenant, if write { "record" } else { "read" })?;
     let _serial = authority.serial.lock().await;
     let (_fence, snapshot) = authority.fenced_snapshot().await?;
-    let principal = crate::platform_identity::verify(
-        &snapshot,
-        &peer,
-        &request.chain,
-        chrono::Utc::now().timestamp(),
-    )?;
+    let now = chrono::Utc::now().timestamp();
+    let principal = crate::platform_identity::verify(&snapshot, &peer, &request.chain, now)?;
     if !principal.permits(
         if write { "propose" } else { "read" },
-        &format!("records:{tenant}"),
+        &format!(
+            "{}:{tenant}",
+            if action_record {
+                "action-records"
+            } else {
+                "records"
+            }
+        ),
     ) {
         return Err(denied().into());
     }
     let records = runtime.records.get(&tenant).ok_or_else(denied)?;
+    if action_record {
+        // Only the fenced governing artifact supplies policy; never the request body.
+        let policy: ActionPolicy = serde_json::from_value(
+            snapshot
+                .artifact
+                .as_ref()
+                .ok_or_else(denied)?
+                .bindings
+                .get(&format!("action-records:{}", snapshot.config.audience))
+                .ok_or_else(denied)?
+                .clone(),
+        )
+        .map_err(|_| denied())?;
+        let admission = ActionAdmission {
+            identity: munarium_core::platform::RecorderIdentity {
+                origin: principal.origin().into(),
+                actor: principal.actor().into(),
+                origin_kind: principal.origin_kind().into(),
+                principal_digest: principal.fingerprint().into(),
+            },
+            service: peer.0.service.clone(),
+            tenant: tenant.clone(),
+            deployment: snapshot.config.deployment.clone(),
+            now: u64::try_from(now).map_err(|_| denied())?,
+            can_record: write,
+            can_read: !write,
+        };
+        let ledger = ActionLedger::new(records.store.as_ref(), &records.version, &policy);
+        let response = match request.action {
+            Operation::ActionArchive { record } => {
+                ledger.archive(&admission, record.as_bytes()).await?
+            }
+            Operation::ActionAppend { event } => {
+                ledger.append(&admission, event.as_bytes()).await?
+            }
+            Operation::ActionLookup { operation_id } => {
+                ledger.lookup(&admission, &operation_id).await?
+            }
+            Operation::ActionTransition { transition_id } => {
+                ledger.transition(&admission, &transition_id).await?
+            }
+            Operation::ActionSourceHead {
+                stream_id,
+                generation,
+            } => {
+                ledger
+                    .source_head(&admission, &stream_id, generation)
+                    .await?
+            }
+            _ => return Err(denied().into()),
+        };
+        return Ok(Json(response));
+    }
     let ledger = EventLedger::new(records.store.as_ref(), &tenant, &records.version);
     let context = RecorderContext {
         identity: munarium_core::platform::RecorderIdentity {
@@ -153,6 +226,7 @@ pub async fn platform_records(
             }
             None => json!({"digest":null,"bundle":null}),
         },
+        _ => return Err(denied().into()),
     };
     Ok(Json(response))
 }
