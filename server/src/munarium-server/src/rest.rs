@@ -1350,6 +1350,11 @@ port-forward with a strict CSP and zero external assets.</p>
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route(
+            "/v1/platform/{tenant}/activation",
+            post(crate::platform_activation::platform_activation)
+                .layer(DefaultBodyLimit::max(131072)),
+        )
+        .route(
             "/v1/platform/{tenant}/records",
             post(crate::platform_records::platform_records)
                 .layer(DefaultBodyLimit::max(16 * 1024 * 1024 + 131072)),

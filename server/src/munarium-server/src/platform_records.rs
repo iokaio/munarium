@@ -25,8 +25,8 @@ fn storage(_: sqlx::Error) -> KernelError {
     KernelError::Storage("platform record storage unavailable".into())
 }
 pub struct Records {
-    store: Arc<dyn StorageBackend>,
-    version: String,
+    pub(crate) store: Arc<dyn StorageBackend>,
+    pub(crate) version: String,
 }
 impl Records {
     pub async fn open(

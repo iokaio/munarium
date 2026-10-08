@@ -14273,6 +14273,10 @@ Platform records: `POST /v1/platform/{tenant}/records` requires mTLS plus a curr
 recipient-bound signed principal. Append/archive require `propose`; lookup/replay
 require `read`, with the exact `records:<tenant>` resource.
 
+Platform activation: `POST /v1/platform/{tenant}/activation` requires an enrolled
+peer and current signed coordinator/reader policy. Its apply, lookup and head
+operations are described in [Stage 2](../platform-stage2.md).
+
 Every path the server serves, from the served OpenAPI document, with the
 chapter that teaches it. **Generated** by `docs/route-index.py` (2026-09-02)
 and **enforced**: the server crate's `docs_coverage` tests fail `cargo test`

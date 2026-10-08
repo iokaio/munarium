@@ -57,6 +57,140 @@ pub fn admission(service: &str) -> ActionAdmission {
 pub fn rehash(event: &mut Value) {
     event["payload_digest"] = json!(action_digest("event-payload", &event["payload"]).unwrap());
 }
+
+pub async fn activation_race(store: &dyn StorageBackend, version: &str) {
+    let (policy, enrollment, first, proof) = activation_inputs();
+    let (_, _, mut second, mut second_proof) = activation_inputs();
+    second["transition"]["id"] = json!("competing-transition");
+    second_proof.ratified = json!({"ratified":true,"transition":second,
+        "transition_digest":action_digest("activation",&second).unwrap()});
+    second_proof.gate_head["transition_id"] = second["transition"]["id"].clone();
+    for receipt in [&mut second_proof.pause, &mut second_proof.registry_receipt] {
+        receipt["transition"] = second["transition"].clone();
+        receipt["transition_digest"] = json!(action_digest("activation", &second).unwrap());
+    }
+    let ledger = ActionLedger::new(store, version, &policy);
+    let (one, two) = tokio::join!(
+        ledger.apply_activation(&enrollment, &first, &proof),
+        ledger.apply_activation(&enrollment, &second, &second_proof)
+    );
+    assert_ne!(one.is_ok(), two.is_ok());
+    assert_eq!(store.head(version).await.unwrap(), 4);
+    let loser = if one.is_ok() {
+        "competing-transition"
+    } else {
+        "transition-a"
+    };
+    assert!(ledger.activation_lookup(&enrollment, loser).await.is_err());
+}
+
+pub fn activation_inputs() -> (
+    ActionPolicy,
+    ActivationEnrollment,
+    Value,
+    ActivationEvidence,
+) {
+    let mut policy = policy();
+    policy.streams.push(StreamRegistration {
+        stream_id: "server-activation".into(),
+        producer: "server".into(),
+        service: "svc-server".into(),
+        generation: 1,
+        kinds: ["activation-applied".into()].into_iter().collect(),
+    });
+    let t = records()["activation"].clone();
+    let e = ActivationEnrollment {
+        initial_epoch: 1,
+        initial_artifact_set_digest: t["prior_artifact_set_digest"].as_str().unwrap().into(),
+        service: "svc-server".into(),
+        coordinator: "svc-council".into(),
+        stream_id: "server-activation".into(),
+    };
+    let registry_receipt = records()["activation-event"]["payload"]["receipt"].clone();
+    let mut pause = registry_receipt.clone();
+    pause["participant"] = json!("gate");
+    pause["phase"] = json!("paused");
+    let p = ActivationEvidence {
+        ratified: json!({"ratified":true,"transition":t,"transition_digest":action_digest("activation",&t).unwrap()}),
+        pause,
+        gate_head: json!({"scope":policy.scope.value(),"participant":"gate","paused":true,"transition_id":t["transition"]["id"],"epoch":1,"artifact_set_digest":t["prior_artifact_set_digest"]}),
+        registry_head: json!({"scope":policy.scope.value(),"participant":"registry","epoch":2,"artifact_set_digest":t["artifact_set_digest"]}),
+        registry_receipt,
+        authority_revision: format!("sha256:{}", "a".repeat(64)),
+        now: 1000,
+    };
+    (policy, e, t, p)
+}
+
+/// Real backend checks: refusal leaves no applied state; concurrent retry records exactly once.
+pub async fn activation_participant(store: &dyn StorageBackend, version: &str) -> Value {
+    let (policy, e, t, mut proof) = activation_inputs();
+    let ledger = ActionLedger::new(store, version, &policy);
+    assert_eq!(ledger.activation_head(&e).await.unwrap()["epoch"], 1);
+    proof.ratified["ratified"] = json!(false);
+    assert!(ledger.apply_activation(&e, &t, &proof).await.is_err());
+    proof.ratified["ratified"] = json!(true);
+    proof.gate_head["paused"] = json!(false);
+    assert!(ledger.apply_activation(&e, &t, &proof).await.is_err());
+    proof.gate_head["paused"] = json!(true);
+    proof.registry_head["epoch"] = json!(1);
+    assert!(ledger.apply_activation(&e, &t, &proof).await.is_err());
+    proof.registry_head["epoch"] = json!(2);
+    proof.now = 1298;
+    assert!(ledger.apply_activation(&e, &t, &proof).await.is_err());
+    proof.now = 991;
+    assert!(ledger.apply_activation(&e, &t, &proof).await.is_err());
+    proof.now = 1000;
+    assert_eq!(store.head(version).await.unwrap(), 1);
+    let (a, b) = tokio::join!(
+        ledger.apply_activation(&e, &t, &proof),
+        ledger.apply_activation(&e, &t, &proof)
+    );
+    let receipt = a.unwrap();
+    assert_eq!(b.unwrap(), receipt);
+    assert_eq!(store.head(version).await.unwrap(), 4);
+    assert_eq!(ledger.activation_head(&e).await.unwrap()["epoch"], 2);
+    let read = admission("svc-gate");
+    let result = ledger.transition(&read, "transition-a").await.unwrap();
+    assert_eq!(result["artifacts"], json!([t]));
+    assert_eq!(result["events"].as_array().unwrap().len(), 1);
+    let event = &result["events"][0];
+    assert_eq!(event["payload"]["receipt"], receipt);
+    let ack = ledger
+        .append(&admission("svc-server"), &bytes(event))
+        .await
+        .unwrap();
+    verify_action_ack(event, &ack).unwrap();
+    assert_eq!(ack["position"], 3);
+    assert_eq!(ack["received_at"], 1000);
+    proof.now = 1100;
+    assert_eq!(
+        ledger.apply_activation(&e, &t, &proof).await.unwrap(),
+        receipt
+    );
+    assert_eq!(
+        ledger.activation_lookup(&e, "transition-a").await.unwrap(),
+        receipt
+    );
+    assert_eq!(store.head(version).await.unwrap(), 4);
+    let mut changed = t.clone();
+    changed["expires_at"] = json!(1200);
+    assert!(ledger.apply_activation(&e, &changed, &proof).await.is_err());
+    let mut reset = e.clone();
+    reset.initial_epoch = 2;
+    assert!(ledger.activation_head(&reset).await.is_err());
+    // An ordinary audit append is history, not installation authority.
+    let mut audit = event.clone();
+    audit["event_id"] = json!("ordinary-history");
+    audit["sequence"] = json!(2);
+    audit["predecessor"] = json!(action_digest("accountability-event", event).unwrap());
+    ledger
+        .append(&admission("svc-server"), &bytes(&audit))
+        .await
+        .unwrap();
+    assert_eq!(ledger.activation_head(&e).await.unwrap()["epoch"], 2);
+    receipt
+}
 pub async fn archives(ledger: &ActionLedger<'_>) {
     let records = records();
     for (name, service) in [

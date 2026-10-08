@@ -219,12 +219,13 @@ def deployment(database, service_peers=(), record_peers=()):
 
         raw_http = http(operator)
         endpoint = f"https://127.0.0.1:{http_port}"
+        server_log = (directory / "server.log").open("wb")
         process = subprocess.Popen(
             [binary],
             env=env,
             stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=server_log,
+            stderr=server_log,
         )
         channel = grpc.secure_channel(
             f"127.0.0.1:{grpc_port}",
@@ -236,6 +237,29 @@ def deployment(database, service_peers=(), record_peers=()):
         rpc = ServerApiClient(
             ClientOptions(f"https://127.0.0.1:{grpc_port}"), grpc_transport=True, channel=channel
         )
+
+        def restart():
+            nonlocal process
+            process.terminate()
+            process.wait(timeout=10)
+            process = subprocess.Popen(
+                [binary],
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=server_log,
+                stderr=server_log,
+            )
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline:
+                assert process.poll() is None, "Server exited during restart"
+                try:
+                    if raw_http.get(endpoint + "/healthz", timeout=1).status_code == 200:
+                        return
+                except httpx.TransportError:
+                    pass
+                time.sleep(0.05)
+            pytest.fail("isolated Server restart failed")
+
         try:
             deadline = time.monotonic() + 15
             last_health = "no response"
@@ -268,6 +292,9 @@ def deployment(database, service_peers=(), record_peers=()):
                 grpc_endpoint=f"127.0.0.1:{grpc_port}",
                 directory=directory,
                 identities=identities,
+                server_identity=server,
+                restart=restart,
+                server_log=directory / "server.log",
             )
         finally:
             api.close()
@@ -280,6 +307,7 @@ def deployment(database, service_peers=(), record_peers=()):
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=10)
+            server_log.close()
 
 
 def signed(d, state, artifact, nonce, *, key=None, kid="bootstrap", changes=None):

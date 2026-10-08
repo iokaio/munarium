@@ -4,6 +4,8 @@ use crate::{
     ledger::FactQuery,
     storage::{NewClaim, StorageBackend},
 };
+mod activation;
+pub use activation::{ActivationEnrollment, ActivationEvidence};
 
 const ARTIFACTS: &str = "platform.action-artifacts-v1";
 const EVENTS: &str = "platform.action-events-v1";

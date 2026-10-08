@@ -983,6 +983,19 @@ class ServerApiClient(BaseServerApi):
             request,
         )
 
+    def platform_activation(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """POST /v1/platform/{tenant}/activation"""
+        return self._call(
+            "PlatformActivation",
+            "POST",
+            "/v1/platform/{tenant}/activation",
+            "application/json",
+            request,
+        )
+
     def get_platform_authority(
         self,
         request: ApiRequest | None = None,
@@ -2775,6 +2788,19 @@ class AsyncServerApiClient(BaseAsyncServerApi):
             "AddMonetaryPrice",
             "POST",
             "/v1/monetary/prices",
+            "application/json",
+            request,
+        )
+
+    async def platform_activation(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """POST /v1/platform/{tenant}/activation"""
+        return await self._call(
+            "PlatformActivation",
+            "POST",
+            "/v1/platform/{tenant}/activation",
             "application/json",
             request,
         )

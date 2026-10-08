@@ -3287,6 +3287,53 @@
         }
       }
     },
+    "/v1/platform/{tenant}/activation": {
+      "post": {
+        "tags": [
+          "platform"
+        ],
+        "operationId": "platform_activation",
+        "parameters": [
+          {
+            "name": "tenant",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "403": {
+            "description": "activation authority refused"
+          },
+          "422": {
+            "description": "immutable transition or expected head conflict"
+          }
+        },
+        "security": [
+          {
+            "platformMtls": []
+          }
+        ]
+      }
+    },
     "/v1/platform/{tenant}/authority": {
       "get": {
         "tags": [

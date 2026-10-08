@@ -86,6 +86,49 @@ does not independently inspect a remote Gate journal. Recovery never grants disp
 
 ## Validation and limits
 
+### Server activation participant
+
+`POST /v1/platform/{tenant}/activation` and `ServerApiService/PlatformActivation`
+share the body `{"tenant":"enrolled-tenant","action":{"operation":"head"}}`.
+`lookup` adds `transition_id`; `apply` adds the exact canonical `transition` string.
+Apply returns the candidate Server receipt; lookup returns its original bytes.
+Head reports the local participant epoch/set with `cell_resumed:false` and
+`execution_enabled:false`. This is separate from signed root governance authority.
+
+The root authority artifact must provide `stage2:<audience>` with `scope`,
+`coordinator`, `readers`, `initial_epoch`, `initial_artifact_set_digest`, `stream_id`,
+`council_endpoint`, `gate_endpoint` and `registry_endpoint`. Endpoints are HTTPS
+origins, using the platform certificate/key and enrolled CA for outgoing mTLS.
+Current participant calls explicitly use HTTP/1.1; Server's native gRPC remains
+HTTP/2. The existing `action-records:<audience>` policy must register the Server
+stream for `activation-applied` and the actual Council service as a Council source.
+Both policies must have the same qualified scope matching Server enrollment.
+
+The transport peer requires enrolled `read` scope; the independently signed
+coordinator binding alone selects which peer may apply. Reader enrollment never
+permits apply. No caller-supplied Warden chain, ratification or dependency receipt
+can establish governing authority here. Server independently fetches current
+Council ratification, Gate pause/head and Registry receipt/head, then reacquires
+the external authority checkpoint fence and verifies the root revision has not
+changed. No fence is held across callbacks to those services.
+
+Initial enrollment is retained once in the protected ledger. An expected-head
+batch commits the installed participant receipt, canonical accountability event
+and Council transition archive together. Provenance names the coordinator and
+root revision; it does not invent a Council service principal. Ordinary audit
+append never installs a participant epoch. Existing action-transition/source-head
+readers see the event; an authorized exact event retry returns its original audit
+acknowledgement. Canonical transition retries do not change event time or history.
+Different initial enrollment or conflicting immutable state returns the existing
+`idempotency-mismatch` problem (422). Missing authority returns 403; unavailable
+dependencies/storage fail without a successful receipt.
+
+Memory is disposable. PostgreSQL tests exercise atomic batches, concurrent retry
+and reconnect, and live REST/gRPC tests cover current authority, dependency refusal
+and process restart. They do not qualify snapshot restore, effects, or delivery of
+other participants' outboxes. Participant restore/reconciliation remains required
+before any execution profile can open dispatch.
+
 From `server/`, run:
 
 ```console

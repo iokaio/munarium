@@ -68,6 +68,7 @@ mod openapi;
 mod ops;
 #[cfg(test)]
 mod panic_policy;
+mod platform_activation;
 mod platform_api;
 mod platform_identity;
 mod platform_records;

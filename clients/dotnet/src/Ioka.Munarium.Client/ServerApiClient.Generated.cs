@@ -153,6 +153,8 @@ public sealed partial class ServerApiClient {
     public Task<ApiResponse> MonetaryPricesAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("MonetaryPrices", "GET", "/v1/monetary/prices", "application/json", request ?? new(), ct);
     /// <summary>POST /v1/monetary/prices</summary>
     public Task<ApiResponse> AddMonetaryPriceAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("AddMonetaryPrice", "POST", "/v1/monetary/prices", "application/json", request ?? new(), ct);
+    /// <summary>POST /v1/platform/{tenant}/activation</summary>
+    public Task<ApiResponse> PlatformActivationAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("PlatformActivation", "POST", "/v1/platform/{tenant}/activation", "application/json", request ?? new(), ct);
     /// <summary>GET /v1/platform/{tenant}/authority</summary>
     public Task<ApiResponse> GetPlatformAuthorityAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("GetPlatformAuthority", "GET", "/v1/platform/{tenant}/authority", "application/json", request ?? new(), ct);
     /// <summary>POST /v1/platform/{tenant}/authority</summary>

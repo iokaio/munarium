@@ -228,6 +228,9 @@ impl pb::server_api_service_server::ServerApiService for ServerApiSvc {
     async fn add_monetary_price(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "POST", "/v1/monetary/prices", "application/json").await
     }
+    async fn platform_activation(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "POST", "/v1/platform/{tenant}/activation", "application/json").await
+    }
     async fn get_platform_authority(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "GET", "/v1/platform/{tenant}/authority", "application/json").await
     }

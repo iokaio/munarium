@@ -95,6 +95,7 @@ impl Modify for SecurityAddon {
         crate::platform_api::get_platform_authority,
         crate::platform_api::transition_platform_authority,
         crate::platform_records::platform_records,
+        crate::platform_activation::platform_activation,
         crate::answers_api::answer,
         crate::query_api::query_collections,
         crate::query_api::authorize_publication,
