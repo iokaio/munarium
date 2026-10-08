@@ -602,6 +602,14 @@
       "streaming": false
     },
     {
+      "name": "platform_activation",
+      "rpc": "PlatformActivation",
+      "method": "POST",
+      "path": "/v1/platform/{tenant}/activation",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
       "name": "get_platform_authority",
       "rpc": "GetPlatformAuthority",
       "method": "GET",

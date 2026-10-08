@@ -21,6 +21,211 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.mark.parametrize("database", ["memory", "postgres"])
+def test_server_activation_transport_and_current_authority(database):
+    """Actual Server; synthetic authenticated dependencies are not composition evidence."""
+    import copy
+    import hashlib
+    import ssl
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Thread
+
+    if database == "postgres" and not os.environ.get("MUNARIUM_PLATFORM_TEST_DATABASE_URL"):
+        pytest.skip("isolated PostgreSQL URL not supplied")
+    with deployment(database, ("svc-council", "svc-gate")) as d, ExitStack() as stack:
+        fixture = (
+            Path(__file__).resolve().parents[3] / "server/contract/platform-stage2-v1/vectors.json"
+        )
+        records = json.loads(fixture.read_text())["records"]
+        t = records["activation"]
+        scope = dict(
+            domain="fixture-domain", tenant=d["tenant"], deployment="stage1-live", cell="cell-a"
+        )
+        t["scope"] = t["transition"]["scope"] = t["ratification"]["scope"] = scope
+        now = int(time.time())
+        t.update(not_before=now - 10, expires_at=now + 300)
+        receipt = records["activation-event"]["payload"]["receipt"]
+        receipt["transition"] = t["transition"]
+        receipt["transition_digest"] = digest("munarium:stage2:activation:v1", t)
+        pause = dict(receipt, participant="gate", phase="paused")
+        proof = dict(
+            ratified=dict(
+                ratified=True, transition=t, transition_digest=receipt["transition_digest"]
+            ),
+            pause=pause,
+            gate_head=dict(
+                scope=scope,
+                participant="gate",
+                paused=True,
+                transition_id=t["transition"]["id"],
+                epoch=1,
+                artifact_set_digest=t["prior_artifact_set_digest"],
+            ),
+            registry_receipt=receipt,
+            registry_head=dict(
+                scope=scope,
+                participant="registry",
+                epoch=2,
+                artifact_set_digest=t["artifact_set_digest"],
+            ),
+        )
+        change_during_fetch = [False]
+
+        class Dependency(BaseHTTPRequestHandler):
+            def log_message(self, *_args):
+                pass
+
+            def do_POST(self):
+                if (
+                    hashlib.sha256(self.connection.getpeercert(binary_form=True)).hexdigest()
+                    != d["server_identity"][2]
+                ):
+                    self.send_error(403)
+                    return
+                count = int(self.headers.get("Content-Length", "0"))
+                if count > 131072:
+                    self.send_error(413)
+                    return
+                action = json.loads(self.rfile.read(count))["action"]["operation"]
+                key = (
+                    "ratified"
+                    if self.path == "/v1/transitions"
+                    else "pause"
+                    if action == "pause-lookup"
+                    else "gate_head"
+                    if action == "activation-head"
+                    else "registry_receipt"
+                    if action == "lookup"
+                    else "registry_head"
+                )
+                if change_during_fetch[0]:
+                    change_during_fetch[0] = False
+                    govern("concurrent-governance")
+                raw = canonical(proof[key])
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+
+        dependency = ThreadingHTTPServer(("127.0.0.1", 0), Dependency)
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(*map(str, d["identities"]["svc-gate"][:2]))
+        ctx.load_verify_locations(cafile=str(d["directory"] / "ca.pem"))
+        ctx.verify_mode = ssl.CERT_REQUIRED
+        dependency.socket = ctx.wrap_socket(dependency.socket, server_side=True)
+        thread = Thread(target=dependency.serve_forever, daemon=True)
+        thread.start()
+        stack.callback(thread.join, 5)
+        stack.callback(dependency.server_close)
+        stack.callback(dependency.shutdown)
+        endpoint = f"https://127.0.0.1:{dependency.server_port}"
+        binding = dict(
+            scope=scope,
+            coordinator="svc-council",
+            readers=["svc-gate"],
+            initial_epoch=1,
+            initial_artifact_set_digest=t["prior_artifact_set_digest"],
+            stream_id="server-activation",
+            council_endpoint=endpoint,
+            gate_endpoint=endpoint,
+            registry_endpoint=endpoint,
+        )
+        action_policy = dict(
+            schema_version=1,
+            profile="stage2-single-cell-v1",
+            scope=scope,
+            readers=["svc-gate"],
+            recovery=[],
+            streams=[
+                dict(
+                    stream_id="server-activation",
+                    producer="server",
+                    service="svc-server",
+                    generation=1,
+                    kinds=["activation-applied"],
+                ),
+                dict(
+                    stream_id="council-approvals",
+                    producer="council",
+                    service="svc-council",
+                    generation=1,
+                    kinds=["approval-recorded"],
+                ),
+            ],
+        )
+        artifact = dict(
+            schema_version=1,
+            bindings={"stage2:svc-server": binding, "action-records:svc-server": action_policy},
+            retire_bootstrap=False,
+            successor_keys={},
+        )
+        path = {"tenant": d["tenant"]}
+
+        def govern(nonce):
+            state = d["api"].get_platform_authority(ApiRequest(path=path)).json()
+            d["api"].transition_platform_authority(
+                ApiRequest.json(signed(d, state, artifact, nonce), path=path)
+            )
+
+        http = stack.enter_context(d["http"](d["identities"]["svc-council"]))
+        reader = stack.enter_context(d["http"](d["identities"]["svc-gate"]))
+        route = d["endpoint"] + f"/v1/platform/{d['tenant']}/activation"
+
+        def body(operation, **fields):
+            return dict(tenant=d["tenant"], action=dict(operation=operation, **fields))
+
+        apply = body("apply", transition=canonical(t).decode())
+        assert http.post(route, json=apply).status_code == 403
+        govern("activation-policy")
+        assert reader.post(route, json=apply).status_code == 403
+        assert http.post(route, json=dict(apply, tenant="foreign")).status_code == 403
+        assert http.post(route, json=body("head")).json()["epoch"] == 1
+        for field, mutation in (
+            ("ratified", {"ratified": False}),
+            ("pause", {"participant": "server"}),
+            ("gate_head", {"paused": False}),
+            ("gate_head", {"transition_id": "other"}),
+            ("registry_head", {"epoch": 1}),
+            ("registry_receipt", {"artifact_set_digest": "sha256:" + "0" * 64}),
+        ):
+            original = copy.deepcopy(proof[field])
+            proof[field].update(mutation)
+            assert http.post(route, json=apply).status_code == 403
+            proof[field] = original
+            assert http.post(route, json=body("head")).json()["epoch"] == 1
+        # The callback itself reads/governs Server: a lock held across it would deadlock.
+        change_during_fetch[0] = True
+        assert http.post(route, json=apply).status_code == 403
+        assert change_during_fetch[0] is False
+        assert http.post(route, json=body("head")).json()["epoch"] == 1
+        result = http.post(route, json=apply)
+        assert result.status_code == 200
+        expected = dict(proof["registry_receipt"], participant="server")
+        assert result.json() == expected
+        cert = d["identities"]["svc-council"]
+        channel = grpc.secure_channel(
+            d["grpc_endpoint"],
+            grpc.ssl_channel_credentials(d["ca"], cert[1].read_bytes(), cert[0].read_bytes()),
+        )
+        stack.callback(channel.close)
+        rpc = ServerApiClient(
+            ClientOptions("https://" + d["grpc_endpoint"]), grpc_transport=True, channel=channel
+        )
+        stack.callback(rpc.close)
+        assert rpc.platform_activation(ApiRequest.json(apply, path=path)).json() == expected
+        lookup = body("lookup", transition_id=t["transition"]["id"])
+        assert rpc.platform_activation(ApiRequest.json(lookup, path=path)).json() == expected
+        assert reader.post(route, json=lookup).json() == expected
+        if database == "postgres":
+            d["restart"]()
+            assert http.post(route, json=lookup).json() == expected
+        assert http.post(route, json=body("head")).json()["epoch"] == 2
+        binding["initial_epoch"] = 2
+        govern("cannot-reset-enrollment")
+        assert http.post(route, json=body("head")).status_code == 422
+
+
+@pytest.mark.parametrize("database", ["memory", "postgres"])
 def test_action_records_require_governed_roles_and_current_principals(database):
     from cryptography.hazmat.primitives.asymmetric import ed25519
 

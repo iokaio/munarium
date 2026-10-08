@@ -234,6 +234,9 @@ public final class ServerApiClient extends ServerApiTransport {
     /** POST /v1/monetary/prices */
     public ApiResponse addMonetaryPrice(ApiRequest request) { return call("AddMonetaryPrice", "POST", "/v1/monetary/prices", "application/json", request); }
     public CompletableFuture<ApiResponse> addMonetaryPriceAsync(ApiRequest request) { return async(() -> addMonetaryPrice(request)); }
+    /** POST /v1/platform/{tenant}/activation */
+    public ApiResponse platformActivation(ApiRequest request) { return call("PlatformActivation", "POST", "/v1/platform/{tenant}/activation", "application/json", request); }
+    public CompletableFuture<ApiResponse> platformActivationAsync(ApiRequest request) { return async(() -> platformActivation(request)); }
     /** GET /v1/platform/{tenant}/authority */
     public ApiResponse getPlatformAuthority(ApiRequest request) { return call("GetPlatformAuthority", "GET", "/v1/platform/{tenant}/authority", "application/json", request); }
     public CompletableFuture<ApiResponse> getPlatformAuthorityAsync(ApiRequest request) { return async(() -> getPlatformAuthority(request)); }

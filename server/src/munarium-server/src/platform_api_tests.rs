@@ -270,6 +270,7 @@ fn platform_wire_contract_uses_signed_identity_instead_of_legacy_uid() {
     for path in [
         "/v1/platform/{tenant}/authority",
         "/v1/platform/{tenant}/records",
+        "/v1/platform/{tenant}/activation",
     ] {
         assert!(spec["paths"][path].get("parameters").is_none());
         for method in ["get", "post"] {

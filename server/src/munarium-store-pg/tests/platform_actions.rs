@@ -6,6 +6,28 @@ use munarium_store_pg::PgStore;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "requires isolated MUNARIUM_TEST_DATABASE_URL; run with --ignored"]
+async fn server_activation_transaction_and_reconnect() {
+    let url = std::env::var("MUNARIUM_TEST_DATABASE_URL").expect("isolated database required");
+    let tenant = format!("activation-{}", uuid::Uuid::new_v4());
+    let store = PgStore::connect(&url, &tenant).await.unwrap();
+    let version = store.create_version(None, None).await.unwrap();
+    let receipt = support::activation_participant(&store, &version).await;
+    drop(store);
+    let reopened = PgStore::connect(&url, &tenant).await.unwrap();
+    let (policy, e, t, proof) = support::activation_inputs();
+    let ledger = ActionLedger::new(&reopened, &version, &policy);
+    assert_eq!(ledger.activation_head(&e).await.unwrap()["epoch"], 2);
+    assert_eq!(
+        ledger.apply_activation(&e, &t, &proof).await.unwrap(),
+        receipt
+    );
+    assert_eq!(reopened.head(&version).await.unwrap(), 5);
+    let version = reopened.create_version(None, None).await.unwrap();
+    support::activation_race(&reopened, &version).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "requires isolated MUNARIUM_TEST_DATABASE_URL; run with --ignored"]
 async fn action_lifecycle_reconnect_and_historical_recovery() {
     let url = std::env::var("MUNARIUM_TEST_DATABASE_URL").expect("isolated database required");
     let tenant = format!("stage2-{}", uuid::Uuid::new_v4());

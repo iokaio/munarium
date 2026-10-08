@@ -248,6 +248,8 @@ impl TenantAuthority {
 pub struct PlatformRuntime {
     tenants: BTreeMap<String, TenantAuthority>,
     pub(crate) records: BTreeMap<String, crate::platform_records::Records>,
+    pub(crate) config: PlatformConfig,
+    pub(crate) activation_permits: tokio::sync::Semaphore,
 }
 impl PlatformRuntime {
     pub async fn open(config: &PlatformConfig, postgres: Option<&PgStore>) -> Result<Self> {
@@ -277,7 +279,12 @@ impl PlatformRuntime {
                 },
             );
         }
-        Ok(Self { tenants, records })
+        Ok(Self {
+            tenants,
+            records,
+            config: config.clone(),
+            activation_permits: tokio::sync::Semaphore::new(32),
+        })
     }
     pub fn tenant(
         &self,

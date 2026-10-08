@@ -6,6 +6,15 @@ use munarium_store_mem::MemStore;
 use serde_json::json;
 
 #[tokio::test]
+async fn server_activation_is_atomic_and_idempotent() {
+    let store = MemStore::new();
+    let version = store.create_version(None, None).await.unwrap();
+    support::activation_participant(&store, &version).await;
+    let version = store.create_version(None, None).await.unwrap();
+    support::activation_race(&store, &version).await;
+}
+
+#[tokio::test]
 async fn action_lifecycle_and_denials() {
     let store = MemStore::new();
     let version = store.create_version(None, None).await.unwrap();
