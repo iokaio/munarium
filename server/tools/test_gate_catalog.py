@@ -266,6 +266,8 @@ class CatalogTests(unittest.TestCase):
                 "true",
             ),
             ("--password-stdin", "--password exposed"),
+            ("toJSON(secrets.DOCKERHUB_TOKEN", "toJSON(secrets.OTHER_TOKEN"),
+            ("|| '{}') }}", "|| '{\"username\":\"\",\"password\":\"\"}') }}"),
             ("docker logout docker.io", "true"),
             ("FROM mirror.gcr.io/library/", "FROM "),
             ("assert original.startswith(base)", "assert True"),
@@ -340,19 +342,20 @@ class CatalogTests(unittest.TestCase):
                 [expression] * count,
                 name,
             )
-            for field, secret, missing in (
-                ("username", "DOCKERHUB_USERNAME", "missing-dockerhub-username"),
-                ("password", "DOCKERHUB_TOKEN", "missing-dockerhub-token"),
-            ):
-                credential = (
-                    "${{ " + condition + " && (secrets." + secret
-                    + " || '" + missing + "') || '' }}"
-                )
-                self.assertEqual(
-                    re.findall(r"^          " + field + r": (.+)$", workflow, re.MULTILINE),
-                    [credential] * count,
-                    name,
-                )
+            # GitHub requires nonempty values when credential keys exist.
+            # The public route must produce an empty mapping, not empty values.
+            credential = (
+                "${{ fromJSON(" + condition
+                + " && format('{{\"username\":{0},\"password\":{1}}}', "
+                + "toJSON(secrets.DOCKERHUB_USERNAME || 'missing-dockerhub-username'), "
+                + "toJSON(secrets.DOCKERHUB_TOKEN || 'missing-dockerhub-token')) || '{}') }}"
+            )
+            self.assertEqual(
+                re.findall(r"^        credentials: >-\n          (.+)$", workflow, re.MULTILINE),
+                [credential] * count,
+                name,
+            )
+            self.assertNotRegex(workflow, r"(?m)^          (username|password):")
 
     def test_cargo_deny_registry_selection_preserves_the_pinned_action(self):
         workflow = (ROOT / ".github/workflows/server-ci.yml").read_text(encoding="utf-8")

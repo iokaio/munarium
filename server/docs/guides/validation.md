@@ -76,9 +76,14 @@ Missing/invalid credentials on an opted-in trusted run fail rather than silently
 hiding a broken configuration.
 
 Fork PRs, Dependabot and repositories without the opt-in variable use
-`mirror.gcr.io` with empty service credentials. These paths do not require
+`mirror.gcr.io` with an empty credentials mapping. These paths do not require
 repository secrets. The same trust condition selects both registry and
 credentials, so Docker Hub secrets are never sent to the mirror.
+The entire mapping is conditional: GitHub rejects empty username/password
+values before starting a job. Authenticated values are JSON-escaped before
+constructing the mapping; the public branch supplies `{}` with neither key.
+The registry regression controls reject the former empty-value shape in all
+three services. Hosted runs are still required to validate runner evaluation.
 The pgvector PostgreSQL 16 index remains pinned to the same digest
 `sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b`;
 its manifest identity and a local pull/start were verified. The independent
