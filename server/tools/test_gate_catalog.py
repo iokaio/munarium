@@ -3,10 +3,13 @@
 
 import copy
 import json
+import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, call
@@ -255,6 +258,25 @@ class CatalogTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 check(workflow, broken, baseline)
         for old, new in (
+            ("mirror.gcr.io/pgvector/pgvector:", "pgvector/pgvector:"),
+            ("vars.DOCKERHUB_AUTHENTICATED_PULLS == 'true'", "true"),
+            ("github.actor != 'dependabot[bot]'", "true"),
+            (
+                "github.event.pull_request.head.repo.full_name == github.repository",
+                "true",
+            ),
+            ("--password-stdin", "--password exposed"),
+            ("toJSON(secrets.DOCKERHUB_TOKEN", "toJSON(secrets.OTHER_TOKEN"),
+            ("|| '{}') }}", "|| '{\"username\":\"\",\"password\":\"\"}') }}"),
+            ("docker logout docker.io", "true"),
+            ("FROM mirror.gcr.io/library/", "FROM "),
+            ("assert original.startswith(base)", "assert True"),
+            ("ref: 3c6349835b2b7b196a839186cb8b78e02f7b5f25", "ref: main"),
+            ("uses: ./.ci-cargo-deny", "run: echo skipped"),
+            (
+                "@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b",
+                "",
+            ),
             ("branches: [main]", "branches: [other]"),
             ("runs-on: ubuntu-latest", "runs-on: other"),
             ("contents: read", "contents: write"),
@@ -296,6 +318,74 @@ class CatalogTests(unittest.TestCase):
             self.assertIn(old, workflow)
             with self.assertRaises(ValueError):
                 check(workflow.replace(old, new, 1), catalog, baseline)
+
+    def test_ci_postgres_services_keep_the_reviewed_image(self):
+        # Both routes keep identical bytes. Only opted-in trusted runs may
+        # attach credentials; forks and Dependabot retain the public mirror.
+        image = (
+            "pgvector/pgvector:pg16@sha256:"
+            "ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b"
+        )
+        condition = (
+            "vars.DOCKERHUB_AUTHENTICATED_PULLS == 'true' && "
+            "github.actor != 'dependabot[bot]' && "
+            "(github.event_name != 'pull_request' || "
+            "github.event.pull_request.head.repo.full_name == github.repository)"
+        )
+        expression = (
+            "${{ " + condition + " && '" + image + "' || 'mirror.gcr.io/" + image + "' }}"
+        )
+        for name, count in (("server-ci.yml", 2), ("clients-ci.yml", 1)):
+            workflow = (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
+            self.assertEqual(
+                re.findall(r"^        image: (.+)$", workflow, re.MULTILINE),
+                [expression] * count,
+                name,
+            )
+            # GitHub requires nonempty values when credential keys exist.
+            # The public route must produce an empty mapping, not empty values.
+            credential = (
+                "${{ fromJSON(" + condition
+                + " && format('{{\"username\":{0},\"password\":{1}}}', "
+                + "toJSON(secrets.DOCKERHUB_USERNAME || 'missing-dockerhub-username'), "
+                + "toJSON(secrets.DOCKERHUB_TOKEN || 'missing-dockerhub-token')) || '{}') }}"
+            )
+            self.assertEqual(
+                re.findall(r"^        credentials: >-\n          (.+)$", workflow, re.MULTILINE),
+                [credential] * count,
+                name,
+            )
+            self.assertNotRegex(workflow, r"(?m)^          (username|password):")
+
+    def test_cargo_deny_registry_selection_preserves_the_pinned_action(self):
+        workflow = (ROOT / ".github/workflows/server-ci.yml").read_text(encoding="utf-8")
+        code = textwrap.dedent(
+            workflow.split("          python3 - <<'PY'\n", 1)[1].split("          PY\n", 1)[0]
+        )
+        path = self.root / ".ci-cargo-deny/Dockerfile"
+        path.parent.mkdir()
+        original = (
+            "FROM rust:1.85.0-alpine3.20@sha256:"
+            "f0cef6c65992995b1c7816cb667de95799852e3fbed9d06f95855cbc512a0fd0\n"
+            "RUN echo fixture\n"
+        )
+        for authenticated in ("true", "false", ""):
+            path.write_text(original, encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, "-c", code], cwd=self.root, capture_output=True,
+                env={**os.environ, "DOCKERHUB_AUTHENTICATED": authenticated},
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            expected = original if authenticated == "true" else original.replace(
+                "FROM ", "FROM mirror.gcr.io/library/", 1
+            )
+            self.assertEqual(path.read_text(encoding="utf-8"), expected)
+        path.write_text("FROM rust:latest\n", encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, "-c", code], cwd=self.root, capture_output=True,
+            env={**os.environ, "DOCKERHUB_AUTHENTICATED": "true"},
+        )
+        self.assertNotEqual(result.returncode, 0)
 
 
 if __name__ == "__main__":

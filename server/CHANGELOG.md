@@ -10,6 +10,11 @@ for registry availability, digests and public signing instructions. The detailed
 - Support explicit `claude-haiku-5-5` requests by omitting temperature, including
   query expansion and structured completion. Legacy sampling and built-in tier
   defaults remain unchanged; select Haiku with `spec.models.fast` explicitly.
+- Add opt-in OpenRouter reasoning controls for exact model IDs, preserving
+  downstream routing restrictions and output ceilings. Omission keeps defaults.
+- Normalize echoed model-only repair envelopes before checking narrative answers
+  for ordinary and streamed session turns. Verification metadata from the model
+  remains untrusted; citation, quotation, usage and bounded-retry checks remain.
 - Add opt-in platform authority, enrolled governance attestations, bootstrap
   retirement, direct REST/gRPC mTLS and independent checkpoint fencing (#75).
 - Add protected decision/replay custody and governed Stage 2 action archives,

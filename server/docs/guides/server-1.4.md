@@ -10,7 +10,8 @@ See the [publication record](../../CONTAINER.md#versions-and-verification).
 
 The baseline is tag `v1.3.0`, source
 `eaa04ac6da25cb332b674c6535013a19b87fa0e7`. The merged changes below run through
-`7d4a4d8`, followed by this release preparation and Haiku compatibility fix.
+`7d4a4d8`, followed by release preparation, Haiku compatibility and the
+OpenRouter/session-answer fixes described below.
 
 | Change | Behavior and boundary |
 |---|---|
@@ -21,6 +22,7 @@ The baseline is tag `v1.3.0`, source
 | [#76](https://github.com/iokaio/munarium/pull/76) | Add governed Stage 2 action archives and lifecycle events with exact durable acknowledgements and bounded historical recovery. |
 | [#77](https://github.com/iokaio/munarium/pull/77) | Add the Server activation participant and atomic custody of participant receipts, Council transition archives and audit events. |
 | 1.4.0 preparation | Add Haiku 5.5 sampling compatibility; align source versions, generated API metadata and release/upgrade documentation. |
+| Provider and session compatibility | Add explicit OpenRouter reasoning controls and unwrap echoed model-only repair envelopes before deterministic answer checks, including streamed turns. |
 
 ### Claude Haiku 5.5
 
@@ -57,6 +59,24 @@ A runbook must permit that provider override. Verify `/v1/providers` reports
 the intended Fast model, then use a fresh session for a bounded question that
 exercises query expansion, retrieval and completion. Model availability and
 answer quality require actual provider evidence; fixture tests do not prove them.
+
+### OpenRouter and session answers
+
+`spec.openrouterReasoning` accepts an explicit `enabled` boolean per exact model
+ID. Omission preserves provider defaults. Configured requests require downstream
+parameter support and retain any `openrouterProvider` routing restrictions and
+the existing output ceiling. Upgrade all replicas before applying the additive
+configuration; older binaries ignore it. Qualify the requested control for each
+model before use. See [provider configuration](managing-key-and-secrets.md#openrouter-reasoning).
+
+Some models echo the model-only evidence envelope supplied with a corrective
+prompt. Session completion now extracts the answer from that reserved envelope
+before citation, quotation and assertion checks. This shared path covers normal
+turns and SSE turns. Model-declared verification is ignored; malformed reserved
+envelopes fail, while ordinary JSON answers retain their requested format.
+Provider token-exhaustion handling runs first, preserving bounded retries and
+usage progress events. These deterministic checks do not establish factual
+correctness or live model quality.
 
 ### Munarium Governance Platform
 

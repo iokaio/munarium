@@ -6,6 +6,86 @@ use serde_json::{json, Value};
 use std::sync::Mutex;
 
 #[tokio::test]
+async fn turn_answer_unwraps_model_evidence_and_preserves_usage() {
+    let invoke = |_: String, _: u32| async {
+        Ok(dto::CompleteResponse {
+            text: munarium_core::model_evidence::envelope(
+                "model_output",
+                Value::Null,
+                None,
+                json!({"answer":"The bell rang [archive/missing].", "unserved_citations":[]}),
+            )
+            .to_string(),
+            stop_reason: "stop".into(),
+            input_tokens: 23,
+            output_tokens: 17,
+            provider: "openrouter".into(),
+            model: "fixture/fast".into(),
+            invocation_event_id: None,
+        })
+    };
+    let result = complete_turn_answer(invoke, "fixture", 64, &None)
+        .await
+        .unwrap();
+    assert_eq!(result.response.text, "The bell rang [archive/missing].");
+    assert_eq!(
+        (result.input_tokens, result.output_tokens, result.attempt),
+        (23, 17, 0)
+    );
+    assert_eq!(
+        crate::verification::check_citations(&result.response.text, &[]),
+        vec!["archive/missing"]
+    );
+}
+
+#[tokio::test]
+async fn turn_answer_checks_exhaustion_before_repair_envelope() {
+    let calls = Mutex::new(Vec::new());
+    let invoke = |_: String, budget: u32| {
+        let attempt = {
+            let mut calls = calls.lock().unwrap();
+            calls.push(budget);
+            calls.len()
+        };
+        async move {
+            Ok(dto::CompleteResponse {
+                // A syntactically complete but unfinished reserved envelope
+                // must not suppress the provider's bounded exhaustion retry.
+                text: if attempt == 1 {
+                    r#"{"source_role":"model_output","content":{}}"#.into()
+                } else {
+                    "A completed answer.".into()
+                },
+                stop_reason: if attempt == 1 { "length" } else { "stop" }.into(),
+                input_tokens: 23,
+                output_tokens: 17,
+                provider: "openrouter".into(),
+                model: "fixture/fast".into(),
+                invocation_event_id: None,
+            })
+        }
+    };
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let result = complete_turn_answer(invoke, "fixture", 64, &Some(tx))
+        .await
+        .unwrap();
+    assert_eq!(result.response.text, "A completed answer.");
+    assert_eq!(*calls.lock().unwrap(), vec![64, 256]);
+    assert_eq!(
+        (result.input_tokens, result.output_tokens, result.attempt),
+        (46, 34, 1)
+    );
+    for expected in 0..=1 {
+        assert!(
+            matches!(rx.try_recv().unwrap(), dto::TurnProgressEvent::Completion {
+            attempt, input_tokens: 23, output_tokens: 17, ..
+        } if attempt == expected)
+        );
+    }
+    assert!(rx.try_recv().is_err());
+}
+
+#[tokio::test]
 async fn anthropic_turn_retry_preserves_usage_and_rejects_non_exhaustion() {
     let state =
         crate::providers_api::usage_tests::test_state_with_auth(None, AuthMode::Disabled).await;
@@ -301,7 +381,10 @@ async fn turn_retry_attempts_and_ceiling_are_bounded() {
             async move {
                 let index = { let mut calls = capture.lock().unwrap(); let n = calls.len(); calls.push(body); n };
                 let stop = if truncated && index == 0 { "length" } else { "stop" };
-                let text = if index <= usize::from(truncated) { "A fabricated \"quotation not in evidence\"." } else { "No quotation." };
+                let text = if index <= usize::from(truncated) { "A fabricated \"quotation not in evidence\".".to_owned() } else {
+                    munarium_core::model_evidence::envelope("model_output", Value::Null, None,
+                        json!({"answer":"No quotation.", "unresolved_quotes":[], "unserved_citations":[]})).to_string()
+                };
                 Json(json!({"done":true,"done_reason":stop,"message":{"role":"assistant","content":text},
                     "prompt_eval_count":2,"eval_count":1}))
             }
@@ -367,10 +450,16 @@ spec:
             );
         } else {
             let (response, _) = result.unwrap();
+            let completion = response.completion.unwrap();
             assert_eq!(
-                response.completion.unwrap().input_tokens,
-                if truncated { 6 } else { 4 }
+                completion.text, "No quotation.",
+                "Repair envelope must not reach the user"
             );
+            let verification = completion.verification.unwrap();
+            assert!(verification.violations.is_empty());
+            assert_eq!(verification.retries, 1);
+            assert!(!verification.first_pass_violations.is_empty());
+            assert_eq!(completion.input_tokens, if truncated { 6 } else { 4 });
             let expected = if truncated { vec![0, 1, 2] } else { vec![0, 1] };
             let mut attempts = Vec::new();
             while let Ok(event) = rx.try_recv() {

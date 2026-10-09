@@ -71,7 +71,7 @@ where
     let mut input_tokens = 0u64;
     let mut output_tokens = 0u64;
     for attempt in 0..=1 {
-        let response = complete(prompt.to_owned(), budget).await?;
+        let mut response = complete(prompt.to_owned(), budget).await?;
         input_tokens = input_tokens
             .checked_add(response.input_tokens)
             .ok_or_else(|| KernelError::Provider("completion usage overflow".into()))?;
@@ -89,6 +89,7 @@ where
             },
         );
         if !completion_truncated(&response)? {
+            response.text = crate::verification::narrative_answer(&response.text)?;
             return Ok(CompletedTurnAnswer {
                 response,
                 budget,
@@ -1413,7 +1414,7 @@ pub async fn op_turn(
                 // Corrective retries ride the current budget — raised when
                 // the truncation retry fired, so a reasoning model gets the
                 // same headroom for its repaired answer.
-                let retry = complete(
+                let mut retry = complete(
                     crate::verification::corrective_prompt(&prompt, &resp.text, &quotes, &cites),
                     budget,
                 )
@@ -1437,6 +1438,7 @@ pub async fn op_turn(
                     )
                     .into());
                 }
+                retry.text = crate::verification::narrative_answer(&retry.text)?;
                 resp = retry;
                 violations = run_checks(&resp.text);
                 emit(

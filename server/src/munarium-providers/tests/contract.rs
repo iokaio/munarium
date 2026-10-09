@@ -472,6 +472,63 @@ async fn configured_openrouter_route_is_explicit_and_legacy_routes_are_unchanged
 }
 
 #[tokio::test]
+async fn openrouter_reasoning_is_explicit_per_resolved_model() {
+    use munarium_providers::{build_provider, parse_provider_config};
+    let recorded = Arc::new(std::sync::Mutex::new(Vec::<serde_json::Value>::new()));
+    let sink = recorded.clone();
+    let app = Router::new().route("/chat/completions", post(move |Json(body): Json<serde_json::Value>| {
+        sink.lock().unwrap().push(body);
+        async { Json(serde_json::json!({"choices":[{"message":{"content":"fixture"},"finish_reason":"stop"}]})) }
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let mut doc = parse_provider_config(&format!("apiVersion: munarium.ioka.io/v1\nkind: ProviderConfig\nmetadata: {{name: fixture}}\nspec:\n  provider: openrouter\n  endpoint: {endpoint}\n  credentialRef: {{env: FIXTURE_KEY}}\n  openrouterReasoning:\n    fixture/fast: {{enabled: false}}\n    fixture/thinking: {{enabled: true}}\n")).unwrap();
+    doc.spec.credential_ref = Some(test_cred());
+    for route in [None, Some("fixture/vendor".to_owned())] {
+        doc.spec.openrouter_provider = route;
+        let provider = build_provider(&doc).unwrap();
+        for model in ["fixture/fast", "fixture/thinking", "fixture/unspecified"] {
+            provider
+                .complete(CompletionRequest {
+                    model: model.into(),
+                    system: None,
+                    prompt: "fixture".into(),
+                    max_tokens: 64,
+                    temperature: None,
+                    tools: None,
+                })
+                .await
+                .unwrap();
+        }
+    }
+    let calls = recorded.lock().unwrap();
+    assert_eq!(calls.len(), 6);
+    for (index, body) in calls.iter().enumerate() {
+        match index % 3 {
+            0 => assert_eq!(body["reasoning"], serde_json::json!({"enabled":false})),
+            1 => assert_eq!(body["reasoning"], serde_json::json!({"enabled":true})),
+            _ => assert!(body.get("reasoning").is_none()),
+        }
+        assert_eq!(body["max_tokens"], 64);
+        if index >= 3 {
+            assert_eq!(
+                body["provider"],
+                serde_json::json!({"only":["fixture/vendor"],"allow_fallbacks":false,"require_parameters":true,"data_collection":"deny"})
+            );
+        } else if index < 2 {
+            assert_eq!(
+                body["provider"],
+                serde_json::json!({"require_parameters":true})
+            );
+        } else {
+            assert!(body.get("provider").is_none());
+        }
+    }
+    server.abort();
+}
+
+#[tokio::test]
 async fn anthropic_messages_dialect() {
     let (base, _) = spawn_mock().await;
     let p = AnthropicProvider::new(Some(&base), test_cred());

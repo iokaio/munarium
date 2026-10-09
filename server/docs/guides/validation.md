@@ -64,6 +64,48 @@ mTLS REST/gRPC tests against the built binary. Existing catalog commands and
 other jobs are unchanged. Negative controls reject removing the new triggers,
 disabling the job, or skipping its authority and live-transport tests.
 
+The October 2026 registry audit adds authenticated Docker Hub pulls with a public
+mirror fallback for the two Server CI services, client conformance and the
+independent `cargo-deny` action. To opt in, set repository Actions secrets
+`DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (a token with public-repository read
+permission), then set the Actions variable `DOCKERHUB_AUTHENTICATED_PULLS=true`.
+Service credentials are supplied before the PostgreSQL pull. The scanner logs
+in using password stdin before its local action build, then logs out in an
+always-running cleanup step. No credential is embedded in a command argument.
+Missing/invalid credentials on an opted-in trusted run fail rather than silently
+hiding a broken configuration.
+
+Fork PRs, Dependabot and repositories without the opt-in variable use
+`mirror.gcr.io` with an empty credentials mapping. These paths do not require
+repository secrets. The same trust condition selects both registry and
+credentials, so Docker Hub secrets are never sent to the mirror.
+The entire mapping is conditional: GitHub rejects empty username/password
+values before starting a job. Authenticated values are JSON-escaped before
+constructing the mapping; the public branch supplies `{}` with neither key.
+The registry regression controls reject the former empty-value shape in all
+three services. Hosted runs are still required to validate runner evaluation.
+The pgvector PostgreSQL 16 index remains pinned to the same digest
+`sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b`;
+its manifest identity and a local pull/start were verified. The independent
+`cargo-deny` job checks out its original action commit, asserts the original
+Dockerfile base, and changes only that base's registry prefix when using the
+mirror. The Rust base digest, action entrypoint, scanner version and all-features
+arguments remain unchanged. The local-action build occurs after this check,
+avoiding the remote Docker action's pre-step anonymous Docker Hub pull.
+All triggers, path filters, permissions, service health checks, test commands,
+feature flags and independent jobs are retained. The catalog and baseline's
+historical source record are unchanged; only the audited orchestration hash
+changes. Regression controls reject removing the mirror or digest pin and
+require all three services to retain the reviewed image. They also reject
+weakening the action pin, base assertion, mirror, trust conditions, credential
+handling, logout or actual scanner invocation. Hosted trusted runs verify real
+authentication; the no-secret/fork conditions have static regression coverage.
+
+The [Google cache](https://docs.cloud.google.com/artifact-registry/docs/pull-cached-dockerhub-images)
+can evict an image. A missing pinned image must fail CI and requires an audited
+source update; do not substitute a floating tag or skip database coverage.
+Local runners continue to accept the existing Docker Hub image at that digest.
+
 The baseline is review evidence, never a second execution source. Intentional
 future coverage changes must update it after reviewing old/new commands and
 prerequisites; do not regenerate it merely to clear a failure. Its exact text

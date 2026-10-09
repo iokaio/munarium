@@ -197,7 +197,9 @@ jobs:
       contents: read
     services:
       postgres:
-        image: pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
+        image: ${{ vars.DOCKERHUB_AUTHENTICATED_PULLS == 'true' && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b' || 'mirror.gcr.io/pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b' }}
+        credentials: >-
+          ${{ fromJSON(vars.DOCKERHUB_AUTHENTICATED_PULLS == 'true' && github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && format('{{"username":{0},"password":{1}}}', toJSON(secrets.DOCKERHUB_USERNAME || 'missing-dockerhub-username'), toJSON(secrets.DOCKERHUB_TOKEN || 'missing-dockerhub-token')) || '{}') }}
         env:
           POSTGRES_USER: munarium
           POSTGRES_PASSWORD: munarium-dev

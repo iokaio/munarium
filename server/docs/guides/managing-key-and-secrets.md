@@ -97,6 +97,31 @@ an invalid response authoritative. Older binaries ignore this additive policy,
 so activate it only after all replicas have upgraded and retain a compatible
 binary if relying on refusal behavior during rollback.
 
+### OpenRouter reasoning
+
+On a Server containing this policy, `spec.openrouterReasoning` controls reasoning
+by exact resolved model ID. For a model qualified to support disabling reasoning:
+
+```yaml
+openrouterReasoning:
+  fictional/fast-model: { enabled: false }
+```
+
+Omitted model entries preserve provider defaults. Explicit entries send
+`reasoning.enabled` and require downstream parameter support, preserving any
+`openrouterProvider` routing restrictions. These controls apply to expansion,
+answers and repairs using that model; they never increase the token ceiling.
+Reasoning can consume the entire output budget without producing visible text.
+Changing the model requires reviewing its exact policy entry and support for
+the requested setting. See [OpenRouter reasoning controls](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens).
+Upgrade all Server replicas before applying this additive policy; older binaries
+ignore it. A configuration or mock test does not qualify live model quality or latency.
+
+Session answers that echo the reserved model-only repair envelope are unwrapped
+before citation and quotation checks. Model-declared verification metadata is
+ignored. Those deterministic checks establish citation membership and quoted-text
+matches, not factual correctness or retrieval relevance.
+
 ### Claude effort and thinking
 
 On a Server containing the Claude policy support, `spec.anthropic.models`
