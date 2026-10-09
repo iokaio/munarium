@@ -3,6 +3,7 @@
 
 import copy
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -255,6 +256,11 @@ class CatalogTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 check(workflow, broken, baseline)
         for old, new in (
+            ("image: mirror.gcr.io/pgvector/pgvector:", "image: pgvector/pgvector:"),
+            (
+                "@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b",
+                "",
+            ),
             ("branches: [main]", "branches: [other]"),
             ("runs-on: ubuntu-latest", "runs-on: other"),
             ("contents: read", "contents: write"),
@@ -296,6 +302,21 @@ class CatalogTests(unittest.TestCase):
             self.assertIn(old, workflow)
             with self.assertRaises(ValueError):
                 check(workflow.replace(old, new, 1), catalog, baseline)
+
+    def test_ci_postgres_services_keep_the_reviewed_image(self):
+        # All three jobs need the same pgvector bytes, with no registry secret
+        # required for a fork PR. A mutable tag is not an equivalent replacement.
+        image = (
+            "mirror.gcr.io/pgvector/pgvector:pg16@sha256:"
+            "ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b"
+        )
+        for name, count in (("server-ci.yml", 2), ("clients-ci.yml", 1)):
+            workflow = (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
+            self.assertEqual(
+                re.findall(r"^        image: (\S+)$", workflow, re.MULTILINE),
+                [image] * count,
+                name,
+            )
 
 
 if __name__ == "__main__":
