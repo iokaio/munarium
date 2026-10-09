@@ -338,7 +338,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+      - name: checkout pinned cargo-deny action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: EmbarkStudios/cargo-deny-action
+          ref: 3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+          path: .ci-cargo-deny
+          persist-credentials: false
+      - name: use the identical cargo-deny base from the public mirror
+        working-directory: .
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.ci-cargo-deny/Dockerfile')
+          original = path.read_text(encoding='utf-8')
+          base = 'FROM rust:1.85.0-alpine3.20@sha256:f0cef6c65992995b1c7816cb667de95799852e3fbed9d06f95855cbc512a0fd0\n'
+          assert original.startswith(base), 'Pinned action base changed; review required'
+          path.write_text(original.replace(base, base.replace('FROM ', 'FROM mirror.gcr.io/library/'), 1), encoding='utf-8')
+          PY
+      - uses: ./.ci-cargo-deny
         with:
           manifest-path: server/Cargo.toml
           # --all-features so the OPTIONAL vector-diskann graph (diskann and

@@ -257,6 +257,10 @@ class CatalogTests(unittest.TestCase):
                 check(workflow, broken, baseline)
         for old, new in (
             ("image: mirror.gcr.io/pgvector/pgvector:", "image: pgvector/pgvector:"),
+            ("FROM mirror.gcr.io/library/", "FROM "),
+            ("assert original.startswith(base)", "assert True"),
+            ("ref: 3c6349835b2b7b196a839186cb8b78e02f7b5f25", "ref: main"),
+            ("uses: ./.ci-cargo-deny", "run: echo skipped"),
             (
                 "@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b",
                 "",

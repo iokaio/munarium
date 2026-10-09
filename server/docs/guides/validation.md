@@ -68,13 +68,19 @@ The October 2026 PostgreSQL pull audit changes only the registry prefix for the
 two Server CI services and the client conformance service to `mirror.gcr.io`.
 The pgvector PostgreSQL 16 index remains pinned to the same digest
 `sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b`;
-its manifest identity and a local pull/start were verified. This avoids the
+its manifest identity and a local pull/start were verified. The independent
+`cargo-deny` job checks out its original action commit, asserts the original
+Dockerfile base, and changes only that base's registry prefix to the same public
+mirror. The Rust base digest, action entrypoint, scanner version and all-features
+arguments remain unchanged. The local-action build occurs after this check,
+avoiding the remote Docker action's pre-step Docker Hub pull. This avoids the
 Docker Hub anonymous pull limit without giving PR jobs registry credentials.
 All triggers, path filters, permissions, service health checks, test commands,
 feature flags and independent jobs are retained. The catalog and baseline's
 historical source record are unchanged; only the audited orchestration hash
 changes. Regression controls reject removing the mirror or digest pin and
-require all three services to retain the reviewed image.
+require all three services to retain the reviewed image. They also reject
+weakening the action pin, base assertion, mirror or actual scanner invocation.
 
 The [Google cache](https://docs.cloud.google.com/artifact-registry/docs/pull-cached-dockerhub-images)
 can evict an image. A missing pinned image must fail CI and requires an audited
