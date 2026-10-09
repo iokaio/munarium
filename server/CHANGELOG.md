@@ -5,6 +5,28 @@ for registry availability, digests and public signing instructions. The detailed
 [Server 1.3.0 release notes](docs/guides/release-notes-1.3.0.md) cover every PR since
 1.2.1 and the subsequent image publication.
 
+## 1.4.0 — unreleased
+
+- Support explicit `claude-haiku-5-5` requests by omitting temperature, including
+  query expansion and structured completion. Legacy sampling and built-in tier
+  defaults remain unchanged; select Haiku with `spec.models.fast` explicitly.
+- Add opt-in platform authority, enrolled governance attestations, bootstrap
+  retirement, direct REST/gRPC mTLS and independent checkpoint fencing (#75).
+- Add protected decision/replay custody and governed Stage 2 action archives,
+  lifecycle records, exact acknowledgements and bounded recovery permits (#75–76).
+- Add a Server activation participant that independently checks Council, Gate
+  and Registry evidence and commits its receipt, transition archive and audit
+  event atomically. Activation does not enable execution (#77).
+- Add migrations 0041–0042. Unenrolled deployments retain legacy defaults;
+  platform mode supports one Server replica and remains experimental. Proposed
+  contracts are not human acceptance or production/effect/restore qualification.
+- Prepare Server/mmctl and SDK source versions 1.4.0, with SDK target range
+  1.4/1.3. Matrix is maintained separately. Image and package publication remain
+  separate actions; installation defaults stay on published Server 1.3.0.
+
+See [release, testing and deployment preparation](docs/guides/server-1.4.md)
+for the complete source range, upgrade requirements and qualification gaps.
+
 ## 1.3.0 — 2026-09-26
 
 Published for Linux AMD64 and ARM64. See the [container record](CONTAINER.md#versions-and-verification)

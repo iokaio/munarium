@@ -18,7 +18,7 @@ Use **Server** for document search, grounded chat and a governed fact ledger. Ad
 immutable file exports. The separate [Munarium Demo](https://github.com/iokaio/munarium-demo)
 provides six working applications and bundled datasets for evaluation.
 
-**Source versions:** Server **1.3.0** and Server client libraries **1.3.0
+**Source versions:** Server **1.4.0 (unreleased)** and Server client libraries **1.4.0
 (unreleased)**. Matrix and its clients publish on their own cadence from
 [iokaio/munarium-matrix](https://github.com/iokaio/munarium-matrix).
 Server 1.2 adds configurable collection vocabularies, checked
@@ -37,6 +37,10 @@ records publication and qualification. Client libraries are published on
 [publication record](server/CONTAINER.md#versions-and-verification) and
 [client installation guide](clients/README.md#installation-and-publication)
 for the four Server package links and available versions.
+
+Server **1.4.0 source preparation** adds Haiku 5.5 compatibility and experimental
+Governance Platform support. See the [release and upgrade guide](server/docs/guides/server-1.4.md).
+The published installation image remains 1.3.0.
 
 ## Guides
 
@@ -59,7 +63,7 @@ for the four Server package links and available versions.
 
 ## Run with Docker
 
-The examples below use the published **1.3.0** image. For Server 1.3 development,
+The examples below use the published **1.3.0** image. For Server 1.4 development,
 see the [source build instructions](server/CONTAINER.md#building-from-source).
 
 The public [iokaio/munarium image on Docker Hub](https://hub.docker.com/r/iokaio/munarium)

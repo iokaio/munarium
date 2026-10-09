@@ -74,7 +74,7 @@ impl AnthropicPolicy {
     /// when an internal structured task requested deterministic temperature 0.
     pub fn prepare(&self, request: &mut CompletionRequest) -> Result<()> {
         self.validate()?;
-        if qualified(&request.model) {
+        if qualified(&request.model) || request.model == "claude-haiku-5-5" {
             request.temperature = None;
         }
         Ok(())
