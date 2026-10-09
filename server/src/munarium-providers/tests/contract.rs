@@ -162,16 +162,19 @@ async fn anthropic_controls_preserve_schema_budget_legacy_models_and_request_ide
     let _cred = test_cred();
     let schema = serde_json::json!({"type":"object","properties":{},"additionalProperties":false});
     let mut hashes = Vec::new();
+    let models = [
+        "claude-sonnet-5",
+        "claude-fable-5-1",
+        "claude-sonnet-5-20260630",
+        "claude-haiku-4-5",
+        "claude-haiku-5-5",
+        "claude-haiku-5-50",
+        "custom-model",
+    ];
     for effort in ["low", "high"] {
         let doc = parse_provider_config(&format!("apiVersion: munarium.ioka.io/v1\nkind: ProviderConfig\nmetadata: {{name: fixture}}\nspec:\n  provider: anthropic\n  endpoint: {endpoint}\n  credentialRef: {{env: MUNARIUM_TEST_PROVIDER_KEY}}\n  anthropic:\n    models:\n      claude-sonnet-5: {{effort: {effort}, thinking: adaptive}}\n      claude-fable-5-1: {{effort: high}}\n")).unwrap();
         let provider = build_provider(&doc).unwrap();
-        for model in [
-            "claude-sonnet-5",
-            "claude-fable-5-1",
-            "claude-sonnet-5-20260630",
-            "claude-haiku-4-5",
-            "custom-model",
-        ] {
+        for model in models {
             let request = || CompletionRequest {
                 model: model.into(),
                 system: None,
@@ -197,7 +200,10 @@ async fn anthropic_controls_preserve_schema_budget_legacy_models_and_request_ide
         assert_eq!(body["max_tokens"], 64);
         assert_eq!(
             body.get("temperature").is_some(),
-            matches!(model, "claude-haiku-4-5" | "custom-model")
+            matches!(
+                model,
+                "claude-haiku-4-5" | "claude-haiku-5-50" | "custom-model"
+            )
         );
         if index % 2 == 0 {
             assert_eq!(body["output_config"]["format"]["schema"], schema);
@@ -208,7 +214,11 @@ async fn anthropic_controls_preserve_schema_budget_legacy_models_and_request_ide
             assert_eq!(body["thinking"]["type"], "adaptive");
             assert_eq!(
                 body["output_config"]["effort"],
-                if index < 10 { "low" } else { "high" }
+                if index < models.len() * 2 {
+                    "low"
+                } else {
+                    "high"
+                }
             );
         } else if model == "claude-fable-5-1" {
             assert_eq!(body["output_config"]["effort"], "high");

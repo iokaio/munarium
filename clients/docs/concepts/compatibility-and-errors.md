@@ -6,14 +6,16 @@ authoritative, machine-readable answer, and this page is the short prose explana
 
 ## Compatibility
 
-The current source Server target is **1.3.0**, with declared minor versions
-**1.3 and 1.2** for release qualification. Published packages retain their
-historical metadata; see the [1.3 release guide](../../../server/docs/guides/server-1.3.md).
-All seven client source packages are **1.1.1**; Matrix clients support
-Matrix **1.0** independently. See [installation and publication](../../README.md#installation-and-publication)
+The current source Server target is **1.4.0**, with declared minor versions
+**1.4 and 1.3** for release qualification. Published packages retain their
+historical metadata; see the [1.4 release guide](../../../server/docs/guides/server-1.4.md).
+All four Server client source packages are **1.4.0 (unreleased)**. Matrix client
+compatibility is maintained in its separate repository. See [installation and publication](../../README.md#installation-and-publication)
 for available registry versions and package links. The complete `ServerApiClient`
-requires Server 1.2, and its collection-query and publication-governance operations
-require 1.2.1; see the [Server 1.2 guide](../guides/server-1.2.md). The existing typed
+includes operations introduced in Server 1.2 and collection-query and
+publication-governance operations introduced in 1.2.1; see the
+[Server 1.2 guide](../guides/server-1.2.md). New platform operations require
+Server 1.4 and its enrolled platform profile. The existing typed
 planes retain their Server 1.1 baseline. Ollama requires Server 1.1, and applying a
 session override to query expansion as well as completion requires Server 1.1.1.
 The [1.1.1 alignment guide](../guides/server-1.1.1.md) records that older release.

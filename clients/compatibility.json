@@ -2,45 +2,45 @@
   "$comment": "The compatibility record for the Munarium client libraries. Generated and maintained by hand at release time. Update this file, never the historical notes in README.md, which are a dated changelog of what was true when they were written.",
   "policy": "Each Clients minor release supports the current Server minor and the one before it (N and N-1). A breaking MMP wire change bumps mmp_contract_major; Server serves both majors for one Server minor release so Clients can move without a flag day. Clients version independently of Server: a shared version number on a given release is a coincidence of that release, not a rule.",
   "mmp_contract_major": 1,
-  "updated": "2026-09-26",
-  "target_server": "1.3.0",
+  "updated": "2026-10-09",
+  "target_server": "1.4.0",
   "clients": {
     "rust": {
-      "version": "1.3.0",
+      "version": "1.4.0",
       "package": "munarium-client",
       "registry": "crates.io",
       "supported_server": [
-        "1.3",
-        "1.2"
+        "1.4",
+        "1.3"
       ]
     },
     "python": {
-      "version": "1.3.0",
+      "version": "1.4.0",
       "package": "munarium-client",
       "registry": "PyPI",
       "supported_server": [
-        "1.3",
-        "1.2"
+        "1.4",
+        "1.3"
       ]
     },
     "dotnet": {
-      "version": "1.3.0",
+      "version": "1.4.0",
       "package": "Ioka.Munarium.Client",
       "registry": "NuGet",
       "supported_server": [
-        "1.3",
-        "1.2"
+        "1.4",
+        "1.3"
       ]
     },
     "java": {
-      "version": "1.3.0",
+      "version": "1.4.0",
       "package": "io.ioka.munarium:munarium-client",
       "registry": "Maven Central",
       "supported_server": [
-        "1.3",
-        "1.2"
+        "1.4",
+        "1.3"
       ]
     }
   },
-  "note": "Server client source packages 1.3.0 target Server 1.3.0 with the declared N/N-1 range 1.3/1.2, pending release qualification and publication. Published 1.1.1 packages retain their qualified Server 1.2/1.1 range. Matrix client compatibility is maintained in iokaio/munarium-matrix. Rust client 1.3.0 requires munarium-proto and munarium-api-types 1.3.0; publish those wire crates before publishing the Rust client. Source versions do not establish registry availability; see the dated publication record in README.md."
+  "note": "Server client source packages 1.4.0 target Server 1.4.0 with the declared N/N-1 range 1.4/1.3, pending release qualification and publication. New platform operations require a Server implementing those operations and its enrolled platform profile; the compatibility range does not backport them to 1.3. Published packages retain their previously qualified ranges. Matrix client compatibility is maintained in iokaio/munarium-matrix. Publish munarium-proto and munarium-api-types 1.4.0 before Rust client 1.4.0. Source versions do not establish registry availability; see the dated publication record in README.md."
 }

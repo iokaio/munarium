@@ -101,7 +101,10 @@ binary if relying on refusal behavior during rollback.
 
 On a Server containing the Claude policy support, `spec.anthropic.models`
 selects controls by **exact resolved model ID**, including an explicit dated
-snapshot when used. The qualified families are Sonnet 5 and Fable 5.1:
+snapshot when used. Haiku 5.5 (`claude-haiku-5-5`) also omits sampling
+parameters, including the temperature requested by query expansion. Its thinking
+and effort use Anthropic defaults; this block does not configure Haiku controls.
+The qualified families for explicit controls are Sonnet 5 and Fable 5.1:
 
 ```yaml
 anthropic:
@@ -114,7 +117,7 @@ Effort accepts `low`, `medium`, `high`, `xhigh` and `max`. Thinking accepts
 `adaptive` or `disabled`. Fable 5.1 cannot disable thinking. Unknown models,
 fields, values and invalid
 combinations are rejected when applying the configuration. These controls are
-Anthropic-only; Haiku and other providers retain their existing request shape.
+Anthropic-only; legacy Haiku 4.5 and other providers retain their existing request shape.
 An omitted model entry or setting retains the provider's default. A model change
 requires reviewing its exact entry; settings do not follow tier names implicitly.
 
