@@ -39,6 +39,53 @@ async fn turn_answer_unwraps_model_evidence_and_preserves_usage() {
 }
 
 #[tokio::test]
+async fn turn_answer_checks_exhaustion_before_repair_envelope() {
+    let calls = Mutex::new(Vec::new());
+    let invoke = |_: String, budget: u32| {
+        let attempt = {
+            let mut calls = calls.lock().unwrap();
+            calls.push(budget);
+            calls.len()
+        };
+        async move {
+            Ok(dto::CompleteResponse {
+                // A syntactically complete but unfinished reserved envelope
+                // must not suppress the provider's bounded exhaustion retry.
+                text: if attempt == 1 {
+                    r#"{"source_role":"model_output","content":{}}"#.into()
+                } else {
+                    "A completed answer.".into()
+                },
+                stop_reason: if attempt == 1 { "length" } else { "stop" }.into(),
+                input_tokens: 23,
+                output_tokens: 17,
+                provider: "openrouter".into(),
+                model: "fixture/fast".into(),
+                invocation_event_id: None,
+            })
+        }
+    };
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let result = complete_turn_answer(invoke, "fixture", 64, &Some(tx))
+        .await
+        .unwrap();
+    assert_eq!(result.response.text, "A completed answer.");
+    assert_eq!(*calls.lock().unwrap(), vec![64, 256]);
+    assert_eq!(
+        (result.input_tokens, result.output_tokens, result.attempt),
+        (46, 34, 1)
+    );
+    for expected in 0..=1 {
+        assert!(
+            matches!(rx.try_recv().unwrap(), dto::TurnProgressEvent::Completion {
+            attempt, input_tokens: 23, output_tokens: 17, ..
+        } if attempt == expected)
+        );
+    }
+    assert!(rx.try_recv().is_err());
+}
+
+#[tokio::test]
 async fn anthropic_turn_retry_preserves_usage_and_rejects_non_exhaustion() {
     let state =
         crate::providers_api::usage_tests::test_state_with_auth(None, AuthMode::Disabled).await;

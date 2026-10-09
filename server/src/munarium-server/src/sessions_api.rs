@@ -72,7 +72,6 @@ where
     let mut output_tokens = 0u64;
     for attempt in 0..=1 {
         let mut response = complete(prompt.to_owned(), budget).await?;
-        response.text = crate::verification::narrative_answer(&response.text)?;
         input_tokens = input_tokens
             .checked_add(response.input_tokens)
             .ok_or_else(|| KernelError::Provider("completion usage overflow".into()))?;
@@ -90,6 +89,7 @@ where
             },
         );
         if !completion_truncated(&response)? {
+            response.text = crate::verification::narrative_answer(&response.text)?;
             return Ok(CompletedTurnAnswer {
                 response,
                 budget,
@@ -1419,7 +1419,6 @@ pub async fn op_turn(
                     budget,
                 )
                 .await?;
-                retry.text = crate::verification::narrative_answer(&retry.text)?;
                 completion_attempt += 1;
                 total_in += retry.input_tokens;
                 total_out += retry.output_tokens;
@@ -1439,6 +1438,7 @@ pub async fn op_turn(
                     )
                     .into());
                 }
+                retry.text = crate::verification::narrative_answer(&retry.text)?;
                 resp = retry;
                 violations = run_checks(&resp.text);
                 emit(

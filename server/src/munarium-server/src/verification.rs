@@ -196,6 +196,18 @@ mod tests {
         invalid["approval_authority"] = false.into();
         invalid["content"]["answer"] = serde_json::Value::Null;
         assert!(narrative_answer(&invalid.to_string()).is_err());
+        for (key, value) in [
+            ("execution_authority", serde_json::json!(true)),
+            ("historical_pin", serde_json::json!(42)),
+            ("citation_id", serde_json::json!("archive/served")),
+            ("content", serde_json::json!({"answer":"  "})),
+        ] {
+            let mut invalid: serde_json::Value = serde_json::from_str(&output).unwrap();
+            invalid[key] = value;
+            assert!(narrative_answer(&invalid.to_string()).is_err(), "{key}");
+        }
+        let previous = output.replace("model_output", "previous_model_output");
+        assert_eq!(narrative_answer(&previous).unwrap(), answer);
     }
 
     #[test]
