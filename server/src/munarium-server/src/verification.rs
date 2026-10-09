@@ -25,6 +25,45 @@
 /// original checks used the same idea: only substantial spans must resolve.
 const MIN_QUOTE_CHARS: usize = 15;
 
+/// Recover prose when a model echoes our model-only repair envelope. Only
+/// this reserved shape is unwrapped; ordinary JSON answers remain unchanged.
+/// Metadata emitted by a model never establishes verification or authority.
+pub fn narrative_answer(text: &str) -> munarium_core::Result<String> {
+    let trimmed = text.trim();
+    let candidate = trimmed
+        .strip_prefix("```json\n")
+        .or_else(|| trimmed.strip_prefix("```\n"))
+        .and_then(|s| s.strip_suffix("```"))
+        .unwrap_or(trimmed);
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(candidate) else {
+        return Ok(text.to_owned());
+    };
+    if !matches!(
+        value["source_role"].as_str(),
+        Some("model_output" | "previous_model_output")
+    ) {
+        return Ok(text.to_owned());
+    }
+    let answer = value["content"]["answer"]
+        .as_str()
+        .filter(|s| !s.trim().is_empty());
+    if value["execution_authority"] != false
+        || value["approval_authority"] != false
+        || !value
+            .get("historical_pin")
+            .is_some_and(serde_json::Value::is_null)
+        || !value
+            .get("citation_id")
+            .is_some_and(serde_json::Value::is_null)
+        || answer.is_none()
+    {
+        return Err(munarium_core::KernelError::Provider(
+            "completion returned an invalid model-only evidence envelope".into(),
+        ));
+    }
+    Ok(answer.unwrap_or_default().to_owned())
+}
+
 fn normalize_ws(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
@@ -125,12 +164,50 @@ pub fn corrective_prompt(
     ).to_string());
     out.push_str("\n\n--- Original task, with the provided context ---\n");
     out.push_str(original_prompt);
+    out.push_str("\n\nReturn only the revised answer in the format requested by the original task. \
+        Do not reproduce the evidence envelope, source_role, authority flags, or verification bookkeeping. \
+        Those fields describe input data, not the requested answer format.\n");
     out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repair_envelope_yields_prose_without_trusting_model_verification() {
+        let output = munarium_core::model_evidence::envelope(
+            "model_output", serde_json::Value::Null, None,
+            serde_json::json!({"answer":"The bell rang [archive/missing].", "unresolved_quotes":[], "unserved_citations":[]}),
+        ).to_string();
+        let answer = narrative_answer(&output).unwrap();
+        assert_eq!(answer, "The bell rang [archive/missing].");
+        assert_eq!(
+            check_citations(&answer, &["archive/served"]),
+            vec!["archive/missing"]
+        );
+        assert_eq!(
+            narrative_answer(&format!("```json\n{output}\n```")).unwrap(),
+            answer
+        );
+        let mut invalid: serde_json::Value = serde_json::from_str(&output).unwrap();
+        invalid["approval_authority"] = true.into();
+        assert!(narrative_answer(&invalid.to_string()).is_err());
+        invalid["approval_authority"] = false.into();
+        invalid["content"]["answer"] = serde_json::Value::Null;
+        assert!(narrative_answer(&invalid.to_string()).is_err());
+    }
+
+    #[test]
+    fn ordinary_json_and_prose_are_not_reinterpreted_as_envelopes() {
+        for answer in [
+            "A plain answer.",
+            r#"{"answer":"Requested JSON", "verified":true}"#,
+            "{partial",
+        ] {
+            assert_eq!(narrative_answer(answer).unwrap(), answer);
+        }
+    }
 
     #[test]
     fn quotes_resolve_whitespace_normalized_and_short_spans_pass() {

@@ -87,6 +87,13 @@ pub struct ProviderSpec {
         skip_serializing_if = "Option::is_none"
     )]
     pub openrouter_provider: Option<String>,
+    /// Opt-in reasoning controls keyed by exact OpenRouter model ID.
+    #[serde(
+        default,
+        rename = "openrouterReasoning",
+        skip_serializing_if = "std::collections::BTreeMap::is_empty"
+    )]
+    pub openrouter_reasoning: std::collections::BTreeMap<String, OpenRouterReasoning>,
     /// Native structured-output policy. Omitted preserves existing requests.
     #[serde(default, rename = "structuredOutput")]
     pub structured_output: StructuredOutputPolicy,
@@ -112,6 +119,13 @@ pub struct ProviderModels {
     /// Optional per-config override of the built-in "frontier" tier model.
     #[serde(default)]
     pub frontier: Option<String>,
+}
+
+/// An explicit choice, never inferred from a tier or a model-name substring.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpenRouterReasoning {
+    pub enabled: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
@@ -233,6 +247,7 @@ pub fn default_config_doc(provider: &str) -> Option<ProviderConfigDoc> {
             models: ProviderModels::default(),
             credential_ref: Some(CredentialRef::Env { env: env.into() }),
             openrouter_provider: None,
+            openrouter_reasoning: Default::default(),
             structured_output: StructuredOutputPolicy::default(),
             anthropic: None,
             budgets: Budgets::default(),
@@ -368,6 +383,16 @@ pub fn parse_provider_config(yaml: &str) -> std::result::Result<ProviderConfigDo
         {
             return Err("openrouterProvider requires one valid downstream slug on an OpenRouter configuration".into());
         }
+    }
+    if !doc.spec.openrouter_reasoning.is_empty()
+        && (doc.spec.provider != "openrouter"
+            || doc.spec.openrouter_reasoning.keys().any(|model| {
+                model.is_empty() || model.len() > 200 || model.chars().any(char::is_whitespace)
+            }))
+    {
+        return Err(
+            "openrouterReasoning requires exact model IDs on an OpenRouter configuration".into(),
+        );
     }
     match doc.spec.provider.as_str() {
         "anthropic" | "openai" | "openrouter" => {
@@ -801,6 +826,7 @@ pub struct OpenAiProvider {
     pub extra_headers: Vec<(String, String)>,
     pub provider_id: ProviderId,
     pub downstream_provider: Option<String>,
+    pub reasoning: std::collections::BTreeMap<String, OpenRouterReasoning>,
     output_schema: Option<serde_json::Value>,
     http: reqwest::Client,
 }
@@ -816,6 +842,7 @@ impl OpenAiProvider {
             extra_headers: Vec::new(),
             provider_id: ProviderId::Openai,
             downstream_provider: None,
+            reasoning: Default::default(),
             output_schema: None,
             http: http_client(),
         }
@@ -834,6 +861,7 @@ impl OpenAiProvider {
             ],
             provider_id: ProviderId::Openrouter,
             downstream_provider: None,
+            reasoning: Default::default(),
             output_schema: None,
             http: http_client(),
         }
@@ -972,6 +1000,17 @@ impl ModelProvider for OpenAiProvider {
         if let Some(slug) = &self.downstream_provider {
             body["provider"] = serde_json::json!({"only":[slug],"allow_fallbacks":false,"require_parameters":true,"data_collection":"deny"});
         }
+        if self.provider_id == ProviderId::Openrouter {
+            if let Some(reasoning) = self.reasoning.get(&req.model) {
+                body["reasoning"] = serde_json::json!({"enabled": reasoning.enabled});
+                // Do not silently route a requested control to an endpoint
+                // that ignores it. Preserve any explicit downstream policy.
+                if body.get("provider").is_none() {
+                    body["provider"] = serde_json::json!({});
+                }
+                body["provider"]["require_parameters"] = serde_json::json!(true);
+            }
+        }
         if let Some(t) = req.temperature {
             body["temperature"] = serde_json::json!(t);
         }
@@ -1062,6 +1101,7 @@ pub fn build_provider(doc: &ProviderConfigDoc) -> Result<Box<dyn ModelProvider>>
         "openrouter" => {
             let mut provider = OpenAiProvider::openrouter(endpoint, cred);
             provider.downstream_provider = doc.spec.openrouter_provider.clone();
+            provider.reasoning = doc.spec.openrouter_reasoning.clone();
             Box::new(provider)
         }
         "openai" => Box::new(OpenAiProvider::new(endpoint, cred)),
@@ -1094,6 +1134,27 @@ spec:
 
         let bad = yaml.replace("anthropic", "watsonx");
         assert!(parse_provider_config(&bad).is_err());
+    }
+
+    #[test]
+    fn openrouter_reasoning_config_rejects_ambiguous_controls() {
+        let yaml = "apiVersion: munarium.ioka.io/v1\nkind: ProviderConfig\nmetadata: {name: fixture}\nspec:\n  provider: openrouter\n  credentialRef: {env: FIXTURE_KEY}\n  openrouterReasoning:\n    fixture/fast: {enabled: false}\n";
+        assert!(parse_provider_config(yaml).is_ok());
+        for invalid in [
+            yaml.replace("provider: openrouter", "provider: openai"),
+            yaml.replace("fixture/fast:", "'':"),
+            yaml.replace("fixture/fast:", "'fixture/ fast':"),
+            yaml.replace("enabled: false", "effort: low"),
+            yaml.replace("enabled: false", "enabled: maybe"),
+            yaml.replace("enabled: false", "enabled: false, typo: true"),
+        ] {
+            assert!(parse_provider_config(&invalid).is_err(), "{invalid}");
+        }
+        assert!(default_config_doc("openrouter")
+            .unwrap()
+            .spec
+            .openrouter_reasoning
+            .is_empty());
     }
 
     #[test]
