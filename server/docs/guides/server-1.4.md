@@ -1,9 +1,9 @@
-# Server 1.4: release and upgrade preparation
+# Server 1.4: release and upgrade
 
-**1.4.0 is an unreleased source candidate**, containing Server and `mmctl`.
-The last published image remains **1.3.0**. This guide prepares review and
-qualification; it does not announce a tag, signed image, package publication,
-production deployment or human acceptance of the platform contracts.
+**1.4.0 was published on 2026-10-09**, containing Server and `mmctl` for Linux
+AMD64 and ARM64. The [release](https://github.com/iokaio/munarium/releases/tag/v1.4.0)
+records source `25012c22087fbaa8ce29ddd68d2880d6e9499b1c` and the signed image.
+SDK package publication and human acceptance of platform contracts remain separate.
 See the [publication record](../../CONTAINER.md#versions-and-verification).
 
 ## Changes since 1.3.0
@@ -157,8 +157,11 @@ An image-only downgrade to 1.3.0 is unsupported once migrations 0041–0042 exis
 Do not delete migration history. A restore must also reconcile independently
 retained authority and participant records before serving. Restoring both the
 database and checkpoint to old state cannot be detected by the checkpoint alone.
-Prefer a compatible roll-forward fix after authority activation. No 1.4.0
-backup/restore rehearsal or production rollback certification is claimed here.
+Prefer a compatible roll-forward fix after authority activation. A synthetic
+legacy-profile rehearsal passed 1.3.0 to 1.4.0 and restoration of the pre-upgrade
+backup into 1.3.0 before policy activation. Activated governance state also
+survived reopen and restoration into compatible 1.4.0. This does not qualify
+production restoration or Governance Platform checkpoint/participant recovery.
 
 ## Testing, documentation and CI
 
@@ -181,7 +184,7 @@ The PR records commands, results and unavailable checks on its actual head.
 Existing automatic workflows remain enabled: Server lint/test, independent
 platform authority, embedded datastore, dependency and Terraform checks;
 four-language clients/conformance; repository hygiene and DCO. CI permissions,
-signing/release controls and contract candidates are unchanged by this preparation.
+signing/release controls and contract candidates remain in force.
 After any fix or rebase, inspect the new head's complete checks. A previously
 green commit does not cover a different head.
 
@@ -213,8 +216,11 @@ green commit does not cover a different head.
    inputs and configuration. Observe health, version, admission, scoped model
    completion and persisted authority. Record the deployed revision and limits.
 
-The earlier private demo Haiku rollout used a patched 1.3-based image. Its model
-smoke does not establish that this 1.4.0 source, new migrations or Governance
-Platform additions have been deployed or release-qualified. No public 1.4.0
-image/tag, two-architecture acceptance, restore rehearsal or platform production
-qualification is asserted by this source-preparation PR.
+The published artifact passed all 12 required main-branch checks on its exact
+source, both-platform container and security checks, and real Ollama REST/gRPC
+completion, embeddings, retrieval and restart tests. The model suites passed
+again against both exact manifests pulled from Docker Hub. AMD64 ran natively;
+ARM64 ran under emulation. The signed candidate was promoted without rebuilding.
+See the [publication record](../../CONTAINER.md#versions-and-verification) for
+digests, verification and the synthetic restore scope. These results do not
+qualify every hosted model or a production Governance Platform deployment.

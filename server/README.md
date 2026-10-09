@@ -32,8 +32,8 @@ deterministically rebuilt under a pin; every retrieval answer carries a provenan
 
 ## About this repository
 
-The source version is **1.4.0 (unreleased)**; the last published image is
-**1.3.0**. The [1.4 release and upgrade guide](docs/guides/server-1.4.md) covers
+Server **1.4.0** is published for Linux AMD64 and ARM64. The
+[1.4 release and upgrade guide](docs/guides/server-1.4.md) covers
 Haiku 5.5 compatibility and the experimental Governance Platform additions. The detailed
 [1.3.0 release notes](docs/guides/release-notes-1.3.0.md) review all 42 PRs since
 1.2.1, the new APIs, compatibility and qualification limits.

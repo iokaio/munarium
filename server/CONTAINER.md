@@ -7,9 +7,9 @@ The image runs as a nonroot user. Server platforms are `linux/amd64` and
 
 ## Quick start
 
-These examples use the published **1.3.0** image. For source builds and 1.3
+These examples use the published **1.4.0** image. For source builds and 1.4
 upgrade requirements, see [building from source](#building-from-source) and the
-[1.3 release guide](docs/guides/server-1.3.md).
+[1.4 release guide](docs/guides/server-1.4.md).
 
 For an isolated, temporary evaluation from PowerShell:
 
@@ -18,7 +18,7 @@ docker run --rm --name munarium-evaluation `
   -p 127.0.0.1:8080:8080 -p 127.0.0.1:50051:50051 `
   -e MUNARIUM_STORE=memory -e MUNARIUM_AUTH_MODE=static `
   -e MUNARIUM_STATIC_TOKENS=evaluation-token:evaluation:rw `
-  iokaio/munarium:1.3.0
+  iokaio/munarium:1.4.0
 ```
 
 Open `http://127.0.0.1:8080/admin` or `/docs`. Check `/healthz`, `/readyz`,
@@ -78,16 +78,58 @@ The bundled client lists its commands with `docker exec <container> /mmctl`
 
 ## Versions and verification
 
-### Last published image: 1.3.0
+### Last published image: 1.4.0
 
-Published and verified on **2026-09-26**. `1.3.0` is immutable; `1.3` and `latest`
-may advance. Pin a verified digest for reproducible deployments. The candidate
+Published and verified on **2026-10-09**. `1.4.0` is immutable; `1.4` and `latest`
+may advance. Candidate `1.4.0-rc.1` was promoted without rebuilding. Earlier
+numeric tags retain their previous digests. Pin a verified digest for deployment.
+
+| Artifact | Identity |
+|---|---|
+| Server | `1.4.0`, `1.4`, `latest` on [Docker Hub](https://hub.docker.com/r/iokaio/munarium/tags) |
+| OCI index | `sha256:800a7b19cd3e2b82a3fb8f0b33e86e3f21fc3ea71ac12a81d6a9a18a816f556a` |
+| AMD64 manifest | `sha256:80891867b353c83025669d131b2ef7bce208a7e8f1d677f1ecb091b6e690b7c6` |
+| ARM64 manifest | `sha256:778981d8f0894f0b7d522c65f902fa93c36dfc87f4994333305b27fd22bc6897` |
+| Image and acceptance-suite source | [`25012c22087fbaa8ce29ddd68d2880d6e9499b1c`](https://github.com/iokaio/munarium/commit/25012c22087fbaa8ce29ddd68d2880d6e9499b1c), tagged [`v1.4.0`](https://github.com/iokaio/munarium/releases/tag/v1.4.0) |
+
+All 12 required main-branch checks passed on this exact source. Both platforms
+passed image audits, six container checks per architecture, and vulnerability
+and secret scans with no HIGH/CRITICAL vulnerability or secret findings. Real
+Ollama REST/gRPC completion, embeddings, retrieval, error/budget handling and
+restart persistence passed on local artifacts and exact registry-pulled manifests.
+AMD64 ran natively; ARM64 ran under emulation, not on physical ARM64 hardware.
+Cargo-inclusive SBOM and build provenance attestations accompany the index.
+
+A synthetic legacy-profile rehearsal preserved 1.3.0 data through upgrade to
+1.4.0 and restored the pre-upgrade backup into 1.3.0 before policy activation.
+Activated governance receipts, replay protection and source restrictions survived
+reopen and an actual database restore into compatible 1.4.0. This does not certify
+production recovery, independent platform checkpoints or participant reconciliation.
+Migrations 0041–0042 prevent an image-only downgrade; follow the
+[1.4 upgrade guide](docs/guides/server-1.4.md) and preserve independent authority.
+Governance Platform support remains experimental and does not grant execution.
+
+```console
+docker pull iokaio/munarium@sha256:800a7b19cd3e2b82a3fb8f0b33e86e3f21fc3ea71ac12a81d6a9a18a816f556a
+cosign verify --certificate-identity https://github.com/iokaio/munarium-int/.github/workflows/server-release.yml@refs/heads/release/server-1.4.0 --certificate-oidc-issuer https://token.actions.githubusercontent.com docker.io/iokaio/munarium@sha256:800a7b19cd3e2b82a3fb8f0b33e86e3f21fc3ea71ac12a81d6a9a18a816f556a
+```
+
+Signature, certificate identity and transparency-log claims were independently
+verified. Anonymous registry retrieval matched the index bytes and both platform
+digests. The certificate identity is public; verification does not require access
+to the signing repository. SDK packages are published separately.
+
+### Previous image: 1.3.0
+
+The following is the historical 1.3.0 record, published and verified on
+**2026-09-26**. `1.3.0` is immutable; `1.3` retains this release. `latest` now
+identifies 1.4.0. Pin a verified digest for reproducible deployments. The candidate
 `1.3.0-rc.1` was promoted without rebuilding. Earlier numeric tags, including
 the `1.2` alias, retain their previous digests.
 
 | Artifact | Identity |
 |---|---|
-| Server | `1.3.0`, `1.3`, `latest` on [Docker Hub](https://hub.docker.com/r/iokaio/munarium/tags) |
+| Server | `1.3.0`, `1.3` on [Docker Hub](https://hub.docker.com/r/iokaio/munarium/tags) |
 | OCI index | `sha256:55078aa474c214dd68d84bfe92d7c6ce2d696fad0f36cc5dd270b160d8c1ec4f` |
 | AMD64 manifest | `sha256:b88fe105781bb1ac477f91b7767b9c38d7ae1bca29c1150e6cc9590addca573e` |
 | ARM64 manifest | `sha256:540da00b6f87a27dea2c88e9ef231e59e494fc29e63fbff74f933798b29724db` |
@@ -131,7 +173,7 @@ publication does not publish the 1.2.0 SDK source packages.
 ### Previous image: 1.2.1
 
 The following is the historical 1.2.1 qualification record. `1.2.1` remains
-immutable, and `1.2` still identifies this release. `latest` now identifies 1.3.0.
+immutable, and `1.2` still identifies this release. `latest` now identifies 1.4.0.
 
 Published and verified on **2026-09-14**:
 
@@ -186,11 +228,12 @@ licenses. [License](https://github.com/iokaio/munarium/blob/main/LICENSE) and
 
 ## Building from source
 
-Source **1.4.0 is unreleased**. Published installation defaults above remain
-on 1.3.0. Build from a clean, recorded source commit whose Server workspace
+Source **1.4.0 is published**. To reproduce a local candidate, build from a
+clean, recorded source commit whose Server workspace
 version is 1.4.0. The OCI export below builds a candidate and does not push it. Use the
 [release checklist](docs/guides/server-1.4.md#build-and-release-checklist) before
-promotion to `1.4.0`, `1.4` or `latest`. The pinned compiler cross-compiles
+any future publication. Never overwrite the immutable published `1.4.0` tag.
+The pinned compiler cross-compiles
 both binaries and verifies their architecture and static linkage. A Buildx
 builder using the `docker-container` driver supports the OCI export and attestations:
 

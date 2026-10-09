@@ -5,7 +5,7 @@ for registry availability, digests and public signing instructions. The detailed
 [Server 1.3.0 release notes](docs/guides/release-notes-1.3.0.md) cover every PR since
 1.2.1 and the subsequent image publication.
 
-## 1.4.0 — unreleased
+## 1.4.0 — 2026-10-09
 
 - Support explicit `claude-haiku-5-5` requests by omitting temperature, including
   query expansion and structured completion. Legacy sampling and built-in tier
@@ -25,11 +25,11 @@ for registry availability, digests and public signing instructions. The detailed
 - Add migrations 0041–0042. Unenrolled deployments retain legacy defaults;
   platform mode supports one Server replica and remains experimental. Proposed
   contracts are not human acceptance or production/effect/restore qualification.
-- Prepare Server/mmctl and SDK source versions 1.4.0, with SDK target range
-  1.4/1.3. Matrix is maintained separately. Image and package publication remain
-  separate actions; installation defaults stay on published Server 1.3.0.
+- Publish Server/mmctl 1.4.0 for Linux AMD64 and ARM64 and update installation
+  defaults. SDK source versions are 1.4.0 with target range 1.4/1.3; SDK package
+  publication remains separate. Matrix is maintained independently.
 
-See [release, testing and deployment preparation](docs/guides/server-1.4.md)
+See [release, testing and deployment guidance](docs/guides/server-1.4.md)
 for the complete source range, upgrade requirements and qualification gaps.
 
 ## 1.3.0 — 2026-09-26

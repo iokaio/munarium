@@ -18,7 +18,7 @@ Use **Server** for document search, grounded chat and a governed fact ledger. Ad
 immutable file exports. The separate [Munarium Demo](https://github.com/iokaio/munarium-demo)
 provides six working applications and bundled datasets for evaluation.
 
-**Source versions:** Server **1.4.0 (unreleased)** and Server client libraries **1.4.0
+**Source versions:** Server **1.4.0** and Server client libraries **1.4.0
 (unreleased)**. Matrix and its clients publish on their own cadence from
 [iokaio/munarium-matrix](https://github.com/iokaio/munarium-matrix).
 Server 1.2 adds configurable collection vocabularies, checked
@@ -27,8 +27,8 @@ Server 1.3 adds durable command recovery, governance profiles, usage and monetar
 accounting, source retention, and provider controls. Read the detailed
 [Server 1.3.0 release notes](server/docs/guides/release-notes-1.3.0.md) for all
 42 PRs since 1.2.1, compatibility changes and upgrade guidance.
-Server **1.3.0** is published on Docker Hub; the
-[image release](https://github.com/iokaio/munarium/releases/tag/v1.3.0)
+Server **1.4.0** is published on Docker Hub; the
+[image release](https://github.com/iokaio/munarium/releases/tag/v1.4.0)
 records publication and qualification. Client libraries are published on
 [NuGet](https://www.nuget.org/packages/Ioka.Munarium.Client),
 [Maven Central](https://central.sonatype.com/artifact/io.ioka.munarium/munarium-client),
@@ -38,9 +38,9 @@ records publication and qualification. Client libraries are published on
 [client installation guide](clients/README.md#installation-and-publication)
 for the four Server package links and available versions.
 
-Server **1.4.0 source preparation** adds Haiku 5.5 compatibility and experimental
+Server **1.4.0** adds Haiku 5.5 compatibility and experimental
 Governance Platform support. See the [release and upgrade guide](server/docs/guides/server-1.4.md).
-The published installation image remains 1.3.0.
+It also includes OpenRouter reasoning controls and ordinary/streamed answer fixes.
 
 ## Guides
 
@@ -63,7 +63,7 @@ The published installation image remains 1.3.0.
 
 ## Run with Docker
 
-The examples below use the published **1.3.0** image. For Server 1.4 development,
+The examples below use the published **1.4.0** image. For local development,
 see the [source build instructions](server/CONTAINER.md#building-from-source).
 
 The public [iokaio/munarium image on Docker Hub](https://hub.docker.com/r/iokaio/munarium)
@@ -73,10 +73,10 @@ in Linux container mode. Matrix is deployed separately; see the
 [Matrix setup guide](https://github.com/iokaio/munarium-matrix#run-it).
 
 ```console
-docker pull iokaio/munarium:1.3.0
+docker pull iokaio/munarium:1.4.0
 ```
 
-`1.3.0` is immutable; `1.3` and `latest` can advance. Pin the verified digest
+`1.4.0` is immutable; `1.4` and `latest` can advance. Pin the verified digest
 for reproducible deployments.
 
 The image includes license notices, SBOM and build provenance attestations.
@@ -88,7 +88,7 @@ for image digests and public signing instructions. There is no trial key or time
 Run this single-line command in PowerShell or a Unix shell:
 
 ```console
-docker run --rm --name munarium-evaluation -p 127.0.0.1:8080:8080 -p 127.0.0.1:50051:50051 -e MUNARIUM_STORE=memory -e MUNARIUM_SOURCE_STORE=mem -e MUNARIUM_AUTH_MODE=static -e MUNARIUM_STATIC_TOKENS=evaluation-token:evaluation:rw iokaio/munarium:1.3.0
+docker run --rm --name munarium-evaluation -p 127.0.0.1:8080:8080 -p 127.0.0.1:50051:50051 -e MUNARIUM_STORE=memory -e MUNARIUM_SOURCE_STORE=mem -e MUNARIUM_AUTH_MODE=static -e MUNARIUM_STATIC_TOKENS=evaluation-token:evaluation:rw iokaio/munarium:1.4.0
 ```
 
 Open `http://localhost:8080/admin` for the dashboard or `http://localhost:8080/docs` for
@@ -146,7 +146,7 @@ services:
       retries: 20
 
   server:
-    image: iokaio/munarium:1.3.0
+    image: iokaio/munarium:1.4.0
     restart: unless-stopped
     depends_on:
       postgres:
