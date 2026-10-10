@@ -13,14 +13,13 @@ are absolute because it is also the crate's README on crates.io.)
 
 ## Install
 
-The registry examples below pin the recorded published release. Client 1.4.0
-is unreleased; use the source installation instructions for its Server 1.4 APIs.
+The registry example below selects the published **1.4.0** client release.
 
 Install [munarium-client from crates.io](https://crates.io/crates/munarium-client):
 
 ```toml
 [dependencies]
-munarium-client = "1.1.1"
+munarium-client = "1.4.0"
 ```
 
 Or from a full checkout, with a path relative to your application's `Cargo.toml`:

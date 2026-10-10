@@ -39,15 +39,14 @@ problem-slug registry, and the head-conflict write loop built in.
 
 ## Install
 
-The registry examples below pin the recorded published release. Client 1.4.0
-is unreleased; use the source installation instructions for its Server 1.4 APIs.
+The registry examples below pin the published **1.4.0** client release.
 
 Add the published package to your application's Gradle build (Java 21+):
 
 ```kotlin
 // build.gradle.kts
 repositories { mavenCentral() }
-dependencies { implementation("io.ioka.munarium:munarium-client:1.1.0") }
+dependencies { implementation("io.ioka.munarium:munarium-client:1.4.0") }
 ```
 
 For Maven:
@@ -56,12 +55,12 @@ For Maven:
 <dependency>
   <groupId>io.ioka.munarium</groupId>
   <artifactId>munarium-client</artifactId>
-  <version>1.1.0</version>
+  <version>1.4.0</version>
 </dependency>
 ```
 
-Maven Central's recorded release is **1.1.0** as of 2026-09-15. The published
-jar includes the generated gRPC stubs; the source instructions build **1.4.0**.
+Maven Central's verified release is **1.4.0** as of 2026-10-09. The published
+jar includes the generated gRPC stubs; the source instructions build the same version.
 
 ### Install from source
 

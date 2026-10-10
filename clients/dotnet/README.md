@@ -13,14 +13,13 @@ ledger, and guides.
 
 ## Install
 
-The registry examples below pin the recorded published release. Client 1.4.0
-is unreleased; use the source installation instructions for its Server 1.4 APIs.
+The registry example below pins the published **1.4.0** client release.
 
 Install [Ioka.Munarium.Client from NuGet](https://www.nuget.org/packages/Ioka.Munarium.Client)
 in your .NET 10 application:
 
 ```console
-dotnet add package Ioka.Munarium.Client --version 1.1.1
+dotnet add package Ioka.Munarium.Client --version 1.4.0
 ```
 
 Or reference the project from a full checkout; adjust the path relative to your

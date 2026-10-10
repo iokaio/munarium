@@ -14,14 +14,13 @@ Python ≥ 3.11 · fully typed (`py.typed`, mypy --strict clean).
 
 ## Install
 
-The registry examples below pin the recorded published release. Client 1.4.0
-is unreleased; use the source installation instructions for its Server 1.4 APIs.
+The registry example below pins the published **1.4.0** client release.
 
 Install [munarium-client from PyPI](https://pypi.org/project/munarium-client/)
 with Python 3.11+:
 
 ```console
-python -m pip install munarium-client==1.1.1
+python -m pip install munarium-client==1.4.0
 ```
 
 Or install from the repository root of a complete checkout:
