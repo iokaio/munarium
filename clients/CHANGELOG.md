@@ -1,6 +1,6 @@
 # Munarium clients — release notes
 
-## 1.4.0 — unreleased, Server 1.4 preparation
+## 1.4.0 — 2026-10-09, Server 1.4 clients
 
 - Align source package versions, version-handshake targets and Rust wire crates
   with Server 1.4.0; the declared N/N-1 range is 1.4/1.3, pending qualification.
@@ -8,8 +8,11 @@
   caller-owned authenticated transports added since the 1.3 preparation.
   New platform APIs require a capable Server with explicit enrollment; they
   are not backported by the declared compatibility range.
-- Package publication remains separate. See the
-  [Server 1.4 release guide](../server/docs/guides/server-1.4.md).
+- Publish all four clients and the two Rust wire crates through
+  `iokaio/munarium-clients-publish`, using the verified Server 1.4.0 source.
+  See the [publication record](README.md#installation-and-publication) for
+  tags, successful workflow runs and registry links. Publication does not
+  establish additional N-1 or platform qualification.
 
 ## 1.3.0 — unreleased, Server 1.3 alignment
 

@@ -28,34 +28,33 @@ and is not supported is in [SUPPORT.md](../SUPPORT.md); conduct is the Contribut
 
 **The contract the clients build from is the server's own**: the eleven protos under [`server/proto/mmp/v1/`](../server/proto/mmp/v1/), the REST reference and problem-slug registry under [`server/docs/api/`](../server/docs/api/), and the two Rust wire crates under `server/src/`. A wire change on the server side reaches every client immediately, and `clients-ci` proves them against a server built from the same commit.
 
-## Server 1.4 source preparation
+## Server 1.4 clients
 
 Server client source packages **1.4.0** target **Server 1.4.0** and declare
-the N/N-1 range **1.4/1.3**, pending conformance qualification and publication.
-Rust builds use wire crates 1.4.0 from the adjacent Server tree.
+the N/N-1 range **1.4/1.3**, pending conformance qualification.
+Rust builds use wire crates 1.4.0 from crates.io or, for checkout builds,
+the adjacent Server tree.
 See the [1.4 compatibility and upgrade guide](../server/docs/guides/server-1.4.md).
 
 ## Installation and publication
 
-All four Server client libraries have published releases. Source manifests prepare
-them at **1.4.0 (unreleased)**. Published Server client 1.1.1 retains its Server
-1.2/1.1 compatibility.
-Registry versions verified on **2026-09-15** are listed below; follow each package
+All four Server client libraries are published at **1.4.0**. Historical Server
+client 1.1.1 retains its Server 1.2/1.1 compatibility.
+Registry versions verified on **2026-10-09** are listed below; follow each package
 link for its release history and subsequent updates.
 
 | Service | Language | Published package | Latest verified version | Installation guide |
 |---|---|---|---|---|
-| Server | Rust | [munarium-client on crates.io](https://crates.io/crates/munarium-client) | 1.1.1 | [Rust](rust/README.md#install) |
-| Server | Python | [munarium-client on PyPI](https://pypi.org/project/munarium-client/) | 1.1.1 | [Python](python/README.md#install) |
-| Server | .NET | [Ioka.Munarium.Client on NuGet](https://www.nuget.org/packages/Ioka.Munarium.Client) | 1.1.1 | [.NET](dotnet/README.md#install) |
-| Server | Java | [io.ioka.munarium:munarium-client on Maven Central](https://central.sonatype.com/artifact/io.ioka.munarium/munarium-client) | 1.1.0 | [Java](java/README.md#install) |
+| Server | Rust | [munarium-client on crates.io](https://crates.io/crates/munarium-client/1.4.0) | 1.4.0 | [Rust](rust/README.md#install) |
+| Server | Python | [munarium-client on PyPI](https://pypi.org/project/munarium-client/1.4.0/) | 1.4.0 | [Python](python/README.md#install) |
+| Server | .NET | [Ioka.Munarium.Client on NuGet](https://www.nuget.org/packages/Ioka.Munarium.Client/1.4.0) | 1.4.0 | [.NET](dotnet/README.md#install) |
+| Server | Java | [io.ioka.munarium:munarium-client on Maven Central](https://central.sonatype.com/artifact/io.ioka.munarium/munarium-client/1.4.0) | 1.4.0 | [Java](java/README.md#install) |
 
 The first public Server client release was **1.1.0** on 2026-09-15. The
-**1.1.1** release aligns package versions and adds the Rust package README,
-with no API changes. Maven Central still lists the initial version above. The
-Rust client's wire dependencies are published as
-[munarium-proto 1.2.1](https://crates.io/crates/munarium-proto/1.2.1) and
-[munarium-api-types 1.2.1](https://crates.io/crates/munarium-api-types/1.2.1).
+**1.1.1** release added the Rust package README, with no API changes.
+The 1.4.0 Rust client's wire dependencies are published as
+[munarium-proto 1.4.0](https://crates.io/crates/munarium-proto/1.4.0) and
+[munarium-api-types 1.4.0](https://crates.io/crates/munarium-api-types/1.4.0).
 [`compatibility.json`](compatibility.json) records source versions, registries
 and supported services; use the registry links above to check availability.
 
@@ -65,31 +64,25 @@ references, Rust path dependencies and Java Gradle composite builds); record the
 commit for reproducibility. Server client builds from a checkout need the
 sibling `server/` tree for wire types or protobufs.
 
-Official packages are published by
-[`.github/workflows/clientbuild.yml`](../.github/workflows/clientbuild.yml), a
-manually dispatched workflow and nothing else: no push, tag or schedule runs it.
-A maintainer picks a family (`all`, the default; or `server-clients` or
-`server-crates`, the two server wire crates the Rust client
-depends on) and ticks the registries to publish to; a dispatch with none ticked
-is a rehearsal that builds every package and runs `check_license.py` over the
-built artifacts. Preflight asks each registry whether the package's version is
-already there: a package that is gets built and skipped, never re-published, so
-`all` with every registry ticked publishes whatever is missing and is safe to
-re-run. Crates go out in dependency order. Every registry push, TestPyPI included,
-runs in the `release` environment, which accepts `main` only and waits on its
-required reviewer. Versions are read from the
-manifests, which `check_compatibility.py` keeps in step with `compatibility.json`,
-so a release is cut by bumping the manifests and this file, never by a workflow
-input.
-
-Publishing is moving to
+Official 1.4.0 packages were published through
 [iokaio/munarium-clients-publish](https://github.com/iokaio/munarium-clients-publish),
-which publishes every Munarium client family from one set of credentials.
+using its manually dispatched `publish.yml` workflow.
 [`release.json`](release.json) describes the `server-crates` and
-`server-clients` families to it. There a release is a tag on the merged commit
-(`server-crates-v<version>` or `clients-v<version>`) and a dispatch of its
-`publish.yml`. `clientbuild.yml` stays until that path has published
-successfully, and is then removed. From 1.2.0 the Matrix clients are released
+`server-clients` families. Publish the wire crates first, then the clients.
+Each family uses its tag on a verified merged source commit:
+`server-crates-v1.4.0` and `clients-v1.4.0` both identify
+`25012c22087fbaa8ce29ddd68d2880d6e9499b1c`.
+
+The [wire-crate run](https://github.com/iokaio/munarium-clients-publish/actions/runs/38011715153)
+and [four-language client run](https://github.com/iokaio/munarium-clients-publish/actions/runs/38012059123)
+passed preflight, package builds/tests, artifact checks and registry uploads.
+Each run received the required `release` environment approval. Rehearsals
+leave every registry unticked; real uploads run from the publishing repository's
+`main` after every selected build passes and skip versions already published.
+Versions come from the source manifests, checked against `compatibility.json`.
+
+The historical [`clientbuild.yml`](../.github/workflows/clientbuild.yml) remains
+in this tree but was not used for 1.4.0. From 1.2.0 the Matrix clients are released
 from [iokaio/munarium-matrix](https://github.com/iokaio/munarium-matrix), not
 from here.
 
