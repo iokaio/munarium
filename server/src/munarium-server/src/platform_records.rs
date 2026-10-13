@@ -81,15 +81,39 @@ impl Records {
 #[serde(tag = "operation", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Operation {
     SourceHead,
-    Append { event: String },
-    Lookup { operation_id: String },
-    Archive { bundle: String },
-    Replay { operation_id: String },
-    ActionArchive { record: String },
-    ActionAppend { event: String },
-    ActionLookup { operation_id: String },
-    ActionTransition { transition_id: String },
-    ActionSourceHead { stream_id: String, generation: u64 },
+    Append {
+        event: String,
+    },
+    Lookup {
+        operation_id: String,
+    },
+    Archive {
+        bundle: String,
+    },
+    Replay {
+        operation_id: String,
+    },
+    ActionArchive {
+        record: String,
+    },
+    ActionAppend {
+        event: String,
+    },
+    ActionLookup {
+        operation_id: String,
+    },
+    ActionTransition {
+        transition_id: String,
+    },
+    ActionSourceHead {
+        stream_id: String,
+        generation: u64,
+    },
+    ActionCheckpoint {
+        cutoff: Option<u64>,
+        after: u64,
+        limit: u16,
+    },
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -122,6 +146,7 @@ pub async fn platform_records(
             | Operation::ActionLookup { .. }
             | Operation::ActionTransition { .. }
             | Operation::ActionSourceHead { .. }
+            | Operation::ActionCheckpoint { .. }
     );
     let runtime = state.platform.as_ref().ok_or_else(denied)?;
     let authority = runtime.tenant(&peer, &tenant, if write { "record" } else { "read" })?;
@@ -192,6 +217,11 @@ pub async fn platform_records(
                     .source_head(&admission, &stream_id, generation)
                     .await?
             }
+            Operation::ActionCheckpoint {
+                cutoff,
+                after,
+                limit,
+            } => ledger.checkpoint(&admission, cutoff, after, limit).await?,
             _ => return Err(denied().into()),
         };
         return Ok(Json(response));

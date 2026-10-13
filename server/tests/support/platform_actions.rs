@@ -334,6 +334,112 @@ pub async fn lifecycle(store: &dyn StorageBackend, version: &str) -> (Value, Val
     final_pair
 }
 
+/// Pinned pages retain exact custody despite later appends and changed read clocks.
+pub async fn recovery_checkpoint(store: &dyn StorageBackend, version: &str) {
+    let policy = policy();
+    let ledger = ActionLedger::new(store, version, &policy);
+    let mut reader = admission("svc-gate");
+    let empty = ledger.checkpoint(&reader, None, 0, 1).await.unwrap();
+    assert_eq!(empty["total_records"], 0);
+    assert_eq!(empty["complete"], true);
+    assert_eq!(empty["execution_enabled"], false);
+    let (_, ack) = lifecycle(store, version).await;
+    let complete = ledger.checkpoint(&reader, None, 0, 64).await.unwrap();
+    let cutoff = complete["ledger_position"].as_u64().unwrap();
+    assert_eq!(complete["total_records"], 11);
+    assert_eq!(complete["records"][10]["receipt"], ack);
+    let mut new_registration = policy.clone();
+    for stream in &mut new_registration.streams {
+        stream.generation = 2;
+    }
+    let historical = ActionLedger::new(store, version, &new_registration);
+    assert_eq!(
+        historical
+            .checkpoint(&reader, Some(11), 0, 64)
+            .await
+            .unwrap(),
+        complete,
+        "current registration must not hide or retag retained generations"
+    );
+    let mut collected = Vec::new();
+    let mut after = 0;
+    loop {
+        let page = ledger
+            .checkpoint(&reader, Some(cutoff), after, 2)
+            .await
+            .unwrap();
+        assert_eq!(page["checkpoint_digest"], complete["checkpoint_digest"]);
+        collected.extend(page["records"].as_array().unwrap().iter().cloned());
+        if page["complete"] == true {
+            assert!(page["next_after"].is_null());
+            break;
+        }
+        let next = page["next_after"].as_u64().unwrap();
+        assert!(next > after);
+        after = next;
+    }
+    assert_eq!(json!(collected), complete["records"]);
+    for entry in &collected {
+        assert_eq!(
+            entry["position"].as_u64(),
+            entry["receipt"][if entry["kind"] == "event" {
+                "position"
+            } else {
+                "ledger_position"
+            }]
+            .as_u64()
+        );
+        if entry["kind"] == "event" {
+            verify_action_ack(&entry["record"], &entry["receipt"]).unwrap();
+        }
+    }
+    reader.now += 500;
+    assert_eq!(
+        ledger
+            .checkpoint(&reader, Some(cutoff), 0, 64)
+            .await
+            .unwrap(),
+        complete
+    );
+    // Concurrent new history must not change an earlier complete export/digest.
+    let activation = records()["activation"].clone();
+    let council = admission("svc-council");
+    let raw = bytes(&activation);
+    let (write, pinned) = tokio::join!(
+        ledger.archive(&council, &raw),
+        ledger.checkpoint(&reader, Some(cutoff), 0, 64)
+    );
+    write.unwrap();
+    assert_eq!(pinned.unwrap(), complete);
+    let latest = ledger.checkpoint(&reader, None, 0, 64).await.unwrap();
+    assert_eq!(latest["total_records"], 12);
+    assert_ne!(latest["checkpoint_digest"], complete["checkpoint_digest"]);
+    assert_eq!(
+        ledger.checkpoint(&reader, Some(0), 0, 1).await.unwrap(),
+        empty
+    );
+    for (pin, cursor, count) in [
+        (Some(cutoff + 2), 0, 1),
+        (Some(cutoff), cutoff + 1, 1),
+        (None, 0, 0),
+        (None, 0, 65),
+    ] {
+        assert!(ledger
+            .checkpoint(&reader, pin, cursor, count)
+            .await
+            .is_err());
+    }
+    reader.tenant = "foreign".into();
+    assert!(ledger.checkpoint(&reader, None, 0, 1).await.is_err());
+    reader = admission("svc-gate");
+    reader.can_read = false;
+    assert!(ledger.checkpoint(&reader, None, 0, 1).await.is_err());
+    assert!(ledger
+        .checkpoint(&admission("svc-council"), None, 0, 1)
+        .await
+        .is_err());
+}
+
 pub async fn historical_recovery(store: &dyn StorageBackend, version: &str) {
     let records = records();
     let mut policy = policy();

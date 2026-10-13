@@ -6,6 +6,17 @@ use munarium_store_pg::PgStore;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "requires isolated MUNARIUM_TEST_DATABASE_URL; run with --ignored"]
+async fn recovery_checkpoint_pins_pages_and_original_receipts() {
+    let url = std::env::var("MUNARIUM_TEST_DATABASE_URL").expect("isolated database required");
+    let store = PgStore::connect(&url, &format!("checkpoint-{}", uuid::Uuid::new_v4()))
+        .await
+        .unwrap();
+    let version = store.create_version(None, None).await.unwrap();
+    support::recovery_checkpoint(&store, &version).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "requires isolated MUNARIUM_TEST_DATABASE_URL; run with --ignored"]
 async fn server_activation_transaction_and_reconnect() {
     let url = std::env::var("MUNARIUM_TEST_DATABASE_URL").expect("isolated database required");
     let tenant = format!("activation-{}", uuid::Uuid::new_v4());

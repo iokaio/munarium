@@ -2,7 +2,7 @@
 //! Experimental Stage 2 accountability, independent of transport and provider layers.
 //! A recorded assertion or acknowledgement never grants execution authority.
 mod ledger;
-pub use ledger::{ActionLedger, ActivationEnrollment, ActivationEvidence};
+pub use ledger::{ActionLedger, ActivationEnrollment, ActivationEvidence, CHECKPOINT_PROFILE};
 
 use crate::{platform::canonical_record, platform::record_digest, KernelError, Result};
 use serde::{Deserialize, Serialize};

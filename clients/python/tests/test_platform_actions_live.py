@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Stage 2 recording admission over actual enrolled mTLS and both transports."""
 
+import hashlib
 import json
 import os
 import time
@@ -404,6 +405,42 @@ def test_action_records_require_governed_roles_and_current_principals(database):
             == call("svc-gate", lookup, 1)
             == dict(ledger_position=2, artifacts=[], events=[])
         )
+        checkpoint = dict(operation="action-checkpoint", cutoff=None, after=0, limit=1)
+        first = call("svc-gate", checkpoint)
+        assert first == call("svc-gate", checkpoint, 1)
+        assert first["profile"] == "stage2-recovery-checkpoint-v1"
+        assert first["total_records"] == 2 and first["execution_enabled"] is False
+        assert first["complete"] is False and first["next_after"] == 1
+        second_action = dict(checkpoint, cutoff=first["ledger_position"], after=first["next_after"])
+        second = call("svc-gate", second_action)
+        assert second == call("svc-gate", second_action, 1)
+        assert second["complete"] is True and second["next_after"] is None
+        entries = first["records"] + second["records"]
+        assert [entry["record"] for entry in entries] == [activation, event]
+        assert [entry["receipt"] for entry in entries] == [archived, ack]
+        descriptor = {
+            key: value
+            for key, value in first.items()
+            if key not in {"checkpoint_digest", "after", "next_after", "complete", "records"}
+        }
+        expected = hashlib.sha256(
+            b"munarium:stage2:recovery-checkpoint:v1\0" + canonical(descriptor)
+        )
+        for entry in entries:
+            expected.update(b"\0" + canonical(entry))
+        assert (
+            first["checkpoint_digest"]
+            == second["checkpoint_digest"]
+            == "sha256:" + expected.hexdigest()
+        )
+        assert call("svc-registry", checkpoint) == first, "existing reader enrollment remains valid"
+        policy["readers"].remove("svc-registry")
+        govern("remove-checkpoint-reader")
+        for transport in (0, 1):
+            with pytest.raises(ForbiddenError):
+                call("svc-registry", checkpoint, transport)
+            with pytest.raises(ForbiddenError):
+                call("svc-gate", checkpoint, transport, resources=["records:" + d["tenant"]])
         changed = dict(event, occurred_at=999)
         for transport in (0, 1):
             with pytest.raises(IdempotencyMismatchError):
@@ -420,3 +457,5 @@ def test_action_records_require_governed_roles_and_current_principals(database):
                 call("svc-registry", append, transport)
             with pytest.raises(ForbiddenError):
                 call("svc-gate", lookup, transport)
+            with pytest.raises(ForbiddenError):
+                call("svc-gate", checkpoint, transport)

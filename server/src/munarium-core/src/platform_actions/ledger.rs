@@ -5,7 +5,9 @@ use crate::{
     storage::{NewClaim, StorageBackend},
 };
 mod activation;
+mod checkpoint;
 pub use activation::{ActivationEnrollment, ActivationEvidence};
+pub use checkpoint::CHECKPOINT_PROFILE;
 
 const ARTIFACTS: &str = "platform.action-artifacts-v1";
 const EVENTS: &str = "platform.action-events-v1";
@@ -48,7 +50,14 @@ impl<'a> ActionLedger<'a> {
         Ok(())
     }
     async fn snapshot(&self) -> Result<(u64, Vec<Stored>, Vec<Stored>)> {
-        let head = self.store.head(self.version).await?;
+        self.snapshot_at(None).await
+    }
+    async fn snapshot_at(&self, cutoff: Option<u64>) -> Result<(u64, Vec<Stored>, Vec<Stored>)> {
+        let current = self.store.head(self.version).await?;
+        let head = cutoff.unwrap_or(current);
+        if head > current || head > MAX {
+            return Err(invalid());
+        }
         let facts = self
             .store
             .slice_facts(
