@@ -1724,7 +1724,7 @@ pub async fn op_shape_source(
         }
     }
     let yaml =
-        serde_yaml::to_string(&shape.doc).map_err(|e| KernelError::Storage(e.to_string()))?;
+        serde_saphyr::to_string(&shape.doc).map_err(|e| KernelError::Storage(e.to_string()))?;
     Ok(ShapeSource {
         yaml,
         stored: false,

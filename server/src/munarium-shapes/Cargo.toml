@@ -10,7 +10,7 @@ description = "Shape registry: schema-driven data shapes. Validation at the comm
 munarium-core = { path = "../munarium-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serde_yaml = { workspace = true }
+serde_saphyr = { workspace = true }
 jsonschema = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }

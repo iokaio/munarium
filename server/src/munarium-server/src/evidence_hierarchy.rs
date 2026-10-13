@@ -260,19 +260,22 @@ async fn resolve_selections(
         let Ok(text) = resp.text().await else {
             continue;
         };
-        let Ok(asset) = serde_yaml::from_str::<serde_yaml::Value>(&text) else {
+        let Ok(asset) = serde_saphyr::from_str_with_options::<serde_json::Value>(
+            &text,
+            serde_saphyr::options! { merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, with_snippet: false },
+        ) else {
             continue;
         };
         let spec = &asset["spec"];
         let names = |key: &str| -> Vec<(String, String)> {
             spec[key]
-                .as_mapping()
+                .as_object()
                 .map(|m| {
                     m.iter()
-                        .filter_map(|(k, v)| {
-                            let name = k.as_str()?.to_string();
+                        .map(|(k, v)| {
+                            let name = k.to_string();
                             let desc = v["description"].as_str().unwrap_or("").to_string();
-                            Some((name, desc))
+                            (name, desc)
                         })
                         .collect()
                 })
@@ -281,20 +284,20 @@ async fn resolve_selections(
         let measures = names("measures");
         let dimensions = names("dimensions");
         let dim_types: std::collections::BTreeMap<String, String> = spec["dimensions"]
-            .as_mapping()
+            .as_object()
             .map(|m| {
                 m.iter()
-                    .filter_map(|(k, v)| {
-                        Some((
-                            k.as_str()?.to_string(),
+                    .map(|(k, v)| {
+                        (
+                            k.to_string(),
                             v["type"].as_str().unwrap_or("string").to_string(),
-                        ))
+                        )
                     })
                     .collect()
             })
             .unwrap_or_default();
         let filterable: Vec<String> = spec["filters"]["allowedDimensions"]
-            .as_sequence()
+            .as_array()
             .map(|s| {
                 s.iter()
                     .filter_map(|v| v.as_str().map(str::to_string))
@@ -302,13 +305,13 @@ async fn resolve_selections(
             })
             .unwrap_or_default();
         let synonyms = spec["synonyms"]
-            .as_mapping()
+            .as_object()
             .map(|m| {
                 m.iter()
                     .filter_map(|(k, v)| {
                         let list: Vec<&str> =
-                            v.as_sequence()?.iter().filter_map(|x| x.as_str()).collect();
-                        Some(format!("{}: {}", k.as_str()?, list.join(", ")))
+                            v.as_array()?.iter().filter_map(|x| x.as_str()).collect();
+                        Some(format!("{}: {}", k.as_str(), list.join(", ")))
                     })
                     .collect::<Vec<_>>()
                     .join("; ")

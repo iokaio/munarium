@@ -60,7 +60,7 @@ tonic-types = { workspace = true }
 prost = { workspace = true }
 bytes = { workspace = true }
 http-body = { workspace = true }
-serde_yaml = { workspace = true }
+serde_saphyr = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 serde = { workspace = true }

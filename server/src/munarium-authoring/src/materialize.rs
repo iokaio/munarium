@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Deterministic materialization: interview answers -> a shape + runbook
 //! document set. Documents are built as `serde_json::Value` trees and
-//! emitted through `serde_yaml` — NEVER by re-serializing `RunbookDoc`
+//! emitted through `serde_saphyr` — NEVER by re-serializing `RunbookDoc`
 //! (`steps_raw` is private and `steps` is `#[serde(skip)]`, so a
 //! round-tripped doc would drop its steps). Every emitted document is
 //! proven by re-parsing through `parse_shape` / `parse_runbook` before it
@@ -40,7 +40,7 @@ pub fn seed_documents(
     let runbook_yaml = catalog::exemplar_runbook(pattern.start_from)
         .ok_or_else(|| format!("exemplar '{}' is not embedded", pattern.start_from))?;
     let mut tree: Value =
-        serde_yaml::from_str(runbook_yaml).map_err(|e| format!("exemplar yaml: {e}"))?;
+        serde_saphyr::from_str_with_options(runbook_yaml, serde_saphyr::options! { merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, with_snippet: false }).map_err(|e| format!("exemplar yaml: {e}"))?;
     tree["metadata"]["name"] = json!(name);
     tree["metadata"]["version"] = json!(1);
     let renamed = emit_yaml(&tree)?;
@@ -347,15 +347,50 @@ fn header_comment(
     out
 }
 
-// Translate through JSON text into YAML's own value tree. Serializing a JSON
-// Number directly with a YAML serializer leaks serde_json's private number
-// representation when arbitrary_precision is unified into the graph. Parsing
-// the JSON tokens also keeps literal marker-like object keys as object keys.
+// Emit native scalar values instead of serializing serde_json's private Number
+// representation when arbitrary_precision is unified into the dependency graph.
+// Literal marker-like object keys remain ordinary keys at every nesting depth.
 fn emit_yaml(tree: &Value) -> Result<String, String> {
-    let json = serde_json::to_string(tree).map_err(|e| format!("emit JSON: {e}"))?;
-    let yaml: serde_yaml::Value =
-        serde_yaml::from_str(&json).map_err(|e| format!("emit YAML value: {e}"))?;
-    serde_yaml::to_string(&yaml).map_err(|e| format!("emit: {e}"))
+    serde_saphyr::to_string(&YamlValue(tree)).map_err(|e| format!("emit: {e}"))
+}
+
+struct YamlValue<'a>(&'a Value);
+impl serde::Serialize for YamlValue<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::{SerializeMap, SerializeSeq};
+        match self.0 {
+            Value::Null => serializer.serialize_unit(),
+            Value::Bool(value) => serializer.serialize_bool(*value),
+            Value::String(value) => serializer.serialize_str(value),
+            Value::Number(value) => {
+                if let Some(value) = value.as_i64() {
+                    serializer.serialize_i64(value)
+                } else if let Some(value) = value.as_u64() {
+                    serializer.serialize_u64(value)
+                } else if let Some(value) = value.as_f64().filter(|value| value.is_finite()) {
+                    serializer.serialize_f64(value)
+                } else {
+                    Err(serde::ser::Error::custom(
+                        "number cannot be represented in YAML",
+                    ))
+                }
+            }
+            Value::Array(values) => {
+                let mut sequence = serializer.serialize_seq(Some(values.len()))?;
+                for value in values {
+                    sequence.serialize_element(&YamlValue(value))?;
+                }
+                sequence.end()
+            }
+            Value::Object(values) => {
+                let mut map = serializer.serialize_map(Some(values.len()))?;
+                for (key, value) in values {
+                    map.serialize_entry(key, &YamlValue(value))?;
+                }
+                map.end()
+            }
+        }
+    }
 }
 
 // ---- answer accessors -------------------------------------------------------
@@ -502,17 +537,28 @@ mod tests {
             "literal": {"$serde_json::private::Number": "ordinary text"},
             "array": [true, null, "123"]
         });
-        let yaml: serde_yaml::Value = serde_yaml::from_str(&emit_yaml(&tree).unwrap()).unwrap();
-        assert_eq!(yaml["signed"].as_i64(), Some(i64::MIN));
-        assert_eq!(yaml["unsigned"].as_u64(), Some(u64::MAX));
-        assert_eq!(yaml["fraction"].as_f64(), Some(0.5));
+        // An independent typed read avoids serde_json's private marker handling
+        // in its arbitrary_precision Value deserializer, while proving the actual
+        // emitted YAML keeps native scalars and ordinary literal object keys.
+        #[derive(serde::Deserialize)]
+        struct Scalars {
+            signed: i64,
+            unsigned: u64,
+            fraction: f64,
+            literal: BTreeMap<String, String>,
+            array: Vec<Value>,
+        }
+        let yaml: Scalars = serde_saphyr::from_str(&emit_yaml(&tree).unwrap()).unwrap();
+        assert_eq!(yaml.signed, i64::MIN);
+        assert_eq!(yaml.unsigned, u64::MAX);
+        assert_eq!(yaml.fraction, 0.5);
         assert_eq!(
-            yaml["literal"]["$serde_json::private::Number"].as_str(),
-            Some("ordinary text")
+            yaml.literal["$serde_json::private::Number"],
+            "ordinary text"
         );
-        assert_eq!(yaml["array"][0].as_bool(), Some(true));
-        assert!(yaml["array"][1].is_null());
-        assert_eq!(yaml["array"][2].as_str(), Some("123"));
+        assert_eq!(yaml.array[0].as_bool(), Some(true));
+        assert!(yaml.array[1].is_null());
+        assert_eq!(yaml.array[2].as_str(), Some("123"));
     }
 
     fn canonical_answers() -> Value {

@@ -59,7 +59,7 @@ sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio",
 # serialization + schema
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde_yaml = "0.9"
+serde_saphyr = { package = "serde-saphyr", version = "=2.0.0", default-features = false, features = ["deserialize", "serialize"] }
 jsonschema = { version = "0.26", default-features = false }
 pgvector = { version = "0.4", features = ["sqlx"] }
 utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"] }

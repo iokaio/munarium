@@ -184,7 +184,7 @@ fn safe_rel_path(p: &str) -> bool {
 /// completion template mentions "kind: Shape" must not be posted to
 /// /v1/shapes.
 fn yaml_kind(yaml: &str) -> String {
-    serde_yaml::from_str::<serde_json::Value>(yaml)
+    serde_saphyr::from_str_with_options::<serde_json::Value>(yaml, serde_saphyr::options! { merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, with_snippet: false })
         .ok()
         .and_then(|v| v.get("kind").and_then(|k| k.as_str()).map(String::from))
         .unwrap_or_default()
@@ -410,7 +410,7 @@ fn main() {
                 });
                 let yaml = std::fs::read_to_string(path)
                     .unwrap_or_else(|e| die(&format!("read {path}: {e}")));
-                let answers: serde_json::Value = serde_yaml::from_str(&yaml)
+                let answers: serde_json::Value = serde_saphyr::from_str_with_options(&yaml, serde_saphyr::options! { merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, with_snippet: false })
                     .unwrap_or_else(|e| die(&format!("answers yaml: {e}")));
                 // --no-materialize stores the answers WITHOUT regenerating
                 // documents — the flag for seeded or assist-edited drafts,

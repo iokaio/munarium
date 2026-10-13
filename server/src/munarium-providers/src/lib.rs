@@ -344,7 +344,7 @@ impl DailyTokenCaps {
 
 pub fn parse_provider_config(yaml: &str) -> std::result::Result<ProviderConfigDoc, String> {
     let doc: ProviderConfigDoc =
-        serde_yaml::from_str(yaml).map_err(|e| format!("provider config yaml: {e}"))?;
+        serde_saphyr::from_str_with_options(yaml, serde_saphyr::options! { merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, with_snippet: false }).map_err(|e| format!("provider config yaml: {e}"))?;
     if doc.kind != "ProviderConfig" {
         return Err(format!("kind must be ProviderConfig, got '{}'", doc.kind));
     }
