@@ -225,7 +225,7 @@ impl Shape {
 
 /// Parse + compile a shape from YAML. Errors are loader-grade messages.
 pub fn parse_shape(yaml: &str) -> Result<Shape, String> {
-    let doc: ShapeDoc = serde_yaml::from_str(yaml).map_err(|e| format!("shape yaml: {e}"))?;
+    let doc: ShapeDoc = serde_saphyr::from_str_with_options(yaml, serde_saphyr::options! { merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, with_snippet: false }).map_err(|e| format!("shape yaml: {e}"))?;
     if doc.kind != "Shape" {
         return Err(format!("kind must be Shape, got '{}'", doc.kind));
     }

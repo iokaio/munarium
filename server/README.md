@@ -84,6 +84,11 @@ release's published limitations.
 Prerequisites: Docker with Compose for the container stack. Native Server builds
 use **Rust 1.98.0**, pinned in [rust-toolchain.toml](rust-toolchain.toml). The pin
 is the tested toolchain, not a minimum; only `munarium-datastore` declares one.
+YAML configuration uses pinned `serde-saphyr` 2.0.0; `serde_yaml` and its
+unmaintained `unsafe-libyaml` backend are removed. Historical single-key runbook
+steps and ordinary `<<` mapping keys retain their interpretation. Filesystem
+includes are disabled and parse errors use plain diagnostics without source
+excerpts. Authoring preserves native scalar types under either JSON feature profile.
 Run the following from the repository root:
 
 ```powershell

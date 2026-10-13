@@ -84,9 +84,9 @@ pub struct RunbookSpec {
     #[serde(default)]
     pub execution: Option<ExecutionSpec>,
     /// Raw single-key step maps (`- resolveSources: {}`); converted by
-    /// `parse_runbook` (serde_yaml 0.9 dropped single-key-map enum syntax).
+    /// `parse_runbook`, preserving the historical single-key step syntax.
     #[serde(default, rename = "steps")]
-    steps_raw: Vec<serde_yaml::Value>,
+    steps_raw: Vec<serde_json::Value>,
     #[serde(skip)]
     pub steps: Vec<StepSpec>,
 }
@@ -750,7 +750,7 @@ impl StepState {
 
 pub fn parse_runbook(yaml: &str) -> Result<RunbookDoc, String> {
     let mut doc: RunbookDoc =
-        serde_yaml::from_str(yaml).map_err(|e| format!("runbook yaml: {e}"))?;
+        serde_saphyr::from_str_with_options(yaml, serde_saphyr::options! { merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, with_snippet: false }).map_err(|e| format!("runbook yaml: {e}"))?;
     if doc.kind != "Runbook" {
         return Err(format!("kind must be Runbook, got '{}'", doc.kind));
     }
@@ -843,18 +843,16 @@ pub fn parse_runbook(yaml: &str) -> Result<RunbookDoc, String> {
     Ok(doc)
 }
 
-fn step_from_value(v: &serde_yaml::Value) -> Result<StepSpec, String> {
+fn step_from_value(v: &serde_json::Value) -> Result<StepSpec, String> {
     let not_single = || "each step must be a single-key map like `- buildIndex: {}`".to_string();
     let map = v
-        .as_mapping()
+        .as_object()
         .filter(|m| m.len() == 1)
         .ok_or_else(not_single)?;
     let (key, body) = map.iter().next().ok_or_else(not_single)?;
-    let key = key.as_str().unwrap_or_default();
-    let get_field = |field: &str| -> Option<&serde_yaml::Value> {
-        body.as_mapping()
-            .and_then(|m| m.get(serde_yaml::Value::from(field)))
-    };
+    let key = key.as_str();
+    let get_field =
+        |field: &str| -> Option<&serde_json::Value> { body.as_object().and_then(|m| m.get(field)) };
     Ok(match key {
         "resolveSources" => StepSpec::ResolveSources {},
         "buildIndex" => StepSpec::BuildIndex {},
@@ -995,6 +993,24 @@ spec:
             "  execution: { order: perCollection }\n  retrieval:",
         );
         assert!(parse_runbook(&bad).is_err());
+    }
+
+    #[test]
+    fn yaml_backend_preserves_literal_merge_keys_and_plain_diagnostics() {
+        let merged = RB.replace("approval: required", "<<: { approval: required }");
+        let doc = parse_runbook(&merged).expect("ordinary merge key parses");
+        assert!(!doc.spec.steps[3].requires_approval());
+        let invalid = RB.replace("approval: required", "approval: [");
+        let error = parse_runbook(&invalid).expect_err("malformed YAML refuses");
+        assert!(
+            !error.contains("approval: ["),
+            "no source excerpt in errors"
+        );
+        assert!(!error.contains("-->"), "plain diagnostics remain plain");
+        for approval in ["Required", "true", "require"] {
+            let invalid = RB.replace("approval: required", &format!("approval: {approval}"));
+            assert!(parse_runbook(&invalid).is_err(), "invalid approval refuses");
+        }
     }
 
     #[test]
@@ -1269,7 +1285,7 @@ spec:
         // round-trips must not grow keys it never declared, or every stored
         // document silently changes the first time it is read and rewritten.
         let doc = parse_runbook(LEGACY).expect("parse");
-        let out = serde_yaml::to_string(&doc).expect("serialize");
+        let out = serde_saphyr::to_string(&doc).expect("serialize");
         for key in [
             "dataViews",
             "researchProfiles",
@@ -1341,7 +1357,7 @@ spec:
     fn a_data_view_with_no_parameters_serializes_none() {
         let doc = parse_runbook(WITH_PROFILE).expect("parses");
         assert!(doc.spec.data_views[0].parameters.is_empty());
-        let out = serde_yaml::to_string(&doc).expect("serialize");
+        let out = serde_saphyr::to_string(&doc).expect("serialize");
         assert!(
             !out.contains("parameters"),
             "no empty key:
@@ -1393,12 +1409,12 @@ spec:
     #[test]
     fn a_step_must_be_a_single_key_map() {
         let single = "each step must be a single-key map like `- buildIndex: {}`";
-        let two: serde_yaml::Value =
-            serde_yaml::from_str("{ buildIndex: {}, verify: {} }").expect("yaml");
+        let two: serde_json::Value =
+            serde_saphyr::from_str("{ buildIndex: {}, verify: {} }").expect("yaml");
         assert_eq!(step_from_value(&two).err().as_deref(), Some(single));
-        let empty: serde_yaml::Value = serde_yaml::from_str("{}").expect("yaml");
+        let empty: serde_json::Value = serde_saphyr::from_str("{}").expect("yaml");
         assert_eq!(step_from_value(&empty).err().as_deref(), Some(single));
-        let one: serde_yaml::Value = serde_yaml::from_str("{ verify: {} }").expect("yaml");
+        let one: serde_json::Value = serde_saphyr::from_str("{ verify: {} }").expect("yaml");
         assert!(matches!(step_from_value(&one), Ok(StepSpec::Verify {})));
     }
 

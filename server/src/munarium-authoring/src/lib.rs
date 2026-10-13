@@ -119,7 +119,10 @@ pub fn doc_kind(yaml: &str) -> DocKind {
         #[serde(default)]
         kind: String,
     }
-    match serde_yaml::from_str::<KindOnly>(yaml) {
+    match serde_saphyr::from_str_with_options::<KindOnly>(
+        yaml,
+        serde_saphyr::options! { merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, with_snippet: false },
+    ) {
         Ok(k) if k.kind == "Shape" => DocKind::Shape,
         Ok(k) if k.kind == "Runbook" => DocKind::Runbook,
         _ => DocKind::Unknown,
