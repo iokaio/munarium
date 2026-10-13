@@ -43,12 +43,45 @@ The closed body is `{"chain":["signed assertion"],"action":{...}}`:
 | `action-lookup` | `operation_id` | Pinned `ledger_position`, `artifacts`, `events` for the operation |
 | `action-transition` | `transition_id` | Pinned position, archived activation and activation events |
 | `action-source-head` | `stream_id`, `generation` | `sequence` and `event_digest`, or `0`/`null` when empty |
+| `action-checkpoint` | optional `cutoff`, `after`, `limit` | Bounded pinned retained-record pages with original receipts and retained source tails; no execution or reopening permission |
 
 Gate's registered service archives requests and decisions; Council's archives
 approvals and activation assertions. Stream registrations bind each event kind's
 logical producer to its actual transport service. An artifact receipt is not an
 event acknowledgement. Neither receipt authorizes execution or asserts that a
 target effect occurred.
+
+## Retained-record checkpoint export
+
+The experimental `stage2-recovery-checkpoint-v1` read implements R1 of
+[ADR 0018](https://github.com/iokaio/munarium-platform/blob/15a5d9231567b296a3a06dd7a38046b8a14a0a67/docs/decisions/0018-restore-checkpoint-protocol.md).
+Use `after:0`, `limit:1..64` and optional `cutoff:null` for the first page, then
+retain its exact `ledger_position` as `cutoff` and follow `next_after`. Reject a
+future cutoff or continuation beyond it. Each encoded page is at most 1 MiB;
+records that cannot fit refuse rather than disappear. Every page rechecks current
+read identity, peer/resource and governing policy, through the same REST/RPC handler.
+
+Declared coverage is `action-artifacts-and-events`. The descriptor binds schema/
+profile/type, scope/ledger, frozen position, total records, retained per-stream/
+generation tails, digest profile and `execution_enabled:false`. Page records retain
+kind, global position, original receipt time, canonical record and exact archive
+receipt/event acknowledgement. Historical tails are retained facts, not current
+source authority. `complete` means pagination of this declared coverage, not proof
+that an operational journal or restoration is complete.
+
+To verify `sha256-delimited-canonical-v1`, remove only `checkpoint_digest`, `after`,
+`next_after`, `complete` and `records` from the page to recover the canonical sorted
+descriptor. Hash `munarium:stage2:recovery-checkpoint:v1` followed by NUL, descriptor
+bytes, then NUL plus each canonical record entry in global-position order across
+all pages. Require matching scope/ledger/cutoff/digest on every page, the complete
+record count and exact receipts. Lost, skipped, substituted or reordered pages
+cannot establish the complete digest. Later writes do not alter a pinned export.
+
+The existing single-record candidate's 64 KiB bound is unchanged; the digest frames
+each descriptor/entry separately rather than treating a whole export as one new
+candidate record. No candidate, migration, credential or grant is created. Independent
+journal write-ahead/commit coverage, cutoff reconciliation, target/worker exclusion
+and governed reopening remain subsequent RECOVERY-01 work.
 
 ## Custody, ordering and recovery
 

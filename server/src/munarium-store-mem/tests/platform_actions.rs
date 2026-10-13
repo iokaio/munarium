@@ -6,6 +6,66 @@ use munarium_store_mem::MemStore;
 use serde_json::json;
 
 #[tokio::test]
+async fn recovery_checkpoint_pins_pages_and_original_receipts() {
+    let store = MemStore::new();
+    let version = store.create_version(None, None).await.unwrap();
+    support::recovery_checkpoint(&store, &version).await;
+}
+
+#[tokio::test]
+async fn recovery_checkpoint_enforces_encoded_page_budget_without_omitting_records() {
+    let store = MemStore::new();
+    let version = store.create_version(None, None).await.unwrap();
+    let policy = support::policy();
+    let ledger = ActionLedger::new(&store, &version, &policy);
+    let gate = support::admission("svc-gate");
+    let mut request = support::records()["request"].clone();
+    let prototype = request["context"]["evidence"][0].clone();
+    request["context"]["evidence"] = json!((0..32)
+        .map(|index| {
+            let mut value = prototype.clone();
+            value["source"]["id"] = json!(format!("source-{index}-{}", "e".repeat(100)));
+            value["verifier"]["id"] = json!(format!("verifier-{}", "v".repeat(110)));
+            value
+        })
+        .collect::<Vec<_>>());
+    request["context_digest"] = json!(action_digest("context", &request["context"]).unwrap());
+    for index in 0..64 {
+        request["operation"]["id"] = json!(format!("large-checkpoint-{index}"));
+        request["attempt"]["id"] = json!(format!("attempt-{index}"));
+        ledger
+            .archive(&gate, &support::bytes(&request))
+            .await
+            .unwrap();
+    }
+    let first = ledger.checkpoint(&gate, None, 0, 64).await.unwrap();
+    assert_eq!(first["complete"], false);
+    assert!(first["records"].as_array().unwrap().len() < 64);
+    let cutoff = first["ledger_position"].as_u64().unwrap();
+    let digest = first["checkpoint_digest"].clone();
+    let mut page = first;
+    let mut count = 0;
+    loop {
+        assert!(serde_json::to_vec(&page).unwrap().len() <= 1024 * 1024);
+        assert_eq!(page["checkpoint_digest"], digest);
+        count += page["records"].as_array().unwrap().len();
+        if page["complete"] == true {
+            break;
+        }
+        page = ledger
+            .checkpoint(
+                &gate,
+                Some(cutoff),
+                page["next_after"].as_u64().unwrap(),
+                64,
+            )
+            .await
+            .unwrap();
+    }
+    assert_eq!(count, 64);
+}
+
+#[tokio::test]
 async fn server_activation_is_atomic_and_idempotent() {
     let store = MemStore::new();
     let version = store.create_version(None, None).await.unwrap();
