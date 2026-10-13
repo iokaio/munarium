@@ -48,7 +48,7 @@ pub struct ChronologyMeta {
 }
 
 pub fn parse_rules_doc(yaml: &str) -> Result<ChronologyRulesDoc> {
-    let doc: ChronologyRulesDoc = serde_yaml::from_str(yaml)
+    let doc: ChronologyRulesDoc = serde_saphyr::from_str_with_options(yaml, serde_saphyr::options! { merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, with_snippet: false })
         .map_err(|e| KernelError::InvalidInput(format!("chronology rules: {e}")))?;
     if doc.kind != "ChronologyRules" {
         return Err(KernelError::InvalidInput(format!(

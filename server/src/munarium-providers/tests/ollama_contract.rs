@@ -71,7 +71,7 @@ fn config_requires_endpoint_and_keeps_cloud_credentials_required() {
     let valid = config("http://ollama:11434");
     let doc = parse_provider_config(&valid).unwrap();
     assert!(resolve_config_credential(&doc.spec).unwrap().is_none());
-    assert!(serde_yaml::to_string(&doc)
+    assert!(serde_saphyr::to_string(&doc)
         .unwrap()
         .find("credentialRef")
         .is_none());
