@@ -1,164 +1,328 @@
 # Hosting MCP tools in Munarium Server
 
-**Status:** proposal, 19 November 2026. Nothing here is implemented, scheduled or accepted. It is input to a design decision for Munarium Server only.
+**v1.5 implementation design.** Server v1.5 requires a qualified MCP endpoint. Operators enable `POST /mcp` for agents acting on behalf of an individual user. This document owns the MCP decisions A1–A9, tool contract and release tests. The roadmap owns cross-component sequencing. [Decision and test index](#12-decision-and-test-index) · [v1.5 roadmap](README.md) · [Retrieval and console analysis](airk-analysis.md)
 
-**Written against:** the Server workspace under [`server/src/`](../../src/) at `bb18085` (1.4.0), and the Model Context Protocol specification revision `2026-07-28`. Statements about Server were checked against the files they link. Statements about the protocol were checked against the published specification pages for that revision; section 13 lists what was not read.
-
-**Assumes:** most of the recommendations in [airk-analysis.md](airk-analysis.md) will be implemented in Server. Identifiers such as R7, IR-2 and U4 refer to that document. Section 9 lists each one's effect on this design and what this design needs if an item is dropped or arrives later.
+Use the published v1.4 Server and SDK artifacts for compatibility and the separately identified checkout for implementation analysis. The roadmap records both source identities. [Source baselines](README.md#source-baselines) · [Server 1.4 upgrade and release guide](../guides/server-1.4.md)
 
 ## 1. Summary
 
-Server has deliberately had no Model Context Protocol (MCP) surface. This document proposes adding one, hosted by the `munarium-server` binary itself, without changing the native REST or gRPC API.
+The gateway handles TLS. An operator switch registers the route on the existing REST listener. The v1.5 catalog includes nine query and session tools and two sealed-evidence readers. Token scope, enabled operations and spending authority determine which tools each caller can see. [Tool catalog](#51-query-tools) · [Deferred governed memory](#111-governed-memory-tools)
 
-The proposal in five points:
+## 2. Why host it in Server
 
-1. **One endpoint, off by default.** `POST /mcp` on the REST listener, served only when `MUNARIUM_MCP=enabled`. It speaks the stateless Streamable HTTP transport and answers every request with a single JSON response.
-2. **A transport, not an authority.** A tool call is translated into a request for an existing `/v1` or `/v1.2` route and dispatched in-process through the same router, exactly as `ServerApiService` already does for gRPC. The call passes the same authentication, clearance checks, budgets, load shedding and audit as a REST call. There is no privileged path.
-3. **Capability tokens only.** `/mcp` accepts a capability JWT carrying a new `mcp` scope, and refuses static `rw`, `ro` and `mgmt` tokens. Every agent call therefore has a subject, an expiry, an access level, compartments and an optional runbook allowlist.
-4. **A closed, static tool table.** Eleven tools in the first phase, all on the query plane: discover, search, ask, converse, and resolve citations. No tool takes a path, a method or a route name as an argument, so the table is the complete list of what an agent can reach.
-5. **No administration.** Index builds, activation, rollout, collections, shapes, runbooks, providers, tokens, ingestion, retention, reports and platform authority are not exposed. Two independent mechanisms keep them out (section 6).
+A named tool can pass the caller's bearer token through the existing handlers for scoped search, sessions and original-reference authorization. This preserves one place to enforce tenant, classification, retention and provider rules. The two filtered listing tools need explicit authorization and attribution because the native management listings disclose more information. A compiled dispatch table follows the pattern in the existing gRPC bridge. [Server security posture](../security-posture.md) · [Native API bridge](../../src/munarium-server/src/grpc_api.rs).
 
-A second phase, which needs a contract decision first, would let an agent read governed memory and propose claims through the existing gates (section 5.3).
-
-The planned Server work in [airk-analysis.md](airk-analysis.md) changes this design in three places: admission (R7 replaces a dedicated MCP pool), the cost of search (an endpoint-backed embedder and reranker make `search_collection` a tool that calls a model), and what a tool error tells an agent about retrying (R11). Section 9 has the full mapping.
-
-## 2. Why now, and why inside Server
-
-The original reason for leaving MCP out still holds for most of the API: an agent holding a general tool surface over Server could rebuild an index, flip a rollout selector or mint a token, and none of those actions has an agent-appropriate governance model.
-
-Three things have changed the balance for the query plane:
-
-- **The query plane is already governed per call.** Sessions, scoped search, collection queries and checked answers all take a capability JWT, filter collections by level and compartment at query time, and write a uid-attributed interaction row ([security-posture.md](../security-posture.md)). An agent calling these is governed in the same way as an application calling them.
-- **The dispatch pattern exists.** [`grpc_api.rs`](../../src/munarium-server/src/grpc_api.rs) maps a fixed set of named RPCs onto route templates and sends each one through `rest::router` with `oneshot`. Its header comment states the property this proposal needs: "Dispatch is in-process through the same bounded, authorized and audited handlers as REST; no network request or alternate service credential is involved. Clients cannot choose an arbitrary URI."
-- **Munarium Matrix already ships this shape.** Matrix serves `POST /mcp` beside its `/v1` routes as "a transport, not an authority", with tools generated from declared assets and no free-form query tool ([Matrix MCP reference](https://github.com/iokaio/munarium-matrix/blob/main/docs/api/mcp.md)). An agent that reaches Matrix over MCP and Server over a hand-written wrapper has two integration models for one product.
-
-Hosting it in Server, instead of in a separate bridge process, matters for governance. A bridge needs its own credential to Server, and whatever that credential can do, the bridge can do for any agent that reaches it. In-process dispatch forwards the caller's own bearer token and nothing else, so the agent's authority is exactly its token's authority.
+The Matrix project owns its service, MCP catalog and documentation. Server's tool catalog covers Server operations. Qualify it independently of any Matrix deployment or Lens inference endpoint. Existing optional evidence integrations follow the separate move and v1.4 parity checks. [Matrix and Lens handoffs](repository-handoffs.md).
 
 ## 3. Design rules
 
-These are the constraints every later section is held to.
-
-| # | Rule | Consequence |
+| ID | Requirement | Acceptance |
 |---|---|---|
-| D1 | The native API does not change. | No route, DTO, proto message or SDK method is altered. `/mcp` sits outside `/v1` and outside the OpenAPI contract, like `/admin` and `/docs`. |
-| D2 | MCP grants no capability the caller's token lacks. | Every tool resolves to handlers that check the caller's own token. The MCP layer holds no credential. |
-| D3 | The tool set is closed and static. | A compiled table. No generic "call route" tool, no argument that selects an operation, no tool generated from tenant data. |
-| D4 | Every call is attributed and audited. | Static tokens are refused, so every call has a JWT `sub` and `jti`. Calls are recorded in the interactions trail with the tool name. |
-| D5 | A refusal is distinguishable from an empty result. | Server problem types reach the agent as tool errors carrying the problem slug. |
-| D6 | Off by default. | A deployment that does not set `MUNARIUM_MCP=enabled` serves 404 on `/mcp` and behaves exactly as today. |
-| D7 | Tool metadata never contains tenant content. | Names, descriptions and schemas are compiled constants. Tenant-authored text (runbook descriptions, document passages) appears only in tool results. |
-
-D7 is a prompt-injection control. A tool description is read by the model as instruction; a tool result is read as data. Matrix generates tools from applied assets because the asset is the bound. Server's bound is the token, so its tools can be constant, and a tenant document or runbook can never alter what `tools/list` says.
+| MCP-RULE-1 | Preserve native v1.4 clients, credentials and contracts. | Run the published clients against the candidate on both native transports. Additive changes to token issuance or reporting follow the contract process. |
+| MCP-RULE-2 | Use the verified caller's authority on every operation. | Enforce tenant, uid, scope, clearance, compartments, runbook restrictions and source retention across listing, dispatch and any continuation. |
+| MCP-RULE-3 | Compile an explicit tool allowlist. | Fix the route, method, parameter mapping, work class, side effects and allowed model stages for each entry. |
+| MCP-RULE-4 | Confirm a durable, attributed admission before executing every authorized tool invocation (A6). | Confirm the recorded tenant, uid, token ID, request ID and tool before dispatch. On failure, the tool performs zero reads, mutations and provider calls (§7.3). |
+| MCP-RULE-5 | Preserve uncertainty and refusal. | Keep native evidence and error types. A failed retrieval, incomplete fan-out or lost response cannot become an empty success. |
+| MCP-RULE-6 | Require operator opt-in. | With the switch unset, old routes and defaults work and `/mcp` returns 404. |
+| MCP-RULE-7 | Keep tool metadata independent of tenant data. | Publish fixed names, descriptions and schemas. Treat returned passages, citations and descriptions as untrusted data. |
 
 ## 4. Hosting and transport
 
-### 4.1 Where it listens
+### 4.1 Listener
 
-`POST /mcp` on the REST listener (`MUNARIUM_HTTP_ADDR`, :8080 in the container). A separate listener was considered and is not recommended for the first version: the gateway, TLS termination and network policy described in [security-posture.md](../security-posture.md) already cover :8080, and a fourth port would need the same treatment again. Operators who want agents on a different hostname or policy can route `/mcp` separately at the gateway.
-
-`MUNARIUM_AUTH_MODE=disabled` and the memory store are development modes. `/mcp` is not served under disabled auth, because rule D4 cannot hold without a token.
+Register `/mcp` on the existing HTTP listener only when enabled with authenticated capability tokens. Reject an incompatible enabled configuration with an actionable startup error. The gateway can publish just this path on a separate hostname. Existing deployments need no listener, credential, network policy or chart change.
 
 ### 4.2 Protocol revision
 
-Target the `2026-07-28` revision. Its core is stateless: there is no `initialize` handshake and no `Mcp-Session-Id`, and each request carries its protocol version. That suits N identical replicas behind a gateway with no session affinity, which is the deployment Server documents in [architecture.md](../architecture.md).
+<a id="a3"></a>
 
-| Concern | Behaviour |
+**A3 · decided.** The v1.5 MCP profile must pass a real-client run on each of two Streamable HTTP revisions, `2026-07-28` and `2025-11-25`. Exercise both against the release candidate as described in §10.5. A missing or failed run for either revision keeps MCP qualification open. Pin each schema revision and digest in the conformance tests. The modern wire behavior is specified below. [Modern wire schema](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/2026-07-28/schema.json) · [HTTP binding](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http).
+
+| Concern | Modern behavior |
 |---|---|
-| Methods | `server/discover`, `tools/list`, `tools/call`. Anything else is `-32601`. |
-| Response form | One `application/json` response per POST. No SSE. Notifications answer `202` with no body. |
-| `GET` / `DELETE` on `/mcp` | `405`. |
-| Batching | Refused. The body must be a single JSON-RPC request or notification. |
-| `MCP-Protocol-Version` | Required. An unsupported value is `400` with `-32022`. |
-| `Mcp-Method`, `Mcp-Name` | Required and compared with the body. A missing or mismatched header is `400` with `-32020`. |
-| `Origin` | Validated against `MUNARIUM_MCP_ALLOWED_ORIGINS`. Present and not allowed is `403`. Absent is accepted (server-side agents send none). |
-| `tools/list` caching | `ttlMs` from configuration, `cacheScope: "private"`, because the list depends on the token's scopes (section 5). |
-| Results | `resultType: "complete"` always. Server never returns `input_required`, never starts a task and never sends a server-to-client request. |
-| Body limit | 1 MiB on `/mcp`. No tool carries document bytes. |
+| Request | Validate a single UTF-8 JSON-RPC message, media types and body size before dispatch. Clients send an `Accept` header allowing JSON and SSE. A request includes a string or integer ID and the standard version, client identity and capability metadata under `params._meta`. Client metadata supplies no authority. |
+| Headers | Validate `MCP-Protocol-Version` against body metadata, `Mcp-Method` against the method, and `Mcp-Name` against the name for a named call. Apply the binding's decoding rule before comparison. A list or discovery request needs no name header. |
+| Operations | Serve `server/discover`, `tools/list`, `tools/call`. Discovery returns `resultType: "complete"`, supported versions, the `tools` capability and server identity under `_meta["io.modelcontextprotocol/serverInfo"]`. Allow a client to start directly with a tool request. |
+| Errors | Header mismatch returns HTTP 400 / `-32020`. An unsupported version returns 400 / `-32022` with supported versions. An unknown RPC method returns 404 / `-32601`. An unknown tool name inside a valid call is an invalid parameter (`-32602`). Handle malformed envelopes separately from a tool's execution errors. |
+| Transport and cache | An accepted notification receives 202 with an empty body. Refuse batches. Use private or disabled caching for scope-dependent listings. Validate origin against exact configured origins when present and return 403 on rejection. Return 405 for standalone GET and DELETE on this profile. |
+| Optional features | Advertise only the implemented tools capability. Omit list-change and subscription capabilities. Match the official SDK's no-subscription behavior for `subscriptions/listen`. Unary calls need no progress updates, tasks or SSE. Bound work after disconnect and preserve any committed side effect. |
 
-**Older clients.** Many clients in use still send `initialize` with `2025-03-26`, `2025-06-18` or `2025-11-25`. The specification allows a server to serve both eras on one endpoint. The proposal is to answer a legacy `initialize` and `ping` statelessly: report the requested version if it is one of those three, mint no session id, ignore any `Mcp-Session-Id` that comes back, and treat a missing `MCP-Protocol-Version` header as `2025-03-26`. This is the same single-round-trip behaviour Matrix has today. It should be controlled by `MUNARIUM_MCP_LEGACY_INITIALIZE` (default enabled) so it can be withdrawn later.
+The discovery schema, reserved error codes, subscription behavior and progress/cancellation semantics above have published references. Task support requires separate extension negotiation. Include tests both for the advertised capabilities and for a client requesting an unsupported optional feature. [Discovery](https://modelcontextprotocol.io/specification/2026-07-28/server/discover) · [Base errors](https://modelcontextprotocol.io/specification/2026-07-28/basic) · [Subscriptions](https://modelcontextprotocol.io/specification/2026-07-28/basic/patterns/subscriptions) · [Official SDK subscription behavior](https://py.sdk.modelcontextprotocol.io/handlers/subscriptions/) · [Progress](https://modelcontextprotocol.io/specification/2026-07-28/basic/patterns/progress) · [Cancellation](https://modelcontextprotocol.io/specification/2026-07-28/basic/patterns/cancellation) · [Tasks](https://modelcontextprotocol.io/extensions/tasks/overview).
 
-**No stdio.** Server is a network service and does not host a stdio transport. A desktop client that only speaks stdio needs a local stdio-to-HTTP relay, which is client tooling and out of scope here.
+**Legacy clients.** Accept `initialize` for `2025-11-25`, acknowledge `notifications/initialized` and support `ping`. Process subsequent tool requests with that revision's headers and result shapes. This profile uses no MCP session ID. Supporting `2025-03-26` or `2025-06-18` would require their own fixtures and client evidence, including missing-header behavior where applicable. A malformed modern request must never trigger a permissive legacy dispatch. [Version negotiation](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning) · [Legacy lifecycle](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle) · [Legacy HTTP binding](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports).
 
 ### 4.3 Authentication and the uid contract
 
-`/mcp` reads `Authorization: Bearer <token>` and accepts exactly one credential kind.
+<a id="a1"></a>
 
-- **Capability JWT with the `mcp` scope:** accepted. The uid is the token's `sub`. An `X-Munarium-Uid` header is not required; if present it must equal `sub`, as on `/v1`.
-- **Static `rw`, `ro` or `mgmt` token:** refused with `forbidden`. On `/v1` a static `rw` token maps to an unrestricted data-plane principal (`Principal::access_ctx` in [`state.rs`](../../src/munarium-server/src/state.rs)); that is a convenience for conformance and must not be an agent's authority.
-- **Missing, invalid, expired or revoked token:** HTTP `401` with a JSON-RPC error body carrying the problem slug (`unauthenticated`, `token-expired`, `token-revoked`). Both are sent because an MCP client that receives a bare status code reports a transport fault it cannot explain.
+**A1 · decided.** The issuer must explicitly grant `mcp` on a tenant-bound capability JWT before the caller can enter the endpoint. This admits authenticated protocol discovery and a filtered tool listing. Each tool invocation also requires its normal data-plane scope, including `query` for the collection and runbook listing tools. Enabling the listener grants no new authority to existing application tokens.
 
-`mcp` is a new, additive scope in [`munarium-access`](../../src/munarium-access/src/lib.rs). It grants nothing by itself: each tool also requires the scope its underlying route requires (`query` or `evidence`). Its purpose is separation in both directions. A token minted for an application's REST calls cannot be handed to an agent and used over MCP, and the manager decides explicitly, per token, that an agent may connect. Tokens are minted the existing way, by the API-management layer with its `mgmt` credential through `POST /v1/access-tokens`, with the usual level, compartments, TTL and `rb` runbook allowlist.
+| Scopes on a valid capability JWT | MCP protocol discovery and `tools/list` | MCP query tool invocation | Native v1.4 query operation |
+|---|---|---|---|
+| `query` only | Entry refused with 403 `scope-missing` | Entry refused before dispatch | Allowed within the token's existing authority |
+| `mcp` only | Discovery succeeds. The list is empty. | Refused before dispatch because the token lacks `query` | Refused because the token lacks `query` |
+| `mcp` and `query` | Discovery succeeds. Enabled query tools are visible. | Allowed if the token also satisfies the operation's tenant, clearance, compartment, resource and runbook checks | Same authority as `query` alone |
 
-**OAuth.** The MCP authorization specification is optional and, where implemented, is built on OAuth 2.1 with protected-resource metadata and an authorization server. Server is deliberately not an identity provider and has no authorization server. This proposal does not add one. A client that insists on the OAuth discovery flow must be fronted by the API-management layer, which performs the OAuth exchange with the organisation's identity provider and swaps the result for a capability JWT, the same division of responsibility that applies to human users today. A consequence worth stating plainly: clients that can only authenticate through MCP's OAuth flow will not connect to a bare Server.
+Check the caller's asserted uid against the verified subject when present. Refuse static role credentials even when they could call the corresponding native operation. Surface the existing authentication slug and correct HTTP status, including 401 for invalid or expired credentials and 403 for insufficient entry scope. Advertise a Bearer challenge on 401. An OAuth-capable gateway can advertise its own protected-resource metadata. A bare Server should advertise only authentication mechanisms it supplies. [Problem registry](../api/errors.md) · [MCP HTTP authorization](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization).
 
-## 5. Proposed tools
+The transport scope controls entry to `/mcp`. Additional scopes on the same token retain their v1.4 meaning on native routes. The issuer should grant only the query authority the agent needs. A deployment that needs MCP-only access or a cross-transport spend limit must enforce it at all applicable entry points. Issue `mcp` tokens and switch on the route only after all intended replicas understand the new profile. Keep v1.4 token issuance, default TTL and verification semantics working on either side of a rolling upgrade. [Token implementation](../../src/munarium-access/src/lib.rs).
 
-Tool names use lowercase letters, digits and underscores only. The specification also allows dots and hyphens, but several model APIs restrict function names to a narrower set, and the narrower set works everywhere.
+## 5. Tool contract
 
-Every input schema is a JSON Schema object with `additionalProperties: false`. Arguments are validated against it before any dispatch; a failure is a protocol error (`-32602`) and no Server route is called.
+### 5.1 Query tools
 
-`tools/list` returns only the tools the presented token could use: a token without `evidence` does not see the evidence tools, and with `MUNARIUM_MCP_PAID_TOOLS=disabled` the tools that run a completion are not listed for anyone. Calling an unlisted tool is still refused by the route's own scope check, so the listing is a courtesy and not the control.
+All entries require `mcp` plus the scope shown. List only enabled tools for which the caller has the required scope, in deterministic order. Check the same policy on direct calls. Use closed input schemas and typed route mappings. Authorize a data handle on every use. [Tool protocol](https://modelcontextprotocol.io/specification/2026-07-28/server/tools).
 
-### 5.1 Phase 1: knowledge tools
+| Tool | Operation | Scope | Effects and limits |
+|---|---|---|---|
+| `list_collections` | New filtered read | `query` | Return active, permitted collections in the caller's tenant. Apply authorization before ordering, paginating and producing counts or cursors. |
+| `list_runbooks` | New filtered read | `query` | Enforce the runbook allowlist and collection clearance. Return a bounded projection without restricted collection names, descriptions of hidden resources or raw runbook YAML. |
+| `search_collection` | `POST /v1.2/search` | `query` | Accept query, collection, optional `top_k` and index version. Use that collection's vocabulary and authorized retrieval policy. |
+| `ask_collections` | `POST /v1.2/query` | `query` | Accept a question, collection selection and optional effective date. Preserve checked citations and source references. Requires explicit authorization for provider work. |
+| `open_session` | `POST /v1/runbooks/{name}/sessions` | `query` | Creates an application session and binds its initial runbook/clearance. |
+| `ask_session` | `POST /v1/sessions/{id}/turns` | `query` | Appends a turn. Allow bounded retrieval options and an authorized research profile. Model selection belongs to the runbook. Expansion and verification can invoke providers in addition to completion. |
+| `get_session` | `GET /v1/sessions/{id}` | `query` | Returns an authorized transcript. Enforce a bounded read strategy before exposing large histories. |
+| `close_session` | `POST /v1/sessions/{id}/close` | `query` | Changes session state. Check ownership and the current scope. |
+| `authorize_publication` | `GET /v1.2/collections/{id}/publications/{publication_id}` | `query` | Returns the authorized original reference, with no grant to download bytes. |
+| `get_evidence` | `GET /v1/evidence/{id}` | Read-only evidence capability | Read and audit the permitted sealed manifest. |
+| `read_evidence_rows` | `GET /v1/evidence/{id}/rows` | Read-only evidence capability | Read and audit a bounded window of canonical CSV rows. |
 
-The "model calls" column separates two kinds of cost. A **completion** is a generative call through the provider gateway, charged against the provider configuration's token caps. A **retrieval call** is an embedding or rerank call to an inference endpoint, which exists only for collections enrolled under IR-2 or IR-3 and is charged in tokens and calls with no price.
+**Sessions.** A v1.4 session carries the clearance and compartments recorded at open. Before an MCP turn, transcript read or close, check current tenant, uid, runbook permission and that the live token covers the saved session authority. Qualify a renewed token, narrower same-uid token and another user's token. Preserve native v1.4 session semantics. For multi-collection answers, the proposed MCP request selects the strict availability policy. If a required collection is unavailable, the tool cannot claim a complete answer. Never expose the identity of an unauthorized collection through that check. [Session operations](../../src/munarium-server/src/sessions_api.rs) · [Evidence hierarchy](../guides/evidence-hierarchy.md).
 
-| Tool | Underlying operation | Scope | Model calls | Changes state |
-|---|---|---|---|---|
-| `list_collections` | New filtered read (section 7.2) | `query` | None | No |
-| `list_runbooks` | New filtered read (section 7.2) | `query` | None | No |
-| `search_collection` | `POST /v1.2/search` | `query` | Retrieval calls on an enrolled collection; none otherwise | No |
-| `ask_collections` | `POST /v1.2/query` | `query` | Completion, plus retrieval calls on an enrolled collection | No |
-| `open_session` | `POST /v1/runbooks/{name}/sessions` | `query` | None | Creates a session |
-| `ask_session` | `POST /v1/sessions/{id}/turns` | `query` | Retrieval calls on an enrolled collection; completion when `complete` is true | Appends a turn |
-| `get_session` | `GET /v1/sessions/{id}` | `query` | No | No |
-| `close_session` | `POST /v1/sessions/{id}/close` | `query` | No | Closes a session |
-| `authorize_publication` | `GET /v1.2/collections/{id}/publications/{publication_id}` | `query` | No | No |
-| `get_evidence` | `GET /v1/evidence/{id}` | `evidence` | No | Writes an access-audit row |
-| `read_evidence_rows` | `GET /v1/evidence/{id}/rows` | `evidence` | No | Writes an access-audit row |
+<a id="a4"></a>
 
-Notes on individual tools:
-
-- **`list_collections`, `list_runbooks`.** The existing `GET /v1/collections` and `GET /v1/runbooks` take static control-plane tokens and return every collection and runbook in the tenant with its access requirements ([`collections_api.rs`](../../src/munarium-server/src/collections_api.rs), [`runbooks_api.rs`](../../src/munarium-server/src/runbooks_api.rs)). An agent should see less. These two tools return only the collections the token's level and compartments permit and the runbooks its `rb` allowlist permits, with names, descriptions and, for runbooks, the permitted collections and declared research profile names. Without them an agent has to be told collection and runbook names out of band.
-- **`search_collection`.** Arguments: `query`, `collection`, optional `top_k`, optional `index_version`. Returns hits and the provenance envelope unchanged, and the search execution record once R1 exists. On a collection enrolled for an endpoint-backed embedder or reranker, a search is no longer a local operation: it makes one embedding call before the vector leg and, where enrolled, one rerank call after fusion. The tool takes no argument that selects or bypasses either stage; the collection's `prefer` or `require` policy decides, as it does for every other caller. `vocabulary_collection` is not exposed in the first version; the default (the searched collection's own vocabulary) is the common case and the cross-collection form has its own authorization rule that is better left to applications.
-- **`ask_collections`.** Arguments: `question`, `collections`, optional `effective_on`. Server selects governing publications, retrieves, composes and returns checked citations with server-resolved source references ([collection guide](../guides/collection-vocabularies.md)). This is the tool most agents will want.
-- **`ask_session`.** Arguments: `session_id`, `query`, optional `top_k`, `complete`, `research_profile`. `model_override` is deliberately absent: choosing a more expensive model is a cost decision, and it stays with the application and the runbook's `allowOverrides` policy. The streaming route is not exposed; the tool returns the same `TurnResponse` the unary route returns, including the `EvidenceHierarchyDecision` when a research profile ran ([evidence hierarchy](../guides/evidence-hierarchy.md)). R2 adds a per-collection outcome to that response and a request-level availability policy. The tool does not expose the policy: turns run with `require`, the default, so an agent never receives a partial multi-collection answer it has to recognise as partial. Exposing `report` can be reconsidered once agents are shown to handle the per-member record correctly.
-- **`authorize_publication`.** Returns an identity for an original file, never bytes or a download grant, as on REST.
-- **`get_evidence`, `read_evidence_rows`.** These resolve a citation such as `evidence/<id>#r0003` to the sealed manifest and rows. Class domination is checked per artifact by the existing handlers, a refusal names nothing about the artifact, and each read is recorded in `evidence_access`. The `evidence` scope also permits sealing on REST; no sealing tool exists, so an agent token with `evidence` can read over MCP and could seal only by calling REST directly. Section 12 asks whether a read-only evidence scope is wanted before these two tools ship.
-
-`POST /v1.2/answers` (compose an answer from caller-supplied pinned passages) is not proposed. It exists for applications that run their own retrieval and want a checked narrative; an agent that has retrieved passages is itself the model, and `ask_collections` covers the case where it wants Server to do both.
+**A4 · decided.** Both evidence readers must work with an additive read-only evidence capability before the v1.5 MCP endpoint ships. Apply A1 at each call: require `mcp` and the read-only grant. On the native manifest and row handlers, the read-only grant suffices for an authorized read. Enforce tenant, clearance, compartments and retention on each resolution, and record the caller and outcome without copying evidence into the access audit. The read-only grant cannot seal, upload or commit evidence. Existing native `evidence` tokens retain their v1.4 read and sealing permissions. Record the new scope’s wire spelling and contract in the shared decision process. [Evidence handlers](../../src/munarium-server/src/evidence_routes.rs).
 
 ### 5.2 Tool results
 
-A successful call returns:
+| Outcome | What the agent receives |
+|---|---|
+| Successful routed query | An object in `structuredContent` containing the native result, plus its JSON serialization in a text block for clients that need text. Check semantic equality on the same native body, preserving integer precision, order within arrays, provenance, citations, optional fields and future extensions. |
+| Audit admission unavailable | A typed refusal indicating that this invocation did not run. If the commit acknowledgment was lost, Server can know that it withheld dispatch even while the audit record’s presence remains uncertain. |
+| Normal domain refusal | A tool result with `isError: true`, the native public problem fields including type URI and status, and R11 retry guidance when present. Derive a short slug from the type for display. An error message must never carry driver output, credentials or inaccessible data. |
+| Invalid message or tool name | A JSON-RPC protocol error with the appropriate request ID. Invalid arguments on a recognized tool yield a tool error before provider work or mutation. For domain failures after dispatch, preserve the observed outcome and any uncertainty. |
+| Response exceeds the size bound | A typed tool error. For a read, name an available limit or cursor. If an operation may already have changed state or incurred spend, report that uncertainty and provide the authorized recovery read when available. Prevent silent truncation and automatic replay. |
 
-- `structuredContent`: the REST response body, unchanged. The JSON an agent sees is the JSON an SDK user sees, so the two cannot drift.
-- `content`: one text block containing the same JSON serialised, for clients that do not read structured content.
-- `isError: false`.
+Measure the serialized envelope, including both structured and text representations, with bounded buffering. Bound inputs and responses *before* expensive or stateful operations where feasible. Do not expose a state-changing entry until a lost, oversized or interrupted response has a bounded way to identify its outcome, or the operation supports a caller-supplied idempotency key. A JSON-RPC request ID is a correlation ID. New native idempotency semantics would require a separate additive contract. The same rule applies to a tool which can consume a budget.
 
-A Server refusal (any `application/problem+json` response) returns `isError: true` with `structuredContent` of `{slug, status, detail, request_id}` plus the problem's extension members, and a text block that leads with the slug. Examples an agent must be able to tell apart: `scope-missing`, `forbidden`, `not-found`, `session-not-open`, `required-evidence-unavailable`, `daily-cap-reached`, `rate-limited`, `datastore-unavailable`, `evidence-forbidden`, `evidence-expired`. The registry in [errors.md](../api/errors.md) applies unchanged and no new slug is needed.
+Keep citation quotes exact in both result formats. Treat source text as evidence for the model and never copy it into schemas, annotations or action instructions. Document field absence on an older response and distinguish a skipped retrieval stage from an empty corpus. Generate an optional output schema only once both conformance and the reference page can use the same source. Annotations describe side effects for the user interface. Enforcement belongs to the dispatcher and native handlers. [Wire compatibility policy](../wire-compatibility.md).
 
-**Retry guidance.** R11 adds `retryable` and `retry_action` to problem responses. They arrive in `structuredContent` with the other extension members, and the text block states the action in words directly after the slug: repeat the same request, retry later, do not retry and inspect, or do not retry. An agent is the caller least able to infer this from a status code, and the one most likely to loop on a refusal. Until R11 exists, the MCP layer does not invent the mapping: the text block carries the slug and detail only, and the reference documentation tells agent authors which slugs are safe to retry.
 
-**Disclosure of how a result was produced.** Two additions from the planned work reach the agent with no MCP code, because the body is passed through unchanged: the search execution record (R1: which engine and legs ran, and whether the embedder and reranker applied) and the per-collection outcomes of a turn (R2). The tool descriptions for `search_collection` and `ask_session` should say that these fields exist and what a not-applied stage means, since a lexical-only result from a collection the agent believes is semantic is otherwise indistinguishable from a full one.
+## 6. Dispatch boundaries
 
-**Passage text is returned verbatim.** U9 has the admin console render invisible and direction-changing characters as visible escapes. Tool results cannot do the same: citation quotes are checked against the passage exactly, and an agent that quotes an escaped form would fail that check. Passages therefore reach the model as stored. Tenant documents are untrusted input to the agent, and a passage can contain text written to look like an instruction. Rule D7 keeps such text out of tool metadata; nothing in Server can keep it out of results. The reference documentation must say so.
+| Excluded from the v1.5 MCP catalog | Native routes or operations | Reason |
+|---|---|---|
+| Index lifecycle | `/v1/indexes/*`, `/v1/collections/{id}/activate-index`, `/v1/index-artifacts/*`, `/v1/index-build-jobs*`, `/v1/retrieval-rollout*` | Alters what every reader is served. Builds are expensive and promotion is fleet-gated. |
+| Collections, shapes, runbooks | `POST /v1/collections`, `/v1/shapes`, `/v1/runbooks*` (apply, run, approve, remove), `/v1/runs/*`, `/v1/authoring/*`, `/v1/chronology-rules*` | Defines the governance an agent is subject to. Approval is a human gate. |
+| Ingestion | `/v1/sources`, `/v1/ingest*`, `/v1/versions/{id}/ingests` | Changes the corpus and future indexes. A later ingestion tool would need separate authority and R3 extraction limits. [Deferred scope](#11-deferred) |
+| Retrieval model enrollment (planned, IR-1 and IR-4) | The provider conformance probe, and the per-collection embedder and reranker enrollment and policy API | Decides which model every reader's results pass through, and an embedder change forces a rebuild. Management role by design. |
+| Build-job control (planned, R6 and R9) | Cooperative cancel, job progress and the job event ring | Operator view of builds an agent cannot start. |
+| Vocabulary and publication governance | `/v1.2/vocabulary-settings`, `/v1.2/collections/{id}/vocabulary*` (write, refresh), `/v1.2/collections/{id}/governance` | Changes how every query in a collection is expanded or which publication governs. |
+| Providers and budgets | `/v1/providers*`, `/healthai`, `/v1/max-tokens`, `/v1/monetary/*` | Credentials, spend ceilings and raw model access. A raw `complete` tool would make Server a model proxy for the agent. |
+| Tokens | `/v1/access-tokens*` | An agent must not mint or revoke authority. |
+| Evidence writes and retention | `POST /v1/evidence`, upload, commit, `DELETE`, legal hold, access audit | Sealing is a service role; purge and hold are management-only. |
+| Governed memory | Ledger reads and writes under `/v1/versions` and `/v1/claims` | v1.4 uses native ledger credentials. MCP needs a separately designed lineage-scoped authority model. [Future governed memory](#111-governed-memory-tools) |
+| Findings writes | `POST /v1/versions/{id}/findings` | A service-to-service write. |
+| Reports and audit | `/v1/reports/*`, `/admin/*` | Management-only, and includes other users' activity. |
+| Recovery and retention | `/v1/command-recovery*`, `/v1/source-retention` | Operator procedures with restore duties. |
+| Platform plane | `/v1/platform/*` | mTLS-admitted authority, record and activation operations. |
 
-Protocol errors (unknown tool, invalid arguments, header mismatch, unsupported version) are JSON-RPC errors and never tool results.
+The dispatcher applies two independent controls.
 
-**Size.** A turn with many hits can be large. Results above `MUNARIUM_MCP_RESULT_MAX_BYTES` (proposed default 256 KiB) are refused with a tool error that says so and names the argument that reduces it (`top_k`, or `limit` for evidence rows). Truncating a result silently would let an agent quote an incomplete answer as complete, which is the failure the evidence hierarchy exists to prevent.
+1. **The table is closed.** The dispatcher maps a tool name to a compiled `(method, route template, argument mapping)` entry. The compiled entry fixes the method and literal portion of the path. Path parameters are percent-encoded per segment with the same `component` and `request_uri` logic `ServerApiService` uses, whose test `path_values_cannot_change_the_selected_operation` already pins that property.
+2. **The native handler checks authority.** Control and management operations retain their native credential requirements. Platform routes retain service-transport admission. The MCP boundary independently restricts each entry to its reviewed tool, operation, argument schema, data scope and cost policy.
 
-**Output schemas.** Declaring `outputSchema` obliges the server to conform on every call. The schemas already exist in the generated OpenAPI document. The first version should omit `outputSchema` and add it once a generator from the OpenAPI components is in place, so the two are produced from one source. The planned work adds response members to exactly the bodies these tools return (R1, R2, R11 and the rerank receipt), so a schema written by hand now would be wrong within a release. When schemas are added they must permit additional properties. The same applies in the other direction to R12: where a request DTO gains a validating newtype, the tool's input schema must carry the same constraint explicitly, as the OpenAPI annotation must.
+A unit test enumerates the compiled entries and rejects routes outside a separately maintained allowlist. A conformance test presents a fully scoped MCP token and verifies that representative administrative operations cannot be reached by any tool name or argument.
 
-**Annotations.** Read-only tools are marked read-only. `open_session`, `ask_session` and `close_session` are marked as state-changing, non-destructive and closed-world. Clients treat annotations as hints, so nothing depends on them.
+## 7. Implementation in Server
 
-### 5.3 Phase 2: governed memory tools (needs a contract decision)
+### 7.1 Layout
 
-The ledger is the part of Server designed for a model to write to: "the model proposes; the mesh disposes". A claim that conflicts with the record is stored as disputed with gate findings, never dropped and never silently applied. Letting an agent propose claims is therefore governed in the sense this proposal requires.
+Add a module in `munarium-server` for version-specific envelopes and the compiled tool table. Build the native router once and share a clone with the in-process dispatcher, or measure the startup and memory costs of the existing bridge construction pattern. Keep `munarium-core` independent of HTTP. Validate any proposed SDK dependency against the musl build, licensing and dependency gates. The size of another implementation is a poor estimate for this work.
 
-It cannot ship in phase 1, because the ledger routes authenticate with static tokens only (`AppState::authenticate` refuses a capability JWT), and the ledger has no level or compartment model: a static `rw` token can write any lineage in the tenant. Rule D4 forbids giving an agent that.
+### 7.2 Dispatch
 
-Candidate tools, for discussion:
+For routed calls, resolve the table entry, validate bounded arguments and verify the caller’s entry and operation scopes. Confirm the durable admission from §7.3 before dispatch through the native router. Encode each path segment with the existing bridge helper and use the caller’s bearer and verified uid. Pass the admission identity in a private request extension. The native handler still enforces its resource checks, body limits and retention policy. The inner router omits `/mcp`. [Native bridge](../../src/munarium-server/src/grpc_api.rs) · [Capture middleware](../../src/munarium-server/src/middleware.rs).
+
+For `list_collections` and `list_runbooks`, resolve the ordinary query access context before reading, then authorize and project in tenant scope before pagination. Test a collection or runbook outside the first page that the token *is* allowed to see. Bind any opaque cursor to the caller's scope and ordering. The existing management listings remain available to native callers with their existing roles. [Collection listing](../../src/munarium-server/src/collections_api.rs) · [Runbook listing](../../src/munarium-server/src/runbooks_api.rs).
+
+### 7.3 Audit and metrics
+
+<a id="a6"></a>
+
+**A6 · decided.** Before executing any authorized `tools/call`, Server must receive confirmation that the shared durable audit store has committed its admission record. Check the verified credential, scopes, tool and bounded arguments first. Write a server-assigned invocation ID, `plane = "mcp"`, fixed tool name, tenant, uid, token ID, request ID and time. Keep credentials, argument bodies, retrieved text and evidence rows out of the admission record. A content-free, typed refusal ends the call if the store is unavailable or the commit acknowledgment is missing by the deadline. No tool handler runs, reads application data, mutates state, reserves provider spend or contacts Lens or another provider in that case.
+
+Apply the same gate to all eleven tools, including `list_collections` and `list_runbooks`, before fetching their data. Authenticated protocol discovery, the legacy handshake and the scope-filtered `tools/list` catalog are protocol operations. They execute no tool. Keep transport refusals and audit-admission failures observable with bounded metrics. Trust identity only after verification.
+
+The v1.4 interaction writer enqueues best-effort records and counts drops and failed inserts. The memory store discards those records. Keep native REST and gRPC capture behavior intact. An MCP invocation requires a confirmed durable commit even when an interaction writer is healthy. A memory-only deployment without a durable audit store must refuse tool execution. [Interaction writer](../../src/munarium-server/src/interactions.rs).
+
+Count one logical invocation across MCP and its inner handler. Correlate the tool’s observed outcome and any domain-specific evidence access, budget or session records to that admission. A committed admission says who was admitted to run which tool. After a crash, a lost acknowledgment or a failed outcome write, it may have no known execution result. Reconcile by invocation ID against available durable receipts and preserve an unknown outcome when the evidence is insufficient. Never replay work solely because an admission exists or because its outcome is missing. The invocation ID does not add exactly-once semantics to the native operation.
+
+The v1.4 `interactions.plane` column is unconstrained text. The timeseries handler explicitly accepts only `rest` and `grpc`. Add `mcp` to that filter and its generated references. Count each admitted invocation once in the unfiltered total and report known outcomes separately. Test old SDK report decoders, older binaries reading mixed rows and counts across all three planes. Use additive storage changes for admission and outcome linkage where needed. [Database definition](../../src/munarium-store-pg/migrations/0010_identity_interactions.sql) · [Report filters](../../src/munarium-server/src/reports_api.rs).
+
+### 7.4 Admission and cost
+
+Acquire an R7 agent permit before parsing the body. Under B3, MCP traffic fits within the configured REST ceiling and leaves its authenticated control reserve available. Charge expensive stages under the heavy-work limit. Transfer or share admission context across the inner dispatch so an MCP call cannot take the same capacity twice. Test saturation with application requests, health and a token revocation in flight. Bound admitted work by deadline, including provider retries. Check cancellation, drop counters and permit recovery. [B3 control capacity](airk-analysis.md#b3) · [SC1 scale-out qualification](scale-out.md#sc1)
+
+<a id="a2"></a>
+
+**A2 · decided.** MCP generative model calls are disabled by default. An operator must explicitly enable generation, name the budget owner and configure both A8 allowances for the collection or index. These requirements apply to local and remote models, including deployments without price data. Currency may appear in reports when pricing is available. MCP generation admission uses tokens.
+
+<a id="a8"></a>
+
+**A8 · decided.** Operators configure a per-request allowance and a daily allowance, each in total input plus output tokens, at the collection or index level. Server resolves the policy from the authorized collection and pinned index. Tool arguments cannot select the policy or payer. In one admitted tool invocation, expansion, verification, final answers, re-asks and every physical retry all count toward the request total. A turn with `complete: false` can still request model-based expansion. Each scope’s daily allowance covers its requests across all replicas for the UTC day. Changing an index pin must preserve a collection’s accumulated daily usage. [Session execution](../../src/munarium-server/src/sessions_api.rs)
+
+**Implementation recommendation for policy inheritance.** With no index-specific token allowances, a pinned index inherits the collection’s request and daily pair. A complete index-specific pair supplies the index’s own request ceiling and daily allowance. Reject an incomplete override during policy validation. A configured collection daily balance remains a separate limit across all of its pins, including indexes with overrides. Reserve the collection’s balance once per attempt and each distinct contributing index’s own daily balance when configured. Replacing or adding a pin cannot reset collection usage. The shared-request rule in [A9](#a9) compares the resolved per-request ceilings.
+
+Before each physical submission, reserve against the remaining request allowance and each applicable daily allowance in one shared, durable admission decision. Use the A6 invocation identity and a distinct physical-attempt identity. Size the reservation from a defensible upper bound on the effective input and permitted output, including model-specific framing and reasoning tokens where applicable. If a required allowance is insufficient, accounting is unavailable, or the adapter cannot bound token use, refuse the attempt before dispatch and return a typed error for a required stage. Existing provider checks continue to apply.
+
+Settle each reservation once against reliable usage. Keep the full reservation against its original request and day when dispatch or usage is uncertain, including after cancellation, restart or a lost reply. A retry needs a fresh reservation in the same request. If provider evidence exceeds a declared bound, retain the actual usage and stop further use of that unverified bound pending investigation. The native v1.4 optional `dailyTotalTokens` is keyed by tenant, provider configuration and UTC day, and its physical-attempt estimates can be lower than observed usage. Its native admission, tier counters and settlement stay compatible. That estimate alone cannot establish an A8 hard limit. [Native token budgets](../tokenbudgets.md)
+
+<a id="a9"></a>
+
+**Shared generation · A9 decided.** For an attempt with multiple contributing collections or indexes, use their largest effective per-request allowance after resolving each contributor’s collection and index policy. The allowances do not add. Before dispatch, Server resolves the scopes that supply material or on whose behalf the stage runs, including source material carried forward in session context. For expansion before retrieval, use the authorized scopes selected for that expansion. An unrelated or merely available index cannot raise the limit. Every contributor must authorize the same payer. An unknown contributor or the absence of a commonly authorized budget refuses the attempt.
+
+For example, Legal allows 2,000 tokens per request and Finance allows 8,000. Both contribute to a shared request, authorize the same payer and have sufficient daily balances. Legal alone retains its 2,000-token ceiling. The combined answer may exceed that ceiling because its single generation call serves both indexes and Finance authorizes the larger request. Its ceiling is 8,000 tokens. An initial 5,000-token attempt is admitted and, if it uses all 5,000, at most 3,000 remain for later stages and retries. If the contributing indexes change between stages, carry the request's usage and outstanding reservations forward when checking the next attempt. Refuse a submission that would take the combined request above 8,000.
+
+The larger limit applies to the request allowance only. Each contributor must independently have enough daily tokens for the full attempt. Atomically reserve against the remaining shared request allowance and all applicable daily balances across replicas. Deduplicate repeated references to a scope and leave no partial reservation on refusal. On settlement, the 5,000 tokens in the example consume 5,000 of each contributing scope’s daily allowance and produce a single 5,000-token charge to the common payer. Correlate settlement to the physical-attempt identity so a repeated receipt cannot duplicate usage. Scope refusal details and usage reports to the caller’s authority.
+
+Embedding and reranking on an enrolled collection incur inference costs even with generation disabled. Under I2, charge the collection's tenant-owned budget and record the verified caller. Use the same admission and accounting path as native reads. Record authorized shadow evaluations separately. The agent cannot select a different payer through tool arguments. Under I1, propagate a native typed refusal as a tool error, or preserve the skipped-stage disclosure when the operator has selected fallback. MCP tool arguments cannot relax the collection's policy, select its endpoint or enroll it. [I1 retrieval failure policy](airk-analysis.md#i1) · [I2 retrieval budgets](airk-analysis.md#i2)
+
+### 7.5 Configuration
+
+| Setting | Proposed default | Acceptance |
+|---|---|---|
+| `MUNARIUM_MCP` | `disabled` | An unset switch preserves the v1.4 listener surface. The enabled v1.5 profile serves both A3 revisions. |
+| `MUNARIUM_MCP_ALLOWED_ORIGINS` | empty | A supplied origin requires an exact configured match. Server-side agents may omit it. |
+| `MUNARIUM_MCP_MAX_CONCURRENCY` | Tune to the R7 pool using the qualification workload | Measure at the smallest supported pool size and record the numeric default in the [open-items register](README.md#open-items) before implementation. Protect native and control traffic. |
+| `MUNARIUM_MCP_PAID_TOOLS` and operator-managed collection/index generation policy | `disabled`, with no owner or allowances supplied | Validate explicit enablement, budget binding and the resolved pair of nonnegative integer allowances under [A2](#a2), [A8](#a8) and [A9](#a9). Missing effective policy or an invalid binding keeps generation disabled. Hide generation-only tools where disabled. |
+| `MUNARIUM_MCP_RESULT_MAX_BYTES` | 262144 | Enforce the bound on the entire serialized tool response. Apply a separate proposed 1 MiB input ceiling. |
+| `MUNARIUM_TOKEN_TTL_SECS` (existing) | 3600 seconds | The deployment operator configures the default for newly issued capability JWTs. The broker normally omits `ttl_secs` to use it. Section 10.1 gives the existing precedence and bounds. |
+
+### 7.6 Documentation and contract effects
+
+Generate a tool table from compiled entries for the future MCP API reference. Link the route, optional chart settings, authentication profile, cost boundaries and tested clients in the Server docs. Keep existing REST methods, typed gRPC tags, SDK signatures and required inputs intact. Recheck scope issuance, the additive timeseries filter, the required read-only evidence capability and the four released SDKs through their ordinary entry points. Publish/re-vendor applicable contract candidates through the owning process. [REST reference](../api/rest.md) · [gRPC coverage](../api/grpc.md).
+
+## 8. Qualification and rollback
+
+<a id="a5"></a>
+
+**A5 · decided.** Hold Server v1.5 until the exact release candidate passes the complete MCP qualification suite. Record the Server revision and artifact digest with all results. A missing tool, a missing real-client run for either A3 revision, an A4 authority failure or another incomplete or failed required check keeps the Server release blocked. Qualify the enabled profile separately from the default-off upgrade path.
+
+| Evidence | Pass condition |
+|---|---|
+| <a id="a5-t1"></a>**A5-T1** · [Complete tool catalog](#a5) | Exercise all eleven §5.1 tools through `/mcp` on the same candidate. For each, record the tool name, configuration, granted scopes, expected result or state transition and observed outcome. Use an explicitly budgeted synthetic provider for generation. Cover the filtered listings and direct-call denials separately. |
+| <a id="a5-t2"></a>**A5-T2** · [Native baseline](#a5) | Use a populated database and v1.4 credentials, sessions, runbooks, pinned indexes and clients. With MCP off, replay successful native requests, refusals and budget limits over REST and gRPC. Compare stable fields and state transitions, documenting volatile IDs, timestamps and the comparison fixture. |
+| <a id="a5-t3"></a>**A5-T3** · [Mixed replicas and rollback](#a5) | Keep MCP disabled while upgrading. Exercise v1.4 clients through both versions. Enable MCP only on qualified replicas, then drain and disable it, exercise old native reads/writes again, and verify access controls and old report readers on retained MCP rows. Leave additive data in place. Document any restore boundary before rollout. |
+| <a id="a3-t1"></a>**A3-T1** · [Protocol fixtures](#a3) | Pin both A3 revisions, upstream schema digests and client versions. Verify headers, origin, direct modern calls, the legacy handshake, method errors, missing scopes, oversized input/results and unsupported features. Exercise requests without replica affinity. Attach the two [real-client transcripts](#105-interoperability-record) alongside the fixture results. |
+| <a id="a1-t1"></a>**A1-T1** · [Entry and tool authority](#a1) | Run the three scope combinations in the authority table against discovery, listing, direct tool invocation and native REST/gRPC query entry points. A missing entry or operation scope must prevent tool dispatch and provider calls. Cover static roles, revoked/expired tokens, uid mismatch, narrower renewed authority, compartments, tenant separation and page boundaries. Test direct invocation of every hidden or paid tool. |
+| <a id="a7-t1"></a>**A7-T1** · [Broker and lifetime](#a7) | On native v1.4 and the candidate, compare issuance at the built-in default, a configured default and a trusted per-request override. Check the 1- and 86,400-second bounds, native clamping and rejection of malformed input. On the candidate, issue an MCP token, change the default, and verify the old signed expiry is unchanged. After expiry plus the verification leeway, confirm 401 and zero tool execution, renew through the broker, and reconnect with the new credential on another replica. Check subject, tenant, permitted scopes and expiry. Reconnection must not replay an interrupted tool call. |
+| <a id="a6-t1"></a>**A6-T1** · [Durable admission](#a6) | For each of the eleven tools, observe a confirmed record before its handler runs. Force write failure, deadline expiry and a committed write with a lost acknowledgment. Verify refusal, zero tool reads, mutations, budget reservations and provider attempts, including on the two listing paths. Verify the durable-store requirement in a memory-only deployment and distinguish authenticated protocol discovery from tool execution. |
+| <a id="a6-t2"></a>**A6-T2** · [Audit recovery](#a6) | Stop a replica after admission and, separately, after a tool effect but before outcome recording. From another replica, recover the original attributed admission, link whatever outcome evidence is available and count one invocation with no automatic replay. A missing outcome must remain unknown. Verify that admission alone cannot be counted as a successful tool call. |
+| <a id="a4-t1"></a>**A4-T1** · [Evidence readers](#a4) | Resolve a synthetic sealed manifest and a bounded row range through both MCP tools and the native handlers. A token with only the read-only grant can read natively and is refused MCP entry. Add `mcp` and both readers become visible and callable for authorized evidence. An `mcp` + `query` token without the evidence grant cannot list or invoke either reader. Exercise cross-tenant and insufficient-clearance refusals, retention and access auditing. With only the two MCP/read grants, verify that no evidence-write tool is reachable and that native seal, upload and commit are denied without mutation. Separately replay an authorized native read and seal with a v1.4 `evidence` token. |
+| <a id="a5-t4"></a>**A5-T4** · [Native result parity](#a5) | Compare actual inner response JSON to tool payload on pinned inputs. Test native refusal slugs, R1 execution, R2 per-member outcomes and R11 retry members when present. Exercise absent optional fields too. Use deterministic fixtures for generated answers. |
+| <a id="a5-t5"></a>**A5-T5** · [State and interruption](#a5) | Disconnect or hit response limits around each state-changing boundary. Verify recovery, audit attribution and uncertain-outcome feedback without replay. |
+| <a id="a2-t1"></a>**A2-T1** · [Generation opt-in](#a2) | With a recording provider and one scope, omit the opt-in, owner and each allowance in turn, then set each allowance to zero. Count zero physical calls for expansion (including `complete: false`), verification and final answers. Exercise authorized generation for a model without pricing. A separate enrolled search charges embedding and reranking under I2. |
+| <a id="a8-t1"></a>**A8-T1** · [Request and daily limits](#a8) | Exhaust the request allowance across expansion, verification, answer generation and a physical retry while daily capacity remains. Separately exhaust daily capacity across several requests with request capacity remaining. Race two replicas for the last daily reservation. Compare provider arrivals with admitted attempts, including a denied retry, and confirm that an unbounded request makes zero calls. |
+| <a id="a8-t3"></a>**A8-T3** · [Policy inheritance](#a8) | Exercise the recommended policy with two pins in one collection. One inherits both allowances and the other overrides both. Verify both effective request ceilings, reject an incomplete override, exhaust the shared collection day, then switch pins. A new pin with index capacity still refuses. Separately exhaust only the index-specific daily balance and confirm the collection reservation is rolled back. |
+| <a id="a9-t1"></a>**A9-T1** · [Shared request ceiling](#a9) | Run the shared-call fixture in the governing decision with the named contributors, a standalone index and an unrelated higher-limit index. Check dispatch on admission, refusal above the effective request ceiling and exhaustion across stage changes and retries. Compare the provider’s physical attempts and the payer’s charge, including after a duplicate settlement receipt. |
+| <a id="a9-t2"></a>**A9-T2** · [Shared authority and daily limits](#a9) | With sufficient request capacity, leave one contributor’s daily balance below the attempt bound. Verify refusal, zero provider arrivals and no partial debit. Repeat with an unknown contributor and without a commonly authorized payer. Race two replicas for the remaining capacity. Verify that all daily reservations commit together, repeated scopes are counted once and reports disclose only authorized usage. |
+| <a id="a8-t2"></a>**A8-T2** · [Accounting recovery](#a8) | Interrupt after reservation and after submission, omit or truncate provider usage, and reconcile from a second replica. Check the retained reservation against its original day across UTC rollover, settle a duplicate receipt only once, and verify that an unresolved attempt keeps its headroom occupied. Inject observed usage over the adapter’s bound and check the recorded excess and refusal of subsequent attempts using that bound. |
+| <a id="a6-t3"></a>**A6-T3** · [Operational evidence](#a6) | Verify persisted MCP admissions and outcomes through the report filter. Saturate the v1.4 best-effort interaction writer separately and verify its native loss signals. Demonstrate that heavy agent load leaves the control action available. Bound session reads and test resource-level refusal after durable admission. |
+
+Removing the outer scope check, dispatching before a durable commit is confirmed, skipping the paid-stage check, dropping filter-before-pagination or counting an inner dispatch as a second invocation must each fail a named test. Record exact artifact versions, checkout, configuration, observed outcomes and pending check owners in the release evidence. [Server validation ladder](../guides/validation.md).
+
+## 9. Interaction with the planned Server work
+
+### 9.1 Dependencies
+
+| Item | MCP dependency |
+|---|---|
+| R7, R11 | Require bounded admission and typed retry guidance before enabling the profile. Retrying a stateful operation also requires a known outcome or an explicit idempotency contract. |
+| R1, R2, IR-0 to IR-4 | Require truthful stage disclosure before opening endpoint-backed collections to agents. Enable multi-collection turns only when required-member failure and completeness are distinguishable. |
+| R3, R4 to R6, R8 to R10 | PDF parsing and job orchestration stay outside the tool table. Honor native refusals when a verified artifact becomes unavailable. |
+| R12 and later IR work | Share touched validation constraints with input schemas. Preserve citation binding if optional packing changes the size of a response. |
+| U1 to U14 | Surface agent activity and revocation through the normal operator views. |
+
+### 9.2 Sequencing
+
+1. Carry A1, A2, the A4 read-only grant and the A8/A9 token accounting rules into the shared contract decision process. Specify the trusted collection/index policy representation and how Server identifies the contributors to each shared call. Pin both A3 wire schemas and freeze v1.4 native fixtures.
+2. Build an off-by-default route with discovery, filtered listing and a deterministic local search. Prove token scope, refusal semantics and receipt attribution end to end.
+3. Implement both evidence readers and their shared native read-only authority. Complete the nine query tools, including the budgeted and stateful paths under their respective policies.
+4. Collect the [A5 qualification evidence](#a5) and both real-client transcripts on the exact candidate. Record mixed-version native operation and operator disablement in the release guide.
+
+### 9.3 Admin console
+
+Show the `mcp` scope and effective revocation setting on tokens. Distinguish immediate enforcement from access continuing until token expiry. Show traffic by plane and tool, load shedding, durable audit admission refusals and invocations with unknown outcomes. Report native interaction queue loss separately. Use U9's visible escaping for operator views of untrusted text. Ensure `rest` and `grpc` reports still work before any MCP calls have occurred. The console's management actions continue to use their native roles.
+
+## 10. Connecting and qualifying clients
+
+### 10.1 Common setup
+
+<a id="a7"></a>
+
+**A7 · decided.** The deployment operates the broker, and the project supplies a documented integration example. The broker authenticates the user through the deployment’s identity provider and derives tenant, uid, clearance, compartments, scopes and permitted runbooks from trusted policy. It calls `POST /v1/access-tokens` with its tenant’s static management credential and asserted broker uid. Give the client the HTTPS MCP URL, its own issued bearer and expiry. Keep the management credential with the broker. [Token issuance](../../src/munarium-server/src/tokens_api.rs) · [Server security posture](../security-posture.md).
+
+For example, a broker that has authenticated a reader and authorized the `handbook` runbook could send this v1.5 issuance body. Omitting `ttl_secs` uses the deployment’s configured lifetime. The `mcp` grant requires a Server that implements A1.
+
+```json
+{
+  "uid": "example-reader",
+  "access_level": 1,
+  "compartments": [],
+  "scopes": ["mcp", "query"],
+  "runbook_refs": ["handbook"]
+}
+```
+
+**Lifetime precedence.** The REST issuer uses the trusted request's `ttl_secs` when supplied, then `MUNARIUM_TOKEN_TTL_SECS` when configured, otherwise 3,600. Both values use unsigned whole seconds. Issuance clamps the selected integer to 1–86,400 seconds. An unparseable configuration value fails configuration loading. The existing transports differ for zero. Explicit REST `ttl_secs: 0` produces a one-second token, while the typed gRPC issuer treats zero as an omitted value and uses the configured default. Preserve both v1.4 behaviors. A broker that needs a per-request override can specify a positive duration. [Server configuration](../../src/munarium-server/src/config.rs) · [Typed gRPC issuer](../../src/munarium-server/src/grpc_platform.rs) · [JWT issuance and verification](../../src/munarium-access/src/lib.rs)
+
+The lifetime governs newly minted capability JWTs. Each receives a signed `iat`, `exp` and distinct `jti`. A configuration change does not alter a previously issued token, the lifetime of a static role credential, or a console session’s idle policy. Verification preserves v1.4’s 30-second clock-skew allowance. On expiry, the client obtains a fresh grant from the broker and reconnects or replaces its bearer. The broker rechecks current user authority. Use the existing revocation policy for an earlier withdrawal. Token replacement alone cannot resolve the outcome of an interrupted tool invocation.
+
+### 10.2 Editors and coding agents
+
+A concrete candidate configuration for a Codex CLI version supporting Streamable HTTP reads the token from the named environment variable. Qualify the recorded CLI version before listing it as supported. [Codex MCP configuration](https://developers.openai.com/codex/mcp).
+
+```toml
+[mcp_servers.munarium]
+url = "https://munarium.example.com/mcp"
+bearer_token_env_var = "MUNARIUM_TOKEN"
+```
+
+| Client candidate | Configuration to exercise | What the run must establish |
+|---|---|---|
+| Claude Code | HTTP connection with headers or a deployment-controlled `headersHelper` | Confirm renewal through the deployed broker and how the client handles a refusal after renewal. [Claude Code MCP](https://code.claude.com/docs/en/mcp) |
+| Cursor | A URL and `Authorization` header in `.cursor/mcp.json`, with `${env:MUNARIUM_TOKEN}` referencing the caller's environment | Confirm scope-specific listing and whether replacing the environment token requires a reload. [Cursor MCP configuration](https://cursor.com/docs/mcp) |
+| VS Code | An HTTP connection with a password input in a version that supports editor-managed configuration | Confirm that the workspace file contains no bearer value and record how the user replaces the input after expiry. [VS Code MCP configuration](https://code.visualstudio.com/docs/agents/reference/mcp-configuration) |
+| Gemini CLI | A Streamable HTTP connection under `httpUrl` with request headers | Verify the credential source and the action on 401. [Gemini CLI MCP servers](https://geminicli.com/docs/tools/mcp-server/) |
+| Claude Desktop, Windsurf/Devin | Configure the remote endpoint through the tested client's settings | Determine the available credential mechanism first. Qualify an OAuth-only client against the deployment's gateway profile. [Claude remote connectors](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp) |
+
+### 10.3 Stdio-only clients
+
+A separately reviewed and pinned local relay can translate stdio to HTTPS. For a candidate such as `mcp-remote`, qualify its HTTP-only mode and credential-file handling, and keep live token values out of process arguments. Include the relay version and credential handling in the test record. A relay's successful connection qualifies only that client–relay–Server combination. [Relay documentation](https://github.com/punkpeye/mcp-remote).
+
+### 10.4 Hosted connectors and SDK applications
+
+A hosted connector moves the MCP request and result through the vendor's infrastructure. Qualify one only where the gateway exposure, corpus and spend authority allow it. A local SDK client can exercise the same tool table against a loopback test service with fictional data. For multi-user applications acquire and renew the token for the active user. Applications handling tool results as model input should preserve user approval choices for access and state changes.
+
+For a Claude Messages connector, exercise the server's `authorization_token` field. For an OpenAI Responses connector, exercise `server_url`, `authorization` and a restricted `allowed_tools` list. Record the observed protocol revision and interaction on expiry. An advertised model API option alone does not establish that the connector will work against bare Server. [Claude MCP connector](https://platform.claude.com/docs/en/agents-and-tools/mcp-connector) · [Responses MCP servers](https://developers.openai.com/api/docs/guides/tools-connectors-mcp).
+
+### 10.5 Interoperability record
+
+| Gate | Evidence to attach |
+|---|---|
+| <a id="a3-t2"></a>**A3-T2** · [Modern client](#a3) · `2026-07-28` | Connect a real versioned client to the candidate. Run authenticated `server/discover`, verify the advertised versions and tools capability, then run `tools/list` and `tools/call` and check the expected result on a synthetic collection. |
+| <a id="a3-t3"></a>**A3-T3** · [Legacy client](#a3) · `2025-11-25` | Connect a real versioned client to the same candidate. Verify the revision returned by `initialize`, send `notifications/initialized`, then run `tools/list` and `tools/call` under the negotiated revision and check the same expected result. A client that supports both revisions may supply both runs. |
+| Per tested client | Record the Server artifact, client name and version, observed wire revision, transport and authentication mode. Attach redacted transcripts for the successful sequence, a denied tool call and token expiry/renewal. Record the operator-visible error and result size. Limit published client support to the exact combinations exercised. |
+| Other surveyed clients | Explicitly mark untested, incompatible or blocked and give the reason. Document vendor-specific setup only after reproducing it on the named version. |
+
+## 11. Deferred
+
+Streaming turns, tasks, prompts, resources, subscriptions, ingestion, a Server-owned OAuth issuer and governed memory reads and writes are outside the v1.5 MCP catalog. Existing native routes retain their v1.4 contracts. MCP qualification can exercise local query tools independently of Lens. The Server release also depends on Lens qualification. [REL1 release gate](README.md#rel1)
+
+### 11.1 Governed memory tools
+
+The append-only ledger accepts proposed claims, records conflicting claims as disputed and retains gate findings. A future MCP profile could expose the following reads and gated writes. The v1.4 ledger uses native static credentials. A static `rw` token can write to any lineage in its tenant. A capability-based profile would need a shared contract defining which lineages the caller can access under MCP-RULE-2.
 
 | Tool | Underlying operation | Kind |
 |---|---|---|
@@ -172,453 +336,29 @@ Candidate tools, for discussion:
 | `memory_open_promise` | `POST /v1/versions/{id}/promises` | Gated write |
 | `memory_fulfill_promise` | `POST /v1/versions/{id}/promises/{key}/fulfill` | Gated write |
 
-What it would take:
+- Define separate read and write capabilities (working names `memory.read` and `memory.write`) and a token claim listing permitted version IDs, analogous to `rb`. An absent list grants access to no lineage.
+- Decide how native ledger handlers accept these capabilities. The route authentication change needs a shared decision record and client conformance review.
+- Require `idempotency_key` and `expected_head` on writes. A new JSON-RPC ID on a retry must not duplicate a claim or promise.
+- Keep version creation, raw event append, anchor locks, counters, digests and governance-profile transitions with the lineage-owning application.
 
-- Two new capability scopes (working names `memory.read` and `memory.write`) and a new optional token claim listing the version ids the token may touch, analogous to `rb`. A token with no list reaches no lineage.
-- A decision on how the ledger routes accept such a token. The smallest change is in the route's authentication helper; it is still a change to who may call a native route, so it needs a hub decision record and client conformance review before implementation.
-- Write tools take a required `idempotency_key` argument and a required `expected_head`. Server must not invent an idempotency key from the JSON-RPC id: a retried tool call with a new id would then execute twice.
-- Not proposed even in phase 2: `CreateVersion`, raw `AppendEvents`, `LockAnchor`, counters, digests and governance-profile transitions. These shape the lineage itself and belong to the application.
+## 12. Decision and test index
 
-## 6. What is not exposed, and how that is enforced
+The decision links lead to the governing paragraphs. The test IDs identify the candidate evidence for §8 and §10.5. The roadmap tracks open values, and A8 identifies its policy-inheritance recommendation separately from the decided token limits. [Open items](README.md#open-items)
 
-| Area | Routes | Why not |
-|---|---|---|
-| Index lifecycle | `/v1/indexes/*`, `/v1/collections/{id}/activate-index`, `/v1/index-artifacts/*`, `/v1/index-build-jobs*`, `/v1/retrieval-rollout*` | Alters what every reader is served. Builds are expensive and promotion is fleet-gated. |
-| Collections, shapes, runbooks | `POST /v1/collections`, `/v1/shapes`, `/v1/runbooks*` (apply, run, approve, remove), `/v1/runs/*`, `/v1/authoring/*`, `/v1/chronology-rules*` | Defines the governance an agent is subject to. Approval is a human gate. |
-| Ingestion | `/v1/sources`, `/v1/ingest*`, `/v1/versions/{id}/ingests` | Changes the corpus and therefore the next index. Section 12 lists this as a possible later, separately scoped addition, with R3 as a precondition. |
-| Retrieval model enrollment (planned, IR-1 and IR-4) | The provider conformance probe, and the per-collection embedder and reranker enrollment and policy API | Decides which model every reader's results pass through, and an embedder change forces a rebuild. Management role by design. |
-| Build-job control (planned, R6 and R9) | Cooperative cancel, job progress and the job event ring | Operator view of builds an agent cannot start. |
-| Vocabulary and publication governance | `/v1.2/vocabulary-settings`, `/v1.2/collections/{id}/vocabulary*` (write, refresh), `/v1.2/collections/{id}/governance` | Changes how every query in a collection is expanded or which publication governs. |
-| Providers and budgets | `/v1/providers*`, `/healthai`, `/v1/max-tokens`, `/v1/monetary/*` | Credentials, spend ceilings and raw model access. A raw `complete` tool would make Server a model proxy for the agent. |
-| Tokens | `/v1/access-tokens*` | An agent must not mint or revoke authority. |
-| Evidence writes and retention | `POST /v1/evidence`, upload, commit, `DELETE`, legal hold, access audit | Sealing is a service role; purge and hold are management-only. |
-| Findings writes | `POST /v1/versions/{id}/findings` | A service-to-service operation for Matrix. |
-| Reports and audit | `/v1/reports/*`, `/admin/*` | Management-only, and includes other users' activity. |
-| Recovery and retention | `/v1/command-recovery*`, `/v1/source-retention` | Operator procedures with restore duties. |
-| Platform plane | `/v1/platform/*` | mTLS-admitted authority, record and activation operations. |
-
-Enforcement does not rest on the table alone. Two independent mechanisms apply:
-
-1. **The table is closed.** The dispatcher maps a tool name to a compiled `(method, route template, argument mapping)` entry. No argument reaches the method or the literal part of the path; path parameters are percent-encoded per segment with the same `component` and `request_uri` logic `ServerApiService` uses, whose test `path_values_cannot_change_the_selected_operation` already pins that property.
-2. **The credential cannot administer.** `/mcp` accepts only capability JWTs. Every control-plane and management route authenticates through `AppState::authenticate`, which rejects a capability JWT with "access tokens are data-plane credentials; this endpoint requires a static token". So even a mistaken table entry pointing at an administrative route would answer `forbidden`.
-
-A third, test-time control keeps the first two honest: a unit test enumerates the table and fails if any entry targets a route outside an explicit allowlist checked into the test, and a conformance test presents a maximally scoped MCP token and asserts that representative administrative operations cannot be reached by any tool name or argument.
-
-## 7. Implementation in Server
-
-### 7.1 Layout
-
-- A new module `mcp.rs` in `munarium-server` holding the JSON-RPC envelope, header and version checks, the tool table and the dispatcher. Matrix's equivalent is about 700 lines including tests.
-- No new crate dependency. The envelope is small enough to write over `serde_json`, which keeps the static musl build and the `cargo deny` surface unchanged. An MCP SDK crate would bring its own transport and session machinery that a stateless single-response server does not use. This should be re-examined if the server later needs streaming or tasks.
-- `munarium-access`: the `mcp` scope constant and its acceptance in `issue`.
-- `config.rs`: the settings in section 7.5.
-- `rest.rs`: the `/mcp` route, registered only when enabled.
-- `munarium-core` is untouched, preserving its independence from HTTP.
-
-### 7.2 Dispatch
-
-Two kinds of tool, both resolved from the same table.
-
-**Routed tools (nine of eleven).** The dispatcher builds an `http::Request` for the entry's route, copies the caller's `Authorization` header and nothing else from the outer request, sets `X-Munarium-Uid` from the token subject, serialises the mapped arguments as the body or query string, and sends it through the REST router with `oneshot`. The inner request then runs the full existing stack: the capture middleware's load shed, uid check, body limit and interaction record, then the handler's own scope, clearance, session-ownership and revocation checks. This is the pattern in [`grpc_api.rs`](../../src/munarium-server/src/grpc_api.rs), including its rule that no caller-controlled header other than the contract ones is forwarded.
-
-**Native tools (`list_collections`, `list_runbooks`).** No existing route gives a clearance-filtered listing to a capability token. These two are small handlers that resolve the token with `data_plane_access` (so scope and revocation checks are the shared ones), call the existing `op_list_collections` and `op_list_runbooks`, and filter with `AccessCtx::permits` and `AccessCtx::permits_runbook`. They add no route to the native API. Because they bypass the router they must write their own interaction record; that is the one place the audit path is not inherited and it needs a direct test.
-
-### 7.3 Audit and metrics
-
-The capture middleware records only `/v1` and `/v1.2` paths ([`middleware.rs`](../../src/munarium-server/src/middleware.rs)), so the outer `/mcp` request is counted in metrics but not captured, and the inner dispatched request is captured as an ordinary REST call. Left like that, an operator could not tell an agent's search from an application's.
-
-Proposal: the dispatcher attaches a request extension (not a header, so it cannot be set from the network) naming the tool. When present, the capture middleware records `plane = "mcp"` and `method = "tools/call <tool>"` on the interaction row, and labels the request metrics with `plane="mcp"` and the tool name as the route. Tool names are a closed set, so this respects the cardinality rules in `metrics.rs`. The row's uid, tenant, `token_jti`, session and collection attribution, body capture and redaction all come from the existing path unchanged. Whether the `interactions.plane` column or any report view constrains its values must be confirmed before implementation; if it does, the change is an additive migration.
-
-The reports that group by plane (`/v1/reports/timeseries?plane=`) would then show agent traffic as its own series with no new report.
-
-### 7.4 Concurrency and cost
-
-- **Admission as a work class.** R7 replaces the single permit pool per plane with admission by work class and a slot reserved for control. MCP should be built on that, not beside it. Agent traffic is one class with its own ceiling (`MUNARIUM_MCP_MAX_CONCURRENCY`), taken before the body is parsed and shed with `overloaded` when full, so an agent loop cannot consume the capacity application traffic uses. Calls that reach an inference endpoint (search on an enrolled collection, and every completion) are additionally admitted through the heavy class that section 8.9 of [airk-analysis.md](airk-analysis.md) assigns to rerank and embedding, so a slow endpoint cannot hold the agent class or the serving plane. R7's reserved control slot is what guarantees that the operator's response to a runaway agent, revoking its token, is never shed along with the traffic it is meant to stop.
-
-  Classification must be explicit: each row of the tool table names its class, and the table test in section 8 fails for an entry with none. If MCP ships before R7, the interim is a dedicated `mcp_permits` semaphore with the same setting, with the inner dispatched request also taking a REST permit. That gives the ceiling without the control reservation or the heavy class, and it should be replaced, not kept, when R7 lands.
-- **Completion spend.** `ask_collections` and `ask_session` with `complete` go through the provider gateway like any other call, so per-config rate budgets and daily token caps apply and refuse with `rate-limited` or `daily-cap-reached` ([token budgets](../tokenbudgets.md)). There is no per-token or per-uid spend ceiling in Server today. An agent can spend a tenant's daily cap faster than a person can. Section 12 raises whether MCP needs its own cap; until then, operators who want a hard separation can disable paid tools or give agents runbooks bound to a provider config with its own budget.
-- **Retrieval-call load.** Embedding and rerank calls for an enrolled collection are bound to the collection, not to the caller, and are charged to whichever scope the collection-binding decision in section 8.9 of [airk-analysis.md](airk-analysis.md) settles on. An agent that searches in a loop therefore loads a shared inference endpoint and a shared budget that no setting in this document limits per agent. `MUNARIUM_MCP_PAID_TOOLS` does not cover it, deliberately: switching search off for agents would remove the tool that makes the others usable. The controls are the agent class ceiling above, the heavy class queue, and the endpoint's own budget. Whether that is enough is part of open decision 3.
-- **Timeouts.** A completion turn can take tens of seconds, and a search on an enrolled collection now includes one or two network calls bounded by the stage deadline. This design sends no progress notifications. The endpoint documentation must state an expected upper bound per tool so clients set tool timeouts accordingly. Streaming progress is deferred (section 11).
-
-### 7.5 Configuration
-
-| Setting | Default | Meaning |
-|---|---|---|
-| `MUNARIUM_MCP` | `disabled` | `enabled` serves `POST /mcp`. |
-| `MUNARIUM_MCP_ALLOWED_ORIGINS` | empty | Comma-separated origins accepted when an `Origin` header is present. Empty refuses every browser origin. |
-| `MUNARIUM_MCP_MAX_CONCURRENCY` | 64 | Ceiling of the agent work class per instance (section 7.4). |
-| `MUNARIUM_MCP_PAID_TOOLS` | `enabled` | `disabled` removes `ask_collections` and refuses `complete: true` on `ask_session`. It governs completions only; embedding and rerank calls made by search follow the collection's enrollment. |
-| `MUNARIUM_MCP_RESULT_MAX_BYTES` | 262144 | Largest tool result returned. |
-| `MUNARIUM_MCP_TOOLS_TTL_MS` | 300000 | `ttlMs` on `tools/list` and `server/discover`. |
-| `MUNARIUM_MCP_LEGACY_INITIALIZE` | `enabled` | Answer `initialize` from pre-2026 clients. |
-
-A per-tenant switch is not proposed. Whether a tenant's agents may connect is already decided per token by the `mcp` scope.
-
-### 7.6 Documentation and contract effects
-
-- New `docs/api/mcp.md` as the reference, linked from the documentation index, with the tool table generated from the compiled table and drift-checked like `grpc-reference.md`.
-- One row in the "Ops" group of [rest.md](../api/rest.md) for `/mcp`. It is outside OpenAPI, so the `docs_coverage` route tests are unaffected.
-- A section in [security-posture.md](../security-posture.md) for the `mcp` scope, the static-token refusal and the OAuth position, and a line in its deployment checklist.
-- [grpc.md](../api/grpc.md): no gRPC twin. MCP is itself an alternate transport.
-- Client SDKs: no change. The `mcp` scope is a new accepted string in token issuance, which the SDKs pass through.
-- Helm chart: an `mcp.enabled` value mapped to the environment settings.
-- Admin console: the changes in section 9.3.
-
-## 8. Testing
-
-| Level | What it must show |
+| Governing decision | Qualification tests |
 |---|---|
-| Unit, `mcp.rs` | Envelope parsing; header and body agreement; version handling for both eras; every tool's schema rejects undeclared arguments; argument-to-request mapping for each tool equals the request an SDK would send. |
-| Unit, table | Every routed entry is in the checked-in allowlist; no entry's route requires `rw` or `mgmt`; every entry names its work class; tool names match the permitted character set. |
-| Pass-through of planned members | As each lands: the execution record (R1), per-member outcomes (R2), retry members (R11) and the rerank receipt appear in `structuredContent` byte-identical to the REST body; a not-applied embedder or reranker stage under `prefer` is visible in the result, and under `require` arrives as a tool error. |
-| Admission | At the agent class ceiling `/mcp` sheds while `/v1` application requests and a management token revocation still succeed. |
-| Server tests | Static tokens are refused on `/mcp`; a JWT without `mcp` is refused; `tools/list` varies with scopes; a refusal arrives as `isError` with its slug; an oversize result is refused and not truncated; the interaction row carries `plane = "mcp"`, the tool name, uid and `jti`; the native listing tools hide collections above the token's clearance and write an interaction row. |
-| Conformance, black box | Over real HTTP against compose: discover, list, search, open a session, ask, resolve a citation, close. The same token over REST and over MCP returns the same body for the same request. A maximally scoped MCP token cannot build an index, activate one, apply a runbook, mint a token or read a report. |
-| Cluster tier | Consecutive calls land on different replicas and succeed with no affinity. |
-| Client compatibility | Each client in section 10.5, at a recorded version, connects, lists tools, calls one and is taken through token expiry against a real Server. Results are published with the reference page. Manual until a client offers a headless mode. |
-| Negative controls | Removing the static-token refusal, the allowlist test or the `mcp` scope check each fails a named test. |
-
-## 9. Interaction with the planned Server work
-
-[airk-analysis.md](airk-analysis.md) proposes twelve recommendations (R1 to R12), an endpoint-backed embedder and reranker (IR-0 to IR-6) and admin console changes (U1 to U14). This design assumes most of them will be built. None changes its core: in-process dispatch, capability tokens only and the closed tool table stand whichever items land.
-
-### 9.1 Effect of each item
-
-| Item | Effect on MCP | Where |
-|---|---|---|
-| R1 search execution record | Passes through in results. Tool descriptions must explain it. Needed for an agent to tell a full hybrid result from a degraded one. | 5.1, 5.2 |
-| R2 per-member outcomes | Passes through in turn results. The availability policy is not exposed; turns run with `require`. | 5.1 |
-| R3 isolated PDF extraction | None while ingestion is excluded. A precondition if ingestion over MCP is ever proposed, since agents would become a new source of hostile documents. | 6, 12 |
-| R4, R6, R8, R9 build-job fencing, cancellation, fairness, progress | None on the tool set. Their new control and status routes join the exclusion list. | 6 |
-| R5 content-free job failure codes | None directly; no job is visible to an agent. The same principle already holds for tool errors, which carry only what problem responses carry. | 5.2 |
-| R7 work-class admission | Replaces the dedicated MCP permit pool. MCP becomes a class, model-calling tools use the heavy class, and the reserved control slot protects revocation. | 7.4 |
-| R10 durable artifact damage record | A damaged artifact gates serving for every replica at once, so an agent sees `datastore-unavailable` consistently instead of on some replicas. No MCP change. | 5.2 |
-| R11 typed retry guidance | Carried in tool errors and stated in the error text. Higher value for agents than for SDK callers. | 5.2 |
-| R12 validating newtypes | Tool input schemas must state the same constraints as the validators. | 5.2 |
-| IR-0 to IR-3 embedder and reranker | `search_collection` and the retrieval half of the ask tools make model calls on enrolled collections. Changes the cost table, the meaning of the paid-tools switch and the timeout guidance. | 5.1, 7.4, 7.5 |
-| IR-1, IR-4 probe, enrollment and policy | Management operations; excluded. The per-collection `prefer` or `require` policy applies to agents unchanged. | 6 |
-| IR-5 shorter context packing | Smaller turn results when the reranker applied. Lowers pressure on the result size limit; no MCP change. | 5.2 |
-| U1 to U14 admin console | See 9.3. | 9.3 |
-
-### 9.2 Sequencing
-
-Phase 1 of MCP does not have to wait for any of this work, but the order affects what an agent can safely be told.
-
-1. **R7 before or with MCP.** It is the one item this design builds on structurally. Shipping MCP first means building an interim pool and then removing it.
-2. **R11 with MCP.** It is small, additive and removes the main reason an agent loops on a refusal. Because of MCP it deserves a higher priority than the "low" the other document gives it.
-3. **R1 before IR-2 or IR-3 is enabled for any collection agents can reach.** Without the execution record an agent cannot see that a stage did not apply.
-4. **R2 before `ask_session` is recommended for runbooks spanning several collections.** Today a skipped collection has no reason attached.
-5. **The collection-binding decision before agents search enrolled collections at volume.** It settles whose budget an agent's embedding and rerank calls are charged to.
-
-If an item is dropped, the consequences are limited to the following.
-
-- **R7 dropped:** the interim `mcp_permits` pool becomes permanent, with no control reservation.
-- **R11 dropped:** retry behaviour is documented per slug for agent authors.
-- **R1 or R2 dropped:** `search_collection` and `ask_session` keep the limitations noted against them, and the embedder and reranker should not use `prefer` on collections agents reach.
-
-### 9.3 Admin console
-
-The console changes in section 9 of [airk-analysis.md](airk-analysis.md) are where an operator would see and stop agent activity. MCP adds four requirements to them.
-
-- **Tokens page (U4, U8).** Show the `mcp` scope as its own marked column or badge, and allow filtering by it, so the tokens that agents hold can be found quickly. Revoking one is the stop control for an agent, and U4's review step should state on the review page that the token is an agent token and whether revocation is enforced at verification time (`MUNARIUM_TOKEN_REVOCATION_CHECK`). If it is not enforced, the page must say that the agent keeps access until the token expires.
-- **Traffic pages (U1).** Show `mcp` as a plane beside `rest` and `grpc`, with per-tool counts and error rates from the interaction rows described in 7.3.
-- **Attention strip (U3).** Add two conditions: the agent work class shedding load, and a single token accounting for an abnormal share of completions or retrieval calls in the window.
-- **Session and audit pages (U9).** Agent-originated turns appear in the same lists. The visible-escape rendering U9 proposes matters more here, because an operator reviewing what an agent asked and was told is the reader most exposed to text crafted to mislead.
-
-No console action is added for MCP. Enabling the endpoint is deployment configuration, and agent access is granted by minting a token, which the console already does.
-
-## 10. Configuring agents to connect
-
-This section shows how common agent clients would be pointed at `/mcp` and how each supplies the bearer token. The examples use `https://munarium.example.com/mcp` and an environment variable named `MUNARIUM_TOKEN`. Client syntax was taken from each vendor's documentation as read on 19 November 2026. None of it has been run against Server, because the endpoint does not exist yet, and these formats change often; section 13 states the limits.
-
-### 10.1 What every client needs
-
-Three things, whatever the client:
-
-1. **The URL** of the endpoint, over HTTPS, as exposed by the gateway.
-2. **One request header:** `Authorization: Bearer <capability JWT>`. No `X-Munarium-Uid` header is needed; the token's subject supplies the uid (section 4.3).
-3. **A way to replace the token when it expires.** Capability tokens live for one hour by default and at most 24 hours. This is the part that differs most between clients and causes most of the practical difficulty.
-
-**Where the token comes from.** The API-management layer mints it with its `mgmt` credential, for one user, with the scopes and clearance that user's agent should have:
-
-```bash
-curl -sS https://munarium.example.com/v1/access-tokens \
-  -H "Authorization: Bearer $MGMT_TOKEN" -H "X-Munarium-Uid: token-broker" \
-  -H "Content-Type: application/json" \
-  -d '{"uid":"alice","access_level":2,"compartments":["eng"],
-       "scopes":["mcp","query"],"runbook_refs":["field-support"],"ttl_secs":28800}'
-```
-
-The `mgmt` credential must never be placed on a developer's machine or in an agent's configuration: it can mint a token for any user at any clearance. An organisation therefore needs a small broker in front of this call, which authenticates the person through its own identity provider and returns a token for that person only. This document calls that broker's command-line form `munarium-agent-token` in the examples below. It is a placeholder for something each deployment supplies, not a tool that ships with Server; section 12 asks whether Server should provide a reference one.
-
-**Three ways a client can hold the token**, in increasing order of convenience:
-
-| Pattern | How it works | When the token expires |
-|---|---|---|
-| Environment variable | The user obtains a token and exports it before starting the client. The configuration file refers to the variable and never contains the token. | The user obtains a new token and restarts or reloads the server entry. Works everywhere. Choose a TTL that covers a working session. |
-| Header helper | The client runs a command that prints the current headers, and runs it again after a `401`. | Renewed with no user action. Supported by Claude Code and Codex, and by agents built on the MCP SDKs. |
-| Per-request token | The calling application passes the token with every model request. | The application supplies a fresh token each time. This is how the hosted model APIs work. |
-
-Two rules apply to all three. Do not write a token into a file that is committed or shared; every client below can reference a variable instead. And do not reuse one token across people: the token's subject is what the audit trail records as the caller.
-
-### 10.2 Coding agents and editors
-
-**Claude Code.** From the command line, at user scope:
-
-```bash
-claude mcp add --transport http --scope user munarium \
-  https://munarium.example.com/mcp \
-  --header "Authorization: Bearer $MUNARIUM_TOKEN"
-```
-
-That form stores the expanded token in the user's own configuration. To share the server definition with a team without sharing a token, commit a `.mcp.json` at the project root that references the variable:
-
-```json
-{
-  "mcpServers": {
-    "munarium": {
-      "type": "http",
-      "url": "https://munarium.example.com/mcp",
-      "headers": { "Authorization": "Bearer ${MUNARIUM_TOKEN}" }
-    }
-  }
-}
-```
-
-For automatic renewal, replace `headers` with a helper. Claude Code runs it at each connection and again after a `401` or `403`, then retries the call once:
-
-```json
-{
-  "mcpServers": {
-    "munarium": {
-      "type": "http",
-      "url": "https://munarium.example.com/mcp",
-      "headersHelper": "munarium-agent-token --format headers-json"
-    }
-  }
-}
-```
-
-The helper must print a JSON object such as `{"Authorization": "Bearer eyJ..."}` within ten seconds. Three details matter for Server:
-
-- When a static `Authorization` header is configured and Server rejects it, Claude Code reports the connection as failed and does not attempt OAuth. That is the behaviour this design wants.
-- For a project-declared server, variables whose names contain `TOKEN`, `KEY`, `SECRET`, `AUTH` or `PASSWORD` are removed from the helper's environment, so the helper must read its own credential from a file or the operating system's credential store.
-- The variable name must not begin with `ANTHROPIC_`; those names are not expanded into headers for remote servers.
-
-Tools appear to the model as `mcp__munarium__search_collection` and so on.
-
-**OpenAI Codex CLI.** In `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.munarium]
-url = "https://munarium.example.com/mcp"
-bearer_token_env_var = "MUNARIUM_TOKEN"
-```
-
-`bearer_token_env_var` names the variable; Codex sends its value in `Authorization`. For renewal, Codex has `http_headers_helper`, a local command that prints a JSON object of headers and is run again once after a `401` or `403`. An explicit bearer token takes precedence over a helper-provided `Authorization`, so use one or the other.
-
-**Cursor.** In `.cursor/mcp.json` for a project or `~/.cursor/mcp.json` for the user:
-
-```json
-{
-  "mcpServers": {
-    "munarium": {
-      "url": "https://munarium.example.com/mcp",
-      "headers": { "Authorization": "Bearer ${env:MUNARIUM_TOKEN}" }
-    }
-  }
-}
-```
-
-**VS Code with GitHub Copilot.** VS Code documents two formats, and the older one is scheduled for removal in February 2027. The older editor-managed format, in `.vscode/mcp.json`, can prompt for the token and store it without writing it to the file:
-
-```json
-{
-  "inputs": [
-    { "type": "promptString", "id": "munarium-token",
-      "description": "Munarium agent token", "password": true }
-  ],
-  "servers": {
-    "munarium": {
-      "type": "http",
-      "url": "https://munarium.example.com/mcp",
-      "headers": { "Authorization": "Bearer ${input:munarium-token}" }
-    }
-  }
-}
-```
-
-The newer portable format, a `.mcp.json` at the workspace root or `~/.copilot/mcp-config.json`, uses the `mcpServers` key and `${MUNARIUM_TOKEN}`, the same shape as the Claude Code project file above. Input prompts are not supported in the portable format, so it relies on the environment variable.
-
-**Gemini CLI.** In `~/.gemini/settings.json` or a project's `.gemini/settings.json`. Note `httpUrl`; in this client `url` selects the older SSE transport:
-
-```json
-{
-  "mcpServers": {
-    "munarium": {
-      "httpUrl": "https://munarium.example.com/mcp",
-      "headers": { "Authorization": "Bearer ${MUNARIUM_TOKEN}" }
-    }
-  }
-}
-```
-
-Gemini CLI documents variable expansion for settings values in general but shows it for MCP only in the `env` block, so expansion inside `headers` needs to be confirmed in testing.
-
-**Windsurf and Devin.** Windsurf's documentation now lives under Devin's, and the configuration file location has moved; the editor's "Open MCP config file" command is the reliable way to find it. The entry uses `serverUrl`:
-
-```json
-{
-  "mcpServers": {
-    "munarium": {
-      "serverUrl": "https://munarium.example.com/mcp",
-      "headers": { "Authorization": "Bearer ${env:MUNARIUM_TOKEN}" }
-    }
-  }
-}
-```
-
-**Claude Desktop.** Remote servers are added as custom connectors in the application's settings, not in a file. The connector form accepts fixed request headers, where `Authorization` with the value `Bearer <token>` can be entered, with sign-in set to none. The value is static, so it is replaced by hand when the token expires. For this client a longer TTL, up to the 24-hour maximum, is the practical choice.
-
-### 10.3 Clients that only speak stdio
-
-A client with no remote-server support can reach Server through a local relay that speaks stdio to the client and HTTP to Server. The widely used one is the `mcp-remote` package:
-
-```json
-{
-  "mcpServers": {
-    "munarium": {
-      "command": "npx",
-      "args": ["mcp-remote", "https://munarium.example.com/mcp",
-               "--header", "Authorization:${AUTH_HEADER}",
-               "--transport", "http-only"],
-      "env": { "AUTH_HEADER": "Bearer <token>" }
-    }
-  }
-}
-```
-
-The header is written without a space after the colon, with `Bearer` and the token together in the variable, because several clients do not escape spaces in arguments. `--transport http-only` stops the relay from falling back to the SSE transport, which Server does not serve. The relay also accepts `--header-file`, which keeps the token out of the process list. This is third-party software running on the user's machine with the user's token, and an organisation should review and pin it as it would any other dependency.
-
-### 10.4 Agents built on a model API or an SDK
-
-**Hosted model APIs.** With these, the model vendor's servers call `/mcp`, not the application.
-
-Claude API, Messages endpoint with the MCP connector beta:
-
-```json
-{
-  "mcp_servers": [
-    { "type": "url", "name": "munarium",
-      "url": "https://munarium.example.com/mcp",
-      "authorization_token": "<token>" }
-  ],
-  "tools": [ { "type": "mcp_toolset", "mcp_server_name": "munarium" } ]
-}
-```
-
-OpenAI Responses API:
-
-```json
-{
-  "type": "mcp",
-  "server_label": "munarium",
-  "server_url": "https://munarium.example.com/mcp",
-  "authorization": "<token>",
-  "allowed_tools": ["list_collections", "search_collection", "ask_collections"],
-  "require_approval": "never"
-}
-```
-
-Both take the token on every request and do not store it, which suits short-lived tokens: the application asks the broker for a token for the current user and passes it along. Both have the same two consequences for a deployment, and they are significant:
-
-- **`/mcp` must be reachable from the public internet**, because the caller is the vendor's infrastructure. Server's security posture assumes :8080 is reachable only from the API-management layer, so the gateway must publish `/mcp` deliberately, and nothing else.
-- **Tool results pass through the vendor's servers** on their way to the model. That is true of any agent, since the model reads the results, but here the vendor also makes the request. Operators whose collections must not leave their network should use a client-side agent with a model they host, not a hosted connector.
-
-**Claude Agent SDK.** The application process makes the MCP call, so the endpoint does not need to be public:
-
-```python
-options = ClaudeAgentOptions(
-    mcp_servers={
-        "munarium": {
-            "type": "http",
-            "url": "https://munarium.example.com/mcp",
-            "headers": {"Authorization": f"Bearer {token_for(user)}"},
-        }
-    },
-    allowed_tools=["mcp__munarium__*"],
-)
-```
-
-The TypeScript form is the same object under `mcpServers`. The SDK runs no interactive sign-in, so the header is the only credential. Build the options with a current token for each session.
-
-**MCP SDKs directly.** A custom agent should fetch the token per request instead of holding one. The TypeScript client transport takes a provider that it calls before every request:
-
-```ts
-const transport = new StreamableHTTPClientTransport(
-  new URL("https://munarium.example.com/mcp"),
-  { authProvider: { token: async () => tokenFor(user) } }
-);
-```
-
-In the Python SDK the headers belong to the HTTP client passed to `streamable_http_client`, and rotation is done with that client's authentication hook. The OpenAI Agents SDK has an equivalent client-side class that takes `url` and `headers`.
-
-A service that runs agents for many users must hold one token per user and never a shared service token. Otherwise every agent call is attributed to the service, and every user receives the service's clearance.
-
-### 10.5 Summary
-
-| Client | Where configured | Token source | Renewal without restart |
-|---|---|---|---|
-| Claude Code | `claude mcp add`, `.mcp.json` | `${VAR}` in `headers`, or `headersHelper` | Yes, with `headersHelper` |
-| Codex CLI | `~/.codex/config.toml` | `bearer_token_env_var`, or `http_headers_helper` | Yes, with the helper |
-| Cursor | `.cursor/mcp.json` | `${env:VAR}` in `headers` | No |
-| VS Code (Copilot) | `.vscode/mcp.json`, or portable `.mcp.json` | Password input, or `${VAR}` | No |
-| Gemini CLI | `.gemini/settings.json` | `${VAR}` in `headers` (to confirm) | No |
-| Windsurf, Devin | Editor MCP config file | `${env:VAR}` in `headers` | No |
-| Claude Desktop | Custom connector settings | Fixed request header, entered by hand | No |
-| stdio-only clients | `mcp-remote` relay | `--header` or `--header-file` | No |
-| Claude API, OpenAI Responses API | Request body | `authorization_token`, `authorization` | Yes, per request |
-| Claude Agent SDK, MCP SDKs | Application code | `headers`, or a token provider | Yes, in code |
-
-### 10.6 What this requires of Server
-
-The client survey feeds back into the design in five places.
-
-1. **An expired token must be recognisable.** Most clients cannot renew a token, and Gemini CLI and Devin are documented as treating a `401` as the start of an OAuth sign-in. Against Server, which has no authorization server, that produces a failed discovery and an error that does not mention expiry. Server's `401` must therefore carry a JSON-RPC error whose message says plainly that the token has expired and names the problem slug, and it must not send a `WWW-Authenticate` header containing `resource_metadata`, which would invite a discovery that cannot succeed. The reference documentation should list, per client, what an expired token looks like.
-2. **Token lifetime is the usability lever.** With a one-hour default and six of the ten client types in the table unable to renew, a deployment will either raise the TTL toward 24 hours or supply a helper. Both are legitimate. The guidance should be explicit: helper-capable clients keep short tokens; the rest use a TTL matched to a working day, with revocation checking enabled (`MUNARIUM_TOKEN_REVOCATION_CHECK=true`) so a longer-lived agent token can still be withdrawn.
-3. **The legacy handshake is required, not optional.** Of the clients surveyed, only the MCP TypeScript SDK states which protocol revision it speaks. The others must be assumed to send `initialize`. This confirms the dual-era behaviour in section 4.2 and argues for leaving `MUNARIUM_MCP_LEGACY_INITIALIZE` enabled by default for a long time.
-4. **SSE fallback must fail cleanly.** Several clients try Streamable HTTP and fall back to the older SSE transport on a `404` or `405`. Server answers `GET /mcp` with `405`. Clients that fall back on that response will then report that SSE is unsupported, which is correct but confusing, so the examples above pin the HTTP transport wherever the client allows it.
-5. **Hosted connectors change the exposure.** Section 10.4's requirement that `/mcp` be public for hosted model APIs should appear in the security posture and the deployment checklist as a decision the operator makes, with the gateway publishing that single path and applying its own rate limits.
-
-A sixth item is a test obligation, not a design change: before release, each client in the table should be connected to a real Server and taken through connect, list, call and token expiry, and the results published in the reference page with the client versions used.
-
-## 11. Deferred
-
-- **Streaming turns and progress.** `POST /v1/sessions/{id}/turns/stream` already emits stage events. Mapping them to progress notifications on an SSE response is feasible but adds a streaming body to the MCP path and to the audit wrapper. Wait for evidence that single-response turns time out in practice.
-- **Tasks.** The tasks extension suits long builds, which are not exposed, so nothing proposed here needs it.
-- **Resources and prompts.** Collections and sessions could be modelled as resources. Tools cover the same reads with clearer authorization, and one primitive is easier to audit than three.
-- **`listChanged` notifications.** The tool list is static per token scope set, so there is nothing to notify.
-- **An MCP OAuth authorization server.** Out of scope by the security posture (section 4.3).
-
-## 12. Open decisions
-
-1. **Is `mcp` a separate required scope?** This proposal says yes. The alternative, accepting any `query` token on `/mcp`, is simpler for operators and removes the separation between application and agent tokens.
-2. **A read-only evidence scope.** Should `get_evidence` and `read_evidence_rows` wait for a scope that cannot seal, or ship on `evidence` with the limitation documented?
-3. **Agent spend and load ceiling.** Is the provider-config daily cap enough for completions, or does MCP need a per-token or per-uid token budget before paid tools are enabled by default? With an endpoint-backed embedder and reranker the same question applies to retrieval calls, which the paid-tools switch does not cover and which are charged to the collection's scope, not the agent's.
-4. **Phase 2 memory tools.** Whether to extend ledger routes to accept a version-bound capability token, and under which scope names. This is a shared semantic choice and needs a hub decision record first.
-5. **Ingestion over MCP.** An agent filing documents into a collection it is cleared for is a plausible request. It changes the corpus, so it is excluded here. If wanted, it should be its own scope and its own review, and it should not precede R3, which bounds what a hostile PDF can do to a replica.
-6. **Legacy protocol support window.** How long to keep answering pre-2026 `initialize`.
-7. **Release vehicle.** The change is additive and off by default, which fits a minor release. It still adds a network surface and a token scope, so it should be called out in release notes and the security posture, not folded into a patch.
-8. **Order relative to R7.** Whether MCP waits for work-class admission or ships on the interim pool (section 9.2).
-9. **A reference token broker.** Most clients need a command that returns a token for the signed-in user (section 10.1). Should Server ship a reference implementation, for example an `mmctl` subcommand that exchanges an identity-provider sign-in at the API-management layer for a capability token, or leave this entirely to each deployment? It must never hold the `mgmt` credential on the user's machine.
-10. **Default token lifetime for agent tokens.** Whether tokens carrying the `mcp` scope keep the one-hour default, given that most clients cannot renew (section 10.6).
-
-## 13. Limits of this analysis
-
-- **The planned work is not built.** Section 9 and the passages that refer to R, IR and U items describe how this design meets [airk-analysis.md](airk-analysis.md) as proposed. Field names, class names, policies and the collection-binding rule there are proposals and may change in implementation; the mapping should be rechecked against each item when it is designed in detail. Which items are in the "most" that will be implemented was not specified, so each dependency is stated with its fallback.
-
-- **Protocol pages not read.** The discovery result schema, the base error-code table, and the progress, cancellation, subscription and task pages of the `2026-07-28` revision were not read. The exact fields of the `server/discover` result, and whether a tools-only server has any obligation on the subscription endpoint, must be confirmed from the schema before implementation. The tool annotation field names were not confirmed for this revision.
-- **Client configuration is from documentation, not from testing.** Section 10 was written from each vendor's published documentation on 19 November 2026 and nothing in it was run, since no endpoint exists. Points the documentation left open are marked there: variable expansion inside `headers` for Gemini CLI, the exact label of the fixed-header field in Claude Desktop, and what Cursor, VS Code, Codex and `mcp-remote` do on a `401` with a static header. Only one client states which protocol revision it speaks. `mcp-remote` is third-party software and was not reviewed. `munarium-agent-token` is a placeholder name.
-- **Server areas not examined.** The `interactions` table constraints and the report queries that read `plane`; the session TTL and turn limits; and the cost of building the REST router a second time for in-process dispatch, as `ServerApiSvc::new` does today.
-- **Matrix is cited from its published documentation**, not from a review of its implementation.
-- **No prototype was built.** Line counts and defaults here are estimates.
+| [A1 · Entry and tool authority](#a1) | [A1-T1](#a1-t1) |
+| [A2 · Generative spending authority](#a2) | [A2-T1](#a2-t1) |
+| [A3 · Protocol revisions and real clients](#a3) | [A3-T1](#a3-t1), [A3-T2](#a3-t2), [A3-T3](#a3-t3) |
+| [A4 · Read-only evidence capability](#a4) | [A4-T1](#a4-t1) |
+| [A5 · Complete Server release gate](#a5) | [A5-T1](#a5-t1), [A5-T2](#a5-t2), [A5-T3](#a5-t3), [A5-T4](#a5-t4), [A5-T5](#a5-t5) |
+| [A6 · Durable audit admission and recovery](#a6) | [A6-T1](#a6-t1), [A6-T2](#a6-t2), [A6-T3](#a6-t3) |
+| [A7 · Deployment broker and issued-token lifetime](#a7) | [A7-T1](#a7-t1) |
+| [A8 · Token allowances and inheritance recommendation](#a8) | [A8-T1](#a8-t1), [A8-T2](#a8-t2), [A8-T3](#a8-t3) |
+| [A9 · Token accounting for shared generation](#a9) | [A9-T1](#a9-t1), [A9-T2](#a9-t2) |
+
+## 13. Evidence limits
+
+At the 19 November 2026 design review, the published modern discovery and Streamable HTTP references supported the discovery shape, header/body validation and error mappings in §4.2. The legacy lifecycle reference supported the initialization sequence. These source checks cover the protocol text. Each client/version claim still requires the real-client evidence in §10.5. [Modern discovery](https://modelcontextprotocol.io/specification/2026-07-28/server/discover) · [Modern HTTP binding](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http) · [Legacy lifecycle](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle)
+
+A1–A9 record the maintainer’s design decisions. The endpoint, protocol fixtures, rollback runs and real-client transcripts still require implementation and qualification on a named Server candidate. Collect router construction costs, safe transcript bounds and multi-replica budget measurements with their owning tests. Keep measured values and dated evidence in the roadmap register. [Open items](README.md#open-items) · [Source baselines](README.md#source-baselines)
