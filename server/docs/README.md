@@ -32,6 +32,7 @@ and API references when applying them to a new deployment.
 | [embedded-support.md](embedded-support.md) | Which crates are supported Rust libraries (D5): the embedded datastore's declared surface, feature sets, minimum compiler and how its isolated consumer qualifies them; every other crate is internal |
 | [lessons-from-vcp.md](lessons-from-vcp.md) | Public engineering recommendations prompted by downstream use, grounded in Server sources and mapped to the implementation plan |
 | [lessons-from-vcp-impl.md](lessons-from-vcp-impl.md) | Proposed Server improvements from the VCP lessons: source analysis, implementation slices, compatibility constraints, regression coverage, and rollout criteria |
+| [design/](design/README.md) | Proposed design plan for 1.5, not accepted or scheduled: phases, goals, acceptance criteria and open questions, with the two analyses it draws on ([AIRK patterns](design/airk-analysis.md), [hosting MCP tools](design/mcp-analysis.md)) |
 | [history/](history/README.md) | Dated pull-request history, editable diagrams, and separately labeled open follow-up work |
 
 ## API reference
