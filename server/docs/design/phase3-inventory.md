@@ -107,6 +107,16 @@ Each of these holds one ordinary permit for the whole request today.
 B4 adds a new extractor identity for the opt-in child-process profile and leaves
 `pdf-text@1` and the set identity above available to v1.4 rebuilds.
 
+**B4 update (19 November 2026).** The rows above remain the default
+(`MUNARIUM_PDF_EXTRACTION=inline`). The opt-in `isolated` profile replaces
+`pdf-text@1` with `pdf-text-isolated@1{...}` and runs it in a child of the
+server binary with OS memory and CPU limits, a deadline, an output cap and a
+per-process admission cap; `extract_source` cancels the child when its build is
+dropped, and over-budget, deferred and cancelled outcomes get their own
+`extraction_status`. Limits are provisional
+([guide](../guides/document-intelligence.md#isolated-pdf-extraction),
+[measurements](pdf-isolation-measurements.md)).
+
 ## B3-T2 classification (proposed)
 
 Recorded 19 November 2026 for review. The classes are proposals that R7

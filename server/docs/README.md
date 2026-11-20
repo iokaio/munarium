@@ -68,7 +68,8 @@ and API references when applying them to a new deployment.
 | [guides/source-stores.md](guides/source-stores.md) | Where document bytes live: Azure Blob / S3 / GCS / file / pg / mem, per-backend setup and credentials |
 | [guides/ollama.md](guides/ollama.md) | Local Ollama chat and embeddings, Docker Desktop setup, model routing, credential-free endpoints and integration checks |
 | [tokenbudgets.md](tokenbudgets.md) | **Token budgets (2026-09-02)**: the eight per-call `max_tokens` ceilings, their built-ins, the `MUNARIUM_MAX_TOKENS_*` environment, runbook precedence, and `GET`/`POST /v1/max-tokens` (whole-object replace, no partial update) with the client calls |
-| [guides/document-intelligence.md](guides/document-intelligence.md) | The paid OCR escalation: why it is off by default, and how to turn it on deliberately |
+| [guides/document-intelligence.md](guides/document-intelligence.md) | The paid OCR escalation: why it is off by default, and how to turn it on deliberately; also the opt-in isolated PDF extraction profile |
+| [design/pdf-isolation-measurements.md](design/pdf-isolation-measurements.md) | Measured cost of isolated PDF extraction under the provisional limits (B4); production limits are not frozen |
 | [guides/evidence-hierarchy.md](guides/evidence-hierarchy.md) | Research profiles, evidence layers and typed assertions (S-3.x, 2026-08-28): how a turn reads documents, a governed Matrix table and pinned ledger facts in declared trust order; what each kind of evidence may be used for; and why a turn naming no profile is byte-identical to the one that ran before |
 | [guides/platform-features.md](guides/platform-features.md) | The platform walkthrough: uid, capability tokens, collections, runbook v2, sessions, reports |
 | [guides/monetary-accounting.md](guides/monetary-accounting.md) | Optional P14 monetary reports: immutable tariffs, durable attempts, coverage and reconciliation |

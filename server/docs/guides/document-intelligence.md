@@ -160,3 +160,67 @@ safe.
 Enabling a provider without its endpoint is a **startup error**, not a warning.
 A silently-disabled escalation looks exactly like "this corpus has no text",
 which is the failure mode hardest to notice.
+
+## Isolated PDF extraction
+
+Local PDF extraction (`pdf-text@1`) runs in the server process with no time,
+memory or output bound. `MUNARIUM_PDF_EXTRACTION=isolated` opts into running the
+same parser in a child process instead (design
+[R3/B4](../design/airk-analysis.md#r3)). The default, `inline`, is exactly v1.4.
+
+- The server re-executes its own binary with a private role argument and an
+  empty environment. No shell and no extra file is involved, so the distroless
+  image needs nothing new.
+- Memory and CPU are enforced by the operating system: `setrlimit` (address
+  space, CPU time, no core dumps) on 64-bit Linux, a Job Object (committed
+  memory, user-mode CPU time, one process, kill on close) on Windows. Other
+  platforms get no OS limit; the identity records `os=none`.
+- The parent enforces the wall-clock deadline and the output cap, and kills and
+  reaps the child on timeout, on overflow and when the build is cancelled.
+- At most `MUNARIUM_PDF_EXTRACTION_CONCURRENCY` children run per process, in
+  arrival order. A document that waits longer than
+  `MUNARIUM_PDF_EXTRACTION_QUEUE_SECS` is not parsed.
+
+| Var | Default (provisional) | Notes |
+|---|---|---|
+| `MUNARIUM_PDF_EXTRACTION` | `inline` | `inline` \| `isolated`; anything else is a startup error |
+| `MUNARIUM_PDF_EXTRACTION_MEMORY_MIB` | `512` | child memory limit; on Linux this is address space and includes the mapped binary |
+| `MUNARIUM_PDF_EXTRACTION_CPU_SECS` | `10` | child CPU time; Windows counts user-mode time only |
+| `MUNARIUM_PDF_EXTRACTION_TIMEOUT_SECS` | `30` | wall clock from spawn to exit |
+| `MUNARIUM_PDF_EXTRACTION_MAX_OUTPUT_MIB` | `64` | largest extracted text accepted |
+| `MUNARIUM_PDF_EXTRACTION_CONCURRENCY` | `2` | children per process (1–64) |
+| `MUNARIUM_PDF_EXTRACTION_QUEUE_SECS` | `120` | admission wait before a document is deferred |
+
+The bounds are read only under `isolated`. They are provisional and not frozen
+production limits; the [measurements](../design/pdf-isolation-measurements.md)
+record what they were chosen from and what remains to qualify.
+
+**Identity.** The profile's extractor identity is
+`pdf-text-isolated@1{os=…;mem_bytes=…;cpu_s=…;wall_ms=…;out_bytes=…}`, so the
+extractor-set identity becomes
+`extract@1[docx@1,pdf-text-isolated@1{…}]`. Successful text is byte-identical
+to `pdf-text@1`; which documents succeed is what differs. Enabling the profile
+does not switch any index: a rebuild produces a new index that goes through the
+normal verify and activate path, and the v1.4 identity stays available to
+rebuilds with `inline`. Concurrency and the queue wait are scheduling settings
+and are not part of the identity.
+
+**Extraction status.** Under the profile, `sources.extraction_status` and the
+build log distinguish the outcomes `inline` reports as `failed`:
+
+| Status | Class in the log | Meaning | Escalates to document intelligence? |
+|---|---|---|---|
+| `failed` | `parser_failed` | the parser rejected or crashed on the document | yes, under the existing rules |
+| `over_budget` | `over_budget` (with `input`, `memory`, `cpu`, `wall_clock` or `output`) | the document exceeded a bound | yes, under the existing rules |
+| `deferred` | `deferred` | no slot within the queue wait; never parsed | **no** |
+| `cancelled` | `cancelled` | the build stopped first; the child was killed | **no** |
+| `failed` | `isolation_failed` | the child could not be started or confined | **no** |
+
+The escalation rules themselves are unchanged: a provider must be configured,
+must accept the media type, and its own `MUNARIUM_DOCINTEL_MAX_BYTES` and
+timeout apply. v1.4 escalates any PDF local extraction could not read, so a
+parser failure and an over-budget refusal keep escalating exactly as a v1.4
+`failed` result would. Work that was never attempted locally does not: paying
+for a document because the local queue was busy, or because the deployment
+cannot start its child, would turn congestion or misconfiguration into cost.
+A deferred document needs a rebuild to be indexed.
