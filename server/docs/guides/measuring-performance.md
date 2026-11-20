@@ -109,6 +109,8 @@ The fixed registry in [metrics.rs](../../src/munarium-server/src/metrics.rs) emi
 | `munarium_interactions_dropped_total` | Failed nonblocking enqueue, including full/closed queue | Reports may undercount requests during this interval |
 | `munarium_interactions_insert_failures_total` | Failed audit inserts | Different from queue overflow; inspect database failures |
 | `munarium_load_shed_total` | Admission refusals under concurrency pressure | A capacity signal, not evidence that rejected work completed quickly |
+| `munarium_admission_total`, `munarium_admission_shed_total` | Admissions by plane, work class and slot (`ordinary`/`reserve`); sheds by plane and class ([admission classes](../ops/admission.md)) | Every shed is also in `munarium_load_shed_total`. Classes come from a fixed allowlist, so the series set is bounded |
+| `munarium_admission_slots`, `munarium_admission_slots_in_use` | Configured and held slots per plane and pool (`ordinary`, plus `reserve` and `heavy` when enabled) | Polled at scrape time; a sample, not a peak |
 | `munarium_provider_calls_total` | Instrumented completion/embedding operations, by provider/model/kind/outcome | Internal HTTP retries are not separate operations in this counter |
 | `munarium_provider_call_duration_seconds` | Instrumented provider operation latency by provider/kind | Includes the adapter operation and its retries; not a per-model histogram |
 | `munarium_provider_tokens_total` | Successful completion input/output tokens by provider/model | Not a complete billing ledger; embedding cache hits and embedding token billing are not counted here |
@@ -522,6 +524,7 @@ and provider refusal semantics, rather than creating synchronized retry bursts.
 | Control | Implemented behavior | How to tune and validate |
 |---|---|---|
 | `MUNARIUM_MAX_CONCURRENCY` | Default 512, minimum 1; separate REST/gRPC ceilings per replica | Raise only if CPU, memory, pool and downstream capacity have headroom; count 503 overload and stream lifetimes |
+| `MUNARIUM_CONTROL_RESERVE` / `MUNARIUM_HEAVY_CONCURRENCY` | Default 0 (off); carved out of, and bounded inside, each plane's ceiling ([admission classes](../ops/admission.md)) | No production sizes are recommended yet. Measure `munarium_admission_slots_in_use` and `munarium_admission_shed_total` by class before and after enabling |
 | `MUNARIUM_DB_MAX_CONNS` | Default 10, minimum 2; SQLx pool per replica | Include all API/worker instances, locks, admin/monitoring and migration connections in the database budget |
 | `MUNARIUM_REPLICA_COUNT` | Default 1; enables shared-store validation and divides provider rate windows | Set to the intended participating replica count; it does not start replicas or discover autoscaling changes |
 | `MUNARIUM_REGISTRY_TTL_SECS` | Default 15 seconds | Measure configuration convergence after rollout; 0 is load-once behavior and unsuitable for changing multi-replica registries |

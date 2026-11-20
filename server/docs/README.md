@@ -84,6 +84,7 @@ and API references when applying them to a new deployment.
 | [ops/command-recovery.md](ops/command-recovery.md) | Guarded command activation, unresolved outcomes and compatible rollback |
 | [ops/clustering.md](ops/clustering.md) | Running N instances on one PostgreSQL (2026-08-17): shared-vs-per-instance inventory, pool math, rolling restarts, orphaned-run diagnosis, partition-overflow recovery |
 | [ops/deployment-runbook.md](ops/deployment-runbook.md) | Deploying with what ships: gate → build and push the image → install or upgrade the Helm chart (or the example AKS module) → verify the rollout, not the hostname → roll back → backups |
+| [ops/admission.md](ops/admission.md) | Admission by work class: the per-plane ceiling, the opt-in control reserve and heavy bound, the route allowlist and the admission metrics |
 | [ops/troubleshooting.md](ops/troubleshooting.md) | Symptom → check → fix: startup exit codes, error slugs, deployed-environment classics, and the look-at-this-first order |
 | [ops/backup-restore.md](ops/backup-restore.md) | What a database restore covers and does not, and the point-in-time restore procedure for a managed PostgreSQL or a CNPG cell — drill it in your own environment before you need it |
 

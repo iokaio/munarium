@@ -53,7 +53,9 @@ and `MUNARIUM_MAX_CONCURRENCY` on a bigger box.
   enforcement ever matters, that is a table-backed budget — a deliberate
   non-feature today.
 - **Load-shed ceilings** (`MUNARIUM_MAX_CONCURRENCY`): per instance per plane,
-  which is what you want — shed reflects each instance's own capacity.
+  which is what you want — shed reflects each instance's own capacity. The
+  opt-in control reserve and heavy bound ([admission classes](admission.md))
+  are per instance per plane too.
 - **`/metrics`**: per instance; give each instance its own scrape target
   and let the scraper label `instance`. Cross-instance truth lives in the
   `/v1/reports/*` views, which read the shared tables.

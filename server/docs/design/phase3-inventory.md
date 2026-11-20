@@ -37,6 +37,17 @@ is never shed today, while its REST equivalent is. Second, the native bridge alr
 charges a nested dispatch once, so the "charge once" rule holds for it. MCP
 dispatch does not exist yet.
 
+**R7 implemented.** [`admission.rs`](../../src/munarium-server/src/admission.rs)
+implements the [B3-T2 classification](#b3-t2-classification-proposed) as written,
+behind two opt-in settings that default to off: `MUNARIUM_CONTROL_RESERVE` and
+`MUNARIUM_HEAVY_CONCURRENCY` ([admission classes](../ops/admission.md)). With
+neither set, the table above still describes the behavior; the `rest_permits` and
+`grpc_permits` pools are now each plane's ordinary pool in `AppState::admission`. The reserve is carved
+out of `MUNARIUM_MAX_CONCURRENCY`, is granted only after the control route's own
+authentication and role check, and is never used by heavy work. Bridged calls take
+their REST route's class and are still charged once. There is no live
+reconfiguration. The console findings below remain follow-ups.
+
 ## Typed gRPC services
 
 | Service | Methods | Pool |

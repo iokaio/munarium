@@ -25,7 +25,7 @@ sources are the guide chapters and script comments cited inline.
 | 422 `idempotency-mismatch` | same key, different body | new key for new work; byte-identical replay returns the recorded response |
 | 409 `session-not-open` | turn against a closed/expired session (2026-08-17) | open a new session; the detail names the actual state |
 | 409 `run-locked` | this runbook run is executing on ANOTHER instance (the cluster advisory lock, 2026-08-17) | poll `GET /v1/runs/{run_id}`; retry when settled — see [clustering.md](clustering.md) for the crash-orphan diagnosis |
-| 503 `overloaded` + `Retry-After: 1` | the instance is at `MUNARIUM_MAX_CONCURRENCY` in-flight /v1 requests | honor Retry-After; if chronic, raise the ceiling or add instances |
+| 503 `overloaded` + `Retry-After: 1` | the instance is at `MUNARIUM_MAX_CONCURRENCY` in-flight /v1 requests, or (opt-in) at its `MUNARIUM_HEAVY_CONCURRENCY` heavy bound | honor Retry-After; if chronic, raise the ceiling or add instances. `munarium_admission_shed_total{class}` shows which class was shed; see [admission classes](admission.md) |
 | 400 naming a chronology rules asset | a version armed `chronology_rules` metadata but the asset is not applied | `POST /v1/chronology-rules` (or `mmctl apply -f`) the asset first — arming fails loud by design |
 
 ## Deployed-environment classics
