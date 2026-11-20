@@ -28,6 +28,7 @@ UTF-8 JSON bytes, not `google.protobuf.Struct` floating-point numbers.
 | Artifact bytes, evidence row windows, generation and expected/staged/serving generations | REST `i64`; native bridge | Signed 64-bit database fields, with domain checks for valid generations/window bounds. |
 | Build-job history (ClearView R6/R9): per-version `attempts`, progress `units_done` / `units_total`, event `seq`; `generation`, `selected_ordinal`, `committed_generation`, `attempt_generation` | REST `i64` / `i32`; native bridge only | Nonnegative `BIGINT` / `INTEGER` columns. New members on new read-only routes; absent `units_total` means unknown, never zero. No typed protobuf message or field is added. |
 | ClearView R1/C1 (experimental): search `execution.version`, leg `candidate_limit` and `fetched`; turn `coverage.members[].hits` | REST `u32`/`u64`; typed `uint32`/`optional uint64`/`optional uint32` with presence | Computed per request, never persisted. `null`/unset means not measured or not searched, never zero. |
+| ClearView IR/I1/I2 (experimental): search `execution.stages[].policy_revision` and `scored`; inference `revision`, `expected_revision`, `timeout_ms`, `max_candidates`, `max_document_bytes`, `embed_dimensions`, `semantic_chunks`, `semantic_vectors`, usage `attempts`, `accounted_units`, `missing_usage` | REST `u64` | Binding revisions and limits are persisted as PostgreSQL `BIGINT`/`INTEGER` within their documented ranges; counts are computed per request. REST-first: no typed gRPC field. |
 | Evidence `from`, optional total; recorded/skipped duplicate/rule counts | REST `usize` | Architecture-sized local carrier, exact integer JSON. Evidence `from` is also bounded by signed-64 audit storage; window defaults and caps remain operation-specific. |
 | Context estimated/budget tokens, health latency/failure counts, turn elapsed milliseconds, authoring finding totals, datastore chunk count, build `max_chars`, token `ttl_secs` | REST `u64` / `usize`; relevant typed fields `uint64` | In-memory/computed quantities are not all persisted `BIGINT`s. Token TTL retains its 24-hour clamp. Existing admission and resource caps remain in effect. |
 
@@ -156,9 +157,48 @@ follows, for maintainer review:
 
 ### R11: retry guidance
 
-Problems may carry `retryable`/`retry_action` for the six slugs listed in
+Problems may carry `retryable`/`retry_action` for the slugs listed in
 [retry guidance](api/errors.md#retry-guidance), and gRPC adds the same keys to
 existing `ErrorInfo` metadata. Other problems serialize exactly as before.
+
+## ClearView phase 6: optional inference stages
+
+Experimental additions (IR-0 to IR-4, I1, I2). A collection that is not
+enrolled, and every deployment that never enables and binds the endpoint,
+produces exactly the v1.4 wire bytes and index ids (COMPAT-T4).
+
+- **Search.** `SearchExecutionDto.stages` (`SearchStageDto[]`) is serialized
+  only when non-empty, so an R1 disclosure of an unenrolled collection is
+  unchanged. A read of an enrolled collection always carries `execution`
+  with `stages`, whether or not `disclose_execution` was set: its response is
+  not a v1.4 response, and an I1 fallback must be disclosed. Typed gRPC
+  `HybridSearch` has no collection filter, so it never reads an enrolled
+  collection and gains no field.
+- **Provider configuration.** `spec.provider: openai-compatible`,
+  `spec.models.rerank`, `spec.inference` (`embedDimensions`, `maxBatch`,
+  `maxRequestBytes`, `maxAttempts`, `allowTestBackend`) and
+  `spec.budgets.shadowDailyTokens` are optional and omitted when unset, so an
+  existing configuration serializes unchanged. `rerank`, `inference` and
+  `shadowDailyTokens` are refused on other kinds. `ProviderId` gains
+  `openai_compatible`.
+- **Build jobs.** `IndexBuildJobRequest.kind` accepts `semantic`; existing
+  kinds are unchanged.
+- **New operations.** `POST /v1/providers/{name}/inference-probe`,
+  `GET/PUT /v1/collections/{id}/inference`,
+  `POST /v1/collections/{id}/inference/enroll` and
+  `POST /v1/collections/{id}/inference/rollback`, with the DTOs in
+  `munarium_api_types::inference`. They are added to the generated full-API
+  operation catalog (`ServerApiService` and the four SDK families).
+- **Problems.** `inference-stage-unavailable` (503) and
+  `inference-not-qualified` (409) are new slugs with retry guidance; no
+  existing slug changes.
+
+| ADR 0023 open choice | Choice in this implementation |
+|---|---|
+| Shadow quota and its allocation | `budgets.shadowDailyTokens` on the bound configuration is carved out of `dailyTotalTokens`: shadow attempts reserve only from it (ledger scope `shadow`), serving, build and probe attempts only from the remainder (scope `all`). Absent authorizes no shadow work. |
+| Wire spelling of the stage policy | `policy: "require" \| "prefer"` per stage on the binding; omitted is `require`. |
+| Refusal types | `inference-stage-unavailable` for a refused read; `inference-not-qualified` for management preconditions. |
+| Stage receipt | `execution.stages[]`: `stage`, `policy`, `policy_revision`, `applied`, `state`, `reason`, `fallback`, `identity`, `scored`. |
 
 ### SDK status
 

@@ -66,6 +66,7 @@ including any route added later, is ordinary and can never take a reserved slot.
 | `POST /v1/index-build-jobs/{job_id}/cancel` | `rw` |
 | `POST /v1/index-artifacts/{index_version_id}/promote` | `rw` |
 | `POST /v1/access-tokens/{jti}/revoke`, `AdminService.RevokeAccessToken` | `mgmt` |
+| `POST /v1/collections/{id}/inference/rollback` (calls no inference endpoint; [inference endpoints](../guides/inference-endpoints.md#roll-back)) | `mgmt` |
 | `GET /v1/index-build-jobs/{job_id}`, `GET /v1/retrieval-rollout/{scope_kind}/{scope_id}`, `GET /v1/index-artifacts/{index_version_id}` | any authenticated static-token role |
 
 Under `MUNARIUM_AUTH_MODE=disabled` every role check passes, as it does in the
@@ -81,6 +82,7 @@ handlers.
   `POST /v1/index-artifacts/backfill`, `POST /v1/sessions/{id}/turns`,
   `POST /v1/sessions/{id}/turns/stream`, `POST /v1.2/answers`,
   `POST /v1/providers/{name}/complete`, `POST /v1/providers/{name}/embed`,
+  `POST /v1/providers/{name}/inference-probe`,
   `PUT /v1/sources`, `POST /v1/ingest`, `POST /v1/ingest/batch`,
   `POST /v1/ingest/bulk`, `POST /v1/ingest/bulk/{bulk_id}/chunk` and
   `PUT /v1/evidence/{evidence_id}/bytes`.
