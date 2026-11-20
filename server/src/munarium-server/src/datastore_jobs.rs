@@ -21,7 +21,8 @@ use std::sync::Arc;
 
 use munarium_core::{KernelError, Result};
 use munarium_store_pg::jobs::{
-    BuildJob, BuildJobs, EnqueueOutcome, JobFence, JobKind, JobSignal, JobTarget, JobVersionOutcome,
+    BuildJob, BuildJobs, ClaimPolicy, EnqueueOutcome, JobFence, JobKind, JobSignal, JobTarget,
+    JobVersionOutcome,
 };
 
 use crate::error::ApiError;
@@ -131,6 +132,19 @@ pub fn spawn_builder(state: &Arc<AppState>) {
         .and_then(|v| v.parse().ok())
         .unwrap_or(5_000u64)
         .max(250);
+    // ClearView R8: opt-in tenant-fair claiming. Unset keeps the v1.4 FIFO
+    // queue; an unknown value is refused rather than silently ignored.
+    let policy = match std::env::var("MUNARIUM_DATASTORE_JOB_SCHEDULING") {
+        Err(_) => ClaimPolicy::Fifo,
+        Ok(raw) => match ClaimPolicy::parse(&raw) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::error!(error = %e, "the builder was not started");
+                return;
+            }
+        },
+    };
+    tracing::info!(scheduling = policy.as_str(), "build-job builder starting");
     let lease_secs = std::env::var("MUNARIUM_DATASTORE_JOB_LEASE_SECS")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -161,7 +175,10 @@ pub fn spawn_builder(state: &Arc<AppState>) {
                 }
                 Err(e) => tracing::warn!(error = %e, "expired-claim cleanup failed"),
             }
-            match jobs.claim_any(&node, lease_secs, MAX_JOB_ATTEMPTS).await {
+            match jobs
+                .claim_next(&node, lease_secs, MAX_JOB_ATTEMPTS, policy)
+                .await
+            {
                 Ok(Some(job)) => {
                     // The claim's fencing generation, captured in the claiming
                     // transaction. Every later write for this job carries it.

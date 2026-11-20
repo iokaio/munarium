@@ -611,4 +611,282 @@ async fn the_job_queue_dedups_claims_leases_and_cancels() {
         .unwrap(),
         "a cancelled job's holder cannot complete it"
     );
+
+    // --- R8 / B1: fair claiming, and the v1.4 FIFO default. ---------------
+    fair_claiming_phases(&q, &pool, &run).await;
+}
+
+async fn enqueue_n(q: &BuildJobs, tenant: &str, prefix: &str, n: usize) -> Vec<String> {
+    let mut ids = Vec::new();
+    for i in 0..n {
+        match q
+            .enqueue(
+                tenant,
+                JobKind::Rebuild,
+                JobTarget::Version(&format!("iv-{prefix}-{i}")),
+                serde_json::json!({}),
+                "test",
+                None,
+            )
+            .await
+            .unwrap()
+        {
+            EnqueueOutcome::Enqueued(id) => ids.push(id),
+            other => panic!("enqueue: {other:?}"),
+        }
+    }
+    ids
+}
+
+async fn done(q: &BuildJobs, j: &munarium_store_pg::jobs::BuildJob, node: &str) {
+    assert!(q
+        .complete_fenced(
+            &j.tenant_id,
+            &j.job_id,
+            node,
+            j.attempts,
+            Ok(serde_json::json!({})),
+            None
+        )
+        .await
+        .unwrap());
+}
+
+async fn last_served(pool: &sqlx::PgPool, tenant: &str) -> Option<i64> {
+    sqlx::query_scalar("SELECT last_served_seq FROM index_build_tenant_turns WHERE tenant_id = $1")
+        .bind(tenant)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// B1-T1 and B1-T2, in the single function that owns the global queue.
+async fn fair_claiming_phases(q: &BuildJobs, pool: &sqlx::PgPool, run: &str) {
+    use munarium_store_pg::jobs::ClaimPolicy::{Fifo, TenantFair};
+    let a = format!("tenant-fair-a-{run}");
+    let b = format!("tenant-fair-b-{run}");
+    let c = format!("tenant-fair-c-{run}");
+
+    // B1-T1: A has a much larger, older backlog; B and C three each.
+    let a_ids = enqueue_n(q, &a, "a", 6).await;
+    let b_ids = enqueue_n(q, &b, "b", 3).await;
+    let c_ids = enqueue_n(q, &c, "c", 3).await;
+    let mut order = Vec::new();
+    for _ in 0..9 {
+        let j = q
+            .claim_next("builder-fair", 600, 3, TenantFair)
+            .await
+            .unwrap()
+            .expect("eligible work");
+        order.push((j.tenant_id.clone(), j.job_id.clone()));
+        done(q, &j, "builder-fair").await;
+    }
+    let expected: Vec<(String, String)> = (0..3)
+        .flat_map(|round| {
+            [
+                (a.clone(), a_ids[round].clone()),
+                (b.clone(), b_ids[round].clone()),
+                (c.clone(), c_ids[round].clone()),
+            ]
+        })
+        .collect();
+    assert_eq!(
+        order, expected,
+        "one claim per tenant per round, each tenant's own oldest first"
+    );
+    // Only A has work left: it is served, and its order is still FIFO.
+    for id in &a_ids[3..] {
+        let j = q
+            .claim_next("builder-fair", 600, 3, TenantFair)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(&j.job_id, id);
+        done(q, &j, "builder-fair").await;
+    }
+    assert!(q
+        .claim_next("builder-fair", 600, 3, TenantFair)
+        .await
+        .unwrap()
+        .is_none());
+
+    // B1-T2: competing builders never spend one tenant's turn twice.
+    let a2 = enqueue_n(q, &a, "a2", 2).await;
+    let b2 = enqueue_n(q, &b, "b2", 2).await;
+    let (x, y) = tokio::join!(
+        q.claim_next("builder-x", 600, 3, TenantFair),
+        q.claim_next("builder-y", 600, 3, TenantFair)
+    );
+    let (x, y) = (x.unwrap(), y.unwrap());
+    let claimed: Vec<_> = [&x, &y].iter().filter_map(|j| j.as_ref()).collect();
+    assert!(
+        !claimed.is_empty(),
+        "at least one concurrent claim succeeds"
+    );
+    if claimed.len() == 2 {
+        assert_ne!(
+            claimed[0].tenant_id, claimed[1].tenant_id,
+            "two concurrent claims took two different tenants' turns"
+        );
+    }
+    for (j, node) in [(&x, "builder-x"), (&y, "builder-y")] {
+        if let Some(j) = j {
+            done(q, j, node).await;
+        }
+    }
+    // Drain the rest of this phase in fair order.
+    while let Some(j) = q
+        .claim_next("builder-fair", 600, 3, TenantFair)
+        .await
+        .unwrap()
+    {
+        assert!(
+            a2.contains(&j.job_id) || b2.contains(&j.job_id),
+            "only this phase's jobs are eligible"
+        );
+        done(q, &j, "builder-fair").await;
+    }
+
+    // A locked candidate is passed over, and progress resumes when it clears.
+    let a3 = enqueue_n(q, &a, "a3", 1).await;
+    let b3 = enqueue_n(q, &b, "b3", 1).await;
+    let mut holder = pool.begin().await.unwrap();
+    sqlx::query("SELECT 1 FROM index_build_tenant_turns WHERE tenant_id = $1 FOR UPDATE")
+        .bind(&a)
+        .execute(&mut *holder)
+        .await
+        .unwrap();
+    let first = q
+        .claim_next("builder-fair", 600, 3, TenantFair)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(first.job_id, b3[0], "A's turn row is locked; B goes");
+    done(q, &first, "builder-fair").await;
+    holder.rollback().await.unwrap();
+    let second = q
+        .claim_next("builder-fair", 600, 3, TenantFair)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(second.job_id, a3[0], "A is served once the lock clears");
+    done(q, &second, "builder-fair").await;
+
+    // A rolled-back claim leaves the turn available.
+    let a4 = enqueue_n(q, &a, "a4", 1).await;
+    let before = last_served(pool, &a).await;
+    let mut rolled = pool.begin().await.unwrap();
+    sqlx::query(
+        "UPDATE index_build_jobs SET state = 'running', claimed_by = 'builder-gone',
+                claimed_at = now(), attempts = attempts + 1
+          WHERE tenant_id = $1 AND job_id = $2",
+    )
+    .bind(&a)
+    .bind(&a4[0])
+    .execute(&mut *rolled)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE index_build_tenant_turns
+            SET last_served_seq = nextval('index_build_tenant_turn_seq')
+          WHERE tenant_id = $1",
+    )
+    .bind(&a)
+    .execute(&mut *rolled)
+    .await
+    .unwrap();
+    rolled.rollback().await.unwrap();
+    assert_eq!(
+        last_served(pool, &a).await,
+        before,
+        "rollback kept the turn"
+    );
+    let next = q
+        .claim_next("builder-fair", 600, 3, TenantFair)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (next.job_id.as_str(), next.attempts),
+        (a4[0].as_str(), 1),
+        "A still has its turn and the job its first generation"
+    );
+    // A reclaimed lease in fair mode: a new generation, the old one fenced.
+    let reclaimed = q
+        .claim_next("builder-fair2", 0, 3, TenantFair)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (reclaimed.job_id.as_str(), reclaimed.attempts),
+        (a4[0].as_str(), 2),
+        "the expired lease is reclaimed"
+    );
+    assert!(!q
+        .heartbeat_fenced(&a, &a4[0], "builder-fair", 1)
+        .await
+        .unwrap());
+    done(q, &reclaimed, "builder-fair2").await;
+
+    // Expired-claim cleanup consumes no turn.
+    let a5 = enqueue_n(q, &a, "a5", 1).await;
+    let mut held = None;
+    for _ in 0..3 {
+        held = q.claim_next("builder-crash", 0, 3, Fifo).await.unwrap();
+    }
+    assert_eq!(held.unwrap().job_id, a5[0]);
+    let before = last_served(pool, &a).await;
+    let failed = q.fail_expired_final_claims(0, 3, 32).await.unwrap();
+    assert!(failed.contains(&(a.clone(), a5[0].clone())));
+    assert_eq!(last_served(pool, &a).await, before, "cleanup is not a turn");
+
+    // Fair scheduling disabled: the v1.4 FIFO queue, oldest first across
+    // tenants, never reading or advancing turns. The fixture's pending row
+    // (created 2026-10-01) is older than anything enqueued now.
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/fixtures/clearview-phase1/v14-build-jobs.json"
+    )))
+    .unwrap();
+    let pending = fixture["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["case"] == "pending")
+        .unwrap();
+    let f_tenant = format!("tenant-fair-fixture-{run}");
+    sqlx::query(
+        "INSERT INTO index_build_jobs
+             (tenant_id, job_id, kind, scope_kind, scope_id, params, state, attempts,
+              requested_by, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,'pending',0,$7,$8::timestamptz)",
+    )
+    .bind(&f_tenant)
+    .bind(pending["job_id"].as_str().unwrap())
+    .bind(pending["kind"].as_str().unwrap())
+    .bind(pending["scope_kind"].as_str().unwrap())
+    .bind(pending["scope_id"].as_str().unwrap())
+    .bind(pending["params"].clone())
+    .bind(pending["requested_by"].as_str().unwrap())
+    .bind(pending["created_at"].as_str().unwrap())
+    .execute(pool)
+    .await
+    .unwrap();
+    let fa = enqueue_n(q, &a, "fifo-a", 3).await;
+    let fb = enqueue_n(q, &b, "fifo-b", 1).await;
+    let turns_before = (last_served(pool, &a).await, last_served(pool, &b).await);
+    let mut fifo = Vec::new();
+    while let Some(j) = q.claim_any("builder-fifo", 600, 3).await.unwrap() {
+        fifo.push(j.job_id.clone());
+        done(q, &j, "builder-fifo").await;
+    }
+    let mut expected = vec![pending["job_id"].as_str().unwrap().to_string()];
+    expected.extend(fa);
+    expected.extend(fb);
+    assert_eq!(fifo, expected, "the v1.4 global FIFO order");
+    assert_eq!(
+        (last_served(pool, &a).await, last_served(pool, &b).await),
+        turns_before,
+        "FIFO mode never advances turns"
+    );
 }

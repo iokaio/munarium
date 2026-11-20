@@ -2246,6 +2246,20 @@
       "origins": [
         "src/munarium-store-pg/migrations/0044_build_job_outcomes.sql"
       ]
+    },
+    "index_build_tenant_turns": {
+      "columns": {
+        "tenant_id": "text",
+        "last_served_seq": "bigint",
+        "last_served_at": "timestamptz"
+      },
+      "content": "Per-tenant fair-claiming position (a sequence number and time of the last fair claim); identifiers only.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0045_build_job_tenant_turns.sql"
+      ]
     }
   },
   "artifacts": {

@@ -172,6 +172,7 @@ complete object-store lifecycle policy or authorize deleting catalog rows.
 | `MUNARIUM_DATASTORE_BUILDER` | Off | Case-insensitive `enabled` starts the durable build-job worker; it requires PostgreSQL. Does not enqueue work or select a serving engine |
 | `MUNARIUM_DATASTORE_BUILDER_POLL_MS` | `5000` | Queue polling milliseconds, clamped to at least 250 |
 | `MUNARIUM_DATASTORE_JOB_LEASE_SECS` | `600` | Claimed-job lease seconds, clamped to at least 30; the worker renews it during execution. Each claim has a generation (the job's `attempts` after that claim), and renewal and completion require it, so a superseded claim cannot write, even from a replica restarted under the same instance name. A lapsed lease is re-offered until the job has been claimed three times. On each poll, the builder moves jobs whose final claim lapsed to `failed` and releases their target for a new request. Publication is fenced by the same generation; see [durable jobs](#5-backfill-and-verify-existing-indexes) |
+| `MUNARIUM_DATASTORE_JOB_SCHEDULING` | `fifo` | How a builder picks its next job (ClearView R8). `fifo` is the v1.4 global queue, oldest job first across tenants. `tenant_fair` gives every tenant with eligible work an equal claim turn and starts that tenant's oldest eligible job; see [fair claiming](#fair-claiming-across-tenants). Any other value stops the builder from starting. Set the same value on every builder |
 | `MUNARIUM_DATASTORE_RECONCILE_INTERVAL_SECS` | `60` | Interrupted sealed-build reconciliation interval, clamped to at least 30 seconds; also runs at startup |
 | `MUNARIUM_DATASTORE_ROLLOUT_REFRESH_MS` | `15000` | Serving warmer/selector refresh interval, clamped to at least 1000 milliseconds |
 | `MUNARIUM_DATASTORE_STARTUP_HYDRATE_TIMEOUT_MS` | `120000` | Startup hydration deadline used by the readiness warmer; does not permit serving incomplete scopes after expiry |
@@ -699,6 +700,29 @@ job activates an index, and recovery never changes the job's terminal state.
 The records are `index_build_job_runs` and `index_build_job_versions`
 (migration 0044).
 
+#### Fair claiming across tenants
+
+By default a builder claims the oldest eligible job across all tenants, so a
+tenant that enqueues hundreds of backfills is served to completion before a job
+another tenant enqueues afterward. With `MUNARIUM_DATASTORE_JOB_SCHEDULING=tenant_fair`
+the builder gives each tenant with eligible work an equal turn: the tenant served
+least recently (a tenant never served goes first) claims its own oldest eligible
+job, with the job ID breaking ties. A turn is one committed claim. The tenant's
+position (`index_build_tenant_turns`, migration 0045) advances in the claiming
+transaction, so a claim that rolls back leaves the turn available, and the claim
+locks the tenant's turn with the job row, so two builders never spend one turn
+twice; the second takes another tenant, or nothing on that poll if only one
+tenant has work. Both modes claim pending jobs and reclaim expired leases with
+attempts remaining, with the same generation fence. Expired-claim cleanup never
+consumes a turn. Equal claims are not equal worker time: builds of different
+lengths still take different shares.
+
+The fair claim sorts eligible jobs by tenant turn. On a local PostgreSQL 16
+container with 10,000 pending jobs across 100 tenants, one claim's selection
+took about 23 ms, against about 11 ms for the FIFO selection over the same rows.
+That single run is indicative only; measure at your own queue depths before
+enabling it.
+
 For scripted CLI polling, `datastore jobs get` returns exit 0 for `succeeded`,
 4 for `failed`/`cancelled`, and 3 otherwise, including `superseded`. Read the
 state to avoid polling a superseded job forever. Synchronous `verify` and
@@ -894,8 +918,9 @@ Before returning a v1.4 builder to service:
 3. Reconcile outstanding cancellations and publication intents. Keep a newer
    process running its reconciler until no attempt is `running` or `sealed` and
    no publication intent is `pending`.
-4. Disable fair claiming and fenced progress if the release in use provides
-   them; this release provides neither.
+4. Disable fair claiming: unset `MUNARIUM_DATASTORE_JOB_SCHEDULING` or set it
+   to `fifo` on every builder. A v1.4 builder ignores the setting and claims
+   FIFO.
 5. Confirm that no retired holder can still write and that no active job needs
    the fence. These read-only queries must all return no rows:
 

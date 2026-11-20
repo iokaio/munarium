@@ -365,6 +365,37 @@ pub struct JobVersionHistory {
     pub next_after: Option<String>,
 }
 
+/// How a builder picks its next job (ClearView R8 / B1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ClaimPolicy {
+    /// The v1.4 global queue: oldest eligible job first, across tenants.
+    #[default]
+    Fifo,
+    /// Equal claim turns for every tenant with eligible work; within a
+    /// tenant, its oldest eligible job. Opt-in.
+    TenantFair,
+}
+
+impl ClaimPolicy {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Fifo => "fifo",
+            Self::TenantFair => "tenant_fair",
+        }
+    }
+
+    /// Parse the `MUNARIUM_DATASTORE_JOB_SCHEDULING` value.
+    pub fn parse(s: &str) -> Result<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "fifo" => Ok(Self::Fifo),
+            "tenant_fair" => Ok(Self::TenantFair),
+            other => Err(KernelError::InvalidInput(format!(
+                "unknown build-job scheduling policy {other:?}; expected fifo or tenant_fair"
+            ))),
+        }
+    }
+}
+
 /// What an enqueue did.
 #[derive(Debug, Clone, PartialEq)]
 pub enum EnqueueOutcome {
@@ -488,22 +519,63 @@ impl BuildJobs {
         lease_secs: i64,
         max_attempts: i32,
     ) -> Result<Option<BuildJob>> {
+        self.claim_next(node_id, lease_secs, max_attempts, ClaimPolicy::Fifo)
+            .await
+    }
+
+    /// [`claim_any`](Self::claim_any) under an explicit scheduling policy
+    /// (ClearView R8). [`ClaimPolicy::Fifo`] is exactly the v1.4 global
+    /// queue. [`ClaimPolicy::TenantFair`] gives each tenant with eligible
+    /// work an equal turn: the tenant served least recently (never-served
+    /// first) claims its oldest eligible job, ties broken by job id. Both
+    /// policies claim pending jobs and reclaim expired leases with attempts
+    /// remaining, and both return the generation captured in the claiming
+    /// transaction.
+    ///
+    /// In fair mode the tenant's turn row is locked with the job row and
+    /// advanced in the same transaction, so a turn is one committed claim: a
+    /// rolled-back claim leaves it available, and two concurrent builders
+    /// never spend one tenant's turn twice (the second skips that tenant for
+    /// this claim). A candidate locked by another transaction is passed over
+    /// for this claim, as in FIFO mode.
+    pub async fn claim_next(
+        &self,
+        node_id: &str,
+        lease_secs: i64,
+        max_attempts: i32,
+        policy: ClaimPolicy,
+    ) -> Result<Option<BuildJob>> {
         let mut tx = self.pool.begin().await.map_err(storage_err)?;
-        let row = sqlx::query(
-            "SELECT tenant_id, job_id FROM index_build_jobs
-              WHERE (state = 'pending'
-                     OR (state = 'running'
-                         AND claimed_at < now() - make_interval(secs => $1)
-                         AND attempts < $2))
-              ORDER BY created_at
-              FOR UPDATE SKIP LOCKED
-              LIMIT 1",
-        )
-        .bind(lease_secs as f64)
-        .bind(max_attempts)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(storage_err)?;
+        let select = match policy {
+            ClaimPolicy::Fifo => {
+                "SELECT tenant_id, job_id FROM index_build_jobs
+                  WHERE (state = 'pending'
+                         OR (state = 'running'
+                             AND claimed_at < now() - make_interval(secs => $1)
+                             AND attempts < $2))
+                  ORDER BY created_at
+                  FOR UPDATE SKIP LOCKED
+                  LIMIT 1"
+            }
+            ClaimPolicy::TenantFair => {
+                "SELECT j.tenant_id, j.job_id
+                   FROM index_build_jobs j
+                   JOIN index_build_tenant_turns t ON t.tenant_id = j.tenant_id
+                  WHERE (j.state = 'pending'
+                         OR (j.state = 'running'
+                             AND j.claimed_at < now() - make_interval(secs => $1)
+                             AND j.attempts < $2))
+                  ORDER BY t.last_served_seq ASC NULLS FIRST, j.created_at, j.job_id
+                  FOR UPDATE OF j, t SKIP LOCKED
+                  LIMIT 1"
+            }
+        };
+        let row = sqlx::query(select)
+            .bind(lease_secs as f64)
+            .bind(max_attempts)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(storage_err)?;
         let Some(row) = row else {
             return Ok(None);
         };
@@ -526,6 +598,19 @@ impl BuildJobs {
         .map_err(storage_err)?;
         let job = row_to_job(claimed);
         record_run(&mut tx, &job, node_id).await?;
+        if policy == ClaimPolicy::TenantFair {
+            // The turn advances with the claim, in its transaction.
+            sqlx::query(
+                "UPDATE index_build_tenant_turns
+                    SET last_served_seq = nextval('index_build_tenant_turn_seq'),
+                        last_served_at = now()
+                  WHERE tenant_id = $1",
+            )
+            .bind(&job.tenant_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(storage_err)?;
+        }
         tx.commit().await.map_err(storage_err)?;
         Ok(Some(job))
     }
