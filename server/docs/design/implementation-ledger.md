@@ -19,7 +19,7 @@ When a task advances, add a dated status, link the PR or implementation revision
 | ID | Task and primary design | Status and next evidence |
 |---|---|---|
 | P0-T1 | [Freeze the v1.4 baseline and maintain the contract worklist](README.md#p0-t1) | Partial. Released source and image are pinned for Matrix. The Phase 1 [job and console fixtures](../../tests/fixtures/clearview-phase1/README.md) and their expected v1.4 results were frozen in `ff65ad5`, from sources byte-identical to v1.4.0. Still to record: full release artifact and SDK pins, owners, rollback boundaries and next review dates. |
-| Phase 0 | [Prepare qualification environments](README.md#qualification-environments) | Deferred by maintainer decision (19 November 2026): no paid Azure or cluster runs until the entire plan is code complete, reviewed and tuned. Until then, prepare code and cluster test plans only. Before scheduling, record named owners, dated availability, access, topology, cost authority and expiry for each environment. |
+| Phase 0 | [Prepare qualification environments](README.md#qualification-environments) | Deferred by maintainer decision (19 November 2026): no paid Azure or cluster runs until the entire plan is code complete, reviewed and tuned. Until then, prepare code and cluster test plans only. Before scheduling, record named owners, dated availability, access, topology, cost authority and expiry for each environment. The [cluster qualification plan](cluster-qualification-plan.md) prepares each cluster receipt, the local workstation cluster runs and the minimum-spend ordering. |
 
 <a id="phase-m-matrix-isolation"></a>
 

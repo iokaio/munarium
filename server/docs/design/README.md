@@ -119,7 +119,7 @@ Use one receipt per acceptance ID and environment. Record candidate and baseline
 
 ## Qualification environments
 
-The component owners below prepare the runs. Named operators, actual hardware allocations, access approvals and spending authority have not been supplied. No environment is booked. Before scheduling, the release owner records the operator, dated availability probe, exact topology, maximum authorized cost (including retries), and reservation/access expiry in the release-owned record. Keep restricted details and corpus text inside the authorized environment. [Qualification policy](../guides/server-1.4.md)
+The component owners below prepare the runs. Named operators, actual hardware allocations, access approvals and spending authority have not been supplied. No environment is booked. Before scheduling, the release owner records the operator, dated availability probe, exact topology, maximum authorized cost (including retries), and reservation/access expiry in the release-owned record. Keep restricted details and corpus text inside the authorized environment. [Qualification policy](../guides/server-1.4.md) · [Cluster qualification plan](cluster-qualification-plan.md)
 
 | Environment and responsible role | Hardware, workload and sizing | Availability, cost and expiry to record |
 |---|---|---|
