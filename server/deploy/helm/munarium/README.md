@@ -1,7 +1,7 @@
 # Munarium Helm chart
 
 One release = one CNPG Postgres cell + the munarium-server deployment + all three
-API planes (REST, gateway, direct gRPC). Chart version `0.4.0`, app version `1.4.0`.
+API planes (REST, gateway, direct gRPC). Chart version `0.5.0`, app version `1.4.0`.
 
 The chart defaults to the published 1.4.0 image. For a 1.4 upgrade, follow
 the [release guide](../../../docs/guides/server-1.4.md) and select the qualified image explicitly.
@@ -54,6 +54,10 @@ helm upgrade munarium deploy/helm/munarium -n munarium --reuse-values \
   --set image.tag=1.4.0
 ```
 
+For production, add the [production profile](#replica-count-and-provider-limits)
+with `-f deploy/helm/munarium/values-production.yaml` on install and on every
+upgrade. The bare chart keeps the v1.4 replica-count behavior.
+
 The default `image.tag` is `"1.4.0"`, the published server version — set the
 tag you mean. The current chart constructs `repository:tag` and has no separate
 digest value; use a Helm post-renderer to replace the image with
@@ -66,6 +70,8 @@ digest value; use a Helm post-renderer to replace the image with
 | `image.repository` | _(required)_ | server image; `helm install` refuses without it |
 | `image.tag` | `"1.4.0"` | image tag — the update lever |
 | `replicas` | `2` | server pods |
+| `providerReplicaCount` | _(omitted)_ | `MUNARIUM_REPLICA_COUNT`, the provider RPM/TPM divisor that arms the cluster startup checks. Omitted: no entry is rendered, as in v1.4. `auto`: `replicas`. A positive integer: that divisor. Anything else fails the render. See [replica count](#replica-count-and-provider-limits) |
+| `strategy` | `{}` | Deployment update strategy, rendered verbatim when set. Empty keeps the Kubernetes default (RollingUpdate, 25% surge) |
 | `staticTokens` | `demo-rw-token:demo:rw,demo-ro-token:demo:ro` | `MUNARIUM_STATIC_TOKENS` — demo literals; replace them |
 | `workloadIdentity.clientId` | `""` | Azure workload-identity UAMI client id. Set: pods get the `azure.workload.identity/use` label + a `munarium` ServiceAccount annotated for federation. Empty: no annotation, so the chart still installs on a non-Azure cluster |
 | `sourceStore.account` | `""` | Azure storage account for document bytes. Set: `MUNARIUM_SOURCE_STORE=az` via workload identity. Empty: `MUNARIUM_SOURCE_STORE=pg` (bytes in Postgres), which is what keeps a plain `helm install` working with no Azure at all |
@@ -84,6 +90,72 @@ The database URL is not a value: it comes from the CNPG-generated app secret
 The direct gRPC LoadBalancer also exposes a plaintext listener. For remote
 clients, terminate TLS at a configured ingress/proxy and disable the direct
 LoadBalancer with `directGrpc.enabled=false` if it is not needed.
+
+## Replica count and provider limits
+
+Each Server process divides every configured provider RPM and TPM limit by
+`MUNARIUM_REPLICA_COUNT` (`max(1, ceil(limit / count))` per local one-minute
+window). A count above 1 also makes startup refuse a memory ledger or memory
+source store. The binary default is 1. The v1.4 chart never rendered the
+variable, so two default pods each admit the full limit and the cluster checks
+stay off. `providerReplicaCount` controls it
+([design](../../../docs/design/scale-out.md#helm-installation-upgrade-and-rollback)):
+
+| Setting | Rendered on every pod | Use |
+|---|---|---|
+| omitted (bare chart) | nothing | v1.4 behavior. A count supplied by a post-render or `kubectl set env` override keeps its effect |
+| `auto` | `replicas` (at least 1) | the [production profile](values-production.yaml). The chart has one Server group, so a pod that serves and builds counts once |
+| a positive integer | that integer | a fixed divisor, even when it differs from `replicas` |
+
+**Fresh production install.** Pass `-f deploy/helm/munarium/values-production.yaml`
+with your own values. Two pods each run with count 2, so a 60 RPM provider
+admits 30 per pod per window. Keep the profile in the values of every later
+upgrade.
+
+**Upgrade a v1.4 release with its original values.** Omit the key. The
+rendered Deployment is identical to the v1.4 chart's for the same values, so
+each pod keeps its previous effective count, ordinarily 1. `--reuse-values`
+carries the v1.4 chart's values, which lack both new keys; both read as
+omitted.
+
+**Migrate that release to the production profile.** First confirm shared
+stores (PostgreSQL ledger and a shared source store), pool capacity for the
+peak live pod count, and the surge allowance. If a count is currently
+supplied by an override, remove the override and set the equivalent chart
+value in the same change. Then upgrade with the profile and wait for the
+rollout. Check that `munarium_replica_count` on every pod's `/metrics` reports
+the expected count, and that the console Health page shows it. A storage
+refusal at startup means the storage configuration must be fixed first.
+
+**Surge.** The default RollingUpdate adds one pod above `replicas` during a
+rollout, and each surge pod opens a full share. With two replicas at count 2,
+three pods can admit 1.5 times the provider limit until the old pod drains.
+Set `strategy.rollingUpdate.maxSurge: 0` (with `maxUnavailable: 1`) to keep
+live processes at `replicas`, at the cost of serving capacity during the
+rollout. A replacement pod still opens a fresh window. Static shares cannot
+bound a provider ceiling across restarts; see
+[automatic scaling qualification](../../../docs/design/scale-out.md#helm-installation-upgrade-and-rollback).
+
+**platform-v1.** The platform authority profile requires one Server process
+and a count of 1; startup refuses any other count, even with shared storage.
+Set `replicas: 1`, `providerReplicaCount: 1` (or `auto`) and
+`strategy: {type: Recreate}`, so Kubernetes stops the old pod before starting
+its replacement. A divisor of 1 on a multi-pod deployment hides the extra
+processes from the startup guard, so never raise `replicas` on this profile.
+
+**Roll back.** Restore the prior values, post-render overrides and chart
+revision together (`helm rollback` restores all three for a Helm-managed
+release). The v1.4 chart ignores `providerReplicaCount` and renders no count,
+so its pods return to count 1 and two full windows. If a divisor of 2 is
+still required, carry it through a deployment override on the v1.4 chart.
+Drain or limit provider work during the transition and check the effective
+count on each pod before resuming traffic.
+
+What is not yet qualified on a cluster: startup guards, effective shares and
+aggregate admissions at steady state and during surge, two upgrades and a
+rollback ([SCALE-1-T1](../../../docs/design/scale-out.md#scale-1-t1)). The
+rendering cases are checked by `scripts/test_helm_chart.py` from the
+repository root.
 
 ## What the chart does NOT wire (and the workaround)
 

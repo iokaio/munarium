@@ -5,6 +5,13 @@ metadata:
   labels: { app: munarium-server }
 spec:
   replicas: {{ .Values.replicas }}
+  {{- with .Values.strategy }}
+  # Rendered only when set. Empty keeps the Kubernetes default (RollingUpdate,
+  # 25% surge, 25% unavailable) that v1.4 used. A platform-v1 deployment
+  # needs `type: Recreate` so its single process is never overlapped.
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   selector:
     matchLabels: { app: munarium-server }
   template:
@@ -56,6 +63,13 @@ spec:
             - { name: MUNARIUM_AUTH_MODE, value: static }
             - { name: MUNARIUM_STATIC_TOKENS, value: {{ .Values.staticTokens | quote }} }
             - { name: MUNARIUM_LOG, value: info }
+            {{- $replicaCount := include "munarium.providerReplicaCount" . }}
+            {{- if $replicaCount }}
+            # providerReplicaCount (SCALE-1): divides each provider RPM/TPM
+            # limit and arms the cluster startup checks. Absent when the value
+            # is omitted, as in the v1.4 chart.
+            - { name: MUNARIUM_REPLICA_COUNT, value: {{ $replicaCount | quote }} }
+            {{- end }}
             {{- if .Values.sourceStore.account }}
             - { name: MUNARIUM_SOURCE_STORE, value: az }
             - { name: MUNARIUM_AZURE_STORAGE_ACCOUNT, value: {{ .Values.sourceStore.account | quote }} }

@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# Production install profile (scale-out.md, SCALE-1). Pass it on install and
+# on every upgrade, together with your own private values:
+#
+#   helm install munarium deploy/helm/munarium -f deploy/helm/munarium/values-production.yaml -f <your values>
+#
+# It sets only what differs from the bare chart. Image, tokens, storage and
+# identity remain yours to supply.
+
+# Divide each provider RPM/TPM limit by the serving replica count and arm the
+# cluster startup checks (shared ledger and source store required). With the
+# default two replicas each pod sees MUNARIUM_REPLICA_COUNT=2, so a 60 RPM
+# provider admits 30 per pod per window.
+providerReplicaCount: auto

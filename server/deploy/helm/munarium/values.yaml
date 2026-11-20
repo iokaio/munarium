@@ -6,6 +6,22 @@ image:
 
 replicas: 2
 
+# MUNARIUM_REPLICA_COUNT, the provider rate-limit divisor that also arms the
+# cluster startup checks (scale-out.md, SCALE-1). Left out here on purpose:
+# omitted, the chart renders no MUNARIUM_REPLICA_COUNT, exactly as v1.4 did.
+# Each pod then enforces the full provider RPM/TPM and the cluster checks stay
+# off, and a count supplied by a post-render or `kubectl set env` override
+# keeps its effect. `auto` renders `replicas`; a positive integer renders that
+# fixed divisor. The production profile (values-production.yaml) sets `auto`;
+# keep it in the release values on every upgrade.
+# providerReplicaCount: auto
+
+# Deployment update strategy, rendered verbatim when set. Empty keeps the
+# Kubernetes default (RollingUpdate with 25% surge) that v1.4 used. Surge pods
+# each take a full provider share; `rollingUpdate: {maxSurge: 0}` bounds the
+# live processes at `replicas`. platform-v1 requires `type: Recreate`.
+strategy: {}
+
 # static demo auth; production swaps MUNARIUM_AUTH_MODE=oidc via values
 staticTokens: "demo-rw-token:demo:rw,demo-ro-token:demo:ro"
 

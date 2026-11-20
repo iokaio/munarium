@@ -72,6 +72,13 @@ helm upgrade munarium deploy/helm/munarium -n munarium --reuse-values --set imag
 kubectl -n munarium rollout status deployment/munarium-server
 ```
 
+For production, also pass `-f deploy/helm/munarium/values-production.yaml` on
+install and on every upgrade. It sets `providerReplicaCount: auto`, so each pod
+divides provider RPM/TPM limits by the replica count and refuses per-process
+storage. Without it the chart renders no `MUNARIUM_REPLICA_COUNT`, as v1.4 did.
+Before adding the profile to an existing release, read the
+[chart's replica-count section](../../deploy/helm/munarium/README.md#replica-count-and-provider-limits).
+
 The private values file must set `staticTokens` to your comma-separated
 `token:tenant:role` registrations. Using a YAML value avoids Helm interpreting
 the commas as separate `--set` assignments. For the published image, use `image.repository=iokaio/munarium` and
@@ -128,7 +135,11 @@ helm rollback munarium <known-good-revision> -n munarium
 kubectl -n munarium rollout status deployment/munarium-server
 ```
 
-or set `image.tag` back to the previous value and upgrade. Migrations are
+or set `image.tag` back to the previous value and upgrade. Restore the prior
+values and any post-render or `kubectl set env` overrides with the chart
+revision: a rollback to a chart without `providerReplicaCount` removes the
+rendered `MUNARIUM_REPLICA_COUNT`, which returns each pod to the full provider
+limit. Migrations are
 additive-only, but read the candidate release's compatibility and rollback
 instructions before reusing its database with an older binary. Server 1.1.1
 adds no migration; rollback to 1.1.0 restores the earlier query-expansion
