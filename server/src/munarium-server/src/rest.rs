@@ -1743,6 +1743,15 @@ pub fn router(state: Arc<AppState>) -> Router {
             "/v1/index-build-jobs/{job_id}/cancel",
             post(crate::datastore_jobs::cancel_job),
         )
+        // ClearView R9: fenced progress and the bounded event history.
+        .route(
+            "/v1/index-build-jobs/{job_id}/progress",
+            get(crate::datastore_jobs::get_job_progress),
+        )
+        .route(
+            "/v1/index-build-jobs/{job_id}/events",
+            get(crate::datastore_jobs::list_job_events),
+        )
         // ClearView R6: a job's durable per-version outcomes.
         .route(
             "/v1/index-build-jobs/{job_id}/versions",

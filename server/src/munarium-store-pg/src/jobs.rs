@@ -396,6 +396,110 @@ impl ClaimPolicy {
     }
 }
 
+/// The stage a queued build has reached (ClearView R9). Closed: a reader
+/// can rely on these values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProgressPhase {
+    /// A direct build extracting, chunking and embedding its sources.
+    Extracting,
+    /// A backfill moving between the versions it selected.
+    Versions,
+    /// Sealing an artifact in local staging.
+    Sealing,
+    /// Deciding to publish: the publication intent.
+    Publishing,
+    /// Uploading components and the manifest.
+    Uploading,
+}
+
+impl ProgressPhase {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Extracting => "extracting",
+            Self::Versions => "versions",
+            Self::Sealing => "sealing",
+            Self::Publishing => "publishing",
+            Self::Uploading => "uploading",
+        }
+    }
+}
+
+/// A job's current progress, as the holder last recorded it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct JobProgress {
+    pub job: BuildJob,
+    pub phase: Option<String>,
+    /// Sources for a direct build, versions for a backfill. Never decreases
+    /// within a claim.
+    pub units_done: Option<i64>,
+    /// Unknown is `None`, never zero.
+    pub units_total: Option<i64>,
+    pub last_advance_at: Option<String>,
+}
+
+/// One recorded transition of a job (ClearView R9).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JobEvent {
+    /// 1, 2, 3, ... for this job, in commit order.
+    pub seq: i64,
+    /// `enqueued`, `claimed`, `state` or `progress`.
+    pub kind: String,
+    pub from_state: Option<String>,
+    pub to_state: String,
+    pub generation: i32,
+    pub node_id: Option<String>,
+    pub phase: Option<String>,
+    pub recorded_at: String,
+}
+
+/// One page of a job's events.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JobEventPage {
+    pub events: Vec<JobEvent>,
+    /// Events after the cursor were pruned by retention (or were recorded
+    /// before the event ring existed), so this page does not continue the
+    /// history without a hole. Also true when no event after the cursor
+    /// survives at all.
+    pub gap: bool,
+    /// The last sequence number this page covers; pass it back to continue.
+    pub through: i64,
+}
+
+/// The provisional per-tenant event retention count (ClearView B2). Not
+/// measured yet; see migration 0046 and the Datastore guide.
+pub const DEFAULT_EVENTS_PER_TENANT: i32 = 1024;
+
+/// Set the per-tenant event retention count. Database-wide: every writer's
+/// triggers read it.
+pub async fn set_event_retention(pool: &PgPool, events_per_tenant: i32) -> Result<()> {
+    if events_per_tenant < 1 {
+        return Err(KernelError::InvalidInput(
+            "the build-job event retention count must be at least 1".into(),
+        ));
+    }
+    sqlx::query(
+        "INSERT INTO index_build_job_event_retention (singleton, events_per_tenant)
+         VALUES (true, $1)
+         ON CONFLICT (singleton)
+         DO UPDATE SET events_per_tenant = EXCLUDED.events_per_tenant, updated_at = now()",
+    )
+    .bind(events_per_tenant)
+    .execute(pool)
+    .await
+    .map_err(storage_err)?;
+    Ok(())
+}
+
+/// The per-tenant event retention count in force.
+pub async fn event_retention(pool: &PgPool) -> Result<i32> {
+    let n: Option<i32> =
+        sqlx::query_scalar("SELECT events_per_tenant FROM index_build_job_event_retention")
+            .fetch_optional(pool)
+            .await
+            .map_err(storage_err)?;
+    Ok(n.unwrap_or(DEFAULT_EVENTS_PER_TENANT))
+}
+
 /// What an enqueue did.
 #[derive(Debug, Clone, PartialEq)]
 pub enum EnqueueOutcome {
@@ -584,7 +688,9 @@ impl BuildJobs {
         let claimed = sqlx::query(
             "UPDATE index_build_jobs
                 SET state = 'running', claimed_by = $3, claimed_at = now(),
-                    attempts = attempts + 1, updated_at = now()
+                    attempts = attempts + 1, updated_at = now(),
+                    progress_phase = NULL, progress_units_done = NULL,
+                    progress_units_total = NULL, progress_advanced_at = NULL
               WHERE tenant_id = $1 AND job_id = $2
           RETURNING tenant_id, job_id, kind, scope_kind, scope_id, index_version_id,
                     params, state, attempt_ids, correlation_id, claimed_by, attempts,
@@ -841,6 +947,154 @@ impl BuildJobs {
         .await
         .map_err(storage_err)?;
         Ok(current == Some(true))
+    }
+
+    /// Record progress for the claim `fence` holds (ClearView R9).
+    ///
+    /// Fenced like completion: the row must be `running` with this node and
+    /// generation, so a stale holder, even under the same node name, writes
+    /// nothing and gets `false`. `units_done` never decreases within a claim
+    /// (a smaller value keeps the larger one), `None` leaves a counter as it
+    /// is, and an unknown total stays NULL. `last_advance_at` moves when the
+    /// phase changes or the count grows. A phase change is recorded in the
+    /// event ring by trigger; a count change is not.
+    pub async fn record_progress(
+        &self,
+        fence: &JobFence,
+        phase: ProgressPhase,
+        units_done: Option<u64>,
+        units_total: Option<u64>,
+    ) -> Result<bool> {
+        let done = units_done.map(|v| i64::try_from(v).unwrap_or(i64::MAX));
+        let total = units_total.map(|v| i64::try_from(v).unwrap_or(i64::MAX));
+        let updated = sqlx::query(
+            "UPDATE index_build_jobs
+                SET progress_advanced_at = CASE
+                        WHEN progress_phase IS DISTINCT FROM $5
+                          OR ($6::bigint IS NOT NULL
+                              AND $6 > COALESCE(progress_units_done, -1))
+                        THEN now() ELSE progress_advanced_at END,
+                    progress_phase = $5,
+                    progress_units_done = CASE
+                        WHEN $6::bigint IS NULL THEN progress_units_done
+                        ELSE GREATEST(COALESCE(progress_units_done, 0), $6) END,
+                    progress_units_total = COALESCE($7::bigint, progress_units_total)
+              WHERE tenant_id = $1 AND job_id = $2
+                AND state = 'running' AND claimed_by = $3 AND attempts = $4",
+        )
+        .bind(&fence.tenant_id)
+        .bind(&fence.job_id)
+        .bind(&fence.node_id)
+        .bind(fence.generation)
+        .bind(phase.as_str())
+        .bind(done)
+        .bind(total)
+        .execute(&self.pool)
+        .await
+        .map_err(storage_err)?;
+        Ok(updated.rows_affected() == 1)
+    }
+
+    /// A job's recorded progress. Tenant-scoped; `None` for no such job.
+    pub async fn progress(&self, tenant_id: &str, job_id: &str) -> Result<Option<JobProgress>> {
+        let Some(job) = self.get(tenant_id, job_id).await? else {
+            return Ok(None);
+        };
+        let row = sqlx::query(
+            "SELECT progress_phase, progress_units_done, progress_units_total,
+                    progress_advanced_at::text AS advanced
+               FROM index_build_jobs WHERE tenant_id = $1 AND job_id = $2",
+        )
+        .bind(tenant_id)
+        .bind(job_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(storage_err)?;
+        Ok(Some(JobProgress {
+            job,
+            phase: row.get("progress_phase"),
+            units_done: row.get("progress_units_done"),
+            units_total: row.get("progress_units_total"),
+            last_advance_at: row.get("advanced"),
+        }))
+    }
+
+    /// One page of a job's events after sequence `after` (0 = from the
+    /// start), oldest first (ClearView R9). Tenant-scoped; `None` for no such
+    /// job. Read in one repeatable-read snapshot, so the job's event count and
+    /// the surviving events agree even while retention prunes and other
+    /// transitions commit; the next page continues from `through`.
+    pub async fn events(
+        &self,
+        tenant_id: &str,
+        job_id: &str,
+        after: i64,
+        limit: i64,
+    ) -> Result<Option<JobEventPage>> {
+        let after = after.max(0);
+        let limit = limit.clamp(1, 200);
+        let mut tx = self.pool.begin().await.map_err(storage_err)?;
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            .execute(&mut *tx)
+            .await
+            .map_err(storage_err)?;
+        let head: Option<Option<i64>> = sqlx::query_scalar(
+            "SELECT event_seq FROM index_build_jobs WHERE tenant_id = $1 AND job_id = $2",
+        )
+        .bind(tenant_id)
+        .bind(job_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(storage_err)?;
+        let Some(head) = head else {
+            return Ok(None);
+        };
+        let rows = sqlx::query(
+            "SELECT job_event_seq, kind, from_state, to_state, job_generation, node_id,
+                    progress_phase, recorded_at::text AS recorded
+               FROM index_build_job_events
+              WHERE tenant_id = $1 AND job_id = $2 AND job_event_seq > $3
+              ORDER BY job_event_seq
+              LIMIT $4",
+        )
+        .bind(tenant_id)
+        .bind(job_id)
+        .bind(after)
+        .bind(limit)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(storage_err)?;
+        tx.commit().await.map_err(storage_err)?;
+        let events: Vec<JobEvent> = rows
+            .into_iter()
+            .map(|r| JobEvent {
+                seq: r.get("job_event_seq"),
+                kind: r.get("kind"),
+                from_state: r.get("from_state"),
+                to_state: r.get("to_state"),
+                generation: r.get("job_generation"),
+                node_id: r.get("node_id"),
+                phase: r.get("progress_phase"),
+                recorded_at: r.get("recorded"),
+            })
+            .collect();
+        // A job with no recorded numbering predates the ring entirely.
+        let head = head.unwrap_or(1);
+        let gap = match events.first() {
+            Some(first) => first.seq > after + 1,
+            None => head > after,
+        };
+        let through = match events.last() {
+            Some(last) => last.seq,
+            // Nothing survives after the cursor: the reader has seen (or
+            // lost) everything up to the head.
+            None => head.max(after),
+        };
+        Ok(Some(JobEventPage {
+            events,
+            gap,
+            through,
+        }))
     }
 
     /// Why a claim is no longer current: `Cancelled` when the job is

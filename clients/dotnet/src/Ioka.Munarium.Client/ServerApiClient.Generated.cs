@@ -127,6 +127,10 @@ public sealed partial class ServerApiClient {
     public Task<ApiResponse> GetJobAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("GetJob", "GET", "/v1/index-build-jobs/{job_id}", "application/json", request ?? new(), ct);
     /// <summary>POST /v1/index-build-jobs/{job_id}/cancel</summary>
     public Task<ApiResponse> CancelJobAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("CancelJob", "POST", "/v1/index-build-jobs/{job_id}/cancel", "application/json", request ?? new(), ct);
+    /// <summary>GET /v1/index-build-jobs/{job_id}/events</summary>
+    public Task<ApiResponse> ListJobEventsAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("ListJobEvents", "GET", "/v1/index-build-jobs/{job_id}/events", "application/json", request ?? new(), ct);
+    /// <summary>GET /v1/index-build-jobs/{job_id}/progress</summary>
+    public Task<ApiResponse> GetJobProgressAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("GetJobProgress", "GET", "/v1/index-build-jobs/{job_id}/progress", "application/json", request ?? new(), ct);
     /// <summary>GET /v1/index-build-jobs/{job_id}/versions</summary>
     public Task<ApiResponse> ListJobVersionsAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("ListJobVersions", "GET", "/v1/index-build-jobs/{job_id}/versions", "application/json", request ?? new(), ct);
     /// <summary>GET /v1/indexes/{shape_ref}</summary>

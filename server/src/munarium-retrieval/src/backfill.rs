@@ -22,6 +22,7 @@
 use munarium_core::Result;
 use munarium_retrieval_pg::required::{RequiredReason, RequiredVersionsPolicy};
 use munarium_retrieval_pg::PgRetrieval;
+use munarium_store_pg::jobs::ProgressPhase;
 
 use crate::mirror::{
     mirror_index, mirror_plan, reconstructed_spec, MirrorContext, MirrorOutcome, MirrorTarget,
@@ -108,13 +109,19 @@ pub async fn backfill_collection(
         }
     }
 
+    let total = required.len() as u64;
     let mut versions = Vec::with_capacity(required.len());
     for v in required {
         // ClearView R6: a safe boundary between versions. A stop here ends
         // the whole backfill; the per-version failures below are kept in the
         // report, but a cancelled or superseded claim is not a version
         // failure to record and move past.
-        ctx.checkpoint().await?;
+        ctx.checkpoint(
+            ProgressPhase::Versions,
+            Some(versions.len() as u64),
+            Some(total),
+        )
+        .await?;
         let target = MirrorTarget::Collection { collection_id };
         let result = backfill_one(ctx, pg, target, &v.index_version_id)
             .await

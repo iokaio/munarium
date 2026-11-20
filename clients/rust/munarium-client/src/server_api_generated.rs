@@ -250,6 +250,14 @@ impl ServerApiClient {
     pub async fn cancel_job(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("CancelJob", "POST", "/v1/index-build-jobs/{job_id}/cancel", "application/json", request).await
     }
+    /// GET /v1/index-build-jobs/{job_id}/events
+    pub async fn list_job_events(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("ListJobEvents", "GET", "/v1/index-build-jobs/{job_id}/events", "application/json", request).await
+    }
+    /// GET /v1/index-build-jobs/{job_id}/progress
+    pub async fn get_job_progress(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("GetJobProgress", "GET", "/v1/index-build-jobs/{job_id}/progress", "application/json", request).await
+    }
     /// GET /v1/index-build-jobs/{job_id}/versions
     pub async fn list_job_versions(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("ListJobVersions", "GET", "/v1/index-build-jobs/{job_id}/versions", "application/json", request).await

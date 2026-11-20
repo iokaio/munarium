@@ -14337,6 +14337,8 @@ route family needs one rule there.
 | `/v1/index-build-jobs` | GET · POST | index-artifacts | §8A |
 | `/v1/index-build-jobs/{job_id}` | GET | index-artifacts | §8A |
 | `/v1/index-build-jobs/{job_id}/cancel` | POST | index-artifacts | §8A |
+| `/v1/index-build-jobs/{job_id}/events` | GET | index-artifacts | §8A |
+| `/v1/index-build-jobs/{job_id}/progress` | GET | index-artifacts | §8A |
 | `/v1/index-build-jobs/{job_id}/versions` | GET | index-artifacts | §8A |
 | `/v1/indexes/{shape_ref}` | GET | retrieval | §16 |
 | `/v1/indexes/{shape_ref}/build` | POST | retrieval | §16 |

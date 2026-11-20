@@ -814,6 +814,32 @@ class ServerApiClient(BaseServerApi):
             request,
         )
 
+    def list_job_events(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/index-build-jobs/{job_id}/events"""
+        return self._call(
+            "ListJobEvents",
+            "GET",
+            "/v1/index-build-jobs/{job_id}/events",
+            "application/json",
+            request,
+        )
+
+    def get_job_progress(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/index-build-jobs/{job_id}/progress"""
+        return self._call(
+            "GetJobProgress",
+            "GET",
+            "/v1/index-build-jobs/{job_id}/progress",
+            "application/json",
+            request,
+        )
+
     def list_job_versions(
         self,
         request: ApiRequest | None = None,
@@ -2645,6 +2671,32 @@ class AsyncServerApiClient(BaseAsyncServerApi):
             "CancelJob",
             "POST",
             "/v1/index-build-jobs/{job_id}/cancel",
+            "application/json",
+            request,
+        )
+
+    async def list_job_events(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/index-build-jobs/{job_id}/events"""
+        return await self._call(
+            "ListJobEvents",
+            "GET",
+            "/v1/index-build-jobs/{job_id}/events",
+            "application/json",
+            request,
+        )
+
+    async def get_job_progress(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/index-build-jobs/{job_id}/progress"""
+        return await self._call(
+            "GetJobProgress",
+            "GET",
+            "/v1/index-build-jobs/{job_id}/progress",
             "application/json",
             request,
         )

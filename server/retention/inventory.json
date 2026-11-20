@@ -1845,9 +1845,14 @@
         "error": "text",
         "requested_by": "text",
         "created_at": "timestamptz",
-        "updated_at": "timestamptz"
+        "updated_at": "timestamptz",
+        "progress_phase": "text",
+        "progress_units_done": "bigint",
+        "progress_units_total": "bigint",
+        "progress_advanced_at": "timestamptz",
+        "event_seq": "bigint"
       },
-      "content": "Durable target, params/result/error, requester and attempt history; retries can rebuild retained content.",
+      "content": "Durable target, params/result/error, requester and attempt history; retries can rebuild retained content. Fenced progress (closed phase, counts, last-advance time) and a per-job event counter.",
       "json_content": {
         "params": "Bounded caller build parameters in extensible map.",
         "result": "Artifact references/outcome/diagnostics; future fields require review."
@@ -1855,7 +1860,8 @@
       "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
       "policy": "catalog",
       "origins": [
-        "src/munarium-store-pg/migrations/0027_index_build_jobs.sql"
+        "src/munarium-store-pg/migrations/0027_index_build_jobs.sql",
+        "src/munarium-store-pg/migrations/0046_build_job_progress_events.sql"
       ]
     },
     "index_version_job_commits": {
@@ -2259,6 +2265,42 @@
       "policy": "catalog",
       "origins": [
         "src/munarium-store-pg/migrations/0045_build_job_tenant_turns.sql"
+      ]
+    },
+    "index_build_job_events": {
+      "columns": {
+        "tenant_id": "text",
+        "event_id": "bigint",
+        "job_id": "text",
+        "job_event_seq": "bigint",
+        "kind": "text",
+        "from_state": "text",
+        "to_state": "text",
+        "job_generation": "int",
+        "node_id": "text",
+        "progress_phase": "text",
+        "recorded_at": "timestamptz"
+      },
+      "content": "Trigger-written build-job transitions (closed kinds, states and phases, the holder node name already exposed as claimed_by); identifiers only. Bounded per tenant to the newest events_per_tenant rows (provisional default 1024, not yet measured; ClearView B2).",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0046_build_job_progress_events.sql"
+      ]
+    },
+    "index_build_job_event_retention": {
+      "columns": {
+        "singleton": "boolean",
+        "events_per_tenant": "int",
+        "updated_at": "timestamptz"
+      },
+      "content": "One configuration row: the per-tenant build-job event retention count.",
+      "json_content": {},
+      "owner": "Database operator; set from MUNARIUM_DATASTORE_JOB_EVENTS_PER_TENANT on builders.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0046_build_job_progress_events.sql"
       ]
     }
   },

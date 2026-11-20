@@ -195,6 +195,12 @@ public final class ServerApiClient extends ServerApiTransport {
     /** POST /v1/index-build-jobs/{job_id}/cancel */
     public ApiResponse cancelJob(ApiRequest request) { return call("CancelJob", "POST", "/v1/index-build-jobs/{job_id}/cancel", "application/json", request); }
     public CompletableFuture<ApiResponse> cancelJobAsync(ApiRequest request) { return async(() -> cancelJob(request)); }
+    /** GET /v1/index-build-jobs/{job_id}/events */
+    public ApiResponse listJobEvents(ApiRequest request) { return call("ListJobEvents", "GET", "/v1/index-build-jobs/{job_id}/events", "application/json", request); }
+    public CompletableFuture<ApiResponse> listJobEventsAsync(ApiRequest request) { return async(() -> listJobEvents(request)); }
+    /** GET /v1/index-build-jobs/{job_id}/progress */
+    public ApiResponse getJobProgress(ApiRequest request) { return call("GetJobProgress", "GET", "/v1/index-build-jobs/{job_id}/progress", "application/json", request); }
+    public CompletableFuture<ApiResponse> getJobProgressAsync(ApiRequest request) { return async(() -> getJobProgress(request)); }
     /** GET /v1/index-build-jobs/{job_id}/versions */
     public ApiResponse listJobVersions(ApiRequest request) { return call("ListJobVersions", "GET", "/v1/index-build-jobs/{job_id}/versions", "application/json", request); }
     public CompletableFuture<ApiResponse> listJobVersionsAsync(ApiRequest request) { return async(() -> listJobVersions(request)); }

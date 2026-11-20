@@ -34,6 +34,7 @@ use munarium_datastore::model::{
 use munarium_datastore::PreparedChunk;
 use munarium_retrieval_pg::direct::PreparedBuild;
 use munarium_retrieval_pg::PgRetrieval;
+use munarium_store_pg::jobs::ProgressPhase;
 
 use crate::mirror::{direct_index, direct_plan, MirrorContext, MirrorOutcome, MirrorTarget};
 
@@ -71,10 +72,15 @@ pub async fn build_collection_direct(
     // The slow half — no transaction anywhere near it. A queued build checks
     // its claim before each source (ClearView R6), so a cancel stops it
     // between sources instead of after the last one.
-    ctx.checkpoint().await?;
+    ctx.checkpoint(ProgressPhase::Extracting, Some(0), None)
+        .await?;
     let build = pg
-        .extract_collection_prepared_with(collection_id, max_chars, |_done, _total| {
-            ctx.checkpoint()
+        .extract_collection_prepared_with(collection_id, max_chars, |done, total| {
+            ctx.checkpoint(
+                ProgressPhase::Extracting,
+                Some(done as u64),
+                Some(total as u64),
+            )
         })
         .await?;
 
@@ -127,7 +133,9 @@ pub async fn build_collection_direct(
     // attributed to its job and generation, and no attempt; the outcome read
     // reports exactly that.
     ctx.inject(crate::mirror::BuildPhase::AfterLogicalCommit)?;
-    ctx.checkpoint().await?;
+    let sources = build.sources.len() as u64;
+    ctx.checkpoint(ProgressPhase::Sealing, Some(sources), Some(sources))
+        .await?;
 
     // The artifact, from the SAME chunks — extraction never runs twice.
     let chunks: Vec<PreparedChunk> = build

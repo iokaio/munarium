@@ -30,8 +30,8 @@ use munarium_retrieval_pg::PgRetrieval;
 use munarium_store_pg::artifacts::{ArtifactCatalog, BindingSlot};
 use munarium_store_pg::attempts::{AttemptState, BuildAttempts, IntentState};
 use munarium_store_pg::jobs::{
-    BuildJobs, EnqueueOutcome, HistoryStatus, JobFence, JobKind, JobSignal, JobTarget, StopReason,
-    STALE_GENERATION_MESSAGE,
+    BuildJobs, EnqueueOutcome, HistoryStatus, JobFence, JobKind, JobSignal, JobTarget,
+    ProgressPhase, StopReason, STALE_GENERATION_MESSAGE,
 };
 use munarium_store_pg::PgStore;
 
@@ -660,7 +660,39 @@ async fn cancel_after_completion_keeps_the_recorded_outcome() {
     .await
     .unwrap();
     assert!(matches!(outcome, MirrorOutcome::Published { .. }));
+    // ClearView R9: the holder recorded its last boundary as progress, and
+    // the trigger recorded the phase changes as events.
+    let p = f
+        .jobs()
+        .progress(&f.tenant, &gen1.job_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(p.phase.as_deref(), Some("uploading"));
     f.finish(&gen1).await;
+    let page = f
+        .jobs()
+        .events(&f.tenant, &gen1.job_id, 0, 50)
+        .await
+        .unwrap()
+        .unwrap();
+    let kinds: Vec<_> = page
+        .events
+        .iter()
+        .map(|e| (e.kind.as_str(), e.phase.clone()))
+        .collect();
+    assert!(!page.gap);
+    assert_eq!(
+        kinds,
+        vec![
+            ("enqueued", None),
+            ("claimed", None),
+            ("progress", Some("sealing".to_string())),
+            ("progress", Some("publishing".to_string())),
+            ("progress", Some("uploading".to_string())),
+            ("state", Some("uploading".to_string())),
+        ]
+    );
     let before = f.history(&gen1).await;
     assert_eq!(f.cancel(&gen1).await, (false, "succeeded".to_string()));
     let after = f.history(&gen1).await;
@@ -821,7 +853,8 @@ async fn a_direct_build_stops_between_sources() {
                 if done == 1 {
                     assert!(jobs.cancel(&tenant, &job_id).await.unwrap());
                 }
-                ctx.checkpoint().await?;
+                ctx.checkpoint(ProgressPhase::Extracting, Some(done as u64), None)
+                    .await?;
                 assert!(s2.stopped().is_none());
                 Ok(())
             }

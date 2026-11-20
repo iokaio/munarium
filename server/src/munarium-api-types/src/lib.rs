@@ -2685,6 +2685,64 @@ pub struct IndexBuildJobVersionDto {
     pub staged_bound: bool,
 }
 
+/// A build job's progress as its current claim last recorded it
+/// (ClearView R9).
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct IndexBuildJobProgressDto {
+    pub job_id: String,
+    pub state: String,
+    /// The claim generation the progress belongs to (`attempts`). A new
+    /// claim starts with no progress.
+    pub generation: i32,
+    /// `extracting` | `versions` | `sealing` | `publishing` | `uploading`.
+    /// Absent before the holder reaches its first boundary, and for a job
+    /// run by a builder that records no progress.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<String>,
+    /// Sources for a direct build, versions for a backfill; never decreases
+    /// within a claim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub units_done: Option<i64>,
+    /// Absent when unknown; never reported as zero to mean unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub units_total: Option<i64>,
+    /// When the phase last changed or the count last grew.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_advance_at: Option<String>,
+}
+
+/// One recorded transition of a build job (ClearView R9).
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct IndexBuildJobEventDto {
+    /// 1, 2, 3, ... for this job, in commit order.
+    pub seq: i64,
+    /// `enqueued` | `claimed` | `state` | `progress`.
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_state: Option<String>,
+    pub to_state: String,
+    pub generation: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claimed_by: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<String>,
+    pub recorded_at: String,
+}
+
+/// One page of a build job's events (ClearView R9).
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct IndexBuildJobEventsResponse {
+    pub job_id: String,
+    pub events: Vec<IndexBuildJobEventDto>,
+    /// True when events after the cursor were pruned by the per-tenant
+    /// retention bound, or predate the event history, including when none
+    /// survive. The job's own state and outcome are unaffected.
+    pub gap: bool,
+    /// Pass as `cursor` to continue, or to poll for newer events. Bound to
+    /// this tenant and job.
+    pub next_cursor: String,
+}
+
 /// One page of a build job's per-version outcomes (ClearView R6).
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct IndexBuildJobVersionsResponse {

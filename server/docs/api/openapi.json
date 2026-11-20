@@ -2749,6 +2749,125 @@
         }
       }
     },
+    "/v1/index-build-jobs/{job_id}/events": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on legacy /v1 requests (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "index-artifacts"
+        ],
+        "summary": "GET /v1/index-build-jobs/{job_id}/events",
+        "operationId": "list_job_events",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "description": "build job id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "The `next_cursor` of the previous page.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, 1 to 200 (default 50).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 200,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "one page of the job's recorded transitions, oldest first; `gap` marks pruned history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexBuildJobEventsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "a malformed cursor or limit, a cursor issued for another tenant or job, or the memory store"
+          },
+          "404": {
+            "description": "no such job"
+          }
+        }
+      }
+    },
+    "/v1/index-build-jobs/{job_id}/progress": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on legacy /v1 requests (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "index-artifacts"
+        ],
+        "summary": "GET /v1/index-build-jobs/{job_id}/progress",
+        "operationId": "get_job_progress",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "description": "build job id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "the job's fenced progress for its current claim",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexBuildJobProgressDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "the memory store"
+          },
+          "404": {
+            "description": "no such job"
+          }
+        }
+      }
+    },
     "/v1/index-build-jobs/{job_id}/versions": {
       "parameters": [
         {
@@ -9871,6 +9990,85 @@
           }
         }
       },
+      "IndexBuildJobEventDto": {
+        "type": "object",
+        "description": "One recorded transition of a build job (ClearView R9).",
+        "required": [
+          "seq",
+          "kind",
+          "to_state",
+          "generation",
+          "recorded_at"
+        ],
+        "properties": {
+          "claimed_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "from_state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "generation": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "kind": {
+            "type": "string",
+            "description": "`enqueued` | `claimed` | `state` | `progress`."
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recorded_at": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "integer",
+            "format": "int64",
+            "description": "1, 2, 3, ... for this job, in commit order."
+          },
+          "to_state": {
+            "type": "string"
+          }
+        }
+      },
+      "IndexBuildJobEventsResponse": {
+        "type": "object",
+        "description": "One page of a build job's events (ClearView R9).",
+        "required": [
+          "job_id",
+          "events",
+          "gap",
+          "next_cursor"
+        ],
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IndexBuildJobEventDto"
+            }
+          },
+          "gap": {
+            "type": "boolean",
+            "description": "True when events after the cursor were pruned by the per-tenant\nretention bound, or predate the event history, including when none\nsurvive. The job's own state and outcome are unaffected."
+          },
+          "job_id": {
+            "type": "string"
+          },
+          "next_cursor": {
+            "type": "string",
+            "description": "Pass as `cursor` to continue, or to poll for newer events. Bound to\nthis tenant and job."
+          }
+        }
+      },
       "IndexBuildJobListResponse": {
         "type": "object",
         "required": [
@@ -9882,6 +10080,58 @@
             "items": {
               "$ref": "#/components/schemas/IndexBuildJobDto"
             }
+          }
+        }
+      },
+      "IndexBuildJobProgressDto": {
+        "type": "object",
+        "description": "A build job's progress as its current claim last recorded it\n(ClearView R9).",
+        "required": [
+          "job_id",
+          "state",
+          "generation"
+        ],
+        "properties": {
+          "generation": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The claim generation the progress belongs to (`attempts`). A new\nclaim starts with no progress."
+          },
+          "job_id": {
+            "type": "string"
+          },
+          "last_advance_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the phase last changed or the count last grew."
+          },
+          "phase": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`extracting` | `versions` | `sealing` | `publishing` | `uploading`.\nAbsent before the holder reaches its first boundary, and for a job\nrun by a builder that records no progress."
+          },
+          "state": {
+            "type": "string"
+          },
+          "units_done": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Sources for a direct build, versions for a backfill; never decreases\nwithin a claim."
+          },
+          "units_total": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Absent when unknown; never reported as zero to mean unknown."
           }
         }
       },

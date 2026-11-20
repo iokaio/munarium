@@ -189,6 +189,12 @@ impl pb::server_api_service_server::ServerApiService for ServerApiSvc {
     async fn cancel_job(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "POST", "/v1/index-build-jobs/{job_id}/cancel", "application/json").await
     }
+    async fn list_job_events(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "GET", "/v1/index-build-jobs/{job_id}/events", "application/json").await
+    }
+    async fn get_job_progress(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "GET", "/v1/index-build-jobs/{job_id}/progress", "application/json").await
+    }
     async fn list_job_versions(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "GET", "/v1/index-build-jobs/{job_id}/versions", "application/json").await
     }

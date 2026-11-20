@@ -145,6 +145,20 @@ pub fn spawn_builder(state: &Arc<AppState>) {
         },
     };
     tracing::info!(scheduling = policy.as_str(), "build-job builder starting");
+    // ClearView B2: the per-tenant event retention count. Unset keeps the
+    // value in the database (the provisional default from migration 0046).
+    let events_per_tenant = match std::env::var("MUNARIUM_DATASTORE_JOB_EVENTS_PER_TENANT") {
+        Err(_) => None,
+        Ok(raw) => match raw.trim().parse::<i32>() {
+            Ok(n) if n >= 1 => Some(n),
+            _ => {
+                tracing::error!(
+                    "MUNARIUM_DATASTORE_JOB_EVENTS_PER_TENANT must be a positive integer; the builder was not started"
+                );
+                return;
+            }
+        },
+    };
     let lease_secs = std::env::var("MUNARIUM_DATASTORE_JOB_LEASE_SECS")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -153,6 +167,12 @@ pub fn spawn_builder(state: &Arc<AppState>) {
 
     let weak = Arc::downgrade(state);
     tokio::spawn(async move {
+        if let Some(n) = events_per_tenant {
+            match munarium_store_pg::jobs::set_event_retention(&pool, n).await {
+                Ok(()) => tracing::info!(events_per_tenant = n, "build-job event retention set"),
+                Err(e) => tracing::warn!(error = %e, "could not set build-job event retention"),
+            }
+        }
         let jobs = BuildJobs::new(pool);
         loop {
             let Some(state) = weak.upgrade() else { return };
@@ -565,6 +585,136 @@ impl JobPage {
     }
 }
 
+/// GET /v1/index-build-jobs/{job_id}/progress
+#[utoipa::path(
+    get,
+    path = "/v1/index-build-jobs/{job_id}/progress",
+    tag = "index-artifacts",
+    params(("job_id" = String, Path, description = "build job id")),
+    responses(
+        (status = 200, description = "the job's fenced progress for its current claim", body = dto::IndexBuildJobProgressDto),
+        (status = 400, description = "the memory store"),
+        (status = 404, description = "no such job")
+    )
+)]
+pub async fn get_job_progress(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    axum::extract::Path(job_id): axum::extract::Path<String>,
+    headers: axum::http::HeaderMap,
+) -> ApiResult<axum::Json<dto::IndexBuildJobProgressDto>> {
+    let ctx = crate::rest::auth_ctx(&state, &headers)?;
+    let pool = state.pg_pool().ok_or_else(|| {
+        ApiError::from(KernelError::InvalidInput(
+            "build jobs require the postgres store".into(),
+        ))
+    })?;
+    let p = BuildJobs::new(pool.clone())
+        .progress(&ctx.tenant_id, &job_id)
+        .await?
+        .ok_or(KernelError::NotFound {
+            kind: "build job",
+            id: job_id,
+        })?;
+    Ok(axum::Json(dto::IndexBuildJobProgressDto {
+        job_id: p.job.job_id,
+        state: p.job.state,
+        generation: p.job.attempts,
+        phase: p.phase,
+        units_done: p.units_done,
+        units_total: p.units_total,
+        last_advance_at: p.last_advance_at,
+    }))
+}
+
+/// The opaque event cursor: the last sequence read, bound to the tenant and
+/// job it was issued for (ClearView B2-T2). Not a secret; the binding stops
+/// a cursor from another tenant or job from being accepted silently.
+fn event_cursor_tag(tenant_id: &str, job_id: &str) -> String {
+    use sha2::Digest as _;
+    let digest = sha2::Sha256::digest(format!("{tenant_id}\0{job_id}").as_bytes());
+    hex::encode(&digest[..8])
+}
+
+fn encode_event_cursor(tenant_id: &str, job_id: &str, through: i64) -> String {
+    format!("je1.{through}.{}", event_cursor_tag(tenant_id, job_id))
+}
+
+fn decode_event_cursor(tenant_id: &str, job_id: &str, cursor: &str) -> ApiResult<i64> {
+    let bad = || {
+        ApiError::from(KernelError::InvalidInput(
+            "cursor is not an event cursor issued for this job".into(),
+        ))
+    };
+    let mut parts = cursor.split('.');
+    let (Some("je1"), Some(seq), Some(tag), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return Err(bad());
+    };
+    let seq: i64 = seq.parse().map_err(|_| bad())?;
+    if seq < 0 || tag != event_cursor_tag(tenant_id, job_id) {
+        return Err(bad());
+    }
+    Ok(seq)
+}
+
+/// GET /v1/index-build-jobs/{job_id}/events
+#[utoipa::path(
+    get,
+    path = "/v1/index-build-jobs/{job_id}/events",
+    tag = "index-artifacts",
+    params(("job_id" = String, Path, description = "build job id"), JobPage),
+    responses(
+        (status = 200, description = "one page of the job's recorded transitions, oldest first; `gap` marks pruned history", body = dto::IndexBuildJobEventsResponse),
+        (status = 400, description = "a malformed cursor or limit, a cursor issued for another tenant or job, or the memory store"),
+        (status = 404, description = "no such job")
+    )
+)]
+pub async fn list_job_events(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    axum::extract::Path(job_id): axum::extract::Path<String>,
+    axum::extract::Query(page): axum::extract::Query<JobPage>,
+    headers: axum::http::HeaderMap,
+) -> ApiResult<axum::Json<dto::IndexBuildJobEventsResponse>> {
+    let ctx = crate::rest::auth_ctx(&state, &headers)?;
+    let pool = state.pg_pool().ok_or_else(|| {
+        ApiError::from(KernelError::InvalidInput(
+            "build jobs require the postgres store".into(),
+        ))
+    })?;
+    let limit = page.limit()?;
+    let after = match page.cursor.as_deref() {
+        None => 0,
+        Some(c) => decode_event_cursor(&ctx.tenant_id, &job_id, c)?,
+    };
+    let events = BuildJobs::new(pool.clone())
+        .events(&ctx.tenant_id, &job_id, after, limit)
+        .await?
+        .ok_or(KernelError::NotFound {
+            kind: "build job",
+            id: job_id.clone(),
+        })?;
+    Ok(axum::Json(dto::IndexBuildJobEventsResponse {
+        next_cursor: encode_event_cursor(&ctx.tenant_id, &job_id, events.through),
+        job_id,
+        gap: events.gap,
+        events: events
+            .events
+            .into_iter()
+            .map(|e| dto::IndexBuildJobEventDto {
+                seq: e.seq,
+                kind: e.kind,
+                from_state: e.from_state,
+                to_state: e.to_state,
+                generation: e.generation,
+                claimed_by: e.node_id,
+                phase: e.phase,
+                recorded_at: e.recorded_at,
+            })
+            .collect(),
+    }))
+}
+
 /// GET /v1/index-build-jobs/{job_id}/versions
 #[utoipa::path(
     get,
@@ -750,6 +900,45 @@ mod tests {
         let signal = JobSignal::new();
         assert!(!lease_watch_once(&closed, &fence, &signal).await);
         assert_eq!((signal.stopped(), signal.uncertain()), (None, true));
+    }
+
+    /// ClearView B2-T2: an event cursor is bound to the tenant and job it
+    /// was issued for; one from another tenant or job, or a malformed one,
+    /// is refused rather than read as a position.
+    #[test]
+    fn event_cursors_are_bound_to_their_tenant_and_job() {
+        let c = encode_event_cursor("tenant-a", "bjob-1", 7);
+        assert_eq!(decode_event_cursor("tenant-a", "bjob-1", &c).unwrap(), 7);
+        assert!(decode_event_cursor("tenant-b", "bjob-1", &c).is_err());
+        assert!(decode_event_cursor("tenant-a", "bjob-2", &c).is_err());
+        for bad in [
+            "",
+            "7",
+            "je1.7",
+            "je1.-1.x",
+            "je1.x.y",
+            "je2.7.abc",
+            "je1.7.abc.d",
+        ] {
+            assert!(
+                decode_event_cursor("tenant-a", "bjob-1", bad).is_err(),
+                "{bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn job_page_limits_are_checked() {
+        let page = |l: &str| JobPage {
+            cursor: None,
+            limit: Some(l.into()),
+        };
+        assert_eq!(JobPage::default().limit().unwrap(), 50);
+        assert_eq!(page("1").limit().unwrap(), 1);
+        assert_eq!(page("200").limit().unwrap(), 200);
+        for bad in ["0", "201", "-1", "x", ""] {
+            assert!(page(bad).limit().is_err(), "{bad:?}");
+        }
     }
 
     #[test]

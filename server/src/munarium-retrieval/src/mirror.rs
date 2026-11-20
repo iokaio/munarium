@@ -51,7 +51,7 @@ use munarium_store_pg::attempts::{
     reconcile_sealed, AttemptMode, AttemptState, BuildAttempts, ClaimOutcome, IntentState,
     PublicationIntent, SealedVerdict,
 };
-use munarium_store_pg::jobs::{JobFence, JobSignal, StopReason};
+use munarium_store_pg::jobs::{JobFence, JobSignal, ProgressPhase, StopReason};
 
 /// Supplies an `ArtifactStore` rooted at a prefix.
 ///
@@ -268,12 +268,20 @@ impl MirrorContext {
     ///
     /// Stops the build with the fence's stale error when the worker-local
     /// signal has stopped, or when the claim is no longer current in
-    /// PostgreSQL. The read is how a build learns of a cancel that committed
-    /// since its last boundary, and how it revalidates a lease whose last
-    /// renewal failed with an error: if PostgreSQL cannot answer, the build
-    /// does not go on to its next shared write. A synchronous build has no
-    /// fence and always continues.
-    pub async fn checkpoint(&self) -> Result<()> {
+    /// PostgreSQL. The check is the fenced progress write (ClearView R9):
+    /// `phase` and the counters are recorded only while the claim is
+    /// current, so the same statement is how a build learns of a cancel that
+    /// committed since its last boundary, and how it revalidates a lease
+    /// whose last renewal failed with an error. If PostgreSQL cannot answer,
+    /// the build does not go on to its next shared write. `None` counters
+    /// keep their recorded values. A synchronous build has no fence and
+    /// always continues.
+    pub async fn checkpoint(
+        &self,
+        phase: ProgressPhase,
+        units_done: Option<u64>,
+        units_total: Option<u64>,
+    ) -> Result<()> {
         let Some(fence) = &self.job_fence else {
             return Ok(());
         };
@@ -282,7 +290,21 @@ impl MirrorContext {
                 return Err(fence.stale());
             }
         }
-        match self.attempts.job_claim_stop_reason(fence).await? {
+        let current = self
+            .attempts
+            .record_job_progress(fence, phase, units_done, units_total)
+            .await?;
+        let reason = if current {
+            None
+        } else {
+            Some(
+                self.attempts
+                    .job_claim_stop_reason(fence)
+                    .await?
+                    .unwrap_or(StopReason::LeaseLost),
+            )
+        };
+        match reason {
             None => {
                 if let Some(signal) = &self.job_signal {
                     signal.set_uncertain(false);
@@ -762,7 +784,7 @@ async fn mirror_body(
     timer.finished_export();
     ctx.fault(BuildPhase::AfterExport)?;
     // ClearView R6: a safe boundary before the (long) seal.
-    ctx.checkpoint().await?;
+    ctx.checkpoint(ProgressPhase::Sealing, None, None).await?;
 
     // A build that lost its lease must not publish: another node may already
     // have reclaimed the plan and be building it too.
@@ -804,7 +826,8 @@ async fn mirror_body(
     ctx.fault(BuildPhase::AfterSeal)?;
     // ClearView R6: a cancel that committed during the seal stops the build
     // here, before it can commit a publication intent.
-    ctx.checkpoint().await?;
+    ctx.checkpoint(ProgressPhase::Publishing, None, None)
+        .await?;
 
     // The same lease check again, AFTER the seal. The heartbeat ran through
     // the seal (that is why it is held for the whole build), but the flag it
@@ -922,7 +945,7 @@ async fn mirror_body(
     // ClearView R6: the boundary before upload. A queued build stopped here
     // leaves its attempt `sealed` and its intent pending; only that exact
     // intent can still finish, through the sealed-attempt reconciler.
-    ctx.checkpoint().await?;
+    ctx.checkpoint(ProgressPhase::Uploading, None, None).await?;
 
     let bound_staged = publish_and_verify(
         ctx,

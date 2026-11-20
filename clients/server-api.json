@@ -498,6 +498,22 @@
       "streaming": false
     },
     {
+      "name": "list_job_events",
+      "rpc": "ListJobEvents",
+      "method": "GET",
+      "path": "/v1/index-build-jobs/{job_id}/events",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "get_job_progress",
+      "rpc": "GetJobProgress",
+      "method": "GET",
+      "path": "/v1/index-build-jobs/{job_id}/progress",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
       "name": "list_job_versions",
       "rpc": "ListJobVersions",
       "method": "GET",

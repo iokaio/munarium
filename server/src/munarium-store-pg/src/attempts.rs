@@ -628,6 +628,22 @@ impl BuildAttempts {
         Ok(true)
     }
 
+    /// Record the claim's progress (see
+    /// [`BuildJobs::record_progress`](crate::jobs::BuildJobs::record_progress)).
+    /// `Ok(false)` when the claim is no longer current.
+    pub async fn record_job_progress(
+        &self,
+        fence: &JobFence,
+        phase: crate::jobs::ProgressPhase,
+        units_done: Option<u64>,
+        units_total: Option<u64>,
+    ) -> Result<bool> {
+        fence.require_tenant(&self.tenant_id)?;
+        crate::jobs::BuildJobs::new(self.pool.clone())
+            .record_progress(fence, phase, units_done, units_total)
+            .await
+    }
+
     /// `None` while the fence's claim is current, otherwise why it is not.
     /// Read without the row lock (see
     /// [`BuildJobs::stop_reason`](crate::jobs::BuildJobs::stop_reason)).

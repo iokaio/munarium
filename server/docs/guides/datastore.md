@@ -173,6 +173,7 @@ complete object-store lifecycle policy or authorize deleting catalog rows.
 | `MUNARIUM_DATASTORE_BUILDER_POLL_MS` | `5000` | Queue polling milliseconds, clamped to at least 250 |
 | `MUNARIUM_DATASTORE_JOB_LEASE_SECS` | `600` | Claimed-job lease seconds, clamped to at least 30; the worker renews it during execution. Each claim has a generation (the job's `attempts` after that claim), and renewal and completion require it, so a superseded claim cannot write, even from a replica restarted under the same instance name. A lapsed lease is re-offered until the job has been claimed three times. On each poll, the builder moves jobs whose final claim lapsed to `failed` and releases their target for a new request. Publication is fenced by the same generation; see [durable jobs](#5-backfill-and-verify-existing-indexes) |
 | `MUNARIUM_DATASTORE_JOB_SCHEDULING` | `fifo` | How a builder picks its next job (ClearView R8). `fifo` is the v1.4 global queue, oldest job first across tenants. `tenant_fair` gives every tenant with eligible work an equal claim turn and starts that tenant's oldest eligible job; see [fair claiming](#fair-claiming-across-tenants). Any other value stops the builder from starting. Set the same value on every builder |
+| `MUNARIUM_DATASTORE_JOB_EVENTS_PER_TENANT` | stored value (provisional `1024`) | Build-job events retained per tenant (ClearView B2). A builder writes it to the database at startup, so it applies to every writer; set the same value everywhere. A value that is not a positive integer stops the builder from starting. Provisional and unmeasured; see [progress and event history](#progress-and-event-history) |
 | `MUNARIUM_DATASTORE_RECONCILE_INTERVAL_SECS` | `60` | Interrupted sealed-build reconciliation interval, clamped to at least 30 seconds; also runs at startup |
 | `MUNARIUM_DATASTORE_ROLLOUT_REFRESH_MS` | `15000` | Serving warmer/selector refresh interval, clamped to at least 1000 milliseconds |
 | `MUNARIUM_DATASTORE_STARTUP_HYDRATE_TIMEOUT_MS` | `120000` | Startup hydration deadline used by the readiness warmer; does not permit serving incomplete scopes after expiry |
@@ -630,6 +631,8 @@ successfully while its result reports `complete: false`.
 | Inspect/list jobs | `GET /v1/index-build-jobs/{job_id}` or `GET /v1/index-build-jobs` | `mmctl datastore jobs get <job-id>` or `list` |
 | Cancel | `POST /v1/index-build-jobs/{job_id}/cancel` | `mmctl datastore jobs cancel <job-id>` |
 | Per-version outcomes | `GET /v1/index-build-jobs/{job_id}/versions`, optional `cursor`, `limit` (1 to 200, default 50) | None yet; use the API |
+| Progress | `GET /v1/index-build-jobs/{job_id}/progress` | None yet; use the API |
+| Event history | `GET /v1/index-build-jobs/{job_id}/events`, optional `cursor`, `limit` | None yet; use the API |
 
 All enqueue requests also accept an optional `correlation_id`. Job states are
 `pending`, `running`, `succeeded`, `failed`, `cancelled` and `superseded`. Inspect
@@ -699,6 +702,40 @@ where an empty page means unknown; and `partial` when the two were mixed. No
 job activates an index, and recovery never changes the job's terminal state.
 The records are `index_build_job_runs` and `index_build_job_versions`
 (migration 0044).
+
+#### Progress and event history
+
+A queued build records its progress on the job row at the same safe boundaries
+it checks for cancellation (ClearView R9): `phase` (`extracting`, `versions`,
+`sealing`, `publishing` or `uploading`), `units_done` and `units_total` (sources
+for a direct build, versions for a backfill; a rebuild has none) and
+`last_advance_at`. The write requires the claim's node and generation, so a
+superseded holder, even one restarted under the same instance name, cannot write
+progress; it is how the build learns that it has been cancelled or superseded.
+Counts never decrease within a claim, an unknown total is absent rather than
+zero, and a new claim starts with no progress. `GET /v1/index-build-jobs/{job_id}/progress`
+returns it with the generation it belongs to.
+
+Database triggers on `index_build_jobs` record each meaningful transition in
+`index_build_job_events` (migration 0046): enqueue, claim or reclaim, a change of
+state and a change of progress phase. Heartbeats, progress counts and a repeated
+completion or cancel record nothing. Because a trigger writes the event, it
+commits or rolls back with the change, and a v1.4 writer's transitions are
+recorded too. Each job numbers its events 1, 2, 3, and so on.
+`GET /v1/index-build-jobs/{job_id}/events` pages them oldest first and returns a
+`next_cursor` bound to the tenant and job; keep polling with it for newer events.
+
+The table keeps the newest events for each tenant, independently of other
+tenants, and prunes older ones in the writing transaction. When events after
+your cursor were pruned, including when none of them survive, the page reports
+`gap: true`. A job created before migration 0046 also reports a gap for its
+unrecorded earlier history. The job row's state and outcome never depend on the
+event history. The bound is set database-wide from
+`MUNARIUM_DATASTORE_JOB_EVENTS_PER_TENANT` on a builder at startup; unset leaves
+the stored value. The default of 1,024 events per tenant is provisional: event
+rates, storage, read and prune cost and the history window operators need have
+not been measured yet, so treat it as a placeholder and review it before relying
+on long histories.
 
 #### Fair claiming across tenants
 
@@ -920,7 +957,9 @@ Before returning a v1.4 builder to service:
    no publication intent is `pending`.
 4. Disable fair claiming: unset `MUNARIUM_DATASTORE_JOB_SCHEDULING` or set it
    to `fifo` on every builder. A v1.4 builder ignores the setting and claims
-   FIFO.
+   FIFO. Fenced progress needs no switch: a v1.4 builder never writes it, the
+   event triggers keep recording its transitions, and the progress read shows
+   no phase for its claims.
 5. Confirm that no retired holder can still write and that no active job needs
    the fence. These read-only queries must all return no rows:
 
