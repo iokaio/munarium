@@ -88,9 +88,9 @@ release.
 | 0084 | ClearView IR-1 | `text_changed_at` on `provider_configs`; existing rows take the migration time, so an earlier inference probe must be repeated | As for 0043 |
 | 0085 | ClearView §5.3 | MCP operation key tombstones, empty until the key janitor prunes a key | As for 0043 |
 | 0086 | ClearView B2 follow-up | Replaces the build-job event trigger function so its prune skips event rows a concurrent prune holds; no row is touched | As for 0043 |
-| 0090 | ClearView SCALE-3, U10 | Replica heartbeats and console fleet mode tables; two nullable `console_sessions` columns, NULL on existing rows (those sessions are never honoured again) | As for 0043 |
+| 0087 | ClearView SCALE-3, U10 | Replica heartbeats and console fleet mode tables; two nullable `console_sessions` columns, NULL on existing rows (those sessions are never honoured again) | As for 0043 |
 
-In short, once any of 0043–0090 is applied, the v1.4.0 image cannot serve that
+In short, once any of 0043–0087 is applied, the v1.4.0 image cannot serve that
 database. The local [COMPAT-T3 negative control](compat-local-receipts.md#compat-t3)
 reproduces this. By maintainer decision of 20 November 2026 the rollback route
 is a **pre-upgrade backup restore**: take a backup before upgrading and restore

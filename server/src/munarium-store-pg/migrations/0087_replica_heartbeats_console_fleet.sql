@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: Apache-2.0
--- 0090 (2026-11-20, ClearView SCALE-3 and U10 / LOGIN1): replica heartbeats,
+-- 0087 (2026-11-20, ClearView SCALE-3 and U10 / LOGIN1): replica heartbeats,
 -- the fleet-wide console login mode and the console session epoch.
 --
 -- `server_replica_heartbeats`: one row per running Server process, written

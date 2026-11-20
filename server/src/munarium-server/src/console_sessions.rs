@@ -30,7 +30,7 @@
 //!
 //! - **Fleet mode and epoch.** On PostgreSQL a replica serves sessions only
 //!   while its environment's console fleet mode is `enabled`
-//!   (`replica_fleet.rs`, migration 0090), and honours a handle only at the
+//!   (`replica_fleet.rs`, migration 0087), and honours a handle only at the
 //!   fleet epoch it was issued under. Switching the fleet back to `legacy`
 //!   increments the epoch, so a fleet enabled again refuses every older
 //!   handle. `MUNARIUM_CONSOLE_SESSIONS=enabled` is a per-replica upper bound.
@@ -395,7 +395,7 @@ const PG_LIVE: &str = "revoked_at IS NULL \
 /// Whether a row was issued under its environment's current fleet epoch
 /// (`$n` is this replica's environment). With `enabled_only`, the fleet must
 /// also be `enabled` now: the rule for honouring a handle. Rows written
-/// before migration 0090 have NULLs and never match.
+/// before migration 0087 have NULLs and never match.
 fn pg_current_epoch(n: usize, enabled_only: bool) -> String {
     format!(
         "COALESCE(fleet_environment = ${n} AND fleet_epoch = (

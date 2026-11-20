@@ -2613,7 +2613,7 @@
       "policy": "console_sessions",
       "origins": [
         "src/munarium-store-pg/migrations/0050_console_sessions.sql",
-        "src/munarium-store-pg/migrations/0090_replica_heartbeats_console_fleet.sql",
+        "src/munarium-store-pg/migrations/0087_replica_heartbeats_console_fleet.sql",
         "src/munarium-server/src/console_sessions.rs"
       ]
     },
@@ -2952,7 +2952,7 @@
       "owner": "Deployment/environment operator.",
       "policy": "replica_fleet",
       "origins": [
-        "src/munarium-store-pg/migrations/0090_replica_heartbeats_console_fleet.sql",
+        "src/munarium-store-pg/migrations/0087_replica_heartbeats_console_fleet.sql",
         "src/munarium-server/src/replica_fleet.rs"
       ]
     },
@@ -2969,7 +2969,7 @@
       "owner": "Database operator, who changes it with munarium-server console-fleet.",
       "policy": "replica_fleet",
       "origins": [
-        "src/munarium-store-pg/migrations/0090_replica_heartbeats_console_fleet.sql",
+        "src/munarium-store-pg/migrations/0087_replica_heartbeats_console_fleet.sql",
         "src/munarium-server/src/replica_fleet.rs"
       ]
     }

@@ -4813,7 +4813,7 @@ mod tests {
         let rows = crate::console_sessions::list(&a, &tenant).await.unwrap();
         assert_eq!(rows.iter().filter(|r| r.live).count(), 1);
         assert_eq!(rows.iter().filter(|r| r.superseded).count(), 1);
-        // A row from before migration 0090 (no epoch) is never honoured.
+        // A row from before migration 0087 (no epoch) is never honoured.
         sqlx::query(
             "UPDATE console_sessions SET fleet_epoch = NULL, fleet_environment = NULL
               WHERE handle_digest = $1",

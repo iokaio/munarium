@@ -17,7 +17,7 @@ for registry availability, digests and public signing instructions. The detailed
   roll back by restoring it. Data written after the upgrade is lost on
   rollback. See the [1.5 upgrade and rollback guide](docs/guides/server-1.5.md).
 - Add replica heartbeats and a fleet-wide console login mode (additive
-  migration 0090). `GET /v1/reports/scale` and the console Health page show
+  migration 0087). `GET /v1/reports/scale` and the console Health page show
   live replicas against `MUNARIUM_REPLICA_COUNT` and warn when more are live.
   `munarium-server console-fleet enable` switches console sessions on for the
   whole fleet, refused while a live replica cannot serve them or the live

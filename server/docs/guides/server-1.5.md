@@ -54,7 +54,7 @@ Published 1.4.0 packages keep their 1.4/1.3 range. See
 | 0084 | Provider configuration `text_changed_at` (existing rows take the migration time, so earlier inference probes must be repeated) |
 | 0085 | MCP operation key tombstones (empty until the key janitor prunes a key) |
 | 0086 | Build-job event prune that skips rows a concurrent prune holds (function only) |
-| 0090 | Replica heartbeats, the console fleet mode (no row: `legacy`) and the session fleet epoch columns |
+| 0087 | Replica heartbeats, the console fleet mode (no row: `legacy`) and the session fleet epoch columns |
 
 Every migration is additive. Their effect on existing rows and the rollback
 boundary of each is in the
@@ -89,7 +89,7 @@ boundary of each is in the
 
 Rollback across the 1.5 migrations is **by backup restore** (maintainer
 decision of 20 November 2026). A 1.4.0 binary refuses to start against a
-database that carries any of migrations 0043–0090, because it does not know
+database that carries any of migrations 0043–0087, because it does not know
 them (`migration 43 was previously applied but is missing in the resolved
 migrations`). There is no image-only downgrade, and no 1.4.x release tolerates
 the newer migrations.

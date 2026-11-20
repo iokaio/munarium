@@ -202,7 +202,7 @@ one exists; a failure without a code has no stable machine-readable cause.
 
 ## Console fleet cutover refusals
 
-`munarium-server console-fleet enable` (Server v1.5, ClearView LOGIN1; migration 0090)
+`munarium-server console-fleet enable` (Server v1.5, ClearView LOGIN1; migration 0087)
 runs the cutover preflight before it switches a deployment environment's console fleet
 mode to `enabled`. A refusal writes nothing, exits with status 3 and prints
 `{"result": "refused", "reason": <code>, "live_replicas": <count or null>}`. The codes

@@ -3,7 +3,7 @@
 //! SCALE-3 and U10 / LOGIN1, maintainer decisions of 20 November 2026).
 //!
 //! - **Heartbeats.** Every Server process on the PostgreSQL store writes a row
-//!   to `server_replica_heartbeats` (migration 0090) at startup and every
+//!   to `server_replica_heartbeats` (migration 0087) at startup and every
 //!   [`HEARTBEAT_INTERVAL`], with an expiry [`HEARTBEAT_TTL_SECS`] ahead on the
 //!   database clock. A row identifies the process by a random
 //!   [`FleetIdentity::replica_id`] and records its build version, deployment

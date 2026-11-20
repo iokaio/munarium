@@ -16,7 +16,7 @@
 //! reported as unavailable, never as an empty queue (the U5 rule).
 //!
 //! Live fleet membership comes from the replica heartbeats
-//! (`replica_fleet.rs`, migration 0090): the report sets `observed_replicas`
+//! (`replica_fleet.rs`, migration 0087): the report sets `observed_replicas`
 //! to the live heartbeats of this replica's deployment environment beside the
 //! configured `MUNARIUM_REPLICA_COUNT`, and warns when more are live than
 //! configured. A failed heartbeat read is `unavailable` with a null count,

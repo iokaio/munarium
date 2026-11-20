@@ -160,7 +160,7 @@ ClearView SCALE-3. Three views read the same snapshot:
 | Console Health page | The same report as tiles, a live-replica table and an admission table, with a warning when more replicas are live than configured | As the report |
 
 **Counting replicas.** Each process writes an expiring heartbeat (migration
-0090) at startup and every 15 seconds; a row expires 45 seconds after its last
+0087) at startup and every 15 seconds; a row expires 45 seconds after its last
 write by the database clock and is then ignored and pruned. The report's
 `observed_replicas` is the number of live heartbeats in the answering
 replica's `MUNARIUM_DEPLOYMENT_ENVIRONMENT_ID`, shown beside its configured
