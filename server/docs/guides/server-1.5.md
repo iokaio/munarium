@@ -67,6 +67,12 @@ boundary of each is in the
 4. Upgrade all relevant readers, writers and workers. New behavior stays off
    until an operator enables it: MCP, inference enrollment, console sessions,
    artifact damage blocking and fair scheduling each have their own setting.
+   So does isolated PDF extraction (`MUNARIUM_PDF_EXTRACTION=isolated`). Under
+   it, `MUNARIUM_PDF_EXTRACTION_ESCALATE_OVER_BUDGET` (default `false`) decides
+   whether an over-budget document may escalate to document intelligence, and
+   `MUNARIUM_PDF_EXTRACTION_DEFERRED` (default `skip`; or `fail`) decides
+   whether a deferred document is left for a rebuild or fails the build. See
+   [isolated PDF extraction](document-intelligence.md#isolated-pdf-extraction).
 5. Verify health, readiness, `/version`, authentication on both transports,
    scoped retrieval and persistence after restart.
 
