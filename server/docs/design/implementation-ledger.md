@@ -34,6 +34,7 @@ When a task advances, add a dated status, link the PR or implementation revision
 15. **ART single replica:** adjust ART so single-replica deployments can block and clear.
 16. **Release evidence:** cosign verification and a real-browser accessibility pass are not required.
 17. **Cluster qualification:** only on the maintainer's 128 GB workstation (Docker Desktop Kubernetes), deferred until implementation moves to that machine. No Azure.
+18. **Follow-ups the same day:** the Lens runtime is Candle (it can change later). ADR 0028 verifier independence requires a per-replica authenticated workload identity, not a configured instance ID over the shared database credential.
 
 ## Phase 0 · v1.4 baseline and shared decisions
 
