@@ -1887,9 +1887,10 @@
         "progress_units_done": "bigint",
         "progress_units_total": "bigint",
         "progress_advanced_at": "timestamptz",
-        "event_seq": "bigint"
+        "event_seq": "bigint",
+        "error_code": "text"
       },
-      "content": "Durable target, params/result/error, requester and attempt history; retries can rebuild retained content. Fenced progress (closed phase, counts, last-advance time) and a per-job event counter.",
+      "content": "Durable target, params/result/error, requester and attempt history; retries can rebuild retained content. Fenced progress (closed phase, counts, last-advance time) and a per-job event counter. A stable failure code from the registered vocabulary for classified failures; no free text.",
       "json_content": {
         "params": "Bounded caller build parameters in extensible map.",
         "result": "Artifact references/outcome/diagnostics; future fields require review."
@@ -1898,7 +1899,8 @@
       "policy": "catalog",
       "origins": [
         "src/munarium-store-pg/migrations/0027_index_build_jobs.sql",
-        "src/munarium-store-pg/migrations/0046_build_job_progress_events.sql"
+        "src/munarium-store-pg/migrations/0046_build_job_progress_events.sql",
+        "src/munarium-store-pg/migrations/0047_build_job_error_codes.sql"
       ]
     },
     "index_version_job_commits": {

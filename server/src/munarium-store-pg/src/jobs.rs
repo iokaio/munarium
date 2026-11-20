@@ -29,12 +29,13 @@ use sqlx::{PgPool, Row};
 
 use munarium_core::{KernelError, Result};
 
+use crate::job_failure::{JobFailure, JobFailureCode};
 use crate::storage_err;
 
 /// The safe, human-readable `error` recorded when an expired final claim is
 /// failed by [`BuildJobs::fail_expired_final_claims`]. It names no table,
-/// node or driver detail. The machine-readable code (`attempts_exhausted`)
-/// waits for the C2 hub record and is not stored or returned yet.
+/// node or driver detail. It is recorded with the code `attempts_exhausted`
+/// ([`JobFailureCode::AttemptsExhausted`], ClearView C2).
 pub const ATTEMPTS_EXHAUSTED_MESSAGE: &str =
     "build job failed: its final attempt stopped renewing its lease before completing";
 
@@ -89,6 +90,9 @@ pub struct BuildJob {
     pub attempts: i32,
     pub result: Option<serde_json::Value>,
     pub error: Option<String>,
+    /// The stable failure code recorded with a classified failure (ClearView
+    /// C2, migration 0047). `None` for every other row.
+    pub error_code: Option<String>,
     pub requested_by: String,
     pub created_at: String,
 }
@@ -763,7 +767,7 @@ impl BuildJobs {
               WHERE tenant_id = $1 AND job_id = $2
           RETURNING tenant_id, job_id, kind, scope_kind, scope_id, index_version_id,
                     params, state, attempt_ids, correlation_id, claimed_by, attempts,
-                    result, error, requested_by, created_at::text AS created_at_text",
+                    result, error, error_code, requested_by, created_at::text AS created_at_text",
         )
         .bind(&tenant)
         .bind(&job_id)
@@ -819,7 +823,7 @@ impl BuildJobs {
                   FOR UPDATE SKIP LOCKED
                   LIMIT $3)
              UPDATE index_build_jobs j
-                SET state = 'failed', error = $4, updated_at = now()
+                SET state = 'failed', error = $4, error_code = $5, updated_at = now()
                FROM expired e
               WHERE j.tenant_id = e.tenant_id AND j.job_id = e.job_id
           RETURNING j.tenant_id, j.job_id",
@@ -827,7 +831,8 @@ impl BuildJobs {
         .bind(lease_secs as f64)
         .bind(max_attempts)
         .bind(limit.clamp(1, 1000))
-        .bind(ATTEMPTS_EXHAUSTED_MESSAGE)
+        .bind(JobFailureCode::AttemptsExhausted.message())
+        .bind(JobFailureCode::AttemptsExhausted.as_str())
         .fetch_all(&self.pool)
         .await
         .map_err(storage_err)?;
@@ -907,8 +912,15 @@ impl BuildJobs {
         outcome: std::result::Result<serde_json::Value, String>,
         attempt_id: Option<&str>,
     ) -> Result<bool> {
-        self.finish(tenant_id, job_id, node_id, None, outcome, attempt_id)
-            .await
+        self.finish(
+            tenant_id,
+            job_id,
+            node_id,
+            None,
+            outcome.map_err(JobFailure::text),
+            attempt_id,
+        )
+        .await
     }
 
     /// [`complete`](Self::complete) fenced by the claim's generation: a
@@ -928,6 +940,29 @@ impl BuildJobs {
             job_id,
             node_id,
             Some(generation),
+            outcome.map_err(JobFailure::text),
+            attempt_id,
+        )
+        .await
+    }
+
+    /// [`complete_fenced`](Self::complete_fenced) with a failure the caller
+    /// classified from its typed cause (ClearView C2): the safe message and,
+    /// when classified, the stable code are recorded together.
+    pub async fn complete_fenced_classified(
+        &self,
+        tenant_id: &str,
+        job_id: &str,
+        node_id: &str,
+        generation: i32,
+        outcome: std::result::Result<serde_json::Value, JobFailure>,
+        attempt_id: Option<&str>,
+    ) -> Result<bool> {
+        self.finish(
+            tenant_id,
+            job_id,
+            node_id,
+            Some(generation),
             outcome,
             attempt_id,
         )
@@ -940,16 +975,16 @@ impl BuildJobs {
         job_id: &str,
         node_id: &str,
         generation: Option<i32>,
-        outcome: std::result::Result<serde_json::Value, String>,
+        outcome: std::result::Result<serde_json::Value, JobFailure>,
         attempt_id: Option<&str>,
     ) -> Result<bool> {
-        let (state, result, error) = match outcome {
-            Ok(v) => ("succeeded", Some(v), None),
-            Err(e) => ("failed", None, Some(e)),
+        let (state, result, error, error_code) = match outcome {
+            Ok(v) => ("succeeded", Some(v), None, None),
+            Err(f) => ("failed", None, Some(f.message), f.code.map(|c| c.as_str())),
         };
         let updated = sqlx::query(
             "UPDATE index_build_jobs
-                SET state = $4, result = $5, error = $6,
+                SET state = $4, result = $5, error = $6, error_code = $9,
                     attempt_ids = CASE WHEN $7::text IS NULL THEN attempt_ids
                                        ELSE array_append(attempt_ids, $7) END,
                     updated_at = now()
@@ -965,6 +1000,7 @@ impl BuildJobs {
         .bind(error)
         .bind(attempt_id)
         .bind(generation)
+        .bind(error_code)
         .execute(&self.pool)
         .await
         .map_err(storage_err)?;
@@ -1319,7 +1355,7 @@ impl BuildJobs {
         let row = sqlx::query(
             "SELECT tenant_id, job_id, kind, scope_kind, scope_id, index_version_id,
                     params, state, attempt_ids, correlation_id, claimed_by, attempts,
-                    result, error, requested_by, created_at::text AS created_at_text
+                    result, error, error_code, requested_by, created_at::text AS created_at_text
                FROM index_build_jobs
               WHERE tenant_id = $1 AND job_id = $2",
         )
@@ -1336,7 +1372,7 @@ impl BuildJobs {
         let rows = sqlx::query(
             "SELECT tenant_id, job_id, kind, scope_kind, scope_id, index_version_id,
                     params, state, attempt_ids, correlation_id, claimed_by, attempts,
-                    result, error, requested_by, created_at::text AS created_at_text
+                    result, error, error_code, requested_by, created_at::text AS created_at_text
                FROM index_build_jobs
               WHERE tenant_id = $1
               ORDER BY created_at DESC
@@ -1367,6 +1403,7 @@ fn row_to_job(r: sqlx::postgres::PgRow) -> BuildJob {
         attempts: r.get("attempts"),
         result: r.get("result"),
         error: r.get("error"),
+        error_code: r.get("error_code"),
         requested_by: r.get("requested_by"),
         created_at: r.get("created_at_text"),
     }

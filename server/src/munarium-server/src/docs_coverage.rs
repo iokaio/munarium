@@ -327,4 +327,47 @@ mod tests {
             missing.len()
         );
     }
+
+    /// ClearView C2: the build-job failure codes the builder can record
+    /// (`JobFailureCode::ALL`, the typed mapping's whole range) are exactly
+    /// the codes the registry's "Build-job failure codes" table lists, each
+    /// with its recorded message.
+    #[test]
+    fn build_job_failure_codes_match_the_error_registry() {
+        use munarium_store_pg::job_failure::JobFailureCode;
+        let registry = read("api/errors.md");
+        let section = registry
+            .split(
+                "
+## Build-job failure codes",
+            )
+            .nth(1)
+            .expect("errors.md lacks the Build-job failure codes section");
+        let section = section
+            .split(
+                "
+## ",
+            )
+            .next()
+            .unwrap();
+        let rows: Vec<&str> = section.lines().filter(|l| l.starts_with("| `")).collect();
+        let listed: BTreeSet<&str> = rows
+            .iter()
+            .filter_map(|l| l[3..].split('`').next())
+            .collect();
+        let typed: BTreeSet<&str> = JobFailureCode::ALL.iter().map(|c| c.as_str()).collect();
+        assert_eq!(listed, typed, "registry and typed codes differ");
+        assert_eq!(rows.len(), typed.len(), "a code is listed twice");
+        for code in JobFailureCode::ALL {
+            let row = rows
+                .iter()
+                .find(|l| l.starts_with(&format!("| `{}`", code.as_str())))
+                .unwrap();
+            assert!(
+                row.trim_end().ends_with(&format!("| {} |", code.message())),
+                "the registry row for {} does not show its message",
+                code.as_str()
+            );
+        }
+    }
 }

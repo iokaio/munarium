@@ -106,8 +106,12 @@ fn assert_row(job: &BuildJob, row: &serde_json::Value) {
     assert_eq!(
         job.error,
         s(&row["error"]),
-        "{case}: error must be returned verbatim"
+        "{case}: the stored error is read back verbatim"
     );
+    // C2: a row written before migration 0047 has no code, and the store
+    // never derives one from its text. The REST view of these rows is the
+    // fixture's `expected_v15_dto` (checked in munarium-server).
+    assert_eq!(job.error_code, None, "{case}: no stored error_code");
     assert_eq!(
         Some(job.requested_by.clone()),
         s(&row["requested_by"]),

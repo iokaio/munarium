@@ -19,6 +19,7 @@
   },
   "timezone_note": "created_at is the text v1.4 returns from created_at::text in a UTC session. The PostgreSQL store test compares instants, so it does not depend on the server TimeZone; the DTO test compares the text exactly.",
   "tenant_placeholder": "{tenant}",
+  "v15_rule": "ClearView R5/C2 (v1.5): a failure is returned with a safe message and, only when its typed cause was classified as it was recorded, an error_code. A stored failure without a code (every row here) returns the generic build-failure message and omits error_code; the text is never parsed and the row is not rewritten. Rows marked unchanged keep their v1.4 DTO bytes. R4 cleanup moves the expired final claim to failed with attempts_exhausted.",
   "rows": [
     {
       "case": "pending",
@@ -39,6 +40,7 @@
       "error": null,
       "requested_by": "operator-fixture",
       "created_at": "2026-10-01 12:00:00+00",
+      "v15": "unchanged",
       "expected_v14_dto": {
         "job_id": "job-v14-pending",
         "kind": "direct",
@@ -68,6 +70,7 @@
       "error": null,
       "requested_by": "operator-fixture",
       "created_at": "2026-10-01 12:01:00+00",
+      "v15": "unchanged",
       "expected_v14_dto": {
         "job_id": "job-v14-running-live",
         "kind": "direct",
@@ -98,6 +101,7 @@
       "error": null,
       "requested_by": "operator-fixture",
       "created_at": "2026-10-01 12:02:00+00",
+      "v15": "unchanged until cleanup",
       "expected_v14_dto": {
         "job_id": "job-v14-running-expired-final",
         "kind": "rebuild",
@@ -106,6 +110,11 @@
         "attempts": 3,
         "claimed_by": "builder-a",
         "created_at": "2026-10-01 12:02:00+00"
+      },
+      "expected_v15_after_cleanup": {
+        "state": "failed",
+        "error": "build job failed: its final attempt stopped renewing its lease before completing",
+        "error_code": "attempts_exhausted"
       }
     },
     {
@@ -127,6 +136,7 @@
       "error": "storage error: error returned from database: duplicate key value violates unique constraint \"index_versions_pkey\"",
       "requested_by": "operator-fixture",
       "created_at": "2026-10-01 12:03:00+00",
+      "v15": "generic",
       "expected_v14_dto": {
         "job_id": "job-v14-failed-storage",
         "kind": "backfill",
@@ -136,6 +146,17 @@
         "attempts": 1,
         "claimed_by": "builder-b",
         "error": "storage error: error returned from database: duplicate key value violates unique constraint \"index_versions_pkey\"",
+        "created_at": "2026-10-01 12:03:00+00"
+      },
+      "expected_v15_dto": {
+        "job_id": "job-v14-failed-storage",
+        "kind": "backfill",
+        "scope_kind": "collection",
+        "scope_id": "col-fixture-failed-storage",
+        "state": "failed",
+        "attempts": 1,
+        "claimed_by": "builder-b",
+        "error": "build job failed; no classified cause was recorded for this failure",
         "created_at": "2026-10-01 12:03:00+00"
       }
     },
@@ -158,6 +179,7 @@
       "error": "invalid input: collection col-fixture-failed-text has no sources",
       "requested_by": "operator-fixture",
       "created_at": "2026-10-01 12:04:00+00",
+      "v15": "generic",
       "expected_v14_dto": {
         "job_id": "job-v14-failed-free-text",
         "kind": "direct",
@@ -167,6 +189,17 @@
         "attempts": 2,
         "claimed_by": "builder-a",
         "error": "invalid input: collection col-fixture-failed-text has no sources",
+        "created_at": "2026-10-01 12:04:00+00"
+      },
+      "expected_v15_dto": {
+        "job_id": "job-v14-failed-free-text",
+        "kind": "direct",
+        "scope_kind": "collection",
+        "scope_id": "col-fixture-failed-text",
+        "state": "failed",
+        "attempts": 2,
+        "claimed_by": "builder-a",
+        "error": "build job failed; no classified cause was recorded for this failure",
         "created_at": "2026-10-01 12:04:00+00"
       }
     },
@@ -189,6 +222,7 @@
       "error": null,
       "requested_by": "operator-fixture",
       "created_at": "2026-10-01 12:05:00+00",
+      "v15": "unchanged",
       "expected_v14_dto": {
         "job_id": "job-v14-succeeded",
         "kind": "rebuild",
@@ -219,6 +253,7 @@
       "error": null,
       "requested_by": "operator-fixture",
       "created_at": "2026-10-01 12:06:00+00",
+      "v15": "unchanged",
       "expected_v14_dto": {
         "job_id": "job-v14-cancelled",
         "kind": "backfill",
@@ -259,7 +294,8 @@
     {
       "id": "historical-error-returned-verbatim",
       "statement": "get and list return the stored error text unchanged, including driver text.",
-      "changes_under": "R5/C2"
+      "changes_under": "R5/C2",
+      "v15_statement": "REST get and list return the generic build-failure message and omit error_code for these rows (expected_v15_dto); the store still reads the stored text back unchanged and error_code is null."
     }
   ]
 }

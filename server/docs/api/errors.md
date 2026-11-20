@@ -122,6 +122,35 @@ The gates' dotted rule vocabulary:
 Backfill mode (`mode: backfill`) downgrades blocks to warns — conflicts in an existing corpus are
 surfaced (claims disputed, findings filed) but never block.
 
+## Build-job failure codes
+
+A failed build job (`GET /v1/index-build-jobs`, `GET /v1/index-build-jobs/{job_id}`)
+carries `error_code` only when the builder classified the failure's typed cause as it
+recorded it (Server v1.5, ClearView C2; migration 0047). These are job outcomes, not
+request errors: the read itself succeeds. Codes are lowercase snake case of at most 64
+characters, enforced on write. Clients key on `error_code`, never on `error` text.
+
+| Code | Recorded when | `error` |
+|---|---|---|
+| `attempts_exhausted` | the final attempt's lease expired before it completed, and expired-claim cleanup failed the job | build job failed: its final attempt stopped renewing its lease before completing |
+| `invalid_input` | the build refused the job's target or parameters (`invalid-input` cause) | build job failed: the build refused the job's target or parameters |
+| `not_found` | something the job names no longer exists (`not-found` cause) | build job failed: something the job names no longer exists |
+| `storage_error` | a storage-layer failure (`storage-error` cause); the driver text goes to the server log only | build job failed: a storage error occurred; see the server log |
+| `datastore_unavailable` | a datastore artifact could not be read or written (`datastore-unavailable` cause) | build job failed: a datastore artifact could not be read or written |
+| `provider_error` | an upstream model provider call failed (`provider-error` cause) | build job failed: an upstream model provider call failed |
+
+Any other cause is unclassified: `error` is the generic message "build job failed; no
+classified cause was recorded for this failure" and `error_code` is omitted. The same
+applies to every failure recorded before migration 0047 and to a free-text failure
+written by a v1.4 builder during rollout. Server never derives a code from stored text
+and does not rewrite those rows; their original text remains in the database for the
+operator. A successful, pending, running or cancelled job omits both members.
+
+**Displayed-text change (v1.5).** In v1.4, `error` returned the stored error string,
+which for a storage failure was the database driver's message. From v1.5 it is one of
+the messages above. Scripts that matched `error` text must move to `error_code` where
+one exists; a failure without a code has no stable machine-readable cause.
+
 ## Platform action records
 
 Experimental [Stage 2 records](../platform-stage2.md) use existing error families:

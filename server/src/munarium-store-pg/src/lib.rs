@@ -60,6 +60,7 @@ pub mod artifacts;
 pub mod attempts;
 pub mod budget;
 pub mod evidence;
+pub mod job_failure;
 pub mod jobs;
 pub mod max_tokens;
 pub mod money;

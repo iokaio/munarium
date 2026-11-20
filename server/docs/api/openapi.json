@@ -9966,7 +9966,15 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "A failed job's safe, human-readable message. Display text, not a\nkey: it changed in v1.5 (ClearView C2), and a failure without\n`error_code` reads as a generic build-failure message."
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The stable failure code of a classified failure, from the build-job\nfailure codes in the error registry (v1.5, ClearView C2). Absent for\nan unclassified or historical failure and for every other state."
           },
           "index_version_id": {
             "type": [

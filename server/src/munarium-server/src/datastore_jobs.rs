@@ -20,6 +20,7 @@
 use std::sync::Arc;
 
 use munarium_core::{KernelError, Result};
+use munarium_store_pg::job_failure::{classify, client_failure, JobFailure};
 use munarium_store_pg::jobs::{
     BuildJob, BuildJobs, ClaimPolicy, EnqueueOutcome, JobFence, JobId, JobKind, JobSignal,
     JobTarget, JobVersionOutcome, VersionCursor,
@@ -221,7 +222,7 @@ pub fn spawn_builder(state: &Arc<AppState>) {
                     );
                     let outcome = run_one_job(&state, &job, Some(&fence), Some(&signal))
                         .await
-                        .map_err(|e| e.to_string());
+                        .map_err(|e| job_failure(&job, generation, &e));
                     drop(beat);
                     if let Some(reason) = signal.stopped() {
                         tracing::info!(
@@ -232,7 +233,7 @@ pub fn spawn_builder(state: &Arc<AppState>) {
                         );
                     }
                     match jobs
-                        .complete_fenced(
+                        .complete_fenced_classified(
                             &job.tenant_id,
                             &job.job_id,
                             &node,
@@ -260,6 +261,21 @@ pub fn spawn_builder(state: &Arc<AppState>) {
             tokio::time::sleep(std::time::Duration::from_millis(poll_ms)).await;
         }
     });
+}
+
+/// The failure a builder records for a job (ClearView C2): classified from
+/// the typed cause, never from its text. Only the safe message and code are
+/// stored; the cause itself goes to the server log.
+fn job_failure(job: &BuildJob, generation: i32, e: &KernelError) -> JobFailure {
+    let failure = classify(e);
+    tracing::warn!(
+        job_id = %job.job_id,
+        generation,
+        error = %e,
+        error_code = failure.code.map(|c| c.as_str()).unwrap_or("unclassified"),
+        "build job failed"
+    );
+    failure
 }
 
 /// Renew a claim's lease every `every` and drive its stop signal
@@ -349,7 +365,12 @@ impl Drop for AbortOnDrop {
 // REST
 // ---------------------------------------------------------------------------
 
+/// The REST view of a job row. Failure members follow the C2 read rule
+/// ([`client_failure`]): a stored code returns its message and code; stored
+/// text without a code (historical or a v1.4 builder's) returns the generic
+/// message and no code. The text is never parsed.
 fn job_dto(j: BuildJob) -> dto::IndexBuildJobDto {
+    let (error, error_code) = client_failure(j.error.as_deref(), j.error_code.as_deref());
     dto::IndexBuildJobDto {
         job_id: j.job_id,
         kind: j.kind,
@@ -360,7 +381,8 @@ fn job_dto(j: BuildJob) -> dto::IndexBuildJobDto {
         attempts: j.attempts,
         claimed_by: j.claimed_by,
         result: j.result,
-        error: j.error,
+        error,
+        error_code,
         created_at: j.created_at,
     }
 }
@@ -787,12 +809,16 @@ pub async fn list_job_versions(
 }
 
 #[cfg(test)]
+#[path = "datastore_jobs_c2_tests.rs"]
+mod c2_tests;
+
+#[cfg(test)]
 mod tests {
     //! v1.4 job DTO baseline for ClearView Phase 1 (R4, R5/C2). The fixture
     //! records each stored row and the exact JSON v1.4.0 returned for it.
-    //! When C2 lands, the failure rows' expectations change deliberately and
-    //! this test is updated alongside the error registry; the other rows must
-    //! keep their v1.4 bytes.
+    //! C2 changes the failure rows' expectations deliberately: those rows are
+    //! marked `generic` and carry `expected_v15_dto` beside the v1.4 one. Every
+    //! row marked `unchanged` must keep its v1.4 bytes.
     use super::*;
 
     const FIXTURE: &str = include_str!(concat!(
@@ -825,8 +851,41 @@ mod tests {
             attempts: row["attempts"].as_i64().unwrap() as i32,
             result: (!row["result"].is_null()).then(|| row["result"].clone()),
             error: opt(row, "error"),
+            // Every fixture row predates migration 0047.
+            error_code: None,
             requested_by: opt(row, "requested_by").unwrap(),
             created_at: opt(row, "created_at").unwrap(),
+        }
+    }
+
+    /// The DTO a fixture row must serialize to now: its v1.4 bytes unless
+    /// C2 changed it (`generic`), and then only the `error` text may differ.
+    fn expected_now(row: &serde_json::Value) -> &serde_json::Value {
+        match row["v15"].as_str().unwrap() {
+            "unchanged" | "unchanged until cleanup" => &row["expected_v14_dto"],
+            "generic" => {
+                let (v14, v15) = (
+                    row["expected_v14_dto"].as_object().unwrap(),
+                    row["expected_v15_dto"].as_object().unwrap(),
+                );
+                assert_eq!(
+                    v14.keys().collect::<Vec<_>>(),
+                    v15.keys().collect::<Vec<_>>(),
+                    "case {}: C2 adds or removes no member here",
+                    row["case"]
+                );
+                for (k, v) in v14 {
+                    if k != "error" {
+                        assert_eq!(&v15[k], v, "case {}: only error changes", row["case"]);
+                    }
+                }
+                assert_eq!(
+                    v15["error"].as_str(),
+                    Some(munarium_store_pg::job_failure::GENERIC_FAILURE_MESSAGE)
+                );
+                &row["expected_v15_dto"]
+            }
+            other => panic!("case {}: unknown v15 marker {other}", row["case"]),
         }
     }
 
@@ -835,13 +894,18 @@ mod tests {
         let fixture: serde_json::Value = serde_json::from_str(FIXTURE).unwrap();
         let rows = fixture["rows"].as_array().unwrap();
         assert!(rows.len() >= 7, "fixture lost rows");
+        let generic = rows.iter().filter(|r| r["v15"] == "generic").count();
+        assert_eq!(generic, 2, "C2 changes exactly the two stored failures");
         for row in rows {
             let got = serde_json::to_value(job_dto(job_from_row(row))).unwrap();
             assert_eq!(
-                got, row["expected_v14_dto"],
-                "case {} no longer serializes as v1.4 did",
+                &got,
+                expected_now(row),
+                "case {} does not serialize as recorded",
                 row["case"]
             );
+            // C2: no stored row without a code gains one.
+            assert!(got.get("error_code").is_none(), "case {}", row["case"]);
         }
         // Success keeps every failure member omitted (C2-T1's existing rule).
         let ok = rows.iter().find(|r| r["case"] == "succeeded").unwrap();
@@ -1049,7 +1113,7 @@ mod tests {
         let got = serde_json::to_value(list).unwrap();
         let obj = got.as_object().unwrap();
         assert_eq!(obj.len(), 1, "list response grew a member: {got}");
-        let expected: Vec<_> = rows.iter().map(|r| r["expected_v14_dto"].clone()).collect();
+        let expected: Vec<_> = rows.iter().map(|r| expected_now(r).clone()).collect();
         assert_eq!(got["jobs"], serde_json::Value::Array(expected));
     }
 }

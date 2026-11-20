@@ -636,9 +636,19 @@ successfully while its result reports `complete: false`.
 
 All enqueue requests also accept an optional `correlation_id`. Job states are
 `pending`, `running`, `succeeded`, `failed`, `cancelled` and `superseded`. Inspect
-`attempts`, `claimed_by`, `result` and `error`. Lapsed leases are retried subject
-to the implementation's attempt ceiling; cancellation is not an artifact
-deletion or a serving rollback.
+`attempts`, `claimed_by`, `result`, `error` and `error_code`. Lapsed leases are
+retried subject to the implementation's attempt ceiling; cancellation is not an
+artifact deletion or a serving rollback.
+
+A failed job's `error` is a safe message (ClearView C2, migration 0047). When
+the builder classified the failure's cause, `error_code` carries a stable code
+from the [build-job failure codes](../api/errors.md#build-job-failure-codes);
+key on it, not on `error`. A failure without a classified cause, recorded before
+migration 0047, or written by a v1.4 builder during rollout reads as a generic
+build-failure message with no `error_code`. Those rows keep their original text
+in `index_build_jobs.error` for the operator, and the builder logs every cause.
+This changes displayed text: v1.4 returned the stored string, including database
+driver text.
 
 Queued builds write only under their current claim. A direct job commits its
 logical version, together with the job and claim generation that built it, only

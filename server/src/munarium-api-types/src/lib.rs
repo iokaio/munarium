@@ -2626,8 +2626,16 @@ pub struct IndexBuildJobDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default, deserialize_with = "json::optional")]
     pub result: Option<serde_json::Value>,
+    /// A failed job's safe, human-readable message. Display text, not a
+    /// key: it changed in v1.5 (ClearView C2), and a failure without
+    /// `error_code` reads as a generic build-failure message.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// The stable failure code of a classified failure, from the build-job
+    /// failure codes in the error registry (v1.5, ClearView C2). Absent for
+    /// an unclassified or historical failure and for every other state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<String>,
     pub created_at: String,
 }
 
