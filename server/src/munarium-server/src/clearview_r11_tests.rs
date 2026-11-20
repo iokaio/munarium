@@ -53,8 +53,14 @@ fn registered_slugs() -> Vec<String> {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/api/errors.md"),
     )
     .unwrap();
+    // Only the "Problem types" section (and its subsections) registers
+    // problem slugs. Other tables in the registry, such as the build-job
+    // failure codes (C2), are a different vocabulary.
     registry
         .lines()
+        .skip_while(|line| *line != "## Problem types")
+        .skip(1)
+        .take_while(|line| !line.starts_with("## "))
         .filter_map(|line| line.strip_prefix("| `"))
         .filter_map(|rest| rest.split_once('`').map(|(slug, _)| slug))
         .filter(|slug| !slug.contains('.') && !slug.contains(' '))
