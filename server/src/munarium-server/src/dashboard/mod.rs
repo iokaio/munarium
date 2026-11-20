@@ -148,12 +148,22 @@ fn rw_credential(state: &AppState, admin: &AdminCtx, token: &str) -> Result<Tena
 // ---------------------------------------------------------------------------
 
 /// One console page: its URL, its nav name (the `active` key handlers pass
-/// to `render`), and the one-sentence purpose shown under its title.
+/// to `render`), the one-sentence purpose shown under its title, and the
+/// documents that explain it (ClearView U11).
 pub(crate) struct NavPage {
     pub href: &'static str,
     pub name: &'static str,
     pub purpose: &'static str,
+    /// Paths under `server/docs/`. The console links to the published copy
+    /// instead of serving or duplicating the text; `docs_coverage` fails if
+    /// any of these files is missing.
+    pub docs: &'static [&'static str],
 }
+
+/// Where the console's documentation links point. The server serves no
+/// guides itself (`/docs` is the OpenAPI page), so links go to the public
+/// repository; the same relative path names the file in a source checkout.
+pub(crate) const DOCS_BASE: &str = "https://github.com/iokaio/munarium/blob/main/server/docs/";
 
 /// A navigation group: one top-level link (to its first page) and, when the
 /// group has more than one page, a row of sub-tabs (ClearView U1). Grouped
@@ -163,11 +173,17 @@ pub(crate) struct NavGroup {
     pub pages: &'static [NavPage],
 }
 
-const fn nav_page(href: &'static str, name: &'static str, purpose: &'static str) -> NavPage {
+const fn nav_page(
+    href: &'static str,
+    name: &'static str,
+    purpose: &'static str,
+    docs: &'static [&'static str],
+) -> NavPage {
     NavPage {
         href,
         name,
         purpose,
+        docs,
     }
 }
 
@@ -177,8 +193,7 @@ pub(crate) const NAV: &[NavGroup] = &[
         pages: &[nav_page(
             "/admin",
             "overview",
-            "Whether anything needs attention, and the size of what is deployed.",
-        )],
+            "Whether anything needs attention, and the size of what is deployed.", &["observability.md", "ops/troubleshooting.md"])],
     },
     NavGroup {
         label: "traffic",
@@ -186,18 +201,15 @@ pub(crate) const NAV: &[NavGroup] = &[
             nav_page(
                 "/admin/traffic",
                 "traffic",
-                "Request rate, errors and latency across the API over a time window.",
-            ),
+                "Request rate, errors and latency across the API over a time window.", &["observability.md"]),
             nav_page(
                 "/admin/endpoints",
                 "endpoints",
-                "Request volume, errors and latency for each route.",
-            ),
+                "Request volume, errors and latency for each route.", &["observability.md", "api/rest.md"]),
             nav_page(
                 "/admin/usage",
                 "usage",
-                "API usage over time, grouped by the dimension you choose.",
-            ),
+                "API usage over time, grouped by the dimension you choose.", &["observability.md"]),
         ],
     },
     NavGroup {
@@ -206,18 +218,15 @@ pub(crate) const NAV: &[NavGroup] = &[
             nav_page(
                 "/admin/collections",
                 "collections",
-                "Collections, their access controls and index versions, and recent bulk uploads.",
-            ),
+                "Collections, their access controls and index versions, and recent bulk uploads.", &["guides/getting-started.md", "guides/loading-corpora.md"]),
             nav_page(
                 "/admin/storage",
                 "storage",
-                "Where collection data lives across the storage tiers and nodes.",
-            ),
+                "Where collection data lives across the storage tiers and nodes.", &["guides/datastore.md"]),
             nav_page(
                 "/admin/sessions",
                 "sessions",
-                "Conversation sessions: activity over time and each session turn by turn.",
-            ),
+                "Conversation sessions: activity over time and each session turn by turn.", &["guides/getting-started.md", "observability.md"]),
         ],
     },
     NavGroup {
@@ -225,8 +234,7 @@ pub(crate) const NAV: &[NavGroup] = &[
         pages: &[nav_page(
             "/admin/runbooks",
             "runbooks",
-            "Deployed runbooks, shapes and runs, including runs waiting for gate approval.",
-        )],
+            "Deployed runbooks, shapes and runs, including runs waiting for gate approval.", &["guides/getting-started.md", "ops/mmctl.md"])],
     },
     NavGroup {
         label: "access and audit",
@@ -234,18 +242,15 @@ pub(crate) const NAV: &[NavGroup] = &[
             nav_page(
                 "/admin/tokens",
                 "tokens",
-                "Capability tokens issued to end users: review, issue and revoke them.",
-            ),
+                "Capability tokens issued to end users: review, issue and revoke them.", &["guides/managing-key-and-secrets.md", "security-posture.md"]),
             nav_page(
                 "/admin/audit",
                 "audit",
-                "Every /v1 request, newest first, attributed to its uid.",
-            ),
+                "Every /v1 request, newest first, attributed to its uid.", &["observability.md", "security-posture.md"]),
             nav_page(
                 "/admin/findings",
                 "findings",
-                "Gate findings recorded at write time and by Matrix reconciliation, newest first.",
-            ),
+                "Gate findings recorded at write time and by Matrix reconciliation, newest first.", &["observability.md", "api/rest.md"]),
         ],
     },
     NavGroup {
@@ -254,18 +259,15 @@ pub(crate) const NAV: &[NavGroup] = &[
             nav_page(
                 "/admin/providers",
                 "providers",
-                "Configured model providers, whether their credentials resolve, and token spend.",
-            ),
+                "Configured model providers, whether their credentials resolve, and token spend.", &["guides/managing-key-and-secrets.md", "guides/ollama.md"]),
             nav_page(
                 "/admin/health",
                 "health",
-                "This instance's process state and effective non-secret configuration.",
-            ),
+                "This instance's process state and effective non-secret configuration.", &["ops/troubleshooting.md", "observability.md"]),
             nav_page(
                 "/admin/matrix",
                 "matrix",
-                "Whether the structured-evidence plane is reachable, and which evidence layer refuses.",
-            ),
+                "Whether the structured-evidence plane is reachable, and which evidence layer refuses.", &["guides/evidence-hierarchy.md"]),
         ],
     },
 ];
@@ -334,7 +336,13 @@ fn nav(active: &str, view_only: bool) -> String {
 /// store mode, and the time of the read.
 fn page_header(admin: &AdminCtx, active: &str, title: &str, actions: &str) -> String {
     let purpose = nav_lookup(active)
-        .map(|(_, p)| format!(r#"<p class="purpose">{}</p>"#, charts::esc(p.purpose)))
+        .map(|(_, p)| {
+            format!(
+                r#"<p class="purpose">{}</p>{}"#,
+                charts::esc(p.purpose),
+                docs_line(p.docs)
+            )
+        })
         .unwrap_or_default();
     let actions = if actions.is_empty() {
         String::new()
@@ -348,6 +356,22 @@ fn page_header(admin: &AdminCtx, active: &str, title: &str, actions: &str) -> St
         charts::esc(&admin.instance),
         admin.store,
         chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
+    )
+}
+
+/// The documentation line under a page's purpose (ClearView U11): each
+/// linked document is named by its path under `server/docs/`.
+fn docs_line(docs: &[&str]) -> String {
+    if docs.is_empty() {
+        return String::new();
+    }
+    let links: Vec<String> = docs
+        .iter()
+        .map(|d| link(&format!("{DOCS_BASE}{d}"), &format!("docs/{d}")))
+        .collect();
+    format!(
+        r#"<p class="docs">Documentation: {}</p>"#,
+        links.join(" · ")
     )
 }
 
@@ -985,6 +1009,14 @@ mod tests {
                     "{}: {body}",
                     page.href
                 );
+                // U11: the page links its documentation.
+                for doc in page.docs {
+                    assert!(
+                        body.contains(&format!(r#"href="{DOCS_BASE}{doc}">docs/{doc}</a>"#)),
+                        "{} lacks {doc}: {body}",
+                        page.href
+                    );
+                }
                 assert!(
                     body.contains(
                         r#"tenant <code>t</code> · instance <code>test-instance</code> · store memory · read "#

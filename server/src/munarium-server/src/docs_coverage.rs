@@ -217,6 +217,43 @@ mod tests {
         );
     }
 
+    /// ClearView U11: every documentation link the operator console prints
+    /// names a file that exists under docs/, every console page links at
+    /// least one, and the links point at this repository's docs tree.
+    #[test]
+    fn every_console_page_links_documentation_that_exists() {
+        assert!(
+            crate::dashboard::DOCS_BASE.ends_with("/server/docs/"),
+            "{}",
+            crate::dashboard::DOCS_BASE
+        );
+        let mut missing = Vec::new();
+        for group in crate::dashboard::NAV {
+            for page in group.pages {
+                assert!(
+                    !page.docs.is_empty(),
+                    "{} links no documentation",
+                    page.href
+                );
+                for doc in page.docs {
+                    assert!(
+                        !doc.starts_with('/') && !doc.contains(".."),
+                        "{}: {doc} must be a path under docs/",
+                        page.href
+                    );
+                    if !docs_root().join(doc).is_file() {
+                        missing.push(format!("{} -> {doc}", page.href));
+                    }
+                }
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "console documentation links to missing files:\n  {}",
+            missing.join("\n  ")
+        );
+    }
+
     #[test]
     fn the_link_scanner_reads_links_the_way_people_write_them() {
         let text = "see [a](x.md), [b](../y/z.md#frag), [c](https://x.example/), \
