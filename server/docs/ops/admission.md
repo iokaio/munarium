@@ -101,7 +101,9 @@ class of its REST route.
 | `munarium_admission_shed_total` | `plane`, `class`; every shed is also counted in `munarium_load_shed_total` |
 | `munarium_admission_slots`, `munarium_admission_slots_in_use` | `plane`, `pool` (`ordinary`, plus `reserve` and `heavy` when enabled) |
 
-No metric carries a tenant, user or route label.
+No metric carries a tenant, user or route label. The same pool usage, per
+replica, is in `GET /v1/reports/scale` and on the console Health page
+([replica diagnostics](clustering.md#replica-pool-and-queue-diagnostics)).
 
 ## Known limits
 

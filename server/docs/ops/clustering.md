@@ -58,7 +58,9 @@ and `MUNARIUM_MAX_CONCURRENCY` on a bigger box.
   are per instance per plane too.
 - **`/metrics`**: per instance; give each instance its own scrape target
   and let the scraper label `instance`. Cross-instance truth lives in the
-  `/v1/reports/*` views, which read the shared tables.
+  `/v1/reports/*` views, which read the shared tables. The
+  [diagnostics below](#replica-pool-and-queue-diagnostics) cover replica
+  identity, pools and the build queue.
 
 ## How to run it
 
@@ -83,6 +85,15 @@ $env:MUNARIUM_REPLICA_COUNT = '2'
 docker compose --profile cluster up
 # gateway on :8443 round-robins REST and gRPC across compose-a / compose-b
 ```
+
+**On Kubernetes** the Helm chart renders `MUNARIUM_REPLICA_COUNT` only when
+`providerReplicaCount` is set. The bare chart omits it, as v1.4 did, so two
+default pods each enforce the full provider limit and the cluster checks
+stay off. The production profile (`values-production.yaml`) sets `auto`,
+which renders the replica count. A rollout surge pod takes a full share as
+well. See the
+[chart's replica-count section](../../deploy/helm/munarium/README.md#replica-count-and-provider-limits)
+for upgrade, migration, `platform-v1` and rollback.
 
 **The proof harness**: `.\test.ps1 -Cluster` builds once, starts two
 servers on 18082/18083 against the compose postgres with a fresh shared
@@ -111,6 +122,45 @@ advisory-lock guard). `MUNARIUM_DB_MAX_CONNS` has a floor of 2: the append
 path holds a pool connection for its `FOR UPDATE` transaction, and a pool
 of 1 deadlocks writers against any concurrent work. Two instances at the
 default 10 fit comfortably under 100.
+
+## Replica, pool and queue diagnostics
+
+ClearView SCALE-3. Three views read the same snapshot:
+
+| Where | What it shows | Scope |
+|---|---|---|
+| `/metrics` (ops plane) | `munarium_replica_count`, `munarium_db_pool_connections` / `_idle` / `_max_connections`, `munarium_admission_slots` / `_in_use`, and the build queue: `munarium_index_build_jobs{state="pending"\|"running"}`, `munarium_index_build_oldest_pending_seconds`, `munarium_index_build_queue_up` | Process gauges per pod; the queue across all tenants, counts only |
+| `GET /v1/reports/scale` (mgmt) | The answering replica's `instance_id`, version, configured count, builder flag, SQL pool and admission pools; the caller's tenant's backlog | One replica per call; one tenant's queue |
+| Console Health page | The same report as tiles and an admission table | As the report |
+
+**Counting replicas.** Each process knows only its configured
+`MUNARIUM_REPLICA_COUNT`. Live membership is not recorded, so the report's
+`observed_replicas` is null and the console says membership is unknown.
+Compare the configured count with ready pods
+(`kubectl get deploy munarium-server`, or kube-state-metrics
+`kube_deployment_status_replicas_ready` beside `kube_deployment_spec_replicas`)
+and with `count(munarium_build_info)` across scrape targets. More live
+processes than the count means the cluster admits more than each provider
+limit, as during a rollout surge.
+
+**Pools.** Busy connections are `open - idle`. Sum `max_connections` across
+every pod, including surge pods, against PostgreSQL `max_connections` (see
+[pool math](#pool-math)). Admission saturation shows as `in_use` at
+`capacity` beside `munarium_admission_shed_total` ([admission classes](admission.md)).
+
+**Build queue.** The read is one indexed, read-only count over
+`index_build_jobs` per scrape or page load, bounded at 2 seconds including
+the wait for a pool connection. Every replica reports the same shared queue,
+so aggregate with `max`, not `sum`. A failed or timed-out read sets
+`munarium_index_build_queue_up 0` and omits the counts; the report and
+console show `unavailable`, never 0. `running` includes jobs whose lease has
+lapsed and that a builder may reclaim. A growing oldest-pending age with
+`running` at the number of builders means builders are the bottleneck; see
+[choosing the resource to scale](../design/scale-out.md#choose-the-server-resource-to-scale).
+
+What has not been qualified: SCALE-3-T1 drives a known queue and pool
+bottleneck on a real fleet, resizes it, and compares these counts with
+fleet and database observations. That run needs a cluster.
 
 ## Diagnosing a crash-orphaned run
 

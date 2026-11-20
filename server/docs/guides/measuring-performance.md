@@ -105,6 +105,9 @@ The fixed registry in [metrics.rs](../../src/munarium-server/src/metrics.rs) emi
 | `munarium_http_requests_total` | Request outcomes by plane, route template, method and status class | Includes the gRPC plane under the same family; inspect plane/status mapping |
 | `munarium_http_request_duration_seconds` | Request duration histogram by plane and route | No success-only label; failures/refusals affect the distribution |
 | `munarium_db_pool_connections`, `munarium_db_pool_idle` | Open/idle SQLx connections | Busy connections are their difference, not a pool-wait measurement |
+| `munarium_db_pool_max_connections` | Configured `MUNARIUM_DB_MAX_CONNS` | Compare busy connections with it; the sum across pods is the database budget |
+| `munarium_replica_count` | Configured `MUNARIUM_REPLICA_COUNT` (provider-limit divisor) | Compare with the number of live scrape targets; the Server does not observe membership |
+| `munarium_index_build_jobs{state}`, `munarium_index_build_oldest_pending_seconds`, `munarium_index_build_queue_up` | Open durable build jobs (all tenants) and oldest pending age, read per scrape | Every replica reports the same shared queue, so take the max, not the sum. `up` 0 means the read failed or exceeded 2 s, and the counts are absent |
 | `munarium_interactions_queue_depth` | Pending audit records | A sustained rise signals the writer is falling behind |
 | `munarium_interactions_dropped_total` | Failed nonblocking enqueue, including full/closed queue | Reports may undercount requests during this interval |
 | `munarium_interactions_insert_failures_total` | Failed audit inserts | Different from queue overflow; inspect database failures |
