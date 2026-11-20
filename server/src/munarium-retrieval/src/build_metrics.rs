@@ -38,6 +38,12 @@ pub struct BuildMetrics {
 /// Receives one record per finished build.
 pub trait BuildObserver: Send + Sync + std::fmt::Debug {
     fn build_finished(&self, metrics: &BuildMetrics);
+
+    /// A build's result was a fleet-blocked pin (ClearView ART1/ART2).
+    /// `mode` is the damage mode (`observe` or `enforce`), `refused` whether
+    /// publication was refused. No identifier crosses this call. The default
+    /// records nothing.
+    fn publication_blocked(&self, _mode: &'static str, _refused: bool) {}
 }
 
 /// A shareable observer handle.

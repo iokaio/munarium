@@ -9,8 +9,10 @@ This procedure covers what happens when a Datastore artifact's bytes no longer m
 | Value | Effect |
 |---|---|
 | `off` (default) | v1.4 behavior: a bad copy is quarantined in that process only. |
-| `observe` | Records findings and honors existing blocks. Never commits a block or a clearance. |
-| `enforce` | Also commits confirmed fleet blocks and verified clearances. |
+| `observe` | Records findings and honors existing blocks. Reports, without refusing, a build whose result is a blocked artifact. Never commits a block or a clearance. |
+| `enforce` | Also commits confirmed fleet blocks and verified clearances, and refuses to publish a blocked artifact. |
+
+The building replica reads the same variable for publication, whatever its retrieval mode (see [Builds of a blocked artifact](#builds-of-a-blocked-artifact)).
 
 1. Give every serving replica its own verifier key and enroll it (see [Verifier keys](#verifier-keys)). Two replicas that share a key count as one verifier, and a replica without an enrolled key only isolates its own copy.
 2. Upgrade every serving replica, then set `observe` everywhere. Drain or replace any v1.4 reader.
@@ -70,20 +72,22 @@ An unknown value stops Datastore infrastructure from arming, and a `datastore` r
 - **Unauthenticated observations.** History entries with decision `unauthenticated` come from a replica without a key, with an unenrolled or revoked key, or with a signature that does not verify. They count for nothing. Check the replica's key file and `list-verifiers`.
 - **History full.** Logs report `history_full = true`. The observation history holds at most 1,024 entries per tenant and never shrinks: entries are never evicted or pruned, and resolving or clearing an incident does not free any. Once it is full, new observations are not added to the history, but they are still decided: findings, blocks and clearances keep working, because candidates, incidents and repair attempts carry their own evidence, and `artifact-damage list` still shows them. What is lost is the per-observation trail of later matches, unavailable fetches and unauthenticated observations, so treat a full history as a signal to review what filled it (for example a replica without an enrolled key, or a store that keeps failing), not as something that resolving incidents will reset.
 
+- **Storage generations.** On an object store (S3, Azure, GCS), every authoritative observation records the stored object's generation: `version:<id>` when the store reports a version id, else `etag:<etag>`. The local-file store records none. Observations of different generations never combine toward a block or a clearance, and an absent generation never combines with a known one. Run every replica against the same artifact store backend, or their observations will not confirm each other. [Storage generations](../design/artifact-damage.md#storage-generations)
+
 List the state for a tenant:
 
 ```console
 munarium-server artifact-damage list --tenant <tenant-id>
 ```
 
-The command prints JSON with each pin's generation and state, each incident's object, expected digest, both confirming verifiers, and any clearance. It reads `MUNARIUM_DATABASE_URL` and the store settings like the server does.
+The command prints JSON with each pin's generation and state, each incident's object, expected digest, `storage_generation`, both confirming verifiers, and any clearance with its `clear_storage_generation`. It reads `MUNARIUM_DATABASE_URL` and the store settings like the server does.
 
 ## Repair and clear
 
 A block is cleared only by a preauthorized repair workflow, after two serving replicas independently fetch the repaired bytes and both match the pin. No API route or console action clears a block.
 
 1. **Withdraw if needed.** Reads of the blocked artifact already fail. To serve the scope from PostgreSQL meanwhile, set its rollout selector to `postgres`. Selecting `datastore` again is refused while the artifact is blocked.
-2. **Repair the bytes** under your separate authority to change artifact storage. Restore the named object (`object_key` in the listing) under the artifact's prefix from a copy whose `sha256` equals the `expected_sha256`. Alternatively, republish the same artifact id from a verified build. Do not change the pin. A different artifact id is a new artifact, not a repair.
+2. **Repair the bytes** under your separate authority to change artifact storage. Restore the named object (`object_key` in the listing) under the artifact's prefix from a copy whose `sha256` equals the `expected_sha256`, for example from a verified build's staged copy of the same artifact id. A rebuild job does not do this: in `enforce` it refuses a blocked artifact (see below). Do not change the pin. A different artifact id is a new artifact, not a repair. On an object store, the restored object has a new storage generation, and the verifications bind to it.
 3. **Preauthorize the workflow** after the bytes are repaired:
 
    ```console
@@ -96,7 +100,19 @@ A block is cleared only by a preauthorized repair workflow, after two serving re
 4. **Wait for verification.** Each `observe` or `enforce` replica verifies the attempt once, in its readiness sweep (`MUNARIUM_DATASTORE_ROLLOUT_REFRESH_MS`, 15 s by default). Clearance needs two different `enforce` replicas. In a deployment declared single-replica, the replica verifies once and again after the single-replica interval, and its two matching runs clear the block. Without that declaration, a single-replica deployment cannot clear a block: run a second replica with a distinct instance id for the verification.
 5. **Confirm** with `list`. The incident shows `cleared`, the attempt and workflow ids, both verifying replicas and `clear_assurance`. Replicas that had quarantined the artifact re-fetch and re-verify it before serving.
 
-If a verifier finds a mismatch during verification, the attempt is invalidated. Repair the bytes again and authorize again. A block whose bytes cannot be repaired stays in force. Bind a rebuilt artifact through the normal promotion path instead.
+If a verifier finds a mismatch during verification, the attempt is invalidated. Repair the bytes again and authorize again. If the object is rewritten during verification, its generation changes and the first match is replaced. With two replicas the attempt can then stall, because the first replica does not verify the same attempt twice. Authorize a new workflow to start a fresh attempt. A block whose bytes cannot be repaired stays in force. Bind a rebuilt artifact through the normal promotion path instead.
+
+## Builds of a blocked artifact
+
+A rebuild of unchanged content produces the same artifact id it produced before. When that artifact is blocked, the building replica's `MUNARIUM_ARTIFACT_DAMAGE_MODE` decides:
+
+| Mode | Effect |
+|---|---|
+| `off` | Unchanged. The build reports `already_built` or `converged`. |
+| `observe` | The build succeeds as before. The replica logs `a build's result is a fleet-blocked artifact` with the version, artifact and incident ids, and counts `munarium_artifact_publication_blocked_total{action="published"}`. Serving still refuses the artifact. |
+| `enforce` | The build is refused before anything is bound or uploaded. A build job fails with `error_code` `datastore_unavailable`, a synchronous rebuild returns `datastore-unavailable`, and a backfill reports that version as `failed`. The log line `publication refused: the build's result is a fleet-blocked artifact` names the ids. Counts `action="refused"`. |
+
+An unavailable integrity check also refuses the build in `enforce`. Clear the block through the repair procedure above; the same rebuild then succeeds. [Publication of a blocked pin](../design/artifact-damage.md#publication-of-a-blocked-pin)
 
 ## Roll back safely
 
@@ -106,7 +122,8 @@ Before you set `off` on any serving replica with an incident still `blocked`: fi
 
 - Verifier independence relies on each replica having its own enrolled key. Replicas share one database credential, so whoever holds it can also enroll keys.
 - A declared single-replica deployment confirms with one replica's view. See the residual risk above.
-- Storage object generations are not yet recorded.
+- Storage generations are recorded only where the store reports them. The local-file store reports none.
+- The publication check runs when a build takes its result; a block committed afterwards is enforced by readers, not by the build.
 - The release fence operates on whole search results.
 - Multi-replica qualification on a real fleet is pending.
 

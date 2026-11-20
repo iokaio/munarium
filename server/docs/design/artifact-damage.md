@@ -52,9 +52,22 @@ A storage pin names exactly what is trusted:
 | `artifact_id` | `sha256` of the canonical manifest bytes. The manifest's expected digest is the artifact id itself. |
 | Manifest key | `manifest.json` under the artifact's catalog prefix (`artifact_uri`). |
 | Component digests | Each component's `path`, `bytes_len` and `sha256`, read from manifest bytes that hash to the artifact id. The ledger also checks each digest against the catalog's manifest projection, so an observation cannot name a digest the pin does not contain. |
-| Storage generation | The store's object generation (ETag or version id) when the store reports one. The `ArtifactStore` trait does not expose one today, so every observation records it as absent. Two observations of different stored generations are different pinned objects. |
+| Storage generation | The store's object generation when the store reports one: the version id where the store reports one, else the ETag, taken from the same read that returned the bytes (`ArtifactStore::get_component_with_generation`). The object-store backends (S3, Azure, GCS and the in-memory store) report one. The local-file store reports none, so its observations record it as absent. Two observations of different stored generations are different pinned objects. See [Storage generations](#storage-generations). |
 
 A **pinned object** is one of these objects together with its expected digest and storage generation. An **artifact pin** is the whole artifact, and it is what a block withdraws. Verification runs the `munarium_datastore::audit::audit_artifact` function. It hashes the manifest before parsing it, then fetches and hashes every component in manifest order. When several objects differ, verifiers report the first mismatch in manifest order, so two verifiers that see the same damage name the same object.
+
+### Storage generations
+
+**Decision, 20 November 2026.** The maintainer decided open question 2: the `ArtifactStore` trait reports an object's stored generation when the backend has one, and blocks and clearances bind to it.
+
+- **Where it comes from.** `ArtifactStore::get_component_with_generation` returns the bytes and the generation of the object they were read from, in one read, so the generation names exactly the bytes that were hashed. `munarium_datastore::store::storage_generation_token` forms the recorded value: `version:<id>` when the store reports a version id, else `etag:<etag>`, so a version id never equals an ETag with the same text. A value longer than 128 bytes, or one with control characters, is recorded as `sha256:` and the digest of the reported text. The default trait method, which the local-file store uses, reports none.
+- **What records it.** `audit_artifact` records each object's generation. Every authoritative observation carries the generation of the object it names, signed with the rest of the pin. The history records it on every authoritative entry, a candidate and its incident record the generation of the mismatches, and a repair attempt records the generation of its first match. `artifact-damage list` shows `storage_generation` (the block's) and `clear_storage_generation` (the clearance's, which is the clearing attempt's match generation). No migration is needed: the 0060 tables already carry the columns, with `''` for absent.
+- **Blocks.** Candidates are keyed by the full pinned object, generation included. A mismatch on another generation starts its own candidate and never confirms one recorded at a different generation.
+- **Clearances.** Two repair matches clear only when both observed the same generation. A match on a different generation from the attempt's first match replaces that first match rather than confirming it, because the earlier match says nothing about the object now stored. Clearance then needs a second independent match on the new generation. Before this decision such a match was rejected and the first match stayed in place.
+- **Absent generations.** A store that reports none behaves exactly as before: every observation records absent, and absent observations of one object combine as they always have.
+- **Mixed absent and known.** Absent is its own value, never a wildcard. An absent and a known generation of the same object never combine toward a block or a clearance, in either order. This is the conservative choice: a replica whose store reports no generation cannot confirm or clear what another replica saw at a known generation, and the reverse. Replicas should therefore read the authoritative store through the same backend.
+
+**Consequences.** A rewrite of an object, even with identical bytes, is a new generation, and so is a metadata-only change on a store that changes the ETag for one. Both make the fleet less likely to block, because verifiers that read different generations do not combine. Neither makes it more likely to clear. During verification, a generation change in a two-replica fleet can stall an attempt: the first replica's match is replaced, and that replica does not verify the same attempt twice. Authorize a new workflow to start a fresh attempt. A declared single replica re-verifies after the interval as usual.
 
 ### Durable finding records
 
@@ -152,6 +165,27 @@ Only a preauthorized repair workflow may clear a block, and only through two fre
 
 No `/v1` route, console action or REST role can clear a block. [Operator procedure](../ops/artifact-damage.md) · [Security posture](../security-posture.md)
 
+## Publication of a blocked pin
+
+**Decision, 20 November 2026.** The maintainer decided open question 5: mirror publication refuses a blocked pin until an ART2 repair clears it.
+
+A rebuild of unchanged content converges on the artifact id it built before. It either reuses the verified artifact or its catalog insert converges on the existing row. Before this decision such a build reported success with a blocked artifact as its result, and a queued build could fill an empty `staged` slot with it. The publication path in `munarium_retrieval::mirror` now reads the pin's block, the same read as serving admission, wherever a build would take a pin as its result:
+
+- when it reuses a verified artifact for the plan, before binding `staged` or reporting `already_built`;
+- when its catalog insert converges on an existing verified row, before reporting `converged`;
+- before uploading any component (`publish_and_verify`, for fresh and resumed publications);
+- when the sealed-attempt reconciler finds the artifact already verified, before binding it.
+
+The outcome depends on `MUNARIUM_ARTIFACT_DAMAGE_MODE` on the building replica, read when the build context is made:
+
+| Mode | A build whose result is a blocked pin |
+|---|---|
+| `off` (default) | Unchanged: no check is made. |
+| `observe` | Publishes as before. Logs `a build's result is a fleet-blocked artifact` with the version, artifact and incident ids, and counts `munarium_artifact_publication_blocked_total{mode="observe",action="published"}`. Serving still refuses the pin. |
+| `enforce` | Refused. The build fails with `datastore-unavailable`, naming only the version, artifact and incident ids. A build job records `error_code` `datastore_unavailable` (C2) with that code's fixed message. Nothing is bound or uploaded. Counts `action="refused"`. |
+
+This matches how serving treats the modes: `observe` honors and reports existing blocks without acting on its own authority, and `enforce` refuses. An unavailable pin check refuses the build in `enforce`, as an unavailable admission check refuses a read. In `observe` it is only logged. An unknown mode refuses the build context, as it refuses to arm serving. Once a verified repair clears the block, the same pin publishes normally. The refusal is a publication-time check, not a fence: a block that commits after the check is still enforced by every reader's admission and release.
+
 ## Modes, upgrade and rollback
 
 `MUNARIUM_ARTIFACT_DAMAGE_MODE` selects the behavior on each replica that builds Datastore parts. Those are replicas in `shadow` and `datastore` retrieval modes.
@@ -159,8 +193,8 @@ No `/v1` route, console action or REST role can clear a block. [Operator procedu
 | Mode | Behavior |
 |---|---|
 | `off` (default) | The v1.4 behavior. Quarantine is per process only. Executors carry no damage context, and nothing reads or writes the new tables. |
-| `observe` | Isolates locally, records findings and verifications, and honors existing blocks at admission and release. Never commits a block or a clearance. |
-| `enforce` | `observe`, plus commits confirmed blocks and verified clearances. |
+| `observe` | Isolates locally, records findings and verifications, and honors existing blocks at admission and release. Reports, without refusing, a build whose result is a blocked pin. Never commits a block or a clearance. |
+| `enforce` | `observe`, plus commits confirmed blocks and verified clearances, and refuses to publish a blocked pin. |
 
 An unknown value is a configuration error. The Datastore infrastructure then refuses to arm and a `datastore` replica stays unready. It never falls back silently to `off`.
 
@@ -183,12 +217,15 @@ An unknown value is a configuration error. The Datastore infrastructure then ref
 | Authenticated verifiers: unsigned, forged, borrowed, altered, other-tenant, other-generation, unenrolled and revoked observations count for nothing; two replicas sharing a key are one verifier; a revoked key's candidate or first match is never confirmed; distinct enrolled keys block and clear; enrollment is idempotent and revocation permanent; key commands never print the private key | `an_unsigned_or_forged_observation_counts_for_nothing`, `an_unenrolled_key_never_counts`, `two_replicas_sharing_one_key_are_one_verifier`, `a_revoked_key_counts_for_nothing_and_its_evidence_is_not_confirmed`, `enrollment_is_idempotent_and_revocation_is_permanent` (ledger); `keyless_and_key_sharing_replicas_only_isolate_locally`, `the_verifier_key_commands_enroll_and_revoke_without_exposing_the_key` (server); `artifact_verifier` unit tests (core) |
 | Single-replica assurance: spaced runs block and clear; runs inside the interval, a replayed fetch, the same run or a future fetch time do not; the default ledger never counts one verifier twice; assurance recorded; schema refuses unmarked or unspaced same-verifier rows; `single` refused above one declared replica | `single_replica_*`, `the_default_ledger_never_counts_one_verifier_twice_however_spaced` and `the_schema_admits_a_same_verifier_block_only_when_marked_and_spaced` (ledger); `a_declared_single_replica_blocks_and_clears_with_spaced_runs` (server); `replica_assurance_tests` (retrieval) |
 
+| Storage generations: different generations never confirm a block or a clearance; an absent and a known generation never combine, in either order; absent-generation stores block and clear as before; the block's and the clearance's generations are listed | `mismatches_of_different_stored_generations_never_combine_toward_a_block`, `an_absent_generation_never_combines_with_a_known_one_toward_a_block`, `repair_matches_of_different_stored_generations_never_clear`, `absent_generation_repairs_clear_as_before` (ledger); `each_object_carries_the_generation_its_bytes_were_read_at` (audit); `a_read_reports_the_stored_generation_and_a_rewrite_changes_it` (object store); `the_local_store_reports_no_generation`, `generation_tokens_are_kinded_bounded_and_prefer_the_version` (store) |
+| Publication of a blocked pin: refused in `enforce` with `datastore_unavailable` and nothing rebound; published and reported in `observe`; unchanged in `off`; an unblocked pin publishes; publishes again after clearance; an unavailable check refuses only in `enforce` | `munarium-retrieval/tests/blocked_publication.rs` |
+
 **Not covered locally.** The following remain uncovered: paused second replicas on a real fleet, a stream spanning a block on a live server, an unavailable final check against a failing database, concurrent failures across processes, binary rollback, and healthy reads on every serving replica after clearance. These are the REL1 fleet receipts. [Cluster qualification plan](cluster-qualification-plan.md)
 
 ## Open questions
 
 1. **Verifier authentication.** Decided on 20 November 2026: independence requires distinct enrolled verifier keys (see [Verifier identity](#verifier-identity)). Binding those keys to the platform-v1 workload certificate is a possible later hardening step.
-2. **Storage generations.** Should the `ArtifactStore` trait report an object's ETag or version id, so that a block and its verifications bind to one stored generation?
+2. **Storage generations.** Decided on 20 November 2026: the trait reports a generation when the backend has one, different generations never combine, and an absent generation never combines with a known one (see [Storage generations](#storage-generations)).
 3. **Per-result authorization records.** The release fence commits a share-locked check, not a durable row per result. Durable per-result records would add a write to every search and need their own retention.
 4. **Bounds.** Are the 1,024-entry history and the 24-hour confirmation window the right defaults? Both are constants today.
-5. **Mirror publication.** A rebuild that converges on a blocked artifact id currently republishes the same id. Should publication refuse a blocked pin? That hook belongs to the mirror publication path and has not been added here.
+5. **Mirror publication.** Decided on 20 November 2026: publication refuses a blocked pin in `enforce` until an ART2 repair clears it, reports it in `observe`, and is unchanged in `off` (see [Publication of a blocked pin](#publication-of-a-blocked-pin)).

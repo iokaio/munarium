@@ -125,6 +125,113 @@ pub fn parse_replica_assurance(
     }
 }
 
+/// Mirror publication's view of fleet blocks (the 20 November 2026 decision
+/// on artifact-damage open question 5).
+///
+/// A build whose result is a pin that carries an active fleet block must not
+/// report success or bind it: a rebuild that converges on a blocked artifact
+/// id would otherwise republish the same id. The gate is built only in
+/// `observe` and `enforce` ([`PublicationGate::for_mode`] returns `None` for
+/// `off`, which leaves publication exactly as before).
+///
+/// - `enforce` refuses the publication with a `datastore-unavailable` error
+///   that names only the version, the artifact id and the incident id. An
+///   unavailable pin check refuses too, as serving admission does.
+/// - `observe` publishes as before and reports the blocked pin (a warning
+///   and the build observer's `publication_blocked`). Like serving in
+///   `observe`, it never changes an outcome on its own authority beyond
+///   what it already honors: serving still refuses the blocked pin.
+///
+/// The refusal holds until an ART2 repair clears the block; a cleared pin
+/// publishes normally.
+#[derive(Debug, Clone)]
+pub struct PublicationGate {
+    mode: DamageMode,
+    ledger: ArtifactDamageLedger,
+}
+
+/// A publication refused because its pin is blocked. Content-free: ids only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlockedPublication {
+    pub index_version_id: String,
+    pub artifact_id: String,
+    pub incident_id: String,
+}
+
+impl std::fmt::Display for BlockedPublication {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "artifact {} of index version {} is blocked by integrity incident {}; publication \
+             is refused until a verified repair clears it",
+            self.artifact_id, self.index_version_id, self.incident_id
+        )
+    }
+}
+
+impl From<BlockedPublication> for KernelError {
+    /// Classified as `datastore_unavailable` by a build job (C2).
+    fn from(b: BlockedPublication) -> Self {
+        KernelError::DatastoreUnavailable(b.to_string())
+    }
+}
+
+/// What the gate decided for one pin.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PublicationCheck {
+    /// No active block: publish.
+    Clear,
+    /// Blocked, and this process only observes: publish, and report it.
+    BlockedObserved(BlockedPublication),
+    /// Blocked, and this process enforces: refuse.
+    Refused(BlockedPublication),
+    /// The pin could not be read. `enforce` refuses on it; `observe`
+    /// publishes and reports it.
+    Unavailable(String),
+}
+
+impl PublicationGate {
+    /// The gate for `mode`, or `None` for `off`.
+    pub fn for_mode(mode: DamageMode, pool: PgPool, tenant_id: &str) -> Option<Self> {
+        match mode {
+            DamageMode::Off => None,
+            DamageMode::Observe | DamageMode::Enforce => Some(Self {
+                mode,
+                ledger: ArtifactDamageLedger::new(pool, tenant_id),
+            }),
+        }
+    }
+
+    pub fn mode(&self) -> DamageMode {
+        self.mode
+    }
+
+    /// Read the pin's block. Never writes.
+    pub async fn check(&self, index_version_id: &str, artifact_id: &str) -> PublicationCheck {
+        match self.ledger.admit(index_version_id, artifact_id).await {
+            Err(e) => PublicationCheck::Unavailable(e.to_string()),
+            Ok(PinAdmission {
+                blocked_by: None, ..
+            }) => PublicationCheck::Clear,
+            Ok(PinAdmission {
+                blocked_by: Some(incident_id),
+                ..
+            }) => {
+                let blocked = BlockedPublication {
+                    index_version_id: index_version_id.to_string(),
+                    artifact_id: artifact_id.to_string(),
+                    incident_id,
+                };
+                if self.mode == DamageMode::Enforce {
+                    PublicationCheck::Refused(blocked)
+                } else {
+                    PublicationCheck::BlockedObserved(blocked)
+                }
+            }
+        }
+    }
+}
+
 /// Load a replica's verifier signing key from `MUNARIUM_ARTIFACT_VERIFIER_KEY_FILE`.
 /// The error names the path, never the file's contents.
 pub fn load_verifier_key(path: &str) -> Result<VerifierSigningKey> {
@@ -463,12 +570,15 @@ fn observation_from(
     verifier: VerifierIdentity,
     fetched_at: Timestamp,
 ) -> AuthoritativeObservation {
-    let pin = |key: &str, expected: &str| ObjectPin {
+    // The storage generation is the one the audit read the object's bytes
+    // at, so a block or a clearance binds to that stored object. `None`
+    // where the store reports no generation, or nothing was read.
+    let pin = |key: &str, expected: &str, generation: Option<&String>| ObjectPin {
         index_version_id: index_version_id.to_string(),
         artifact_id: artifact_id.to_string(),
         object_key: key.to_string(),
         expected_sha256: expected.to_string(),
-        storage_generation: None,
+        storage_generation: generation.cloned(),
     };
     let (target_key, target_expected) = match attempt {
         Some(a) => (a.object_key.clone(), a.expected_sha256.clone()),
@@ -476,7 +586,7 @@ fn observation_from(
     };
     let (object, outcome, observed, detail) = match audit {
         Err(e) => (
-            pin(&target_key, &target_expected),
+            pin(&target_key, &target_expected, None),
             Outcome::Unavailable,
             None,
             format!("pin could not be interpreted: {e}"),
@@ -484,14 +594,18 @@ fn observation_from(
         Ok(audit) => {
             if let Some(bad) = audit.first_mismatch() {
                 (
-                    pin(&bad.object_key, &bad.expected_sha256),
+                    pin(
+                        &bad.object_key,
+                        &bad.expected_sha256,
+                        bad.storage_generation.as_ref(),
+                    ),
                     Outcome::Mismatch,
                     bad.observed_sha256.clone(),
                     "authoritative digest differs from the pin".to_string(),
                 )
             } else if let Some(gone) = audit.first_unavailable() {
                 (
-                    pin(&gone.object_key, &gone.expected_sha256),
+                    pin(&gone.object_key, &gone.expected_sha256, None),
                     Outcome::Unavailable,
                     None,
                     "pinned object could not be read".to_string(),
@@ -502,13 +616,17 @@ fn observation_from(
                     .filter(|o| o.outcome == AuditOutcome::Match)
                 {
                     Some(o) => (
-                        pin(&o.object_key, &o.expected_sha256),
+                        pin(
+                            &o.object_key,
+                            &o.expected_sha256,
+                            o.storage_generation.as_ref(),
+                        ),
                         Outcome::Match,
                         o.observed_sha256.clone(),
                         "every pinned object matched".to_string(),
                     ),
                     None => (
-                        pin(&target_key, &target_expected),
+                        pin(&target_key, &target_expected, None),
                         Outcome::Unavailable,
                         None,
                         "the incident's object is not in the pinned manifest".to_string(),
@@ -787,5 +905,85 @@ mod isolation_release_tests {
         assert!(!release_after_clearance(&mut at, 6));
         assert!(!release_after_clearance(&mut at, 0));
         assert!(release_after_clearance(&mut at, 8));
+    }
+}
+
+#[cfg(test)]
+mod storage_generation_tests {
+    use super::*;
+    use munarium_datastore::audit::ObjectAudit;
+
+    fn object(key: &str, outcome: AuditOutcome, generation: Option<&str>) -> ObjectAudit {
+        let expected = if key == MANIFEST_OBJECT {
+            "a".repeat(64)
+        } else {
+            "c".repeat(64)
+        };
+        ObjectAudit {
+            object_key: key.into(),
+            expected_sha256: expected.clone(),
+            expected_bytes: None,
+            observed_sha256: match outcome {
+                AuditOutcome::Match => Some(expected),
+                AuditOutcome::Mismatch => Some("b".repeat(64)),
+                AuditOutcome::Unavailable => None,
+            },
+            observed_bytes: None,
+            storage_generation: generation.map(str::to_string),
+            outcome,
+        }
+    }
+
+    fn observe(objects: Vec<ObjectAudit>) -> ObjectPin {
+        let audit = ArtifactAudit {
+            artifact_id: "a".repeat(64),
+            objects,
+        };
+        observation_from(
+            Ok(&audit),
+            "idx2-v",
+            &"a".repeat(64),
+            None,
+            VerifierIdentity {
+                verifier_id: "v".into(),
+                run_id: "r".into(),
+            },
+            Timestamp::default(),
+        )
+        .pin
+    }
+
+    /// The observation names the generation the audit read its object at:
+    /// the mismatching object's, or the matched target's. An unread object
+    /// carries none.
+    #[test]
+    fn an_observation_carries_the_generation_of_the_object_it_names() {
+        let mismatch = observe(vec![
+            object(MANIFEST_OBJECT, AuditOutcome::Match, Some("etag:m")),
+            object("records/chunks.bin", AuditOutcome::Mismatch, Some("etag:c")),
+        ]);
+        assert_eq!(mismatch.object_key, "records/chunks.bin");
+        assert_eq!(mismatch.storage_generation.as_deref(), Some("etag:c"));
+
+        let clean = observe(vec![
+            object(MANIFEST_OBJECT, AuditOutcome::Match, Some("etag:m")),
+            object("records/chunks.bin", AuditOutcome::Match, Some("etag:c")),
+        ]);
+        assert_eq!(clean.object_key, MANIFEST_OBJECT);
+        assert_eq!(clean.storage_generation.as_deref(), Some("etag:m"));
+
+        let unread = observe(vec![
+            object(MANIFEST_OBJECT, AuditOutcome::Match, Some("etag:m")),
+            object("records/chunks.bin", AuditOutcome::Unavailable, None),
+        ]);
+        assert_eq!(unread.storage_generation, None);
+
+        // A store without generations: absent, as before.
+        let absent = observe(vec![object(
+            "records/chunks.bin",
+            AuditOutcome::Mismatch,
+            None,
+        )]);
+        assert_eq!(absent.storage_generation, None);
     }
 }

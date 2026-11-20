@@ -185,7 +185,7 @@ build-job page links to.
 | `invalid_input`<a id="job-failure-invalid_input"></a> | the build refused the job's target or parameters (`invalid-input` cause) | build job failed: the build refused the job's target or parameters |
 | `not_found`<a id="job-failure-not_found"></a> | something the job names no longer exists (`not-found` cause) | build job failed: something the job names no longer exists |
 | `storage_error`<a id="job-failure-storage_error"></a> | a storage-layer failure (`storage-error` cause); the driver text goes to the server log only | build job failed: a storage error occurred; see the server log |
-| `datastore_unavailable`<a id="job-failure-datastore_unavailable"></a> | a datastore artifact could not be read or written (`datastore-unavailable` cause) | build job failed: a datastore artifact could not be read or written |
+| `datastore_unavailable`<a id="job-failure-datastore_unavailable"></a> | a datastore artifact could not be read or written (`datastore-unavailable` cause), including a build refused in `MUNARIUM_ARTIFACT_DAMAGE_MODE=enforce` because its result is a fleet-blocked artifact ([artifact damage](../ops/artifact-damage.md#builds-of-a-blocked-artifact)) | build job failed: a datastore artifact could not be read or written |
 | `provider_error`<a id="job-failure-provider_error"></a> | an upstream model provider call failed (`provider-error` cause) | build job failed: an upstream model provider call failed |
 
 Any other cause is unclassified: `error` is the generic message "build job failed; no

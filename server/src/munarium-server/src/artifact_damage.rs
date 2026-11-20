@@ -87,6 +87,7 @@ fn incident_json(i: &Incident) -> serde_json::Value {
         "artifact_id": i.artifact_id,
         "object_key": i.object_key,
         "expected_sha256": i.expected_sha256,
+        "storage_generation": i.storage_generation,
         "state": i.state,
         "blocked_generation": i.blocked_generation,
         "confirming_verifiers": i.confirming_verifiers,
@@ -96,6 +97,7 @@ fn incident_json(i: &Incident) -> serde_json::Value {
         "clearing_workflow_id": i.clearing_workflow_id,
         "clearing_verifiers": i.clearing_verifiers,
         "clear_assurance": i.clear_assurance,
+        "clear_storage_generation": i.clear_storage_generation,
     })
 }
 

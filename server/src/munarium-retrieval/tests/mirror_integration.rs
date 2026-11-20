@@ -122,6 +122,7 @@ async fn harness(tenant: &str, docs: usize) -> Harness {
         },
         job_fence: None,
         job_signal: None,
+        publication_damage: None,
     };
 
     Harness {
@@ -1735,6 +1736,7 @@ async fn a_selected_legacy_shape_serves_from_the_datastore() {
         },
         job_fence: None,
         job_signal: None,
+        publication_damage: None,
     };
     let _artifact_id = match backfill_one(
         &ctx,
@@ -1889,6 +1891,7 @@ async fn direct_harness(tenant: &str, docs: usize) -> Harness {
         },
         job_fence: None,
         job_signal: None,
+        publication_damage: None,
     };
     Harness {
         tenant: tenant.to_string(),
@@ -2186,6 +2189,7 @@ async fn an_engine_upgrade_promotes_staged_to_serving_with_pins_intact() {
         },
         job_fence: None,
         job_signal: None,
+        publication_damage: None,
     };
     let approx = build_collection_direct(&ctx2, &h.pg, &h.collection_id, 400, 1)
         .await

@@ -198,6 +198,13 @@ const METRICS_META: &[(&str, &str, &str)] = &[
         "histogram",
         "Derived-index build time by mode and phase (export|seal|publish|total).",
     ),
+    // ClearView ART1/ART2: a build whose result was a fleet-blocked pin.
+    // Labelled by damage mode and action only; the ids go to the log.
+    (
+        "munarium_artifact_publication_blocked_total",
+        "counter",
+        "Builds whose result was a fleet-blocked artifact, by damage mode (observe|enforce) and action (refused|published).",
+    ),
 ];
 
 struct Histogram {

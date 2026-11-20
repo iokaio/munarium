@@ -1373,3 +1373,145 @@ async fn enrollment_is_idempotent_and_revocation_is_permanent() {
             .is_err()
     );
 }
+
+// ---------------------------------------------------------------------------
+// Storage generations (decision of 20 November 2026): two observations of
+// different stored generations are different pinned objects, and an absent
+// generation never combines with a known one.
+// ---------------------------------------------------------------------------
+
+impl Fixture {
+    async fn at_generation(
+        &self,
+        verifier: &str,
+        outcome: Outcome,
+        attempt: Option<&str>,
+        generation: Option<&str>,
+    ) -> Decision {
+        let mut o = self.observe(verifier, outcome, attempt).await;
+        o.pin.storage_generation = generation.map(str::to_string);
+        self.record(&o).await
+    }
+
+    async fn only_incident(&self) -> munarium_store_pg::artifact_damage::Incident {
+        let mut all = self.ledger.incidents().await.unwrap();
+        assert_eq!(all.len(), 1, "{all:?}");
+        all.remove(0)
+    }
+}
+
+#[tokio::test]
+async fn mismatches_of_different_stored_generations_never_combine_toward_a_block() {
+    let url = guard!();
+    let f = fixture(&url, "dmg-gen-block").await;
+    let m = Outcome::Mismatch;
+    assert_eq!(
+        f.at_generation("replica-a", m, None, Some("etag:1")).await,
+        Decision::Candidate
+    );
+    // A second verifier on another generation starts its own candidate.
+    assert_eq!(
+        f.at_generation("replica-b", m, None, Some("etag:2")).await,
+        Decision::Candidate
+    );
+    // Mixed: an absent generation is its own value and confirms neither.
+    assert_eq!(
+        f.at_generation("replica-c", m, None, None).await,
+        Decision::Candidate
+    );
+    assert_eq!(f.blocked_by().await, None);
+    assert_eq!(f.ledger.incidents().await.unwrap(), vec![]);
+
+    // The same generation from an independent verifier confirms, and the
+    // incident records the generation it was confirmed on.
+    let d = f.at_generation("replica-d", m, None, Some("etag:2")).await;
+    assert!(matches!(d, Decision::Blocked { .. }), "{d:?}");
+    let incident = f.only_incident().await;
+    assert_eq!(incident.storage_generation.as_deref(), Some("etag:2"));
+    assert_eq!(incident.confirming_verifiers[0], f.fp("replica-b").await);
+}
+
+#[tokio::test]
+async fn an_absent_generation_never_combines_with_a_known_one_toward_a_block() {
+    let url = guard!();
+    let f = fixture(&url, "dmg-gen-mixed").await;
+    let m = Outcome::Mismatch;
+    assert_eq!(
+        f.at_generation("replica-a", m, None, None).await,
+        Decision::Candidate
+    );
+    assert_eq!(
+        f.at_generation("replica-b", m, None, Some("etag:1")).await,
+        Decision::Candidate
+    );
+    assert_eq!(f.blocked_by().await, None);
+    // Two absent generations still combine exactly as before the decision.
+    let d = f.at_generation("replica-c", m, None, None).await;
+    assert!(matches!(d, Decision::Blocked { .. }), "{d:?}");
+    assert_eq!(f.only_incident().await.storage_generation, None);
+}
+
+#[tokio::test]
+async fn repair_matches_of_different_stored_generations_never_clear() {
+    let url = guard!();
+    let f = fixture(&url, "dmg-gen-clear").await;
+    let incident = f.block().await;
+    let attempt = f
+        .ledger
+        .authorize_repair(&incident, "repair-workflow", "operator", None)
+        .await
+        .unwrap();
+    let a = Some(attempt.attempt_id.as_str());
+    let ok = Outcome::Match;
+    assert_eq!(
+        f.at_generation("replica-a", ok, a, Some("etag:7")).await,
+        Decision::RepairMatch
+    );
+    // An independent match on another stored generation does not clear: it
+    // replaces the first match, because the earlier one says nothing about
+    // the object now stored.
+    assert_eq!(
+        f.at_generation("replica-b", ok, a, Some("etag:8")).await,
+        Decision::RepairMatch
+    );
+    // Mixed: an absent generation replaces again and does not clear.
+    assert_eq!(
+        f.at_generation("replica-c", ok, a, None).await,
+        Decision::RepairMatch
+    );
+    assert_eq!(
+        f.at_generation("replica-a", ok, a, Some("etag:8")).await,
+        Decision::RepairMatch
+    );
+    assert_eq!(f.blocked_by().await.as_deref(), Some(incident.as_str()));
+
+    // Two independent matches on one generation clear, and the clearance
+    // reports that generation.
+    let d = f.at_generation("replica-b", ok, a, Some("etag:8")).await;
+    assert!(matches!(d, Decision::Cleared { .. }), "{d:?}");
+    assert_eq!(f.blocked_by().await, None);
+    let cleared = f.only_incident().await;
+    assert_eq!(cleared.state, "cleared");
+    assert_eq!(cleared.clear_storage_generation.as_deref(), Some("etag:8"));
+    assert_eq!(cleared.storage_generation, None, "blocked on an absent one");
+}
+
+#[tokio::test]
+async fn absent_generation_repairs_clear_as_before() {
+    let url = guard!();
+    let f = fixture(&url, "dmg-gen-absent").await;
+    let incident = f.block().await;
+    let attempt = f
+        .ledger
+        .authorize_repair(&incident, "repair-workflow", "operator", None)
+        .await
+        .unwrap();
+    let a = Some(attempt.attempt_id.as_str());
+    assert_eq!(
+        f.at_generation("replica-a", Outcome::Match, a, None).await,
+        Decision::RepairMatch
+    );
+    let d = f.at_generation("replica-b", Outcome::Match, a, None).await;
+    assert!(matches!(d, Decision::Cleared { .. }), "{d:?}");
+    assert_eq!(f.only_incident().await.clear_storage_generation, None);
+}

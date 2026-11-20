@@ -114,6 +114,7 @@ async fn measure_postgres_versus_datastore_query_latency() {
         },
         job_fence: None,
         job_signal: None,
+        publication_damage: None,
     };
     let build_started = Instant::now();
     let _artifact_id = match munarium_retrieval::backfill::backfill_one(

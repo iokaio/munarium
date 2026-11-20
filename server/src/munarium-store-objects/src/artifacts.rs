@@ -28,7 +28,9 @@ use object_store::path::Path as ObjectPath;
 use object_store::{ObjectStore, ObjectStoreExt};
 use tokio::runtime::Handle;
 
-use munarium_datastore::store::{ArtifactStore, ByteRange};
+use munarium_datastore::store::{
+    storage_generation_token, ArtifactStore, ByteRange, StoredComponent,
+};
 use munarium_datastore::verify::normalize_component_path;
 use munarium_datastore::Error as DsError;
 
@@ -178,6 +180,29 @@ impl ArtifactStore for ObjectArtifactStore {
         })
     }
 
+    /// One GET: the bytes and the generation the store reported for the
+    /// object it served them from (its version id when versioning reports
+    /// one, else its ETag). Taking both from the same response is the
+    /// point: a separate HEAD could name a newer object than the bytes.
+    fn get_component_with_generation(&self, path: &str) -> Result<StoredComponent, DsError> {
+        let key = self.key(path)?;
+        self.block(async {
+            let got = self
+                .store
+                .get(&key)
+                .await
+                .map_err(|e| self.map_err("GET", path, e))?;
+            let generation =
+                storage_generation_token(got.meta.version.as_deref(), got.meta.e_tag.as_deref());
+            let bytes = got
+                .bytes()
+                .await
+                .map(|b| b.to_vec())
+                .map_err(|e| self.map_err("GET body", path, e))?;
+            Ok(StoredComponent { bytes, generation })
+        })
+    }
+
     fn head_component(&self, path: &str) -> Result<u64, DsError> {
         let key = self.key(path)?;
         self.block(async {
@@ -304,6 +329,35 @@ mod tests {
             let err = s.get_component("missing.bin", None).unwrap_err();
             assert!(matches!(err, DsError::Integrity(_)), "{err}");
             assert!(!s.exists("missing.bin").unwrap());
+        })
+        .await;
+    }
+
+    /// An object store reports the generation of the object a read served,
+    /// and a rewrite of the same key is a new generation even when the bytes
+    /// are identical.
+    #[tokio::test]
+    async fn a_read_reports_the_stored_generation_and_a_rewrite_changes_it() {
+        let s = store("v1/gen");
+        blocking(move || {
+            s.put_component("a.bin", b"one").unwrap();
+            let first = s.get_component_with_generation("a.bin").unwrap();
+            assert_eq!(first.bytes, b"one");
+            let g1 = first
+                .generation
+                .expect("the in-memory store reports an ETag");
+            assert!(g1.starts_with("etag:"), "{g1}");
+            assert_eq!(
+                s.get_component_with_generation("a.bin").unwrap().generation,
+                Some(g1.clone()),
+                "an unchanged object keeps its generation"
+            );
+            s.put_component("a.bin", b"one").unwrap();
+            let again = s.get_component_with_generation("a.bin").unwrap();
+            assert_eq!(again.bytes, b"one");
+            assert_ne!(again.generation, Some(g1), "a rewrite is a new generation");
+            let err = s.get_component_with_generation("missing.bin").unwrap_err();
+            assert!(matches!(err, DsError::Integrity(_)), "{err}");
         })
         .await;
     }

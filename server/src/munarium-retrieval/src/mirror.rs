@@ -38,6 +38,7 @@ use std::sync::Arc;
 use munarium_core::{KernelError, Result};
 
 use crate::build_metrics::{BuildMetrics, BuildTimer, Observer};
+use crate::damage::{PublicationCheck, PublicationGate};
 use munarium_datastore::model::*;
 use munarium_datastore::shard::{SealedArtifact, ShardWriter, MANIFEST};
 use munarium_datastore::store::{ArtifactStore, LocalFileStore};
@@ -209,6 +210,11 @@ pub struct MirrorContext {
     /// it, and revalidates the claim, at each safe boundary
     /// ([`MirrorContext::checkpoint`]). `None` for a synchronous build.
     pub job_signal: Option<JobSignal>,
+    /// Fleet blocks at publication (ClearView ART1/ART2, the 20 November
+    /// 2026 decision): a build whose result is a blocked pin is refused in
+    /// `enforce` and reported in `observe`. `None` is
+    /// `MUNARIUM_ARTIFACT_DAMAGE_MODE=off`, and publication is unchanged.
+    pub publication_damage: Option<PublicationGate>,
 }
 
 impl std::fmt::Debug for MirrorContext {
@@ -222,6 +228,10 @@ impl std::fmt::Debug for MirrorContext {
             .field("observer", &self.observer.is_some())
             .field("job_fence", &self.job_fence.is_some())
             .field("job_signal", &self.job_signal)
+            .field(
+                "publication_damage",
+                &self.publication_damage.as_ref().map(|g| g.mode()),
+            )
             .finish_non_exhaustive()
     }
 }
@@ -414,6 +424,9 @@ async fn acquire_attempt(
                 // generation that finished its recorded intent never binds,
                 // so without this the replacement would leave the version
                 // verified but unbound.
+                // A reused artifact is this build's result, so a blocked
+                // one is refused before it is bound or reported as built.
+                guard_blocked_publication(ctx, index_version_id, &existing.artifact_id).await?;
                 if let Some(fence) = &ctx.job_fence {
                     bind_staged_fenced(ctx, index_version_id, &existing.artifact_id, fence).await?;
                     record_disposition(ctx, fence, index_version_id, "reused").await;
@@ -1003,6 +1016,9 @@ async fn mirror_body(
     };
     match ctx.catalog.insert_sealed(&new).await? {
         InsertOutcome::Converged { .. } => {
+            // A rebuild that converges on a blocked artifact id would
+            // otherwise report the blocked pin as this build's result.
+            guard_blocked_publication(ctx, index_version_id, &sealed.artifact_id).await?;
             if intent.is_some() {
                 ctx.attempts
                     .resolve_publication_intent(attempt_id, IntentState::Converged, None)
@@ -1116,6 +1132,8 @@ async fn publish_and_verify(
     if let Some((_, intent)) = fenced {
         require_intent_target(intent, index_version_id, final_prefix, artifact_id)?;
     }
+    // Before any byte is written: a blocked pin is not republished.
+    guard_blocked_publication(ctx, index_version_id, artifact_id).await?;
     let intent_digest = fenced.map(|(_, intent)| intent.manifest_sha256.clone());
     // Steps 8 and 9 run on the BLOCKING pool.
     //
@@ -1222,6 +1240,63 @@ async fn publish_and_verify(
     match fenced {
         None => bind_staged_if_empty(ctx, index_version_id, artifact_id).await,
         Some((fence, _)) => bind_staged_fenced(ctx, index_version_id, artifact_id, fence).await,
+    }
+}
+
+/// Refuse, in `enforce`, to publish or bind a pin that carries an active
+/// fleet block; report it in `observe`; do nothing in `off` (see
+/// [`PublicationGate`]). The refusal is a `datastore-unavailable` error that
+/// names only ids, so a build job records `datastore_unavailable` (C2).
+async fn guard_blocked_publication(
+    ctx: &MirrorContext,
+    index_version_id: &str,
+    artifact_id: &str,
+) -> Result<()> {
+    let Some(gate) = &ctx.publication_damage else {
+        return Ok(());
+    };
+    let mode = gate.mode().as_str();
+    let report = |refused: bool| {
+        if let Some(observer) = &ctx.observer {
+            observer.publication_blocked(mode, refused);
+        }
+    };
+    match gate.check(index_version_id, artifact_id).await {
+        PublicationCheck::Clear => Ok(()),
+        PublicationCheck::BlockedObserved(blocked) => {
+            tracing::warn!(
+                index_version_id = %blocked.index_version_id,
+                artifact_id = %blocked.artifact_id,
+                incident_id = %blocked.incident_id,
+                mode,
+                "a build's result is a fleet-blocked artifact; observe mode publishes it, and \
+                 serving still refuses it"
+            );
+            report(false);
+            Ok(())
+        }
+        PublicationCheck::Refused(blocked) => {
+            tracing::warn!(
+                index_version_id = %blocked.index_version_id,
+                artifact_id = %blocked.artifact_id,
+                incident_id = %blocked.incident_id,
+                mode,
+                "publication refused: the build's result is a fleet-blocked artifact"
+            );
+            report(true);
+            Err(blocked.into())
+        }
+        PublicationCheck::Unavailable(e) => {
+            tracing::warn!(error = %e, mode, "the integrity check for publication is unavailable");
+            if gate.mode() == crate::damage::DamageMode::Enforce {
+                Err(KernelError::DatastoreUnavailable(
+                    "the integrity check for publication is unavailable; nothing was published"
+                        .into(),
+                ))
+            } else {
+                Ok(())
+            }
+        }
     }
 }
 
@@ -1551,6 +1626,8 @@ async fn resume_publication(
         // there before the caller marks the attempt succeeded: a verified
         // artifact with no binding is not servable, and the slot is filled
         // only if it is empty, so a finished publication is left alone.
+        // A blocked pin is not bound.
+        guard_blocked_publication(ctx, &row.index_version_id, &artifact_id).await?;
         match fenced {
             None => {
                 bind_staged_if_empty(ctx, &row.index_version_id, &artifact_id).await?;

@@ -316,6 +316,9 @@ pub struct Incident {
     pub artifact_id: String,
     pub object_key: String,
     pub expected_sha256: String,
+    /// The stored generation both confirming mismatches observed; `None`
+    /// when the store reported none.
+    pub storage_generation: Option<String>,
     pub state: String,
     pub blocked_generation: i64,
     pub confirming_verifiers: [String; 2],
@@ -327,6 +330,10 @@ pub struct Incident {
     pub clearing_verifiers: Option<[String; 2]>,
     /// `independent` or `single_replica` once cleared.
     pub clear_assurance: Option<String>,
+    /// The stored generation both clearing matches observed, once cleared:
+    /// the clearing attempt's recorded match generation. `None` when the
+    /// incident is not cleared or the store reported no generation.
+    pub clear_storage_generation: Option<String>,
 }
 
 /// A preauthorized repair attempt.
@@ -365,6 +372,11 @@ fn clip(detail: Option<&str>) -> Option<String> {
         }
         out
     })
+}
+
+/// A stored generation column holds `''` for "the store reported none".
+fn non_empty(generation: String) -> Option<String> {
+    (!generation.is_empty()).then_some(generation)
 }
 
 fn is_sha256(s: &str) -> bool {
@@ -1162,8 +1174,20 @@ impl ArtifactDamageLedger {
         let observed = o.observed_sha256.clone().unwrap_or_default();
         // A first match whose key was revoked since is replaced, never
         // confirmed. Its key row is share-locked like the current one.
+        //
+        // So is a first match of a different stored generation (the 20
+        // November 2026 storage-generation decision): the two matches would
+        // be of two different stored objects, and the earlier one says
+        // nothing about the object now stored. The newer match becomes the
+        // first, so two matches are only ever combined when both observed
+        // the same generation. An absent generation (stored as '') is its
+        // own value: it never combines with a known one.
+        let same_generation = a
+            .get::<Option<String>, _>("first_match_storage_generation")
+            .unwrap_or_default()
+            == storage_generation;
         let first_verifier = match a.get::<Option<String>, _>("first_match_verifier_id") {
-            Some(v) if self.key_active(tx, &v).await? => Some(v),
+            Some(v) if same_generation && self.key_active(tx, &v).await? => Some(v),
             _ => None,
         };
         let Some(first_verifier) = first_verifier else {
@@ -1210,14 +1234,6 @@ impl ArtifactDamageLedger {
         } else {
             Assurance::Independent
         };
-        if a.get::<Option<String>, _>("first_match_storage_generation")
-            .unwrap_or_default()
-            != storage_generation
-        {
-            return Ok(Decision::Rejected(
-                "the two matches observed different stored objects".into(),
-            ));
-        }
         if !authority.may_clear {
             return Ok(Decision::ClearWithheld);
         }
@@ -1476,13 +1492,17 @@ impl ArtifactDamageLedger {
     /// Incidents, newest first.
     pub async fn incidents(&self) -> Result<Vec<Incident>> {
         let rows = sqlx::query(
-            "SELECT incident_id, index_version_id, artifact_id, object_key, expected_sha256,
-                    state, blocked_generation, first_verifier_id, second_verifier_id,
-                    cleared_generation, clearing_attempt_id, clearing_workflow_id,
-                    clear_first_verifier_id, clear_second_verifier_id, block_assurance,
-                    clear_assurance
-               FROM artifact_integrity_incidents WHERE tenant_id = $1
-              ORDER BY blocked_at DESC, incident_id
+            "SELECT i.incident_id, i.index_version_id, i.artifact_id, i.object_key,
+                    i.expected_sha256, i.storage_generation, i.state, i.blocked_generation,
+                    i.first_verifier_id, i.second_verifier_id, i.cleared_generation,
+                    i.clearing_attempt_id, i.clearing_workflow_id, i.clear_first_verifier_id,
+                    i.clear_second_verifier_id, i.block_assurance, i.clear_assurance,
+                    a.first_match_storage_generation AS clear_storage_generation
+               FROM artifact_integrity_incidents i
+               LEFT JOIN artifact_repair_attempts a
+                 ON a.tenant_id = i.tenant_id AND a.attempt_id = i.clearing_attempt_id
+              WHERE i.tenant_id = $1
+              ORDER BY i.blocked_at DESC, i.incident_id
               LIMIT 500",
         )
         .bind(&self.tenant_id)
@@ -1497,6 +1517,7 @@ impl ArtifactDamageLedger {
                 artifact_id: r.get("artifact_id"),
                 object_key: r.get("object_key"),
                 expected_sha256: r.get("expected_sha256"),
+                storage_generation: non_empty(r.get("storage_generation")),
                 state: r.get("state"),
                 blocked_generation: r.get("blocked_generation"),
                 confirming_verifiers: [r.get("first_verifier_id"), r.get("second_verifier_id")],
@@ -1512,6 +1533,9 @@ impl ArtifactDamageLedger {
                     _ => None,
                 },
                 clear_assurance: r.get("clear_assurance"),
+                clear_storage_generation: r
+                    .get::<Option<String>, _>("clear_storage_generation")
+                    .and_then(non_empty),
             })
             .collect())
     }

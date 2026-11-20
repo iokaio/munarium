@@ -85,6 +85,16 @@ impl BuildObserver for MetricsObserver {
             );
         }
     }
+
+    fn publication_blocked(&self, mode: &'static str, refused: bool) {
+        self.metrics.inc(
+            "munarium_artifact_publication_blocked_total",
+            crate::metrics::labels(&[
+                ("mode", mode),
+                ("action", if refused { "refused" } else { "published" }),
+            ]),
+        );
+    }
 }
 
 /// An artifact store factory over a cloud object client.
@@ -186,7 +196,20 @@ impl AppState {
                 )
             })?;
 
+        // ClearView ART1/ART2: publication refuses a fleet-blocked pin in
+        // `enforce` and reports it in `observe`. Read at the server edge
+        // like every other datastore knob. An unknown mode refuses the build
+        // rather than publishing as if `off`, as it refuses to arm serving.
+        let damage_mode = munarium_retrieval::damage::DamageMode::parse(
+            &std::env::var("MUNARIUM_ARTIFACT_DAMAGE_MODE").unwrap_or_default(),
+        )?;
+
         Ok(MirrorContext {
+            publication_damage: munarium_retrieval::damage::PublicationGate::for_mode(
+                damage_mode,
+                pool.clone(),
+                tenant_id,
+            ),
             catalog: ArtifactCatalog::new(pool.clone(), tenant_id),
             attempts: BuildAttempts::new(pool.clone(), tenant_id),
             stores: self.artifact_store_factory()?,

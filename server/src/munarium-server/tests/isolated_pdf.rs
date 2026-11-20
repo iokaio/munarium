@@ -539,6 +539,7 @@ async fn a_cancelled_queued_build_kills_its_isolated_child_and_frees_the_builder
         },
         job_fence: Some(fence.clone()),
         job_signal: Some(signal.clone()),
+        publication_damage: None,
     };
 
     let collection_id = col.id.clone();

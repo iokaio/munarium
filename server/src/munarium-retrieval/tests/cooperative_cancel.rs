@@ -149,6 +149,7 @@ impl Fixture {
             },
             job_fence: fence.cloned(),
             job_signal: signal.cloned(),
+            publication_damage: None,
         }
     }
 

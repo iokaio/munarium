@@ -38,6 +38,65 @@ pub trait ArtifactStore: Send + Sync {
     fn get_component(&self, path: &str, range: Option<ByteRange>) -> Result<Vec<u8>, Error>;
     fn head_component(&self, path: &str) -> Result<u64, Error>;
     fn exists(&self, path: &str) -> Result<bool, Error>;
+
+    /// Read a whole component together with the stored generation of the
+    /// object the bytes came from (ClearView ART1/ART2).
+    ///
+    /// The generation is the store's own object version, an ETag or a
+    /// version id, taken from the SAME read that returned the bytes, so it
+    /// names exactly the object that was hashed. A store that reports no
+    /// stable generation returns `None`, which is what the default does:
+    /// the bytes of [`ArtifactStore::get_component`] with no generation.
+    /// Callers must treat `None` as "unknown", never as equal to a known
+    /// generation. Use [`storage_generation_token`] to form the value.
+    fn get_component_with_generation(&self, path: &str) -> Result<StoredComponent, Error> {
+        Ok(StoredComponent {
+            bytes: self.get_component(path, None)?,
+            generation: None,
+        })
+    }
+}
+
+/// A whole component and the stored generation it was read at.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredComponent {
+    pub bytes: Vec<u8>,
+    /// See [`ArtifactStore::get_component_with_generation`].
+    pub generation: Option<String>,
+}
+
+/// The longest generation token [`storage_generation_token`] returns. The
+/// damage ledger accepts at most 128 bytes.
+pub const STORAGE_GENERATION_MAX: usize = 128;
+
+/// Form a bounded, comparable generation token from what a store reported.
+///
+/// A version id is preferred over an ETag: where a store reports one it
+/// identifies the stored object exactly. The token is prefixed with its kind
+/// (`version:` or `etag:`), so a version id never compares equal to an ETag
+/// that happens to have the same text. A value that is empty after trimming
+/// is absent. A value too long for the ledger, or one carrying control
+/// characters, is replaced by `sha256:` and the hex digest of the reported
+/// text, which still compares equal exactly when the reported values do.
+pub fn storage_generation_token(version: Option<&str>, e_tag: Option<&str>) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    fn pick(v: Option<&str>) -> Option<&str> {
+        v.map(str::trim).filter(|v| !v.is_empty())
+    }
+    let (kind, raw) = match (pick(version), pick(e_tag)) {
+        (Some(v), _) => ("version", v),
+        (None, Some(e)) => ("etag", e),
+        (None, None) => return None,
+    };
+    let token = format!("{kind}:{raw}");
+    if token.len() <= STORAGE_GENERATION_MAX && !token.chars().any(char::is_control) {
+        Some(token)
+    } else {
+        Some(format!(
+            "sha256:{}",
+            hex::encode(Sha256::digest(token.as_bytes()))
+        ))
+    }
 }
 
 /// The local-filesystem store, behind the `artifact-file` feature.
@@ -140,6 +199,50 @@ mod tests {
             .get_component("a.bin", Some(ByteRange { start: 2, end: 5 }))
             .unwrap();
         assert_eq!(got, b"234");
+    }
+
+    /// A local directory reports no stable generation: a whole read carries
+    /// none, which is the trait's default and the pre-ClearView behavior.
+    #[test]
+    fn the_local_store_reports_no_generation() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalFileStore::new(dir.path()).unwrap();
+        store.put_component("a.bin", b"abc").unwrap();
+        let got = store.get_component_with_generation("a.bin").unwrap();
+        assert_eq!(got.bytes, b"abc");
+        assert_eq!(got.generation, None);
+    }
+
+    #[test]
+    fn generation_tokens_are_kinded_bounded_and_prefer_the_version() {
+        assert_eq!(storage_generation_token(None, None), None);
+        assert_eq!(storage_generation_token(Some("  "), Some("")), None);
+        assert_eq!(
+            storage_generation_token(None, Some("\"0x8D\"")).as_deref(),
+            Some("etag:\"0x8D\"")
+        );
+        assert_eq!(
+            storage_generation_token(Some("v7"), Some("\"e\"")).as_deref(),
+            Some("version:v7")
+        );
+        // The same text as a version and as an ETag is two generations.
+        assert_ne!(
+            storage_generation_token(Some("x"), None),
+            storage_generation_token(None, Some("x"))
+        );
+        let long = "z".repeat(400);
+        let a = storage_generation_token(Some(&long), None).unwrap();
+        assert!(
+            a.starts_with("sha256:") && a.len() <= STORAGE_GENERATION_MAX,
+            "{a}"
+        );
+        assert_eq!(Some(a), storage_generation_token(Some(&long), None));
+        let control = storage_generation_token(None, Some("a\nb")).unwrap();
+        assert!(control.starts_with("sha256:"), "{control}");
+        assert_ne!(
+            storage_generation_token(Some(&long), None),
+            storage_generation_token(Some(&"y".repeat(400)), None)
+        );
     }
 
     /// The store re-normalizes rather than trusting its caller: this is the

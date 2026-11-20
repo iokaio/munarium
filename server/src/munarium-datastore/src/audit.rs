@@ -50,6 +50,11 @@ pub struct ObjectAudit {
     /// The digest of the bytes actually fetched, when any were.
     pub observed_sha256: Option<String>,
     pub observed_bytes: Option<u64>,
+    /// The store's generation of the object the observed bytes came from,
+    /// when the store reports one (an ETag or version id). `None` when it
+    /// reports none or nothing was read. Two audits that saw different
+    /// generations observed two different stored objects.
+    pub storage_generation: Option<String>,
     pub outcome: AuditOutcome,
 }
 
@@ -110,8 +115,9 @@ pub fn audit_artifact(
     limits: &Limits,
 ) -> Result<ArtifactAudit, Error> {
     let mut objects = Vec::new();
-    let manifest_bytes = match store.get_component(MANIFEST, None) {
-        Ok(b) => b,
+    let (manifest_bytes, manifest_generation) = match store.get_component_with_generation(MANIFEST)
+    {
+        Ok(read) => (read.bytes, read.generation),
         Err(_) => {
             objects.push(ObjectAudit {
                 object_key: MANIFEST.to_string(),
@@ -119,6 +125,7 @@ pub fn audit_artifact(
                 expected_bytes: None,
                 observed_sha256: None,
                 observed_bytes: None,
+                storage_generation: None,
                 outcome: AuditOutcome::Unavailable,
             });
             return Ok(ArtifactAudit {
@@ -135,6 +142,7 @@ pub fn audit_artifact(
         expected_bytes: None,
         observed_sha256: Some(observed),
         observed_bytes: Some(manifest_bytes.len() as u64),
+        storage_generation: manifest_generation,
         outcome: if manifest_matches {
             AuditOutcome::Match
         } else {
@@ -154,7 +162,7 @@ pub fn audit_artifact(
 
     for c in &manifest.components {
         let fetched = match store.exists(&c.path) {
-            Ok(true) => store.get_component(&c.path, None).ok(),
+            Ok(true) => store.get_component_with_generation(&c.path).ok(),
             // An absent optional component is skipped, as hydration and open
             // skip it: the pin does not require it, so its absence neither
             // makes the artifact unusable nor leaves the audit incomplete. A
@@ -162,14 +170,16 @@ pub fn audit_artifact(
             Ok(false) if !c.required => continue,
             _ => None,
         };
-        let (observed_sha256, observed_bytes, outcome) = match fetched {
-            None => (None, None, AuditOutcome::Unavailable),
-            Some(bytes) => {
+        let (observed_sha256, observed_bytes, storage_generation, outcome) = match fetched {
+            None => (None, None, None, AuditOutcome::Unavailable),
+            Some(read) => {
+                let bytes = read.bytes;
                 let d = digest(&bytes);
                 let ok = bytes.len() as u64 == c.bytes_len && d == c.sha256;
                 (
                     Some(d),
                     Some(bytes.len() as u64),
+                    read.generation,
                     if ok {
                         AuditOutcome::Match
                     } else {
@@ -184,6 +194,7 @@ pub fn audit_artifact(
             expected_bytes: Some(c.bytes_len),
             observed_sha256,
             observed_bytes,
+            storage_generation,
             outcome,
         });
     }
@@ -379,6 +390,55 @@ mod tests {
             audit.first_unavailable().map(|o| o.object_key.as_str()),
             Some(required.as_str())
         );
+    }
+
+    /// A store that reports generations: each object's audit carries the
+    /// generation of the read that produced its digest. The local store
+    /// reports none, so every object's is absent.
+    #[test]
+    fn each_object_carries_the_generation_its_bytes_were_read_at() {
+        use crate::store::{ByteRange, StoredComponent};
+        struct Versioned(LocalFileStore);
+        impl ArtifactStore for Versioned {
+            fn put_component(&self, p: &str, b: &[u8]) -> Result<(), Error> {
+                self.0.put_component(p, b)
+            }
+            fn get_component(&self, p: &str, r: Option<ByteRange>) -> Result<Vec<u8>, Error> {
+                self.0.get_component(p, r)
+            }
+            fn head_component(&self, p: &str) -> Result<u64, Error> {
+                self.0.head_component(p)
+            }
+            fn exists(&self, p: &str) -> Result<bool, Error> {
+                self.0.exists(p)
+            }
+            fn get_component_with_generation(&self, p: &str) -> Result<StoredComponent, Error> {
+                Ok(StoredComponent {
+                    bytes: self.0.get_component(p, None)?,
+                    generation: Some(format!("etag:{p}")),
+                })
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let (store, id, _) = seed(dir.path());
+        let plain = run(&store, &id);
+        assert!(plain.objects.iter().all(|o| o.storage_generation.is_none()));
+
+        let versioned = Versioned(store);
+        let audit = audit_artifact(
+            &versioned,
+            &id,
+            &ReaderCapabilities::v1(),
+            &Limits::default(),
+        )
+        .unwrap();
+        assert!(audit.all_match());
+        for o in &audit.objects {
+            assert_eq!(
+                o.storage_generation.as_deref(),
+                Some(format!("etag:{}", o.object_key).as_str())
+            );
+        }
     }
 
     /// Absence is never damage: a missing component is unavailable.

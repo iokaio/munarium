@@ -74,6 +74,7 @@ async fn work() {
         },
         job_fence: None,
         job_signal: None,
+        publication_damage: None,
     };
     let mode = harness::setting("P08_MODE");
     if mode == "setup" {

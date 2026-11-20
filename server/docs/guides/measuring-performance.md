@@ -121,6 +121,7 @@ The fixed registry in [metrics.rs](../../src/munarium-server/src/metrics.rs) emi
 | `munarium_index_build_total` | Derived-artifact build outcomes by mode/outcome | Not all ordinary PostgreSQL index builds or upload activity |
 | `munarium_index_build_chunks_total`, `munarium_index_build_bytes_total` | Work sealed into derived artifacts | Counts artifact work, not original source bytes |
 | `munarium_index_build_duration_seconds` | Derived-artifact phase duration: export, seal, publish, total | Phase timing does not include every upstream preparation step or queue wait |
+| `munarium_artifact_publication_blocked_total` | Builds whose result was a fleet-blocked artifact, by damage `mode` (`observe`/`enforce`) and `action` (`published`/`refused`) ([artifact damage](../ops/artifact-damage.md#builds-of-a-blocked-artifact)) | Counted only when damage handling is on; the artifact and incident ids are in the log, never in a label |
 
 Counters and histograms live in process memory and reset on restart. Gauges are
 read from current state when rendered. Persist scrapes externally. Series may

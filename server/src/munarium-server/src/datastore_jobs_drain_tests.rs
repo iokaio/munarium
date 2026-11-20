@@ -627,6 +627,7 @@ async fn a_drain_in_the_last_backfill_version_releases_the_job() {
             },
             job_fence: Some(fence.clone()),
             job_signal: Some(signal.clone()),
+            publication_damage: None,
         }
     };
     // What `run_one_job` does for a backfill, with this test's context.
