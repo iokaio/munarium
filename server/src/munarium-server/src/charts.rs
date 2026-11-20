@@ -18,6 +18,13 @@
 //! runbook refs are hostile input on an HTML surface.
 
 /// HTML/attribute escape for every user-derived string.
+///
+/// Also renders invisible and direction-changing characters as a visible
+/// `<U+XXXX>` marker (ClearView U9), so a value on an operator's screen
+/// reads the same as its bytes: a right-to-left override cannot make
+/// `invoice<U+202E>gpj.exe` look like an image, and two token uids that
+/// differ by a zero-width space look different. The marker is plain text,
+/// so the result stays safe in both element and attribute context.
 pub fn esc(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -27,10 +34,34 @@ pub fn esc(s: &str) -> String {
             '>' => out.push_str("&gt;"),
             '"' => out.push_str("&quot;"),
             '\'' => out.push_str("&#39;"),
+            c if is_hidden(c) => out.push_str(&format!("&lt;U+{:04X}&gt;", c as u32)),
             _ => out.push(c),
         }
     }
     out
+}
+
+/// Characters that are invisible or change the display order of their
+/// neighbors. Tab, line feed and carriage return keep their v1.4 output.
+/// Zero-width joiner and non-joiner (U+200C, U+200D) are left alone: they
+/// are required by several scripts and by emoji sequences.
+fn is_hidden(c: char) -> bool {
+    matches!(c as u32,
+        // C0 controls except tab, line feed and carriage return; DEL; C1.
+        0x00..=0x08 | 0x0B | 0x0C | 0x0E..=0x1F | 0x7F..=0x9F
+        // Soft hyphen, combining grapheme joiner, Arabic letter mark,
+        // Mongolian vowel separator.
+        | 0xAD | 0x34F | 0x61C | 0x180E
+        // Zero-width space; left-to-right and right-to-left marks.
+        | 0x200B | 0x200E | 0x200F
+        // Line and paragraph separators; bidi embeddings and overrides.
+        | 0x2028..=0x202E
+        // Word joiner and invisible operators; bidi isolates.
+        | 0x2060..=0x2064 | 0x2066..=0x2069
+        // Byte order mark / zero-width no-break space.
+        | 0xFEFF
+        // Tag characters.
+        | 0xE0000..=0xE007F)
 }
 
 /// The design tokens, declared once per page. Light values on `:root`, dark
@@ -418,12 +449,12 @@ pub fn state_color(state: &str) -> &'static str {
 mod tests {
     use super::*;
 
-    /// ClearView Phase 1 baseline (U9): what v1.4 `esc` does with untrusted
-    /// text containing invisible and direction-changing characters. U9
-    /// changes the `visible` cases deliberately; the `unchanged` negative
-    /// controls must keep their v1.4 output.
+    /// ClearView U9 against the Phase 1 fixture: every `visible` case now
+    /// renders its hidden characters as markers, every `unchanged` negative
+    /// control keeps its exact v1.4 output, and no output contains a raw
+    /// hidden character.
     #[test]
-    fn v14_console_fixture_records_esc_output() {
+    fn console_fixture_esc_output_matches_u9() {
         const FIXTURE: &str = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../tests/fixtures/clearview-phase1/v14-console.json"
@@ -433,13 +464,31 @@ mod tests {
         assert!(cases.len() >= 12, "fixture lost cases");
         for c in cases {
             let input = c["input"].as_str().unwrap();
+            let got = esc(input);
             assert_eq!(
-                esc(input),
-                c["expected_v14_esc"].as_str().unwrap(),
+                got,
+                c["expected_v15_esc"].as_str().unwrap(),
                 "case {}",
                 c["case"]
             );
+            match c["v15"].as_str().unwrap() {
+                "unchanged" => assert_eq!(got, c["expected_v14_esc"].as_str().unwrap()),
+                "visible" => assert_ne!(got, c["expected_v14_esc"].as_str().unwrap()),
+                other => panic!("unknown v15 expectation {other}"),
+            }
+            assert!(!got.chars().any(is_hidden), "case {}: {got:?}", c["case"]);
         }
+    }
+
+    #[test]
+    fn esc_keeps_layout_whitespace_and_joiners() {
+        // Tab, newline and carriage return, plus ZWJ/ZWNJ used by scripts
+        // and emoji sequences, pass through unchanged.
+        for s in ["a\tb\nc\rd", "\u{200C}\u{200D}"] {
+            assert_eq!(esc(s), s);
+        }
+        // The marker is plain text, so the result is still attribute-safe.
+        assert_eq!(esc("\u{202E}\""), "&lt;U+202E&gt;&quot;");
     }
 
     #[test]

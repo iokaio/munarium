@@ -1,6 +1,6 @@
 {
   "fixture": "clearview-phase1/v14-console",
-  "fixture_version": 1,
+  "fixture_version": 2,
   "captured_from": {
     "release": "v1.4.0",
     "commit": "25012c22087fbaa8ce29ddd68d2880d6e9499b1c",
@@ -10,94 +10,111 @@
     ],
     "note": "Both sources are byte-identical between v1.4.0 and the commit that added this fixture."
   },
-  "consumers": ["U9", "U5", "U14", "COMPAT-T5"],
+  "consumers": [
+    "U9",
+    "U5",
+    "U14",
+    "COMPAT-T5"
+  ],
   "untrusted_text": {
     "function": "charts::esc",
-    "v15_rule": "U9: every case marked visible must render its invisible or direction-changing characters as visible escapes; cases marked unchanged must keep their v1.4 output. The escape spelling is decided by U9 and recorded here when it lands.",
+    "v15_rule": "U9: each invisible or direction-changing character renders as the visible text marker <U+XXXX> (HTML-escaped as &lt;U+XXXX&gt;). Cases marked unchanged keep their v1.4 output. Tab, line feed, carriage return, ZWJ and ZWNJ are not marked.",
     "cases": [
       {
         "case": "rlo_file_name",
         "purpose": "A right-to-left override makes a file name read as an image while the bytes end in .exe.",
-        "input": "invoice‮gpj.exe",
-        "expected_v14_esc": "invoice‮gpj.exe",
-        "v15": "visible"
+        "input": "invoice\u202egpj.exe",
+        "expected_v14_esc": "invoice\u202egpj.exe",
+        "v15": "visible",
+        "expected_v15_esc": "invoice&lt;U+202E&gt;gpj.exe"
       },
       {
         "case": "rlo_inside_markup",
         "purpose": "HTML metacharacters are escaped and the override passes through.",
-        "input": "<‮b>",
-        "expected_v14_esc": "&lt;‮b&gt;",
-        "v15": "visible"
+        "input": "<\u202eb>",
+        "expected_v14_esc": "&lt;\u202eb&gt;",
+        "v15": "visible",
+        "expected_v15_esc": "&lt;&lt;U+202E&gt;b&gt;"
       },
       {
         "case": "zero_width_space_in_uid",
         "purpose": "Two token uids that look identical on screen.",
-        "input": "user​admin",
-        "expected_v14_esc": "user​admin",
-        "v15": "visible"
+        "input": "user\u200badmin",
+        "expected_v14_esc": "user\u200badmin",
+        "v15": "visible",
+        "expected_v15_esc": "user&lt;U+200B&gt;admin"
       },
       {
         "case": "bidi_isolates",
         "purpose": "First-strong and pop isolates around a citation reference.",
-        "input": "⁨doc-7⁩ ⁦p.3⁩",
-        "expected_v14_esc": "⁨doc-7⁩ ⁦p.3⁩",
-        "v15": "visible"
+        "input": "\u2068doc-7\u2069 \u2066p.3\u2069",
+        "expected_v14_esc": "\u2068doc-7\u2069 \u2066p.3\u2069",
+        "v15": "visible",
+        "expected_v15_esc": "&lt;U+2068&gt;doc-7&lt;U+2069&gt; &lt;U+2066&gt;p.3&lt;U+2069&gt;"
       },
       {
         "case": "directional_marks",
         "purpose": "Left-to-right and right-to-left marks.",
-        "input": "a‎b‏c",
-        "expected_v14_esc": "a‎b‏c",
-        "v15": "visible"
+        "input": "a\u200eb\u200fc",
+        "expected_v14_esc": "a\u200eb\u200fc",
+        "v15": "visible",
+        "expected_v15_esc": "a&lt;U+200E&gt;b&lt;U+200F&gt;c"
       },
       {
         "case": "byte_order_mark_and_word_joiner",
         "purpose": "A leading BOM and an embedded word joiner and soft hyphen.",
-        "input": "﻿token⁠id­x",
-        "expected_v14_esc": "﻿token⁠id­x",
-        "v15": "visible"
+        "input": "\ufefftoken\u2060id\u00adx",
+        "expected_v14_esc": "\ufefftoken\u2060id\u00adx",
+        "v15": "visible",
+        "expected_v15_esc": "&lt;U+FEFF&gt;token&lt;U+2060&gt;id&lt;U+00AD&gt;x"
       },
       {
         "case": "c0_and_c1_controls",
         "purpose": "NUL, BEL, ESC and NEL inside a model answer.",
         "input": "line1\u0000\u0007\u001b[31mline2\u0085",
         "expected_v14_esc": "line1\u0000\u0007\u001b[31mline2\u0085",
-        "v15": "visible"
+        "v15": "visible",
+        "expected_v15_esc": "line1&lt;U+0000&gt;&lt;U+0007&gt;&lt;U+001B&gt;[31mline2&lt;U+0085&gt;"
       },
       {
         "case": "line_and_paragraph_separators",
         "purpose": "Unicode separators that break a single-line cell.",
-        "input": "a b c",
-        "expected_v14_esc": "a b c",
-        "v15": "visible"
+        "input": "a\u2028b\u2029c",
+        "expected_v14_esc": "a\u2028b\u2029c",
+        "v15": "visible",
+        "expected_v15_esc": "a&lt;U+2028&gt;b&lt;U+2029&gt;c"
       },
       {
         "case": "tag_characters",
         "purpose": "Invisible Unicode tag characters (U+E0041, U+E0042) carrying hidden text.",
-        "input": "ok󠁁󠁂",
-        "expected_v14_esc": "ok󠁁󠁂",
-        "v15": "visible"
+        "input": "ok\udb40\udc41\udb40\udc42",
+        "expected_v14_esc": "ok\udb40\udc41\udb40\udc42",
+        "v15": "visible",
+        "expected_v15_esc": "ok&lt;U+E0041&gt;&lt;U+E0042&gt;"
       },
       {
         "case": "ordinary_non_ascii",
         "purpose": "Negative control: accented and CJK text must not be escaped.",
         "input": "café 東京 Ω",
         "expected_v14_esc": "café 東京 Ω",
-        "v15": "unchanged"
+        "v15": "unchanged",
+        "expected_v15_esc": "café 東京 Ω"
       },
       {
         "case": "ordinary_whitespace",
         "purpose": "Negative control: space, tab and newline keep their v1.4 output.",
         "input": "a b\tc\nd",
         "expected_v14_esc": "a b\tc\nd",
-        "v15": "unchanged"
+        "v15": "unchanged",
+        "expected_v15_esc": "a b\tc\nd"
       },
       {
         "case": "html_metacharacters",
         "purpose": "Negative control: the five v1.4 escapes are unchanged.",
         "input": "<a href=\"x\">'&'</a>",
         "expected_v14_esc": "&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;",
-        "v15": "unchanged"
+        "v15": "unchanged",
+        "expected_v15_esc": "&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;"
       }
     ]
   },
