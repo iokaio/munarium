@@ -462,41 +462,36 @@ Hours come from the local rehearsal timings plus the provisioning and teardown t
 
 <a id="plan-compat-t3"></a>
 
-## COMPAT-T3 · Mixed replicas and binary rollback
+## COMPAT-T3 · Upgrade and binary rollback by backup restore
 
-**Purpose.** Seed a disposable PostgreSQL cell and object store with v1.4, upgrade in place, read and write with both replica versions, then roll back the binary and re-read. [COMPAT-T3](README.md#compat-t3)
+**Purpose.** Seed a disposable PostgreSQL cell and object store with v1.4, take a backup, upgrade in place, read and write with the upgraded fleet, then roll back by restoring the pre-upgrade backup into v1.4.0 and re-read. [COMPAT-T3](README.md#compat-t3) · [Rolling back to 1.4.0](../guides/server-1.5.md#rolling-back-to-140)
 
-**Open decision (blocks scheduling).** Migration 0043 (R4 publication fencing) is on the branch. A v1.4.0 binary refuses to start against a database that has it (`MigrateError::VersionMissing`), so the in-place binary rollback COMPAT-T3 describes cannot pass against v1.4.0 as written. [Ledger: migrations and binary rollback](implementation-ledger.md#next-implementation-steps) · [Datastore drain and rollback](../guides/datastore.md#mixed-version-builders-drain-before-switching). The procedure branches on the decision:
+**Route B is chosen.** By maintainer decision of 20 November 2026, binary rollback across the v1.5 migrations is by backup restore. A v1.4.0 binary refuses to start against a database that has any of migrations 0043–0081 (`MigrateError::VersionMissing`), so there is no in-place binary swap and no qualified v1.4.x that ignores the newer migrations. Writes made under v1.5 after the upgrade are lost on rollback by design; the "re-read" step re-reads v1.4-written data only. COMPAT-T3's obligation is amended accordingly. [Datastore drain and rollback](../guides/datastore.md#mixed-version-builders-drain-before-switching)
 
-| Route | What "binary rollback" means in the run | Extra prerequisites | Effect on the receipt |
-|---|---|---|---|
-| A · qualified v1.4.x with `ignore_missing` | Replace v1.5 pods with v1.4.x pods against the upgraded database | A separately qualified v1.4.x release ([maintenance releases](README.md#release-evidence)) | Baseline for rollback is v1.4.x, not v1.4.0; record both. v1.4.0 mixed replicas are impossible after 0043 applies. |
-| B · restore a pre-upgrade backup | Stop v1.5, restore the backup taken before upgrade, start v1.4.0 | CNPG WAL archive and backup to object storage (to be written), the [backup/restore runbook](../ops/backup-restore.md) | Writes made under v1.5 are lost by design; the "re-read" step re-reads v1.4-written data only. COMPAT-T3's wording needs a recorded amendment. |
-| C · no new migrations in v1.5 | In-place binary swap | Rework of R4 storage, already merged on the branch | Contradicts the current branch; listed for completeness. |
+**Mixed replicas.** A v1.4.0 replica cannot start once a v1.5 pod has applied the migrations, because migrations run at startup. The mixed-version part of COMPAT-T3 is therefore limited to v1.4.0 processes that were already running when the first v1.5 pod started, until they are replaced. Record what was exercised.
 
-**Mixed replicas.** Even under route A, a v1.4.0 replica cannot start once 0043 is applied. The mixed-replica part of COMPAT-T3 is therefore: v1.4.x (route A) with v1.5, or v1.4.0 with v1.5 only *before* the first v1.5 pod applies migrations, which is not possible because migrations run at startup. Record which is exercised. The decision record must state this.
+**Prerequisites.** Ledger rows R4 (implemented), COMPAT-T3, the Phase 1 [fixtures](../../tests/fixtures/clearview-phase1/README.md). Sealed evidence and a pinned session in the seed. A configured and drilled backup: a CNPG WAL archive and base backup to MinIO (to be written), following the [backup/restore runbook](../ops/backup-restore.md), with matching object-store revisions.
 
-**Prerequisites.** The rollback decision recorded. Ledger rows R4 (implemented), COMPAT-T3, the Phase 1 [fixtures](../../tests/fixtures/clearview-phase1/README.md). Sealed evidence and a pinned session in the seed. For route B, a configured and drilled backup.
+**Topology.** L3, 2 replicas, S3/MinIO source and artifact store, CNPG with a backup target in MinIO.
 
-**Topology.** C1 or L2, 2 replicas, `az` (C1) or S3/MinIO (L2) source and artifact store, CNPG with backup target for route B.
-
-**Procedure (route-independent part).**
+**Procedure.**
 
 1. Install v1.4.0, seed with v1.4 clients: ledger writes, sealed evidence, a pinned session, an index build with Datastore artifacts, runbook runs. Snapshot stable reads as the baseline.
-2. For route B, take and verify the backup now.
+2. Take and verify the backup, including the matching object-store revisions.
 3. Drain v1.4 builders per the [datastore procedure](../guides/datastore.md#mixed-version-builders-drain-before-switching).
-4. Roll one replica to the candidate (held mixed replicas need a second Deployment: to be written). Read and write through both versions where the route allows; compare with baseline.
-5. Complete the upgrade; enable fenced builders; read and write.
-6. Roll back per the selected route; re-read; compare old indexes, hashes, approvals, provenance, session pins and evidence IDs with the baseline.
-7. Exercise the documented memory-store surface separately (local only; no cluster needed).
+4. Roll one replica to the candidate (held mixed replicas need a second Deployment: to be written). Read and write through both versions while the already-running v1.4.0 replica lasts; compare with baseline.
+5. Complete the upgrade; enable fenced builders; read and write. Record what was written, since it is lost by the rollback.
+6. Negative control: start a v1.4.0 pod against the upgraded database and record the `VersionMissing` refusal and that it wrote nothing.
+7. Roll back: stop every v1.5 pod, restore the pre-upgrade backup into the cell, start v1.4.0; re-read; compare old indexes, hashes, approvals, provenance, session pins and evidence IDs with the baseline, and confirm that the step 5 writes are absent.
+8. Exercise the documented memory-store surface separately (local only; no cluster needed).
 
-**Observations.** Startup logs per pod (including the expected `VersionMissing` negative control on v1.4.0 for routes A and B), `_sqlx_migrations` contents, baseline diffs, drain query results.
+**Observations.** Startup logs per pod (including the `VersionMissing` negative control), `_sqlx_migrations` contents before and after the restore, backup and restore timings, baseline diffs, drain query results.
 
-**Pass/fail.** All baseline reads identical after rollback under the selected route's stated scope; no data loss beyond what the decision explicitly accepts.
+**Pass/fail.** All baseline reads identical after the restore; v1.5-written data absent as the decision accepts, and no other loss.
 
-**Teardown.** Drop the cell and containers; delete backups taken for the run.
+**Teardown.** Drop the cell and buckets; delete backups taken for the run.
 
-**Local rehearsal.** Fully on L1 (compose, with MinIO) or L2; the `VersionMissing` negative control should be rehearsed locally first because it costs nothing and confirms the decision is needed.
+**Rehearsal.** Fully on L1 (compose, with MinIO) or L2; the `VersionMissing` negative control has already been rehearsed locally ([local receipt](compat-local-receipts.md#compat-t3)).
 
 | Resource | Quantity | Hours | Unit price | Subtotal |
 |---|---|---|---|---|
@@ -671,7 +666,6 @@ Existing repository tooling named in the procedures: `scripts/test_helm_chart.py
 
 | Decision | Blocks | Owner |
 |---|---|---|
-| Binary rollback route after migration 0043 (A, B or C above) | COMPAT-T3, ART rollback step, LOGIN1 rollback baseline, W1 step 9 | Server release engineering ([ledger](implementation-ledger.md#next-implementation-steps)) |
 | Whether L3 (workstation Docker Desktop Kubernetes) receipts on the exact candidate are accepted environments of record for the IDs marked Full in the [L3 table](#what-one-docker-desktop-node-can-prove) | Whether W1 is needed and its size | Release owner |
 | U10 shared session store | LOGIN1 | Server console and deployment maintainers ([open items](README.md#open-items)) |
 | ART1 verifier identity and independence (hub record) | ART1/ART2 | Hub contract owners |

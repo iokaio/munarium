@@ -13,7 +13,9 @@ for registry availability, digests and public signing instructions. The detailed
 - Add additive migrations 0043–0047, 0050, 0060, 0070, 0080 and 0081 (build
   publication fencing and job records, console sessions, artifact damage, MCP
   endpoint, inference stages and placement). A v1.4.0 binary does not start
-  against a database that carries them.
+  against a database that carries them: take a backup before upgrading and
+  roll back by restoring it. Data written after the upgrade is lost on
+  rollback. See the [1.5 upgrade and rollback guide](docs/guides/server-1.5.md).
 
 ## 1.4.0 — 2026-10-09
 

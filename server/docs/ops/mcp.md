@@ -342,9 +342,11 @@ shed with 503 `overloaded` like REST.
 2. Unset `MUNARIUM_MCP` and restart: `/mcp` answers 404, native routes and
    reports are unchanged. Stop issuing `mcp` tokens; revoke outstanding ones
    if revocation checks are on.
-3. Rolling back to a v1.4 binary leaves the 0070 tables in place; v1.4 never
-   reads them. Interaction rows on the `mcp` plane remain; a v1.4 report
-   reader counts them in the unfiltered total and rejects the `mcp` filter.
+3. Disabling MCP leaves the 0070 tables and the `mcp`-plane interaction rows
+   in place. Returning to a v1.4.0 binary is by restoring the pre-upgrade
+   backup ([rolling back to 1.4.0](../guides/server-1.5.md#rolling-back-to-140)), because v1.4.0 does
+   not start against a database with the 1.5 migrations. That restore discards
+   everything written since the upgrade, MCP records included.
 
 ## Qualification status
 

@@ -129,7 +129,7 @@ An unknown value is a configuration error. The Datastore infrastructure then ref
 
 **Activation.** Roll every serving replica to `observe` first, and drain or replace any v1.4 reader. Then switch them to `enforce`. A block can only commit once every reader can enforce it.
 
-**Rollback.** Before returning a replica to `off` or to a v1.4 binary while a block is outstanding, withdraw the affected scope. Set its rollout selector to `postgres`, or keep the artifact out of the `serving` slot. A v1.4 reader cannot see the block. The tables are additive and a v1.4 binary ignores them. A later upgrade finds the block still in force.
+**Rollback.** Before returning a replica to `off` while a block is outstanding, withdraw the affected scope. Set its rollout selector to `postgres`, or keep the artifact out of the `serving` slot. An `off` reader cannot see the block; a later switch back finds the block still in force. Returning to a v1.4.0 binary is by restoring the pre-upgrade backup ([rolling back to 1.4.0](../guides/server-1.5.md#rolling-back-to-140)). The restored database predates the block, so withdraw or repair the affected artifact before v1.4.0 serves it.
 
 ## Validation and coverage
 

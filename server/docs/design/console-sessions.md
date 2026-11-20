@@ -67,7 +67,7 @@ The switch is an explicit operator action, made only when every replica that ser
 
 ## Rollback
 
-To return to the v1.4 login, set `MUNARIUM_CONSOLE_SESSIONS=legacy` (or unset it) on every replica and do a rolling restart. A v1.4 binary is equally valid, because the table is additive. Outstanding handles then behave as follows.
+To return to the v1.4 login, set `MUNARIUM_CONSOLE_SESSIONS=legacy` (or unset it) on every replica and do a rolling restart. Returning to a v1.4.0 binary instead means restoring the pre-upgrade backup ([rolling back to 1.4.0](../guides/server-1.5.md#rolling-back-to-140)), which also discards data written since the upgrade. Outstanding handles then behave as follows.
 
 - A legacy replica never reads the session cookie. Once every serving replica is legacy, no handle is honoured anywhere, and operators sign in again through the v1.4 login, which sets `__munarium_admin` again.
 - Rows remain in the table, unused, until pruning. If the fleet is switched back to `enabled` before a handle's absolute expiry, a browser that still holds it would be accepted again. As the last rollback step, revoke all outstanding sessions. The console sessions page still lists them in legacy mode and revokes them per tenant. Fleet-wide, run `UPDATE console_sessions SET revoked_at = now(), revoked_reason = 'revoked' WHERE revoked_at IS NULL`. Alternatively, wait `MUNARIUM_CONSOLE_SESSION_MAX_SECS` before switching again.

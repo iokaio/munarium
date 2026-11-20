@@ -54,7 +54,7 @@ If a verifier finds a mismatch during verification, the attempt is invalidated. 
 
 ## Roll back safely
 
-Before you set `off` on any serving replica, or roll back to a v1.4 binary, with an incident still `blocked`: first withdraw the affected scope (rollout selector to `postgres`), or make sure the artifact is not in the `serving` slot. A v1.4 or `off` reader cannot see the block. The tables are additive, so the block remains in force when you upgrade again.
+Before you set `off` on any serving replica with an incident still `blocked`: first withdraw the affected scope (rollout selector to `postgres`), or make sure the artifact is not in the `serving` slot. An `off` reader cannot see the block. The tables are additive, so the block remains in force when you switch back. Returning to a v1.4.0 binary is by restoring the pre-upgrade backup ([rolling back to 1.4.0](../guides/server-1.5.md#rolling-back-to-140)); the restored database has no block, so withdraw or repair the affected artifact before v1.4.0 serves it.
 
 ## Limits
 

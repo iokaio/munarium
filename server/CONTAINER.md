@@ -234,6 +234,10 @@ whose Server workspace version is 1.5.0. The OCI export below builds a candidate
 and does not push it. Use the
 [release checklist](docs/guides/server-1.4.md#build-and-release-checklist) before
 any future publication. Never overwrite the immutable published `1.4.0` tag.
+Migrations 0043–0081 prevent an image-only downgrade from 1.5.0 to 1.4.0:
+take a backup before upgrading, and roll back by restoring it into 1.4.0. Data
+written by 1.5.0 after the upgrade is lost on rollback. See the
+[1.5 upgrade and rollback guide](docs/guides/server-1.5.md).
 The pinned compiler cross-compiles
 both binaries and verifies their architecture and static linkage. A Buildx
 builder using the `docker-container` driver supports the OCI export and attestations:

@@ -369,9 +369,10 @@ None of these is a compatibility regression. Each is recorded for a reviewer.
 - **COMPAT-T2:** chart install, upgrade with `--reuse-values`, replica-count
   migration and rollback (L2/L3), plus Matrix-enabled runs with a pinned peer
   after M1 step 3.
-- **COMPAT-T3:** depends on the rollback-route decision. Then mixed replicas
-  (second Deployment), sealed evidence and pinned sessions across rollback, and
-  for route B a drilled backup restore.
+- **COMPAT-T3:** the rollback route is a pre-upgrade backup restore (route B,
+  maintainer decision of 20 November 2026). Sealed evidence and pinned sessions
+  read after a drilled restore into v1.4.0, with the `VersionMissing` negative
+  control.
 - **COMPAT-T5:** mixed-replica console sessions and the LOGIN1 cutover.
 - **A5-T3** and the other multi-replica MCP cases.
 - Cosign verification of the baseline on the qualification host.

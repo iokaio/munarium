@@ -84,18 +84,18 @@ release.
 | 0070 | ClearView Phase 5 | MCP store tables, unwritten with MCP unset | As for 0043 |
 | 0080 | ClearView IR-1–IR-4 | Inference stage tables, empty without an enrolled collection | As for 0043 |
 
-In short, once any of 0043–0080 is applied, the v1.4.0 image cannot serve that
+In short, once any of 0043–0081 is applied, the v1.4.0 image cannot serve that
 database. The local [COMPAT-T3 negative control](compat-local-receipts.md#compat-t3)
-reproduces this. The rollback route (a qualified v1.4.x that tolerates newer
-migrations, a pre-upgrade backup restore, or no new migrations) is an open
-maintainer decision; see the [ledger](implementation-ledger.md#next-implementation-steps)
-and the [cluster plan](cluster-qualification-plan.md#plan-compat-t3).
+reproduces this. By maintainer decision of 20 November 2026 the rollback route
+is a **pre-upgrade backup restore**: take a backup before upgrading and restore
+it into v1.4.0 to roll back; data written by v1.5 after the upgrade is lost. See
+[rolling back to 1.4.0](../guides/server-1.5.md#rolling-back-to-140) and the
+[cluster plan](cluster-qualification-plan.md#plan-compat-t3).
 
 ## Pending contracts and measurements
 
 | Item | Accountable role | Affected phase | Next review |
 |---|---|---|---|
-| Binary rollback route for 0043–0080 (COMPAT-T3 wording) | Server release engineering with storage maintainers | 1, 4–8, release | `<YYYY-MM-DD>` |
 | Hub ADRs 0020–0028 (M1, C1, C2, I1+I2, SC2, A1+A4, A2+A8+A9, A6, ART1+ART2), accepted 20 November 2026: contract export | Hub maintainers with each component owner | M, 1, 2, 5, 6, 8, SCALE | `<YYYY-MM-DD>` |
 | Matrix consumer switch (M1 step 3) and M1-T2 installed-peer receipt | Matrix release maintainers | M | `<YYYY-MM-DD>` |
 | Lens model runtime decision and I3 measurements | Lens maintainers | L, 6 | `<YYYY-MM-DD>` |

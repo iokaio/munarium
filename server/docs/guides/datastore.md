@@ -1007,11 +1007,11 @@ Before returning a v1.4 builder to service:
 6. Resume legacy claiming only after those checks pass.
 
 A v1.4.0 binary refuses to start against a database with migration 0043 or any
-later migration, because it does not know them. Returning to v1.4.0 therefore
-needs a binary that tolerates unknown migrations or a restore of a backup taken
-before the upgrade; no such binary is part of this release. Plan the upgrade with
-that restore point. The drain above is still required before any v1.4 builder
-claims work against the upgraded data.
+later migration, because it does not know them. Returning to v1.4.0 is therefore
+by restoring the backup taken before the upgrade, as described in
+[rolling back to 1.4.0](server-1.5.md#rolling-back-to-140); data written after the upgrade is lost.
+Take that backup before the first 1.5 process starts. The drain above applies
+while v1.4 and v1.5 builders share a database during the upgrade itself.
 
 Back up PostgreSQL and durable source/artifact storage with a coordinated recovery
 plan. A database restore can reference unavailable L2 objects; resolve those by
