@@ -361,6 +361,217 @@ fn the_child_role_refuses_bad_arguments_without_reading_input() {
 }
 
 // ---------------------------------------------------------------------------
+// a queued build stopped during an isolated extraction (R6 with R3)
+// ---------------------------------------------------------------------------
+
+const PDF: &str = "application/pdf";
+
+/// The isolated extractor, observable from the test: it records each run's
+/// child pid and outcome, and shares the admission counters.
+struct Probe {
+    inner: Arc<IsolatedPdfExtractor>,
+    runs: Arc<std::sync::Mutex<Vec<munarium_extract::IsolatedRun>>>,
+}
+
+impl TextExtractor for Probe {
+    fn media_types(&self) -> &[&str] {
+        &[PDF]
+    }
+
+    fn extract(&self, bytes: &[u8]) -> munarium_core::Result<munarium_extract::Extracted> {
+        self.extract_cancellable(bytes, &Cancellation::new())
+    }
+
+    fn id(&self) -> &'static str {
+        "pdf-isolated-probe"
+    }
+
+    fn extract_cancellable(
+        &self,
+        bytes: &[u8],
+        cancel: &Cancellation,
+    ) -> munarium_core::Result<munarium_extract::Extracted> {
+        let run = self.inner.run(bytes, cancel);
+        let extracted = run.extracted.clone();
+        self.runs.lock().expect("runs").push(run);
+        Ok(extracted)
+    }
+}
+
+/// ClearView R6 with R3: cancelling a queued direct build while its one
+/// source is inside a slow isolated PDF extraction kills and reaps the
+/// child at once, through the job's stop signal, and the build returns
+/// (the builder loop's slot is free) with the stale-claim error and nothing
+/// committed. The stop is driven exactly as the builder's lease watch
+/// drives it: the job is cancelled, the fenced renewal is refused, and the
+/// signal stops with the recorded reason. Needs PostgreSQL; skips loudly
+/// without `MUNARIUM_TEST_DATABASE_URL`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_cancelled_queued_build_kills_its_isolated_child_and_frees_the_builder() {
+    use munarium_retrieval::mirror::{LocalStoreFactory, MirrorContext, VectorPolicy};
+    use munarium_store_pg::artifacts::ArtifactCatalog;
+    use munarium_store_pg::attempts::BuildAttempts;
+    use munarium_store_pg::jobs::{
+        BuildJobs, HistoryStatus, JobFence, JobId, JobSignal, StopReason, STALE_GENERATION_MESSAGE,
+    };
+
+    let Ok(url) = std::env::var("MUNARIUM_TEST_DATABASE_URL") else {
+        eprintln!("SKIPPED: MUNARIUM_TEST_DATABASE_URL is unset");
+        return;
+    };
+    let tenant = format!("tenant-r3-stop-{}", uuid::Uuid::new_v4().simple());
+    let store = munarium_store_pg::PgStore::connect(&url, &tenant)
+        .await
+        .expect("connect");
+    let pool = store.pool().clone();
+    let probe = Arc::new(extractor(generous()));
+    let runs = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let registry = munarium_extract::ExtractorRegistry::with_extractors(vec![Box::new(Probe {
+        inner: Arc::clone(&probe),
+        runs: Arc::clone(&runs),
+    })]);
+    let pg = munarium_retrieval_pg::PgRetrieval::new(pool.clone(), &tenant)
+        .with_extractors(Arc::new(registry));
+    let col = pg
+        .ensure_collection(
+            &format!("col-r3-{}", uuid::Uuid::new_v4().simple()),
+            "para",
+            0,
+            &[],
+            Some("R3 child stop"),
+        )
+        .await
+        .expect("collection");
+    let (source_id, _, _) = pg
+        .put_source("", PDF, "r3/slow.pdf", Some("para"), &heavy_pdf(2_000_000))
+        .await
+        .expect("source");
+    pg.bind_source(&col.id, &source_id, None)
+        .await
+        .expect("bind");
+
+    // A direct job claimed once by this builder, tenant-scoped and under an
+    // infinite lease, so no other test's claimer or cleaner can take it.
+    let job_id = format!("bjob-r3-{}", uuid::Uuid::new_v4().simple());
+    sqlx::query(
+        "INSERT INTO index_build_jobs
+             (tenant_id, job_id, kind, scope_kind, scope_id, params, state, claimed_by,
+              claimed_at, attempts, requested_by)
+         VALUES ($1,$2,'direct','collection',$3,'{}'::jsonb,'running','builder-r3',
+                 'infinity',1,'test-r3')",
+    )
+    .bind(&tenant)
+    .bind(&job_id)
+    .bind(&col.id)
+    .execute(&pool)
+    .await
+    .expect("seed job");
+    sqlx::query(
+        "INSERT INTO index_build_job_runs (tenant_id, job_id, job_generation, node_id)
+         VALUES ($1,$2,1,'builder-r3')",
+    )
+    .bind(&tenant)
+    .bind(&job_id)
+    .execute(&pool)
+    .await
+    .expect("seed run");
+    let fence = JobFence {
+        tenant_id: tenant.clone(),
+        job_id: job_id.clone(),
+        node_id: "builder-r3".into(),
+        generation: 1,
+    };
+    let signal = JobSignal::new();
+    let artifacts = tempfile::tempdir().expect("artifacts");
+    let staging = tempfile::tempdir().expect("staging");
+    let ctx = MirrorContext {
+        catalog: ArtifactCatalog::new(pool.clone(), &tenant),
+        attempts: BuildAttempts::new(pool.clone(), &tenant),
+        stores: Arc::new(LocalStoreFactory::new(artifacts.path())),
+        node_id: "builder-r3".into(),
+        staging_root: staging.path().to_path_buf(),
+        artifact_prefix: "v1".into(),
+        tenant_path_hash: "t0000".into(),
+        faults: None,
+        observer: None,
+        vector_policy: VectorPolicy {
+            approx_threshold: None,
+        },
+        job_fence: Some(fence.clone()),
+        job_signal: Some(signal.clone()),
+    };
+
+    let collection_id = col.id.clone();
+    let build = tokio::spawn(async move {
+        munarium_retrieval::direct::build_collection_direct(&ctx, &pg, &collection_id, 400, 0).await
+    });
+
+    // Wait until the child is parsing.
+    let waited = Instant::now();
+    while probe.running() == 0 {
+        assert!(
+            waited.elapsed() < Duration::from_secs(60),
+            "the extraction child never started"
+        );
+        assert!(!build.is_finished(), "the build ended before extracting");
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+
+    // Cancel, then what the lease watch does: a refused renewal stops the
+    // signal with the recorded reason.
+    let jobs = BuildJobs::new(pool.clone());
+    assert!(jobs.cancel(&tenant, &job_id).await.expect("cancel"));
+    assert!(!jobs
+        .heartbeat_fenced(&tenant, &job_id, "builder-r3", 1)
+        .await
+        .expect("renewal"));
+    let reason = jobs.stop_reason(&fence).await.expect("reason");
+    assert_eq!(reason, Some(StopReason::Cancelled));
+    let stopped = Instant::now();
+    signal.stop(StopReason::Cancelled);
+
+    let outcome = tokio::time::timeout(Duration::from_secs(10), build)
+        .await
+        .expect("the build returned promptly; its builder slot is free")
+        .expect("build task");
+    let took = stopped.elapsed();
+    let err = outcome.expect_err("a cancelled build does not succeed");
+    assert!(err.to_string().contains(STALE_GENERATION_MESSAGE), "{err}");
+    assert!(took < Duration::from_secs(5), "took {took:?}");
+
+    // The child was cancelled, killed and reaped; no slot is held.
+    let runs = runs.lock().expect("runs").clone();
+    assert_eq!(runs.len(), 1, "one extraction");
+    assert_eq!(
+        runs[0].extracted.failure,
+        Some(FailureClass::Cancelled),
+        "{:?}",
+        runs[0].extracted.note
+    );
+    assert_reaped(runs[0].report.child_pid);
+    assert_eq!(probe.running(), 0);
+
+    // Nothing was committed, and the job stays cancelled.
+    let history = jobs
+        .version_history(&tenant, &JobId::parse(&job_id).expect("id"), None, 50)
+        .await
+        .expect("history")
+        .expect("job");
+    assert_eq!(history.job.state, "cancelled");
+    assert_eq!(history.history, HistoryStatus::Recorded);
+    assert!(history.versions.is_empty(), "{:?}", history.versions);
+    let versions: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM index_versions WHERE tenant_id = $1 AND collection_id = $2",
+    )
+    .bind(&tenant)
+    .bind(&col.id)
+    .fetch_one(&pool)
+    .await
+    .expect("count");
+    assert_eq!(versions, 0, "no index version committed");
+}
+
+// ---------------------------------------------------------------------------
 // measurement harness
 // ---------------------------------------------------------------------------
 

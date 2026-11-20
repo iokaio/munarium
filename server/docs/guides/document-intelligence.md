@@ -176,7 +176,10 @@ same parser in a child process instead (design
   memory, user-mode CPU time, one process, kill on close) on Windows. Other
   platforms get no OS limit; the identity records `os=none`.
 - The parent enforces the wall-clock deadline and the output cap, and kills and
-  reaps the child on timeout, on overflow and when the build is cancelled.
+  reaps the child on timeout, on overflow and when the build is cancelled. A
+  queued direct build also kills it when its job is cancelled or loses its
+  lease, through the worker's stop signal (ClearView R6); the in-process
+  `inline` parser cannot be stopped that way and runs to its end.
 - At most `MUNARIUM_PDF_EXTRACTION_CONCURRENCY` children run per process, in
   arrival order. A document that waits longer than
   `MUNARIUM_PDF_EXTRACTION_QUEUE_SECS` is not parsed.

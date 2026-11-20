@@ -260,8 +260,16 @@ impl Extracted {
 /// A cancellation flag shared between an async caller and the blocking
 /// extraction it started. Dropping the guard from [`Cancellation::guard`]
 /// cancels, so a dropped build future stops its child process.
+///
+/// A [`child`](Cancellation::child) also observes its parent: a queued build
+/// holds one parent for the whole build, cancelled by the job's stop signal,
+/// and each source's extraction gets a child that its own drop guard
+/// cancels without cancelling the build.
 #[derive(Debug, Clone, Default)]
-pub struct Cancellation(Arc<AtomicBool>);
+pub struct Cancellation {
+    flag: Arc<AtomicBool>,
+    parent: Option<Box<Cancellation>>,
+}
 
 impl Cancellation {
     pub fn new() -> Self {
@@ -269,11 +277,21 @@ impl Cancellation {
     }
 
     pub fn cancel(&self) {
-        self.0.store(true, Ordering::SeqCst);
+        self.flag.store(true, Ordering::SeqCst);
     }
 
+    /// Cancelled itself, or through any ancestor.
     pub fn is_cancelled(&self) -> bool {
-        self.0.load(Ordering::SeqCst)
+        self.flag.load(Ordering::SeqCst) || self.parent.as_ref().is_some_and(|p| p.is_cancelled())
+    }
+
+    /// A new cancellation that is cancelled whenever `self` is. Cancelling
+    /// the child leaves `self` untouched.
+    pub fn child(&self) -> Self {
+        Self {
+            flag: Arc::default(),
+            parent: Some(Box::new(self.clone())),
+        }
     }
 
     /// A guard that cancels when dropped.
@@ -459,6 +477,24 @@ pub(crate) fn extract_err(what: &str, e: impl std::fmt::Display) -> KernelError 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_child_cancellation_follows_its_parent_but_not_the_reverse() {
+        let build = Cancellation::new();
+        let source = build.child();
+        let guard = source.guard();
+        drop(guard);
+        assert!(source.is_cancelled());
+        assert!(
+            !build.is_cancelled(),
+            "a source's drop guard spares the build"
+        );
+        let next = build.child();
+        let grandchild = next.child();
+        assert!(!next.is_cancelled() && !grandchild.is_cancelled());
+        build.cancel();
+        assert!(next.is_cancelled() && grandchild.is_cancelled());
+    }
 
     #[test]
     fn text_media_passes_through_unchanged() {

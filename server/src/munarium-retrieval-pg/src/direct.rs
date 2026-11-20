@@ -103,7 +103,44 @@ impl PgRetrieval {
         &self,
         collection_id: &str,
         max_chars: usize,
+        before_source: F,
+    ) -> Result<PreparedBuild>
+    where
+        F: FnMut(usize, usize) -> Fut,
+        Fut: std::future::Future<Output = Result<()>>,
+    {
+        self.extract_prepared(collection_id, max_chars, before_source, None)
+            .await
+    }
+
+    /// [`extract_collection_prepared_with`](Self::extract_collection_prepared_with)
+    /// whose in-flight extraction also stops when `stop` is cancelled
+    /// (ClearView R6 with R3). A queued build cancels `stop` from its job's
+    /// stop signal, so an isolated PDF child is killed and reaped as soon as
+    /// the build is cancelled or loses its lease; the source then reads as
+    /// `cancelled` and the build stops at its next boundary. An in-process
+    /// extraction cannot be interrupted and runs to its end first.
+    pub async fn extract_collection_prepared_stoppable<F, Fut>(
+        &self,
+        collection_id: &str,
+        max_chars: usize,
+        before_source: F,
+        stop: &crate::Cancellation,
+    ) -> Result<PreparedBuild>
+    where
+        F: FnMut(usize, usize) -> Fut,
+        Fut: std::future::Future<Output = Result<()>>,
+    {
+        self.extract_prepared(collection_id, max_chars, before_source, Some(stop))
+            .await
+    }
+
+    async fn extract_prepared<F, Fut>(
+        &self,
+        collection_id: &str,
+        max_chars: usize,
         mut before_source: F,
+        stop: Option<&crate::Cancellation>,
     ) -> Result<PreparedBuild>
     where
         F: FnMut(usize, usize) -> Fut,
@@ -152,7 +189,9 @@ impl PgRetrieval {
                 &s.content_hash,
             )?;
             let bytes = self.source_store().get(&key).await?;
-            let extracted = self.extract_source(&s.media_type, &bytes).await;
+            let extracted = self
+                .extract_source_stoppable(&s.media_type, &bytes, stop)
+                .await;
 
             use sha2::Digest as _;
             let status = match extracted.status {

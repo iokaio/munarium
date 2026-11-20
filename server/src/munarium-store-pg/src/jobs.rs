@@ -229,10 +229,10 @@ struct SignalInner {
 /// upload) and stop there, which releases the builder slot.
 ///
 /// [`on_stop`](Self::on_stop) registers work to run when the signal stops.
-/// Its intended consumer is the opt-in R3 PDF child process, which should
-/// register a hook that kills and reaps the child; that wiring is a
-/// follow-up. A legacy in-process parse cannot be interrupted and holds its
-/// slot until it returns, after which the next boundary stops the build.
+/// A queued direct build registers one that cancels its extraction, so an
+/// opt-in R3 PDF child process is killed and reaped at once. A legacy
+/// in-process parse cannot be interrupted and holds its slot until it
+/// returns, after which the build stops before committing anything.
 #[derive(Clone, Default)]
 pub struct JobSignal {
     inner: std::sync::Arc<SignalInner>,

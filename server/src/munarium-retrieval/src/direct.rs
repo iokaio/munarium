@@ -72,17 +72,35 @@ pub async fn build_collection_direct(
     // The slow half — no transaction anywhere near it. A queued build checks
     // its claim before each source (ClearView R6), so a cancel stops it
     // between sources instead of after the last one.
+    //
+    // Inside one source, the job's stop signal cancels the extraction itself
+    // (ClearView R6 with R3): an isolated PDF child is killed and reaped at
+    // once, and the build stops below. A synchronous build has no signal and
+    // nothing cancels it.
     ctx.checkpoint(ProgressPhase::Extracting, Some(0), None)
         .await?;
+    let stop = munarium_retrieval_pg::Cancellation::new();
+    if let Some(signal) = &ctx.job_signal {
+        let stop = stop.clone();
+        signal.on_stop(move |_| stop.cancel());
+    }
     let build = pg
-        .extract_collection_prepared_with(collection_id, max_chars, |done, total| {
-            ctx.checkpoint(
-                ProgressPhase::Extracting,
-                Some(done as u64),
-                Some(total as u64),
-            )
-        })
+        .extract_collection_prepared_stoppable(
+            collection_id,
+            max_chars,
+            |done, total| {
+                ctx.checkpoint(
+                    ProgressPhase::Extracting,
+                    Some(done as u64),
+                    Some(total as u64),
+                )
+            },
+            &stop,
+        )
         .await?;
+    // A stop during the last source: its extraction was cancelled, and
+    // nothing of it may be committed.
+    ctx.stop_if_signalled()?;
 
     // The REAL spec, from what extraction actually did.
     let spec = direct_spec(

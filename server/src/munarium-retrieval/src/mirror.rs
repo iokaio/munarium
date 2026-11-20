@@ -263,6 +263,16 @@ impl MirrorContext {
         self.fault(phase)
     }
 
+    /// Stop with the fence's stale error if the worker-local signal has
+    /// already stopped, without a database round trip. Writes no progress.
+    /// A synchronous build always continues.
+    pub fn stop_if_signalled(&self) -> Result<()> {
+        match (&self.job_fence, &self.job_signal) {
+            (Some(fence), Some(signal)) if signal.stopped().is_some() => Err(fence.stale()),
+            _ => Ok(()),
+        }
+    }
+
     /// A safe boundary of a queued build (ClearView R6): between sources,
     /// between versions, before seal and before upload.
     ///

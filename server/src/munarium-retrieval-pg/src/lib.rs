@@ -62,6 +62,8 @@ pub use munarium_core::retrieval::{
 // Re-exported so this crate's surface is unchanged by the move. PgSourceStore
 // is a STORAGE backend and now lives with the other ones; PgRetrieval::new
 // still defaults to it so tests and `docker compose up` need no object store.
+/// The cancellation a queued build hands to [`PgRetrieval::extract_collection_prepared_stoppable`].
+pub use munarium_extract::Cancellation;
 pub use munarium_store_pg::PgSourceStore;
 
 pub const CHUNKER_VERSION: &str = "para@2";
@@ -315,6 +317,21 @@ impl PgRetrieval {
         media_type: &str,
         bytes: &[u8],
     ) -> munarium_extract::Extracted {
+        self.extract_source_stoppable(media_type, bytes, None).await
+    }
+
+    /// [`extract_source`](Self::extract_source) that also stops when `stop`
+    /// is cancelled (ClearView R6 with R3). A queued build passes the
+    /// cancellation its job's stop signal sets, so a cancel or lost lease
+    /// kills and reaps an isolated PDF child at once instead of waiting for
+    /// it to finish. The in-process v1.4 extractors cannot be interrupted
+    /// and ignore it.
+    pub(crate) async fn extract_source_stoppable(
+        &self,
+        media_type: &str,
+        bytes: &[u8],
+        stop: Option<&munarium_extract::Cancellation>,
+    ) -> munarium_extract::Extracted {
         // Local extraction is synchronous CPU work — a PDF parse with no time
         // bound, a DOCX inflate and XML walk — and it ran on the async worker
         // that also serves /readyz, heartbeats and every other request on
@@ -326,7 +343,12 @@ impl PgRetrieval {
         // (R3/B4) can stop its child: dropping this future drops the guard,
         // which cancels, and the child is killed and reaped. The in-process
         // v1.4 extractors ignore the flag.
-        let cancel = munarium_extract::Cancellation::new();
+        //
+        // The per-source cancellation is a child of `stop`, so the drop guard
+        // ends only this source while a job stop ends every source.
+        let cancel = stop
+            .map(munarium_extract::Cancellation::child)
+            .unwrap_or_default();
         let _cancel_on_drop = cancel.guard();
         let extractors = Arc::clone(&self.extractors);
         let media = media_type.to_string();

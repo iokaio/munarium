@@ -684,9 +684,14 @@ job-lease renewal also stops the worker when a renewal is refused. A renewal
 that fails with an error leaves the lease uncertain: the worker keeps going
 only after it has revalidated the claim against PostgreSQL at the next
 boundary, and every shared write still rechecks the claim under the row lock.
-A worker inside one source's extraction holds its slot until that source
-returns; the opt-in child-process PDF extraction (R3) is expected to be killed
-through the worker's stop signal, which is not yet wired.
+Inside one source's extraction, a queued direct build depends on the
+extractor. With the opt-in child-process PDF extraction
+(`MUNARIUM_PDF_EXTRACTION=isolated`, R3), the worker's stop signal cancels the
+extraction: the child is killed and reaped at once, or a document still waiting
+for a child slot is not started, and the build stops without committing
+anything, which frees its slot. The default `inline` profile and the other
+in-process extractors cannot be interrupted: the worker holds its slot until
+that source's parse returns and stops at the next boundary.
 
 What a stopped job leaves depends on which commit won:
 
