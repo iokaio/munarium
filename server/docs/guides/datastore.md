@@ -171,13 +171,15 @@ complete object-store lifecycle policy or authorize deleting catalog rows.
 |---|---|---|
 | `MUNARIUM_DATASTORE_BUILDER` | Off | Case-insensitive `enabled` starts the durable build-job worker; it requires PostgreSQL. Does not enqueue work or select a serving engine |
 | `MUNARIUM_DATASTORE_BUILDER_POLL_MS` | `5000` | Queue polling milliseconds, clamped to at least 250 |
-| `MUNARIUM_DATASTORE_JOB_LEASE_SECS` | `600` | Claimed-job lease seconds, clamped to at least 30; the worker renews it during execution. Each claim has a generation (the job's `attempts` after that claim), and renewal and completion require it, so a superseded claim cannot write, even from a replica restarted under the same instance name. A lapsed lease is re-offered until the job has been claimed three times. On each poll, the builder moves jobs whose final claim lapsed to `failed` and releases their target for a new request |
+| `MUNARIUM_DATASTORE_JOB_LEASE_SECS` | `600` | Claimed-job lease seconds, clamped to at least 30; the worker renews it during execution. Each claim has a generation (the job's `attempts` after that claim), and renewal and completion require it, so a superseded claim cannot write, even from a replica restarted under the same instance name. A lapsed lease is re-offered until the job has been claimed three times. On each poll, the builder moves jobs whose final claim lapsed to `failed` and releases their target for a new request. Publication is fenced by the same generation; see [durable jobs](#5-backfill-and-verify-existing-indexes) |
 | `MUNARIUM_DATASTORE_RECONCILE_INTERVAL_SECS` | `60` | Interrupted sealed-build reconciliation interval, clamped to at least 30 seconds; also runs at startup |
 | `MUNARIUM_DATASTORE_ROLLOUT_REFRESH_MS` | `15000` | Serving warmer/selector refresh interval, clamped to at least 1000 milliseconds |
 | `MUNARIUM_DATASTORE_STARTUP_HYDRATE_TIMEOUT_MS` | `120000` | Startup hydration deadline used by the readiness warmer; does not permit serving incomplete scopes after expiry |
 
 The reconciler handles interrupted build publication; it is not a general
-database-to-cache synchronization or backup service. Synchronous rebuild/backfill
+database-to-cache synchronization or backup service. For a queued build it
+finishes only the manifest that build's claim recorded, and binds the artifact
+only while that claim is still current. Synchronous rebuild/backfill
 API calls do not require the queued-job worker, but they still require the
 artifact and staging configuration.
 
@@ -633,6 +635,26 @@ All enqueue requests also accept an optional `correlation_id`. Job states are
 to the implementation's attempt ceiling; cancellation is not an artifact
 deletion or a serving rollback.
 
+Queued builds write only under their current claim. A direct job commits its
+logical version, together with the job and claim generation that built it, only
+while that claim is current. Each artifact attempt a job starts is linked to the
+claim, and before anything is catalogued or uploaded the job records one
+publication intent: the manifest's object key and SHA-256. Each of these writes
+locks the job row and rechecks its state, generation and holder, so it
+serializes with cancellation, completion, reclaim and expired-claim cleanup.
+
+Once a claim is superseded, its execution commits and publishes nothing new,
+even on a replica restarted under the same instance name. If it had already
+recorded an intent, that execution or the reconciler may finish only that
+manifest. An existing object at the key must match the recorded digest; a
+different object is left in place and the intent is recorded as `failed`. The
+superseded claim never binds the artifact. A rebuild or backfill under the
+current claim that finds the verified artifact fills the empty `staged` slot,
+so if the replacement job reported `deferred`, enqueue it again. Synchronous
+rebuild, backfill and verify endpoints are unchanged. The records are kept in
+`index_version_job_commits`, `index_build_attempt_jobs` and
+`index_build_publication_intents` (migration 0043).
+
 For scripted CLI polling, `datastore jobs get` returns exit 0 for `succeeded`,
 4 for `failed`/`cancelled`, and 3 otherwise, including `superseded`. Read the
 state to avoid polling a superseded job forever. Synchronous `verify` and
@@ -802,6 +824,55 @@ increasing it blindly can trade disk thrashing for memory pressure. Changing the
 approximate-vector threshold only affects eligible future direct builds. Validate
 recall and ranking on held-out queries before promoting their physical artifacts.
 
+### Mixed-version builders: drain before switching
+
+A v1.4 builder does not take the job-row lock and does not record attempt links
+or publication intents, so fenced and unfenced builders must not run the queue
+at the same time. Record each step in the change record.
+
+Before enabling builders with publication fencing:
+
+1. Stop new claims on every v1.4 builder: unset `MUNARIUM_DATASTORE_BUILDER`, or
+   set it to `disabled`, and recreate those processes.
+2. Wait until their active work has drained, including sealed-attempt recovery:
+   no `running` job claimed by a v1.4 node, and no `running` or `sealed` attempt
+   owned by one. Cancel any job you do not want finished.
+3. Only then enable `MUNARIUM_DATASTORE_BUILDER` on the new builders.
+
+An artifact reclaim expires the old `running` attempt once its lease has lapsed
+and starts a new attempt with a fresh tenant-scoped `att-` ID.
+
+Before returning a v1.4 builder to service:
+
+1. Stop new claims on every newer builder as above.
+2. Drain current workers. Let running jobs complete, or cancel them and let the
+   newer builder's cleanup fail any expired final claim.
+3. Reconcile outstanding cancellations and publication intents. Keep a newer
+   process running its reconciler until no attempt is `running` or `sealed` and
+   no publication intent is `pending`.
+4. Disable fair claiming and fenced progress if the release in use provides
+   them; this release provides neither.
+5. Confirm that no retired holder can still write and that no active job needs
+   the fence. These read-only queries must all return no rows:
+
+   ```sql
+   SELECT tenant_id, job_id, claimed_by, attempts
+     FROM index_build_jobs WHERE state = 'running';
+   SELECT tenant_id, attempt_id, owner_node_id, state
+     FROM index_build_attempts WHERE state IN ('running', 'sealed');
+   SELECT tenant_id, attempt_id, job_id, job_generation
+     FROM index_build_publication_intents WHERE state = 'pending';
+   ```
+
+6. Resume legacy claiming only after those checks pass.
+
+A v1.4.0 binary refuses to start against a database with migration 0043 or any
+later migration, because it does not know them. Returning to v1.4.0 therefore
+needs a binary that tolerates unknown migrations or a restore of a backup taken
+before the upgrade; no such binary is part of this release. Plan the upgrade with
+that restore point. The drain above is still required before any v1.4 builder
+claims work against the upgraded data.
+
 Back up PostgreSQL and durable source/artifact storage with a coordinated recovery
 plan. A database restore can reference unavailable L2 objects; resolve those by
 rebuilding or rolling scopes back, then verify serving-required completeness and
@@ -817,6 +888,7 @@ readiness. L1 and L0 are caches, not substitutes for backups. Follow the
 | Cloud artifact creation fails with PostgreSQL sources | Cloud artifact client comes from cloud source configuration; use local file artifacts or configure matching cloud source/artifact stores |
 | Permission denied on local files | UID 65532 ownership/access for the cache, staging and artifact directories |
 | Job stays pending | Builder enabled on a worker with database and storage access; inspect worker logs and lease state |
+| Verified artifact without a `staged` binding after a job was reclaimed | A superseded claim finished the manifest it had recorded but may not bind. Enqueue the rebuild or backfill again; under the current claim it reuses the verified artifact and fills the empty slot |
 | Job `failed` with "its final attempt stopped renewing its lease" | Its third claim stopped renewing (worker crash, restart or partition). Inspect that worker's logs, fix the cause, then enqueue the target again. A v1.4 builder leaves such a job `running` until a newer builder fails it |
 | Backfill responds successfully but is incomplete | Check every version outcome; retry deferred work and fix actual failed builds |
 | Promotion rejected | Staged/serving generations, verified candidate, fleet revision/mode/readiness and staged-open residency |
