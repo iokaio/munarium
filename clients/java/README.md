@@ -1,7 +1,7 @@
 # munarium-client (Java)
 
-Client **1.4.0** targets **Munarium Server 1.4.0** with declared support for
-Server minors **1.4 and 1.3**; see the [compatibility record](https://github.com/iokaio/munarium/blob/main/clients/compatibility.json).
+Client source **1.5.0 (unreleased)** targets **Munarium Server 1.5.0** with declared support for
+Server minors **1.5 and 1.4**; see the [compatibility record](https://github.com/iokaio/munarium/blob/main/clients/compatibility.json).
 
 Official Java client for [munarium-server](../../server/): the ten-plane
 surface on both transports (REST via `java.net.http`, gRPC via
@@ -39,7 +39,8 @@ problem-slug registry, and the head-conflict write loop built in.
 
 ## Install
 
-The registry examples below pin the published **1.4.0** client release.
+The registry examples below pin the published **1.4.0** client release. Published
+1.4.0 retains its Server 1.4/1.3 range; use a source build for Server 1.5 APIs.
 
 Add the published package to your application's Gradle build (Java 21+):
 

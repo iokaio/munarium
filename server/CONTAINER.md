@@ -228,9 +228,10 @@ licenses. [License](https://github.com/iokaio/munarium/blob/main/LICENSE) and
 
 ## Building from source
 
-Source **1.4.0 is published**. To reproduce a local candidate, build from a
-clean, recorded source commit whose Server workspace
-version is 1.4.0. The OCI export below builds a candidate and does not push it. Use the
+Source **1.5.0 is unreleased**. Published installation defaults above remain
+on 1.4.0. To build a local candidate, build from a clean, recorded source commit
+whose Server workspace version is 1.5.0. The OCI export below builds a candidate
+and does not push it. Use the
 [release checklist](docs/guides/server-1.4.md#build-and-release-checklist) before
 any future publication. Never overwrite the immutable published `1.4.0` tag.
 The pinned compiler cross-compiles
@@ -241,10 +242,10 @@ builder using the `docker-container` driver supports the OCI export and attestat
 docker buildx create --name munarium-builder --driver docker-container
 $revision = git rev-parse HEAD
 docker buildx build --builder munarium-builder --platform linux/amd64,linux/arm64 `
-  --build-arg SOURCE_REVISION=$revision --build-arg BUILD_VERSION=1.4.0 `
+  --build-arg SOURCE_REVISION=$revision --build-arg BUILD_VERSION=1.5.0 `
   --sbom=SELECT_CATALOGERS=+rust-cargo-lock-cataloger --provenance=mode=max `
-  --tag iokaio/munarium:1.4.0-rc.1 `
-  --output type=oci,dest=munarium-1.4.0.oci.tar ./server
+  --tag iokaio/munarium:1.5.0-rc.1 `
+  --output type=oci,dest=munarium-1.5.0.oci.tar ./server
 ```
 
 Building ARM64 does not prove it runs: execute and test each platform before

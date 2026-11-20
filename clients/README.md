@@ -28,13 +28,14 @@ and is not supported is in [SUPPORT.md](../SUPPORT.md); conduct is the Contribut
 
 **The contract the clients build from is the server's own**: the eleven protos under [`server/proto/mmp/v1/`](../server/proto/mmp/v1/), the REST reference and problem-slug registry under [`server/docs/api/`](../server/docs/api/), and the two Rust wire crates under `server/src/`. A wire change on the server side reaches every client immediately, and `clients-ci` proves them against a server built from the same commit.
 
-## Server 1.4 clients
+## Server 1.5 source preparation
 
-Server client source packages **1.4.0** target **Server 1.4.0** and declare
-the N/N-1 range **1.4/1.3**, pending conformance qualification.
-Rust builds use wire crates 1.4.0 from crates.io or, for checkout builds,
-the adjacent Server tree.
-See the [1.4 compatibility and upgrade guide](../server/docs/guides/server-1.4.md).
+Server client source packages **1.5.0 (unreleased)** target **Server 1.5.0** and
+declare the N/N-1 range **1.5/1.4**, pending conformance qualification and
+publication. Rust builds use wire crates 1.5.0 from the adjacent Server tree.
+Published 1.4.0 packages retain their Server 1.4/1.3 range.
+See the [1.4 compatibility and upgrade guide](../server/docs/guides/server-1.4.md)
+for the published release.
 
 ## Installation and publication
 
@@ -97,8 +98,9 @@ the four Server client package versions are aligned with Server 1.3.0 for clarit
 `clients/check_compatibility.py` fails CI if `compatibility.json`'s recorded version for a
 language ever drifts from what that language's own manifest declares.
 
-The four Server client source packages are **1.4.0**, targeting **Server 1.4.0**, with
-supported Server minors **1.4 and 1.3** recorded in `compatibility.json`.
+The four Server client source packages are **1.5.0 (unreleased)**, targeting
+**Server 1.5.0**, with supported Server minors **1.5 and 1.4** recorded in
+`compatibility.json`.
 `ServerApiClient` provides every documented operation over REST and native gRPC,
 including vocabulary, answers, source references and streaming turns. Read the
 [Server 1.2 guide](docs/guides/server-1.2.md) for language examples. Existing typed

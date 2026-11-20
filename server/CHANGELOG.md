@@ -5,6 +5,16 @@ for registry availability, digests and public signing instructions. The detailed
 [Server 1.3.0 release notes](docs/guides/release-notes-1.3.0.md) cover every PR since
 1.2.1 and the subsequent image publication.
 
+## 1.5.0 — unreleased
+
+- Prepare Server/mmctl and SDK source versions 1.5.0, with SDK target range
+  1.5/1.4. Image and package publication remain separate actions; installation
+  defaults stay on published Server 1.4.0.
+- Add additive migrations 0043–0047, 0050, 0060, 0070, 0080 and 0081 (build
+  publication fencing and job records, console sessions, artifact damage, MCP
+  endpoint, inference stages and placement). A v1.4.0 binary does not start
+  against a database that carries them.
+
 ## 1.4.0 — 2026-10-09
 
 - Support explicit `claude-haiku-5-5` requests by omitting temperature, including

@@ -1,5 +1,13 @@
 # Munarium clients — release notes
 
+## 1.5.0 — unreleased, Server 1.5 alignment
+
+- Align source package versions, version-handshake targets and Rust wire crates
+  with Server 1.5.0; the declared N/N-1 range is 1.5/1.4, pending qualification.
+  Published 1.4.0 packages keep their 1.4/1.3 range.
+- Include the client changes made since the 1.4.0 publication for the Server 1.5
+  wire fields. Package publication remains a separate action.
+
 ## 1.4.0 — 2026-10-09, Server 1.4 clients
 
 - Align source package versions, version-handshake targets and Rust wire crates

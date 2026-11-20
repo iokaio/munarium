@@ -6,10 +6,11 @@ authoritative, machine-readable answer, and this page is the short prose explana
 
 ## Compatibility
 
-The current source Server target is **1.4.0**, with declared minor versions
-**1.4 and 1.3** for release qualification. Published packages retain their
-historical metadata; see the [1.4 release guide](../../../server/docs/guides/server-1.4.md).
-All four Server client source packages are **1.4.0 (unreleased)**. Matrix client
+The current source Server target is **1.5.0**, with declared minor versions
+**1.5 and 1.4** for release qualification. Published packages retain their
+historical metadata; published 1.4.0 keeps its 1.4/1.3 range. See the
+[1.4 release guide](../../../server/docs/guides/server-1.4.md) for the published release.
+All four Server client source packages are **1.5.0 (unreleased)**. Matrix client
 compatibility is maintained in its separate repository. See [installation and publication](../../README.md#installation-and-publication)
 for available registry versions and package links. The complete `ServerApiClient`
 includes operations introduced in Server 1.2 and collection-query and
