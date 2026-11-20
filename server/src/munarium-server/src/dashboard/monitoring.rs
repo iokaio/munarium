@@ -25,6 +25,8 @@ struct TileCount {
     value: String,
     sub: String,
     note: String,
+    /// The read succeeded (so `value` is a count, possibly 0).
+    ok: bool,
 }
 
 fn tile_count<E: std::fmt::Display>(what: &str, read: Result<usize, E>, sub: &str) -> TileCount {
@@ -33,6 +35,7 @@ fn tile_count<E: std::fmt::Display>(what: &str, read: Result<usize, E>, sub: &st
             value: n.to_string(),
             sub: sub.to_string(),
             note: String::new(),
+            ok: true,
         },
         Err(e) => TileCount {
             value: "unavailable".to_string(),
@@ -42,8 +45,52 @@ fn tile_count<E: std::fmt::Display>(what: &str, read: Result<usize, E>, sub: &st
                 charts::esc(what),
                 charts::esc(&e.to_string())
             ),
+            ok: false,
         },
     }
+}
+
+/// An empty deployment, for the overview's task-first landing (ClearView
+/// U11): every read succeeded, and the tenant has no runbook and no
+/// collection in any status, no open session, no run awaiting approval or
+/// running, and no block finding in 24 hours. Tokens, shapes and providers
+/// are configuration, not content, and do not count. A failed read is never
+/// empty: it shows the tiles with `unavailable` (U5).
+pub(super) fn is_empty_deployment(
+    counts: &munarium_core::Result<reports_api::ControlPlaneCounts>,
+    other_reads_ok: bool,
+) -> bool {
+    other_reads_ok
+        && counts.as_ref().is_ok_and(|c| {
+            c.runbooks_total == 0
+                && c.collections_total == 0
+                && c.sessions_open == 0
+                && c.runs_awaiting_approval == 0
+                && c.runs_running == 0
+                && c.findings_block_24h == 0
+        })
+}
+
+/// The landing shown in place of the inventory tiles when the deployment is
+/// empty: the three first tasks, each linked to its guide, and the
+/// configuration that does exist, so no count is hidden.
+pub(super) fn first_tasks(tokens: i64, shapes: &str, providers: &str) -> String {
+    let tasks: String = super::FIRST_TASKS
+        .iter()
+        .map(|t| {
+            format!(
+                "<li>{} · {}</li>",
+                super::link(&format!("{}{}", super::DOCS_BASE, t.doc), t.title),
+                charts::esc(t.does)
+            )
+        })
+        .collect();
+    format!(
+        r#"<div class="card"><p><strong>Nothing is deployed for this tenant yet:</strong> no runbook, collection, session, run or recent block finding. Start with one of these tasks; each link opens its guide.</p><ul>{tasks}</ul><p class="muted">Already configured: <a href="/admin/tokens">tokens active: {}</a> · <a href="/admin/runbooks">shapes: {}</a> · <a href="/admin/providers">providers: {}</a>.</p></div>"#,
+        charts::esc(&tokens.to_string()),
+        charts::esc(shapes),
+        charts::esc(providers),
+    )
 }
 
 /// One condition the overview's attention strip checks (ClearView U3):
@@ -228,7 +275,9 @@ pub(super) async fn overview(State(state): State<Arc<AppState>>, headers: Header
     let counts = reports_api::op_control_plane_counts(&state, tenant).await;
     let attention =
         attention_strip(&attention_checks(&state, tenant, &counts, &provider_list).await);
+    let empty = is_empty_deployment(&counts, shapes.ok && providers.ok);
     let inventory = match counts {
+        Ok(c) if empty => first_tasks(c.tokens_active, &shapes.value, &providers.value),
         Ok(c) => format!(
             r#"<div class="tiles">{}{}{}{}{}{}{}{}</div>{read_notes}"#,
             tile_link(
@@ -783,6 +832,53 @@ mod tests {
             }
         }
         assert_eq!(checked, 4, "fixture lost failed-read cases");
+    }
+
+    /// U11: the landing is shown only when every read succeeded and every
+    /// content count is zero; tokens, shapes and providers do not count.
+    #[test]
+    fn only_a_fully_read_empty_deployment_gets_the_landing() {
+        use reports_api::ControlPlaneCounts;
+        let zero = ControlPlaneCounts {
+            tokens_active: 3,
+            ..Default::default()
+        };
+        assert!(is_empty_deployment(&Ok(zero), true));
+        assert!(
+            !is_empty_deployment(&Ok(zero), false),
+            "a failed shapes/providers read"
+        );
+        assert!(!is_empty_deployment(
+            &Err(KernelError::Storage("down".into())),
+            true
+        ));
+        let nonzero: [fn(&mut ControlPlaneCounts); 6] = [
+            |c| c.runbooks_total = 1,
+            |c| c.collections_total = 1,
+            |c| c.sessions_open = 1,
+            |c| c.runs_awaiting_approval = 1,
+            |c| c.runs_running = 1,
+            |c| c.findings_block_24h = 1,
+        ];
+        for set in nonzero {
+            let mut c = zero;
+            set(&mut c);
+            assert!(!is_empty_deployment(&Ok(c), true), "{c:?}");
+        }
+        let html = first_tasks(3, "0", "2");
+        for t in super::super::FIRST_TASKS {
+            assert!(
+                html.contains(&format!(
+                    r#"<a href="{}{}">{}</a>"#,
+                    super::super::DOCS_BASE,
+                    t.doc,
+                    t.title
+                )),
+                "{html}"
+            );
+        }
+        assert!(html.contains("tokens active: 3"), "{html}");
+        assert!(html.contains("providers: 2"), "{html}");
     }
 
     fn check(what: &'static str, observed: Result<i64, String>) -> Check {

@@ -308,6 +308,162 @@ mod tests {
         out
     }
 
+    /// The anchors a GitHub rendering of `text` offers: every explicit
+    /// `<a id="…">` and every heading's generated id (lowercased, punctuation
+    /// other than `-` and `_` dropped, spaces as hyphens).
+    pub(crate) fn anchors_in(text: &str) -> BTreeSet<String> {
+        let mut out = BTreeSet::new();
+        for (i, _) in text.match_indices("<a id=\"") {
+            let rest = &text[i + 7..];
+            if let Some(end) = rest.find('"') {
+                out.insert(rest[..end].to_string());
+            }
+        }
+        let mut in_fence = false;
+        for line in text.lines() {
+            if line.trim_start().starts_with("```") {
+                in_fence = !in_fence;
+                continue;
+            }
+            if in_fence || !line.starts_with('#') {
+                continue;
+            }
+            let heading = line.trim_start_matches('#').trim();
+            let id: String = heading
+                .to_lowercase()
+                .chars()
+                .filter_map(|c| match c {
+                    ' ' => Some('-'),
+                    c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
+                    _ => None,
+                })
+                .collect();
+            out.insert(id);
+        }
+        out
+    }
+
+    #[test]
+    fn the_anchor_reader_reads_headings_the_way_github_does() {
+        let a = anchors_in(
+            "# Title\n## 4. Define a shape and a runbook\n### Common first-run problems\n\
+             ```\n## not a heading\n```\n| `x`<a id=\"problem-x\"></a> |",
+        );
+        for id in [
+            "title",
+            "4-define-a-shape-and-a-runbook",
+            "common-first-run-problems",
+            "problem-x",
+        ] {
+            assert!(a.contains(id), "{id}: {a:?}");
+        }
+        assert!(!a.contains("not-a-heading"), "{a:?}");
+    }
+
+    /// ClearView U11: every problem slug the console can link has its
+    /// `#problem-<slug>` anchor in the registry. The console's slug comes
+    /// from `error::problem_slug`, whose range is every source slug (the
+    /// scan below requires a hyphen, so the one-word kernel slugs are added
+    /// from `error::slug`) plus the `overloaded` notice.
+    #[test]
+    fn every_problem_slug_has_a_registry_anchor() {
+        use munarium_core::KernelError;
+        let anchors = anchors_in(&read(crate::dashboard::ERRORS_DOC));
+        let mut slugs = slugs_in_source();
+        for e in [
+            KernelError::HeadConflict {
+                expected: 0,
+                actual: 1,
+            },
+            KernelError::PolicyRejection { findings: vec![] },
+            KernelError::ShapeViolation {
+                shape_ref: "s@1".into(),
+                detail: String::new(),
+            },
+            KernelError::IdempotencyMismatch,
+            KernelError::NotFound {
+                kind: "k",
+                id: "i".into(),
+            },
+            KernelError::InvalidInput(String::new()),
+            KernelError::Unauthenticated(String::new()),
+            KernelError::Forbidden(String::new()),
+            KernelError::RateLimited(String::new()),
+            KernelError::Storage(String::new()),
+            KernelError::DatastoreUnavailable(String::new()),
+            KernelError::Provider(String::new()),
+        ] {
+            slugs.insert(crate::error::slug(&e).to_string());
+            slugs.insert(crate::error::problem_slug(&e).to_string());
+        }
+        slugs.insert("overloaded".into());
+        let missing: Vec<String> = slugs
+            .iter()
+            .filter(|s| !anchors.contains(&format!("problem-{s}")))
+            .cloned()
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "docs/api/errors.md lacks the #problem-<slug> anchor for: {missing:?}"
+        );
+        // The console's link names exactly that anchor.
+        let link = crate::dashboard::problem_link("not-found");
+        assert!(
+            link.contains(&format!(
+                "{}{}#problem-not-found\"",
+                crate::dashboard::DOCS_BASE,
+                crate::dashboard::ERRORS_DOC
+            )),
+            "{link}"
+        );
+    }
+
+    /// ClearView U11: every build-job failure code has its
+    /// `#job-failure-<code>` anchor, which the build-job page links to.
+    #[test]
+    fn every_build_job_failure_code_has_a_registry_anchor() {
+        use munarium_store_pg::job_failure::JobFailureCode;
+        let anchors = anchors_in(&read(crate::dashboard::ERRORS_DOC));
+        for code in JobFailureCode::ALL {
+            let id = format!("job-failure-{}", code.as_str());
+            assert!(anchors.contains(&id), "errors.md lacks #{id}");
+            assert!(
+                crate::dashboard::job_failure_link(code.as_str()).contains(&format!("#{id}\"")),
+                "{id}"
+            );
+        }
+    }
+
+    /// ClearView U11: the empty-deployment landing's three tasks each link a
+    /// document that exists, at an anchor it has.
+    #[test]
+    fn every_first_task_links_a_guide_and_anchor_that_exist() {
+        assert_eq!(crate::dashboard::FIRST_TASKS.len(), 3);
+        for task in crate::dashboard::FIRST_TASKS {
+            let (path, anchor) = match task.doc.split_once('#') {
+                Some((p, a)) => (p, Some(a)),
+                None => (task.doc, None),
+            };
+            assert!(
+                !path.starts_with('/') && !path.contains(".."),
+                "{}: {path} must be a path under docs/",
+                task.title
+            );
+            assert!(
+                docs_root().join(path).is_file(),
+                "{}: docs/{path} does not exist",
+                task.title
+            );
+            if let Some(anchor) = anchor {
+                assert!(
+                    anchors_in(&read(path)).contains(anchor),
+                    "{}: docs/{path} has no #{anchor}",
+                    task.title
+                );
+            }
+        }
+    }
+
     #[test]
     fn every_problem_slug_is_in_the_error_registry() {
         let slugs = slugs_in_source();

@@ -677,6 +677,21 @@ pub fn slug(e: &KernelError) -> &'static str {
     }
 }
 
+/// The slug `to_problem` gives `e`, in the same order of precedence, without
+/// building the problem (or logging a storage error's text). The console
+/// names it and links it to the registry (ClearView U11).
+pub(crate) fn problem_slug(e: &KernelError) -> &'static str {
+    mcp_generation_error(e)
+        .or_else(|| command_unresolved(e))
+        .or_else(|| inference_refusal(e))
+        .or_else(|| inference_not_qualified(e))
+        .or_else(|| source_denied(e))
+        .map(|c| c.slug)
+        .or_else(|| run_locked_detail(e).map(|_| "run-locked"))
+        .or_else(|| daily_cap_detail(e).map(|_| "daily-cap-reached"))
+        .unwrap_or_else(|| slug(e))
+}
+
 pub fn to_problem(e: &KernelError) -> (StatusCode, Problem) {
     if let Some(error) = mcp_generation_error(e) {
         return error.to_problem();
@@ -982,6 +997,43 @@ mod tests {
             .unwrap()
             .and_utc();
         assert_eq!(seconds_to_next_utc_midnight(last), 43_200);
+    }
+
+    /// The console's slug is the one the API returns for the same error,
+    /// including the promoted slugs a sentinel prefix selects.
+    #[test]
+    fn problem_slug_matches_the_problem_type() {
+        use crate::mcp_generation::{ACCOUNTING_PREFIX, ALLOWANCE_PREFIX, NOT_AUTHORIZED_PREFIX};
+        let cases = [
+            KernelError::NotFound {
+                kind: "run",
+                id: "x".into(),
+            },
+            KernelError::InvalidInput("bad".into()),
+            KernelError::Storage("driver text".into()),
+            KernelError::Forbidden("no".into()),
+            KernelError::RateLimited("slow".into()),
+            KernelError::InvalidInput(format!("{RUN_LOCKED_PREFIX}run-1")),
+            KernelError::InvalidInput(format!("{COMMAND_UNRESOLVED_PREFIX}cmd")),
+            KernelError::InvalidInput(format!(
+                "{}gone",
+                munarium_store_pg::source_retention::DENIED_PREFIX
+            )),
+            KernelError::InvalidInput(format!("{}probe", crate::inference::NOT_QUALIFIED_PREFIX)),
+            KernelError::RateLimited(format!("{DAILY_CAP_PREFIX}cap")),
+            KernelError::Forbidden(format!("{NOT_AUTHORIZED_PREFIX}x")),
+            KernelError::RateLimited(format!("{ALLOWANCE_PREFIX}x")),
+            KernelError::Storage(format!("{ACCOUNTING_PREFIX}x")),
+        ];
+        let mut seen = std::collections::BTreeSet::new();
+        for e in &cases {
+            let (_, problem) = to_problem(e);
+            let api = problem.problem_type.rsplit('/').next().unwrap().to_string();
+            assert_eq!(problem_slug(e), api, "{e:?}");
+            seen.insert(api);
+        }
+        // Each case reached a different slug: every promotion was taken.
+        assert_eq!(seen.len(), cases.len(), "{seen:?}");
     }
 }
 

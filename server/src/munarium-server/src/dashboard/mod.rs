@@ -273,6 +273,42 @@ pub(crate) struct NavPage {
 /// repository; the same relative path names the file in a source checkout.
 pub(crate) const DOCS_BASE: &str = "https://github.com/iokaio/munarium/blob/main/server/docs/";
 
+/// The error registry, under `DOCS_BASE`.
+pub(crate) const ERRORS_DOC: &str = "api/errors.md";
+
+/// A problem slug, linked to its row in the error registry (ClearView U11).
+/// Every slug the server emits has a `#problem-<slug>` anchor there, which
+/// `docs_coverage` checks.
+pub(crate) fn problem_link(slug: &str) -> String {
+    registry_link("problem", slug)
+}
+
+/// The problem slug the API returns for `e`, linked to the registry.
+pub(crate) fn problem_of(e: &KernelError) -> String {
+    problem_link(crate::error::problem_slug(e))
+}
+
+/// A build-job failure code, linked to its registry row
+/// (`#job-failure-<code>`) when it is one this server defines; a code a newer
+/// builder wrote is shown unlinked rather than pointing at a missing anchor.
+pub(crate) fn job_failure_link(code: &str) -> String {
+    use munarium_store_pg::job_failure::JobFailureCode;
+    if JobFailureCode::ALL.iter().any(|c| c.as_str() == code) {
+        registry_link("job-failure", code)
+    } else {
+        format!("<code>{}</code>", charts::esc(code))
+    }
+}
+
+fn registry_link(kind: &str, key: &str) -> String {
+    format!(
+        r#"<a href="{}" aria-label="{} in the error registry"><code>{}</code></a>"#,
+        charts::esc(&format!("{DOCS_BASE}{ERRORS_DOC}#{kind}-{key}")),
+        charts::esc(key),
+        charts::esc(key)
+    )
+}
+
 /// A navigation group: one top-level link (to its first page) and, when the
 /// group has more than one page, a row of sub-tabs (ClearView U1). Grouped
 /// by operator task; every v1.4 URL is still a destination.
@@ -294,6 +330,36 @@ const fn nav_page(
         docs,
     }
 }
+
+/// One task on the overview's empty-deployment landing (ClearView U11,
+/// after AIRK's task-first landing page).
+pub(crate) struct FirstTask {
+    pub title: &'static str,
+    /// A path under `server/docs/`, optionally with a heading anchor;
+    /// `docs_coverage` checks that both exist.
+    pub doc: &'static str,
+    pub does: &'static str,
+}
+
+/// The three first tasks an empty deployment offers instead of tiles
+/// reading zero.
+pub(crate) const FIRST_TASKS: &[FirstTask] = &[
+    FirstTask {
+        title: "Create an index",
+        doc: "guides/getting-started.md#4-define-a-shape-and-a-runbook",
+        does: "define a shape and a runbook, ingest documents, then build, inspect and approve the index.",
+    },
+    FirstTask {
+        title: "Connect an agent",
+        doc: "ops/mcp.md",
+        does: "issue a capability token and connect an agent through the opt-in MCP endpoint.",
+    },
+    FirstTask {
+        title: "Find missing results",
+        doc: "guides/getting-started.md#common-first-run-problems",
+        does: "when a runbook validates but retrieves nothing, check upload prefixes, media types, bound collections, run-step results and the approved cutover.",
+    },
+];
 
 pub(crate) const NAV: &[NavGroup] = &[
     NavGroup {
@@ -583,8 +649,9 @@ pub(crate) fn error_panel(
         _ => StatusCode::OK,
     };
     let body = format!(
-        r#"<div class="notice">{}</div>"#,
-        charts::esc(&e.to_string())
+        r#"<div class="notice">{} · problem {}</div>"#,
+        charts::esc(&e.to_string()),
+        problem_of(e)
     );
     (status, page(admin, active, title, "", &body)).into_response()
 }
@@ -599,7 +666,11 @@ pub(crate) fn store_note(e: &KernelError) -> String {
     } else {
         ""
     };
-    format!(r#"<div class="notice">{prefix}{}</div>"#, charts::esc(&msg))
+    format!(
+        r#"<div class="notice">{prefix}{} · problem {}</div>"#,
+        charts::esc(&msg),
+        problem_of(e)
+    )
 }
 
 pub(crate) fn notice(admin: &AdminCtx, active: &str, title: &str, msg: &str) -> Response {
@@ -2981,6 +3052,81 @@ mod tests {
         }
     }
 
+    /// The anchors the registry declares (`<a id="…">`).
+    fn registry_ids() -> std::collections::BTreeSet<String> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../docs")
+            .join(ERRORS_DOC);
+        let text = std::fs::read_to_string(&path).expect("errors.md");
+        text.match_indices("<a id=\"")
+            .filter_map(|(i, _)| {
+                let rest = &text[i + 7..];
+                rest.find('"').map(|end| rest[..end].to_string())
+            })
+            .collect()
+    }
+
+    /// Every registry anchor a page links to.
+    fn registry_links(body: &str) -> Vec<String> {
+        let needle = format!("{DOCS_BASE}{ERRORS_DOC}#");
+        body.match_indices(&needle)
+            .filter_map(|(i, _)| {
+                let rest = &body[i + needle.len()..];
+                rest.find('"').map(|end| rest[..end].to_string())
+            })
+            .collect()
+    }
+
+    /// U11: every problem slug a page shows links to its row in the error
+    /// registry, at an anchor the registry has. A whole-page failure (the
+    /// missing shape) names `not-found`; a section that needs PostgreSQL
+    /// names the slug its API read returns.
+    #[tokio::test]
+    async fn every_problem_slug_links_to_a_registry_anchor_that_exists() {
+        let ids = registry_ids();
+        assert!(ids.contains("problem-not-found"), "{ids:?}");
+        let state = state(static_auth()).await;
+        let mut linked = std::collections::BTreeSet::new();
+        for path in memory_pages() {
+            for view_only in [false, true] {
+                let body = body_string(get(&state, &path, Some("m"), view_only).await).await;
+                for anchor in registry_links(&body) {
+                    assert!(
+                        ids.contains(&anchor),
+                        "{path}: #{anchor} is not in errors.md"
+                    );
+                    linked.insert(anchor);
+                }
+            }
+        }
+        let body = body_string(get(&state, "/admin/shapes/nope@9", Some("m"), false).await).await;
+        assert!(
+            body.contains(&format!(
+                r#"· problem <a href="{DOCS_BASE}api/errors.md#problem-not-found" aria-label="not-found in the error registry"><code>not-found</code></a></div>"#
+            )),
+            "{body}"
+        );
+        // The memory store's section notes name the API's slug too.
+        assert!(linked.contains("problem-invalid-input"), "{linked:?}");
+        // A slug the registry lacks would fail the check above.
+        assert!(!ids.contains("problem-no-such-slug"));
+    }
+
+    /// U11 (empty-deployment landing): on the memory store the
+    /// control-plane counts cannot be read, so the overview shows the tiles
+    /// with the failed read named, never the empty landing (U5).
+    #[tokio::test]
+    async fn a_failed_overview_read_never_shows_the_empty_landing() {
+        let state = state(static_auth()).await;
+        let body = body_string(get(&state, "/admin", Some("m"), false).await).await;
+        assert!(!body.contains("Nothing is deployed"), "{body}");
+        for t in FIRST_TASKS {
+            assert!(!body.contains(t.title), "{body}");
+        }
+        assert!(body.contains(r#"<div class="tiles">"#), "{body}");
+        assert!(body.contains("#problem-invalid-input"), "{body}");
+    }
+
     /// Navigation by role: every console page, list or detail, is served to
     /// the mgmt role only. No credential, a non-mgmt role and an unknown
     /// token all land on the login page; nothing is rendered for them.
@@ -3083,37 +3229,10 @@ mod tests {
         // a labelled required field for the typed jti and a named danger
         // button; after it, a link back that changes nothing.
         let body = body_string(get(&state, &review, Some("m"), false).await).await;
-        let tags = html_checks::tags(&body);
-        let form = tags
-            .iter()
-            .position(|t| {
-                t.name == "form" && !t.closing && t.attr("class") == Some("action confirm")
-            })
-            .expect("confirmation form");
-        let end = tags[form..]
-            .iter()
-            .position(|t| t.name == "form" && t.closing)
-            .unwrap()
-            + form;
-        let inside = &tags[form..end];
-        assert_eq!(tags[form].attr("method"), Some("post"));
-        let input = |name: &str| {
-            inside
-                .iter()
-                .find(|t| t.name == "input" && t.attr("name") == Some(name))
-        };
-        assert_eq!(input("_csrf").and_then(|t| t.attr("type")), Some("hidden"));
-        assert_eq!(input("plan").and_then(|t| t.attr("type")), Some("hidden"));
-        let typed = input("confirm").expect("typed field");
-        assert!(typed.has("required") && typed.attr("type") == Some("text"));
-        assert!(inside.iter().any(|t| t.name == "label" && !t.closing));
-        assert!(inside
-            .iter()
-            .any(|t| t.name == "button" && t.attr("class") == Some("danger")));
-        let after = &body[tags[end].at..];
-        assert!(
-            after.contains(r#"<a href="/admin/tokens">← back to tokens (nothing changes)</a>"#),
-            "{after}"
+        assert_confirmation_form(
+            &body,
+            &[],
+            r#"<a href="/admin/tokens">← back to tokens (nothing changes)</a>"#,
         );
         // The run page links each awaiting step to its review (U4), and the
         // review's confirmation names its credential field and the typed id.
@@ -3144,6 +3263,134 @@ mod tests {
             ),
             "{body}"
         );
+        // The approval's confirmation is the same structure as revocation's,
+        // with the per-submission rw credential inside the same form.
+        assert_confirmation_form(
+            &body,
+            &[("rw_token", "password")],
+            r#"<a href="/admin/runs/run-u14">← back to the run (nothing changes)</a>"#,
+        );
+        // Behind the view-only proxy the review is shown and no
+        // confirmation is offered.
+        let body = body_string(
+            get(
+                &state,
+                "/admin/runs/run-u14/steps/0/approve",
+                Some("m"),
+                true,
+            )
+            .await,
+        )
+        .await;
+        assert!(plan_in(&body).is_none(), "{body}");
+        assert!(!body.contains(r#"name="rw_token""#), "{body}");
+        assert!(body.contains("view-only passthrough"), "{body}");
+    }
+
+    /// U11 (empty-deployment landing), on PostgreSQL: a tenant with nothing
+    /// deployed gets the three first tasks, each linked to its guide, and no
+    /// tiles reading zero; a token alone does not end it, and the first
+    /// collection (in any status) brings the tiles back.
+    #[tokio::test]
+    async fn an_empty_deployment_gets_the_first_tasks_on_postgres() {
+        let Ok(url) = std::env::var("MUNARIUM_TEST_DATABASE_URL") else {
+            eprintln!(
+                "console U11 landing PostgreSQL test NOT RUN: MUNARIUM_TEST_DATABASE_URL unset"
+            );
+            return;
+        };
+        let tenant = format!("console-empty-{}", uuid::Uuid::new_v4().simple());
+        let mut cfg = test_config(AuthMode::Static(vec![(
+            "m".into(),
+            tenant.clone(),
+            "mgmt".into(),
+        )]));
+        cfg.store = StoreKind::Postgres;
+        cfg.database_url = Some(url);
+        let state = AppState::new(cfg).await.expect("state");
+        let pool = state.pg_pool().expect("pool").clone();
+        issue(&state, &tenant, "alice").await;
+
+        for view_only in [false, true] {
+            let body = body_string(get(&state, "/admin", Some("m"), view_only).await).await;
+            assert!(body.contains("Nothing is deployed"), "{body}");
+            for t in FIRST_TASKS {
+                assert!(
+                    body.contains(&format!(
+                        r#"<a href="{DOCS_BASE}{}">{}</a>"#,
+                        t.doc, t.title
+                    )),
+                    "{}: {body}",
+                    t.title
+                );
+            }
+            assert!(body.contains("tokens active: 1"), "{body}");
+            assert!(!body.contains("runs awaiting approval"), "{body}");
+            assert!(!body.contains("block findings"), "{body}");
+            html_checks::assert_operable("/admin", &body);
+            assert_classes_styled("/admin", &body);
+        }
+
+        // A retired collection still makes the deployment non-empty: the
+        // tiles return, reading what is there.
+        sqlx::query(
+            "INSERT INTO collections (tenant_id, id, name, shape_ref, status)
+             VALUES ($1, 'col-empty', 'retired-one', 's@1', 'retired')",
+        )
+        .bind(&tenant)
+        .execute(&pool)
+        .await
+        .expect("collection");
+        let body = body_string(get(&state, "/admin", Some("m"), false).await).await;
+        assert!(!body.contains("Nothing is deployed"), "{body}");
+        assert!(body.contains("runs awaiting approval"), "{body}");
+        for t in FIRST_TASKS {
+            assert!(!body.contains(t.title), "{body}");
+        }
+    }
+
+    /// One typed confirmation (U4), checked as a form (U14): inside one post
+    /// form with class `action confirm`, the CSRF token and plan as hidden
+    /// fields, the `extra` (name, type) fields, a labelled required text
+    /// field for the typed identifier and a named danger button; after the
+    /// form, `back`, a link that changes nothing.
+    fn assert_confirmation_form(body: &str, extra: &[(&str, &str)], back: &str) {
+        let tags = html_checks::tags(body);
+        let form = tags
+            .iter()
+            .position(|t| {
+                t.name == "form" && !t.closing && t.attr("class") == Some("action confirm")
+            })
+            .expect("confirmation form");
+        let end = tags[form..]
+            .iter()
+            .position(|t| t.name == "form" && t.closing)
+            .unwrap()
+            + form;
+        let inside = &tags[form..end];
+        assert_eq!(tags[form].attr("method"), Some("post"));
+        let input = |name: &str| {
+            inside
+                .iter()
+                .find(|t| t.name == "input" && t.attr("name") == Some(name))
+        };
+        assert_eq!(input("_csrf").and_then(|t| t.attr("type")), Some("hidden"));
+        assert_eq!(input("plan").and_then(|t| t.attr("type")), Some("hidden"));
+        for (name, kind) in extra {
+            assert_eq!(
+                input(name).and_then(|t| t.attr("type")),
+                Some(*kind),
+                "{name} inside the confirmation form"
+            );
+        }
+        let typed = input("confirm").expect("typed field");
+        assert!(typed.has("required") && typed.attr("type") == Some("text"));
+        assert!(inside.iter().any(|t| t.name == "label" && !t.closing));
+        assert!(inside
+            .iter()
+            .any(|t| t.name == "button" && t.attr("class") == Some("danger")));
+        let after = &body[tags[end].at..];
+        assert!(after.contains(back), "{after}");
     }
 
     // -----------------------------------------------------------------------

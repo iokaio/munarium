@@ -360,6 +360,9 @@ pub(super) fn detail_body(
     if let Some(e) = &job.error {
         facts.push(("error", esc(e)));
     }
+    if let Some(c) = &job.error_code {
+        facts.push(("error code", super::job_failure_link(c)));
+    }
     let dto = crate::datastore_jobs::job_dto(job.clone());
     format!(
         r#"{refresh}<div class="card">{}</div>
@@ -767,5 +770,46 @@ mod tests {
             &Ok(history(HistoryStatus::Recorded, vec![])),
         );
         assert!(!body.contains("reloads every"), "{body}");
+    }
+
+    /// A failed job's code links to its row in the error registry (U11); a
+    /// code this server does not define is shown but not linked, and a job
+    /// without a code shows none.
+    #[test]
+    fn a_failure_code_links_to_its_registry_row() {
+        let failed = |code: Option<&str>| JobProgress {
+            job: BuildJob {
+                error: Some(
+                    "build job failed: a storage error occurred; see the server log".into(),
+                ),
+                error_code: code.map(String::from),
+                ..job("direct", "failed", 1)
+            },
+            ..progress("direct", Some(1), Some(5))
+        };
+        let render = |p: &JobProgress| {
+            detail_body(
+                p,
+                &Ok(EventsRead::default()),
+                &Ok(history(HistoryStatus::Recorded, vec![])),
+            )
+        };
+        let body = render(&failed(Some("storage_error")));
+        assert!(
+            body.contains(&format!(
+                r#"<a href="{}api/errors.md#job-failure-storage_error" aria-label="storage_error in the error registry"><code>storage_error</code></a>"#,
+                super::super::DOCS_BASE
+            )),
+            "{body}"
+        );
+        let body = render(&failed(Some("from_a_newer_builder")));
+        assert!(body.contains("<code>from_a_newer_builder</code>"), "{body}");
+        assert!(
+            !body.contains("#job-failure-from_a_newer_builder"),
+            "{body}"
+        );
+        let body = render(&failed(None));
+        assert!(!body.contains("error code"), "{body}");
+        assert!(!body.contains("#job-failure-"), "{body}");
     }
 }

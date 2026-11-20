@@ -993,7 +993,8 @@ fn overloaded(admin: &super::AdminCtx, title: &str, run_id: &str, ordinal: usize
             "runbooks",
             title,
             &format!(
-                r#"<div class="notice">overloaded: this replica has no free slot for heavy work on the REST plane (MUNARIUM_MAX_CONCURRENCY, MUNARIUM_HEAVY_CONCURRENCY). Nothing was approved; retry shortly.</div><p><a href="{}">review the step again</a> · <a href="/admin/runs/{}">back to the run</a></p>"#,
+                r#"<div class="notice">{}: this replica has no free slot for heavy work on the REST plane (MUNARIUM_MAX_CONCURRENCY, MUNARIUM_HEAVY_CONCURRENCY). Nothing was approved; retry shortly.</div><p><a href="{}">review the step again</a> · <a href="/admin/runs/{}">back to the run</a></p>"#,
+                super::problem_link("overloaded"),
                 esc(&approve_path(run_id, ordinal)),
                 path_segment(run_id),
             ),

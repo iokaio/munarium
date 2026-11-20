@@ -684,6 +684,8 @@ pub struct ControlPlaneCounts {
     pub runbooks_active: i64,
     pub runbooks_total: i64,
     pub collections_active: i64,
+    /// Every collection, whatever its status (the overview's empty test).
+    pub collections_total: i64,
     pub sessions_open: i64,
     pub tokens_active: i64,
     pub runs_awaiting_approval: i64,
@@ -692,7 +694,7 @@ pub struct ControlPlaneCounts {
 }
 
 pub async fn op_control_plane_counts(state: &AppState, tenant: &str) -> Result<ControlPlaneCounts> {
-    let row: (i64, i64, i64, i64, i64, i64, i64, i64) = sqlx::query_as(
+    let row: (i64, i64, i64, i64, i64, i64, i64, i64, i64) = sqlx::query_as(
         "SELECT (SELECT count(*) FROM runbooks WHERE tenant_id = $1 AND status = 'active'),
                 (SELECT count(*) FROM runbooks WHERE tenant_id = $1),
                 (SELECT count(*) FROM collections WHERE tenant_id = $1 AND status = 'active'),
@@ -703,7 +705,8 @@ pub async fn op_control_plane_counts(state: &AppState, tenant: &str) -> Result<C
                 (SELECT count(*) FROM runbook_runs WHERE tenant_id = $1 AND state = 'running'),
                 (SELECT count(*) FROM gate_findings
                   WHERE tenant_id = $1 AND severity = 'block'
-                    AND recorded_at >= now() - interval '24 hours')",
+                    AND recorded_at >= now() - interval '24 hours'),
+                (SELECT count(*) FROM collections WHERE tenant_id = $1)",
     )
     .bind(tenant)
     .fetch_one(pool(state)?)
@@ -718,6 +721,7 @@ pub async fn op_control_plane_counts(state: &AppState, tenant: &str) -> Result<C
         runs_awaiting_approval: row.5,
         runs_running: row.6,
         findings_block_24h: row.7,
+        collections_total: row.8,
     })
 }
 
