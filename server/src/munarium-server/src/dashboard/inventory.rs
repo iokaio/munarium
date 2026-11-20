@@ -640,18 +640,37 @@ fn issue_form(admin: &super::AdminCtx) -> String {
     action(
         admin,
         format!(
-            r#"<form class="action" method="post" action="/admin/tokens/issue">{}
+            r#"<form class="action stack" method="post" action="/admin/tokens/issue">{}
 <label>uid <input type="text" name="uid" required placeholder="alice"></label>
-<label>access level <input type="number" name="access_level" value="0" min="0" style="width:70px"></label>
+<label>access level <input type="number" name="access_level" value="0" min="0"></label>
 <label>compartments <input type="text" name="compartments" placeholder="finance,legal"></label>
-<label><input type="checkbox" name="scope_query" value="1" checked> query</label>
-<label><input type="checkbox" name="scope_ingest" value="1"> ingest</label>
+<fieldset><legend>scopes</legend>
+<label class="check"><input type="checkbox" name="scope_query" value="1" checked> query</label>
+<label class="check"><input type="checkbox" name="scope_ingest" value="1"> ingest</label>
+</fieldset>
 <label>runbooks <input type="text" name="runbook_refs" placeholder="name allowlist, comma-separated"></label>
-<label>ttl s <input type="number" name="ttl_secs" min="1" style="width:90px" placeholder="default"></label>
+<label>ttl (seconds) <input type="number" name="ttl_secs" min="1" placeholder="default"></label>
 <button type="submit">issue token</button></form>"#,
             csrf_field(admin)
         ),
     )
+}
+
+/// The issue form as an operator sees it, for the stylesheet test.
+#[cfg(test)]
+pub(super) fn issue_form_for_test() -> String {
+    let admin = super::AdminCtx {
+        tenant: crate::state::TenantCtx {
+            tenant_id: "t".into(),
+            role: "mgmt".into(),
+            disabled_mode: false,
+        },
+        view_only: false,
+        csrf: "c".into(),
+        instance: "i".into(),
+        store: "memory",
+    };
+    issue_form(&admin)
 }
 
 pub(super) async fn tokens(

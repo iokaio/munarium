@@ -8,8 +8,8 @@
 
 use super::{
     action, admin_auth, csrf_field, csrf_ok, error_panel, html_table, json_block, kv, link, notice,
-    opt, pre, render, rw_credential, short, stale_form, state_badge, store_note, window_picker,
-    WindowParam,
+    opt, pill, pre, render, rw_credential, short, stale_form, state_badge, store_note,
+    window_picker, Tone, WindowParam,
 };
 use crate::charts::{self, esc};
 use crate::reports_api;
@@ -44,12 +44,12 @@ fn collection_link(id: Option<&str>, name: &str) -> String {
 }
 
 fn status_badge(status: &str) -> String {
-    let class = if status == "active" {
-        "badge"
+    let tone = if status == "active" {
+        Tone::Neutral
     } else {
-        "badge warn"
+        Tone::Warn
     };
-    format!(r#"<span class="{class}">{}</span>"#, esc(status))
+    pill(status, tone)
 }
 
 fn runs_table(rows: &[(String, String, String, String)]) -> String {

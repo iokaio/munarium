@@ -38,6 +38,8 @@
 //! "needs the postgres store" note wherever a table is the source; the
 //! registries (shapes, providers, chronology rules) render on both stores.
 
+#[cfg(test)]
+mod html_checks;
 mod inventory;
 mod monitoring;
 mod runbooks;
@@ -538,6 +540,29 @@ pub(crate) fn severity_badge(severity: &str) -> String {
         r#"<span class="swatch" style="background:{color}"></span> {}"#,
         charts::esc(severity)
     )
+}
+
+/// The tone of a status pill (ClearView U13). Each tone pairs a reserved
+/// status color with text that stays legible on it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Tone {
+    /// Nothing to report, or a plain fact.
+    Neutral,
+    Good,
+    Warn,
+    Bad,
+}
+
+/// A pill badge: the state's text label on its status color. The label is
+/// always present, so the color is never the only cue.
+pub(crate) fn pill(text: &str, tone: Tone) -> String {
+    let class = match tone {
+        Tone::Neutral => "badge",
+        Tone::Good => "badge good",
+        Tone::Warn => "badge warn",
+        Tone::Bad => "badge bad",
+    };
+    format!(r#"<span class="{class}">{}</span>"#, charts::esc(text))
 }
 
 /// The hidden CSRF field every action form starts with.
@@ -1720,6 +1745,129 @@ mod tests {
         // Unknown shape: a real 404, not a 200 with a sad face.
         let resp = get(&state, "/admin/shapes/nope@9", None, false).await;
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    // -----------------------------------------------------------------------
+    // U13: one visual vocabulary
+    // -----------------------------------------------------------------------
+
+    /// The pages a structural check renders without a database: every
+    /// navigation page, the token issue page, a revocation review, a missing
+    /// shape (the error panel) and the login form.
+    fn memory_pages() -> Vec<String> {
+        let mut pages: Vec<String> = NAV
+            .iter()
+            .flat_map(|g| g.pages.iter().map(|p| p.href.to_string()))
+            .collect();
+        pages.extend(
+            [
+                "/admin/tokens/issue",
+                "/admin/tokens/tok-x/revoke",
+                "/admin/shapes/nope@9",
+                "/admin/login",
+            ]
+            .map(String::from),
+        );
+        pages
+    }
+
+    /// The text that follows `tag`'s matching `</span>`, up to the next tag.
+    fn text_after_span(body: &str, tag: &html_checks::Tag) -> String {
+        let close = body[tag.at..].find("</span>").expect("closed span") + tag.at + 7;
+        let end = body[close..].find('<').map_or(body.len(), |e| close + e);
+        body[close..end].trim().to_string()
+    }
+
+    /// The text inside a span, up to its first child tag or its end.
+    fn text_inside_span(body: &str, tag: &html_checks::Tag) -> String {
+        let open = body[tag.at..].find('>').expect("tag end") + tag.at + 1;
+        let end = body[open..].find('<').map_or(body.len(), |e| open + e);
+        body[open..end].trim().to_string()
+    }
+
+    /// Every status color on a page comes with a text label: a swatch is
+    /// followed by its label, and a badge carries its text.
+    pub(super) fn assert_status_cues_have_text(path: &str, body: &str) {
+        for t in html_checks::tags(body) {
+            let Some(class) = t.attr("class") else {
+                continue;
+            };
+            let classes: Vec<&str> = class.split_whitespace().collect();
+            if t.closing || t.name != "span" {
+                continue;
+            }
+            if classes.contains(&"swatch") {
+                assert!(
+                    !text_after_span(body, &t).is_empty(),
+                    "{path}: a swatch without a label at byte {}",
+                    t.at
+                );
+            }
+            if classes.contains(&"badge") {
+                assert!(
+                    !text_inside_span(body, &t).is_empty(),
+                    "{path}: an empty badge at byte {}",
+                    t.at
+                );
+            }
+        }
+    }
+
+    pub(super) fn assert_classes_styled(path: &str, body: &str) {
+        for class in html_checks::classes(body) {
+            assert!(
+                html_checks::styled(charts::STYLE, &class),
+                "{path}: class {class:?} has no rule in charts::STYLE"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn every_class_is_styled_and_every_status_color_has_text() {
+        let state = state(static_auth()).await;
+        for path in memory_pages() {
+            let body = body_string(get(&state, &path, Some("m"), false).await).await;
+            assert_classes_styled(&path, &body);
+            assert_status_cues_have_text(&path, &body);
+        }
+        // The cue helpers themselves, over every reserved state.
+        for (html, label) in [
+            (state_badge("done"), "done"),
+            (state_badge("failed"), "failed"),
+            (state_badge("awaiting_approval"), "awaiting_approval"),
+            (state_badge("running"), "running"),
+            (severity_badge("block"), "block"),
+            (severity_badge("warn"), "warn"),
+            (severity_badge("info"), "info"),
+            (pill("open", Tone::Neutral), "open"),
+            (pill("verified", Tone::Good), "verified"),
+            (pill("stale", Tone::Warn), "stale"),
+            (pill("failed", Tone::Bad), "failed"),
+        ] {
+            assert!(html.contains(label), "{html}");
+            assert_classes_styled(label, &html);
+            assert_status_cues_have_text(label, &html);
+        }
+        // Hostile labels stay escaped inside a pill.
+        assert_eq!(
+            pill("<b>", Tone::Bad),
+            r#"<span class="badge bad">&lt;b&gt;</span>"#
+        );
+    }
+
+    /// The status tokens have text-safe variants in both color schemes, and
+    /// identifiers share one monospace token.
+    #[test]
+    fn the_stylesheet_defines_text_tones_and_a_monospace_token() {
+        let css = charts::STYLE;
+        for token in ["--good-ink:", "--warning-ink:", "--critical-ink:"] {
+            assert_eq!(css.matches(token).count(), 2, "{token} in light and dark");
+        }
+        assert!(css.contains("--mono:"));
+        assert!(css.contains("code, .id { font-family: var(--mono)"));
+        // No inline width styles remain on the issue form.
+        let admin_form = super::inventory::issue_form_for_test();
+        assert!(!admin_form.contains("style="), "{admin_form}");
     }
 
     #[tokio::test]
