@@ -30,6 +30,8 @@ use sqlx::Row;
 use munarium_core::retrieval::CollectionInfo;
 use munarium_core::{KernelError, Result};
 
+use munarium_store_pg::jobs::{lock_generation, JobFence};
+
 use crate::chunk_text;
 use crate::collections::{partition_name, ChunkBatch, CHUNK_INSERT_BATCH};
 use crate::{local_embed, storage_err, PgRetrieval};
@@ -186,6 +188,40 @@ impl PgRetrieval {
         watermark_seq: u64,
         build: &PreparedBuild,
     ) -> Result<bool> {
+        self.commit_prepared_index_fenced(
+            collection_id,
+            index_id,
+            manifest,
+            watermark_seq,
+            build,
+            None,
+        )
+        .await
+    }
+
+    /// [`commit_prepared_index`](Self::commit_prepared_index) for a queued
+    /// build, fenced by its job claim (ClearView R4).
+    ///
+    /// With `Some(fence)`, the commit transaction first locks the job row and
+    /// rechecks the claim, so the version commit serializes with every
+    /// retirement of that generation: a superseded claim commits nothing and
+    /// gets the fence's stale error. The version row and its tenant, job and
+    /// generation attribution are committed together. The job row stays locked
+    /// until the insert-only transaction commits, which delays a concurrent
+    /// lease renewal or cancel by that long; reclaim and cleanup skip the
+    /// locked row. `None` is exactly the unfenced commit.
+    pub async fn commit_prepared_index_fenced(
+        &self,
+        collection_id: &str,
+        index_id: &str,
+        manifest: &serde_json::Value,
+        watermark_seq: u64,
+        build: &PreparedBuild,
+        fence: Option<&JobFence>,
+    ) -> Result<bool> {
+        if let Some(fence) = fence {
+            fence.require_tenant(&self.tenant_id)?;
+        }
         let watermark_seq = crate::pg_watermark(watermark_seq)?;
         // Validate before publishing any rows, including an otherwise replayed
         // build. A caller-supplied ordinal cannot wrap into a negative INTEGER.
@@ -195,6 +231,12 @@ impl PgRetrieval {
             })?;
         }
         let mut tx = self.pool().begin().await.map_err(storage_err)?;
+        if let Some(fence) = fence {
+            if !lock_generation(&mut tx, fence).await? {
+                // Dropping `tx` releases the lock; nothing was written.
+                return Err(fence.stale());
+            }
+        }
         // The existence check IS the insert: `ON CONFLICT DO NOTHING` makes
         // two builders racing on one identity converge — the loser sees zero
         // rows and reports `false`, exactly as a retry after a completed
@@ -219,6 +261,20 @@ impl PgRetrieval {
         if inserted == 0 {
             // Dropping `tx` rolls the (empty) transaction back.
             return Ok(false);
+        }
+        if let Some(fence) = fence {
+            sqlx::query(
+                "INSERT INTO index_version_job_commits
+                     (tenant_id, index_version_id, job_id, job_generation)
+                 VALUES ($1, $2, $3, $4)",
+            )
+            .bind(&self.tenant_id)
+            .bind(index_id)
+            .bind(&fence.job_id)
+            .bind(fence.generation)
+            .execute(&mut *tx)
+            .await
+            .map_err(storage_err)?;
         }
 
         for outcome in &build.outcomes {

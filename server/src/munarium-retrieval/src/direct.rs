@@ -103,14 +103,17 @@ pub async fn build_collection_direct(
         "spec_version": spec.spec_version,
     });
 
-    // The short half.
+    // The short half. A queued build commits under its job claim's lock, with
+    // the version's job and generation attribution, or not at all
+    // (ClearView R4); a synchronous build (`job_fence: None`) is unchanged.
     let committed = pg
-        .commit_prepared_index(
+        .commit_prepared_index_fenced(
             collection_id,
             &index_version_id,
             &manifest,
             watermark_seq,
             &build,
+            ctx.job_fence.as_ref(),
         )
         .await?;
 

@@ -112,6 +112,7 @@ async fn measure_postgres_versus_datastore_query_latency() {
         vector_policy: munarium_retrieval::mirror::VectorPolicy {
             approx_threshold: None,
         },
+        job_fence: None,
     };
     let build_started = Instant::now();
     let _artifact_id = match munarium_retrieval::backfill::backfill_one(

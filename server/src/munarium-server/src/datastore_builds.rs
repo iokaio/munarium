@@ -28,6 +28,7 @@ use munarium_retrieval::mirror::{
 use munarium_retrieval::RequiredVersionsPolicy;
 use munarium_store_pg::artifacts::{ArtifactCatalog, BindingSlot};
 use munarium_store_pg::attempts::BuildAttempts;
+use munarium_store_pg::jobs::JobFence;
 
 use munarium_api_types as dto;
 
@@ -199,6 +200,8 @@ impl AppState {
             // The exact/approximate decision for direct builds, read at the
             // server edge like every other datastore env knob.
             vector_policy: munarium_retrieval::mirror::VectorPolicy::from_env(),
+            // Synchronous by default; the builder loop sets the claim's fence.
+            job_fence: None,
         })
     }
 }
@@ -400,7 +403,19 @@ pub async fn op_rebuild_artifact(
     tenant_id: &str,
     index_version_id: &str,
 ) -> Result<dto::IndexArtifactBuildDto> {
-    let ctx = state.mirror_context(tenant_id)?;
+    op_rebuild_artifact_fenced(state, tenant_id, index_version_id, None).await
+}
+
+/// [`op_rebuild_artifact`] for a queued rebuild job, fenced by its claim
+/// (ClearView R4). `None` is the synchronous operation.
+pub async fn op_rebuild_artifact_fenced(
+    state: &AppState,
+    tenant_id: &str,
+    index_version_id: &str,
+    fence: Option<&JobFence>,
+) -> Result<dto::IndexArtifactBuildDto> {
+    let mut ctx = state.mirror_context(tenant_id)?;
+    ctx.job_fence = fence.cloned();
     let outcome = state
         .retrieval_for(tenant_id)?
         .rebuild_version(&ctx, index_version_id)
@@ -602,7 +617,21 @@ pub async fn op_backfill_collection(
     tenant_id: &str,
     collection_id: &str,
 ) -> Result<dto::IndexArtifactBackfillResponse> {
-    let ctx = state.mirror_context(tenant_id)?;
+    op_backfill_collection_fenced(state, tenant_id, collection_id, None).await
+}
+
+/// [`op_backfill_collection`] for a queued backfill job, fenced by its claim
+/// (ClearView R4): every version's attempt is linked to the claim and
+/// publishes only through an intent committed while it is current. `None` is
+/// the synchronous operation.
+pub async fn op_backfill_collection_fenced(
+    state: &AppState,
+    tenant_id: &str,
+    collection_id: &str,
+    fence: Option<&JobFence>,
+) -> Result<dto::IndexArtifactBackfillResponse> {
+    let mut ctx = state.mirror_context(tenant_id)?;
+    ctx.job_fence = fence.cloned();
 
     // The policy comes from the scope's own rollout row when it has one, so a
     // backfill covers exactly what the selector will later demand. A scope with

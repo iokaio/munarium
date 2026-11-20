@@ -72,6 +72,7 @@ async fn work() {
         vector_policy: VectorPolicy {
             approx_threshold: None,
         },
+        job_fence: None,
     };
     let mode = harness::setting("P08_MODE");
     if mode == "setup" {

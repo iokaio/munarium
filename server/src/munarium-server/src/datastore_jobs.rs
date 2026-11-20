@@ -20,7 +20,7 @@
 use std::sync::Arc;
 
 use munarium_core::{KernelError, Result};
-use munarium_store_pg::jobs::{BuildJob, BuildJobs, EnqueueOutcome, JobKind, JobTarget};
+use munarium_store_pg::jobs::{BuildJob, BuildJobs, EnqueueOutcome, JobFence, JobKind, JobTarget};
 
 use crate::error::ApiError;
 use crate::state::AppState;
@@ -35,7 +35,19 @@ use munarium_api_types as dto;
 ///
 /// Public and free of loop machinery so a test can run a claimed job
 /// deterministically — the loop adds only scheduling.
-pub async fn run_one_job(state: &AppState, job: &BuildJob) -> Result<serde_json::Value> {
+///
+/// `fence` is the claim this execution runs under (ClearView R4). Every
+/// effect outside the job row — a direct build's logical-version commit, each
+/// artifact attempt, publication intent and `staged` binding — is written
+/// under the job row's lock only while that claim is current. A superseded
+/// execution commits and publishes nothing new; it may only finish an intent
+/// its generation already committed. `None` runs the job with the synchronous
+/// operations' authority.
+pub async fn run_one_job(
+    state: &AppState,
+    job: &BuildJob,
+    fence: Option<&JobFence>,
+) -> Result<serde_json::Value> {
     let tenant = job.tenant_id.as_str();
     match JobKind::parse(&job.kind)? {
         JobKind::Backfill => {
@@ -43,8 +55,10 @@ pub async fn run_one_job(state: &AppState, job: &BuildJob) -> Result<serde_json:
                 .scope_id
                 .as_deref()
                 .ok_or_else(|| KernelError::InvalidInput("a backfill job names a scope".into()))?;
-            let report =
-                crate::datastore_builds::op_backfill_collection(state, tenant, scope_id).await?;
+            let report = crate::datastore_builds::op_backfill_collection_fenced(
+                state, tenant, scope_id, fence,
+            )
+            .await?;
             Ok(serde_json::json!({
                 "collection_id": report.collection_id,
                 "complete": report.complete,
@@ -56,7 +70,8 @@ pub async fn run_one_job(state: &AppState, job: &BuildJob) -> Result<serde_json:
                 KernelError::InvalidInput("a rebuild job names an index version".into())
             })?;
             let built =
-                crate::datastore_builds::op_rebuild_artifact(state, tenant, version).await?;
+                crate::datastore_builds::op_rebuild_artifact_fenced(state, tenant, version, fence)
+                    .await?;
             Ok(serde_json::to_value(&built).map_err(|e| KernelError::Storage(e.to_string()))?)
         }
         JobKind::Direct => {
@@ -73,7 +88,8 @@ pub async fn run_one_job(state: &AppState, job: &BuildJob) -> Result<serde_json:
                 .get("watermark_seq")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(0);
-            let ctx = state.mirror_context(tenant)?;
+            let mut ctx = state.mirror_context(tenant)?;
+            ctx.job_fence = fence.cloned();
             let retrieval = state.retrieval_for(tenant)?;
             let outcome = retrieval
                 .build_collection_direct(&ctx, collection_id, max_chars, watermark_seq)
@@ -176,7 +192,10 @@ pub fn spawn_builder(state: &Arc<AppState>) {
                             }
                         }))
                     };
-                    let outcome = run_one_job(&state, &job).await.map_err(|e| e.to_string());
+                    let fence = JobFence::of_claim(&job, &node);
+                    let outcome = run_one_job(&state, &job, Some(&fence))
+                        .await
+                        .map_err(|e| e.to_string());
                     drop(beat);
                     match jobs
                         .complete_fenced(

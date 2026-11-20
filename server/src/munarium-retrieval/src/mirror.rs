@@ -45,11 +45,13 @@ use munarium_datastore::PreparedChunk;
 use munarium_retrieval_pg::export::{ExportStats, ExportedSource};
 use munarium_retrieval_pg::PgRetrieval;
 use munarium_store_pg::artifacts::{
-    ArtifactCatalog, ArtifactState, BindingSlot, InsertOutcome, NewArtifact,
+    ArtifactCatalog, ArtifactState, BindingSlot, FencedBind, InsertOutcome, NewArtifact,
 };
 use munarium_store_pg::attempts::{
-    reconcile_sealed, AttemptMode, AttemptState, BuildAttempts, ClaimOutcome, SealedVerdict,
+    reconcile_sealed, AttemptMode, AttemptState, BuildAttempts, ClaimOutcome, IntentState,
+    PublicationIntent, SealedVerdict,
 };
+use munarium_store_pg::jobs::JobFence;
 
 /// Supplies an `ArtifactStore` rooted at a prefix.
 ///
@@ -193,6 +195,12 @@ pub struct MirrorContext {
     /// and stays exact. Lives here rather than in an env read inside the
     /// build, so a test can pin it and the server reads env at its edge.
     pub vector_policy: VectorPolicy,
+    /// The job claim a QUEUED build runs under (ClearView R4). `None` for a
+    /// synchronous build, which keeps its existing artifact-attempt authority
+    /// unchanged. With `Some`, the build links its attempt to the claim,
+    /// commits a publication intent before cataloguing or uploading, and
+    /// binds `staged` only while the claim's generation is current.
+    pub job_fence: Option<JobFence>,
 }
 
 impl std::fmt::Debug for MirrorContext {
@@ -204,6 +212,7 @@ impl std::fmt::Debug for MirrorContext {
             .field("artifact_prefix", &self.artifact_prefix)
             .field("faults", &self.faults.is_some())
             .field("observer", &self.observer.is_some())
+            .field("job_fence", &self.job_fence.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -297,6 +306,13 @@ pub async fn mirror_index(
     // bytes under a new attempt.
     for existing in ctx.catalog.artifacts_for_version(index_version_id).await? {
         if existing.artifact_plan_sha256 == plan_hash && existing.state == ArtifactState::Verified {
+            // A queued build under the CURRENT claim fills an empty `staged`
+            // slot for the artifact it reuses. A retired generation that
+            // finished its recorded intent never binds, so without this the
+            // replacement would leave the version verified but unbound.
+            if let Some(fence) = &ctx.job_fence {
+                bind_staged_fenced(ctx, index_version_id, &existing.artifact_id, fence).await?;
+            }
             let outcome = Ok(MirrorOutcome::AlreadyBuilt {
                 artifact_id: existing.artifact_id,
             });
@@ -407,6 +423,11 @@ pub async fn mirror_index(
                     "a sealed mirror build failed before publication; leaving it for the reconciler"
                 );
             } else {
+                // A queued build that recorded an intent and then failed
+                // before sealing will never publish it.
+                if ctx.job_fence.is_some() {
+                    fail_pending_intent(ctx, &attempt_id, &e.to_string()).await;
+                }
                 ctx.attempts
                     .mark_failed(&attempt_id, "mirror_build_failed", &e.to_string())
                     .await
@@ -465,6 +486,13 @@ pub async fn direct_index(
 
     for existing in ctx.catalog.artifacts_for_version(index_version_id).await? {
         if existing.artifact_plan_sha256 == plan_hash && existing.state == ArtifactState::Verified {
+            // A queued build under the CURRENT claim fills an empty `staged`
+            // slot for the artifact it reuses. A retired generation that
+            // finished its recorded intent never binds, so without this the
+            // replacement would leave the version verified but unbound.
+            if let Some(fence) = &ctx.job_fence {
+                bind_staged_fenced(ctx, index_version_id, &existing.artifact_id, fence).await?;
+            }
             let outcome = Ok(MirrorOutcome::AlreadyBuilt {
                 artifact_id: existing.artifact_id,
             });
@@ -549,6 +577,11 @@ pub async fn direct_index(
                     "a sealed direct build failed before publication; leaving it for the reconciler"
                 );
             } else {
+                // A queued build that recorded an intent and then failed
+                // before sealing will never publish it.
+                if ctx.job_fence.is_some() {
+                    fail_pending_intent(ctx, &attempt_id, &e.to_string()).await;
+                }
                 ctx.attempts
                     .mark_failed(&attempt_id, "direct_build_failed", &e.to_string())
                     .await
@@ -573,6 +606,19 @@ async fn mirror_body(
     timer: &mut BuildTimer,
 ) -> Result<MirrorOutcome> {
     ctx.fault(BuildPhase::AfterClaim)?;
+
+    // ClearView R4: a queued build links its attempt to the job claim before
+    // any work that could be published, under the job row's lock. A claim
+    // retired before this point leaves no link and publishes nothing.
+    if let Some(fence) = &ctx.job_fence {
+        if !ctx
+            .attempts
+            .link_job(fence, attempt_id, index_version_id)
+            .await?
+        {
+            return Err(fence.stale());
+        }
+    }
 
     // Steps 4-5: stream committed chunks into a writer, OUTSIDE any
     // transaction. Not holding one is the whole reason attempts exist.
@@ -701,13 +747,54 @@ async fn mirror_body(
         ));
     }
 
-    // Step 7: catalog as `sealed`, converging on conflict.
     let final_prefix = ctx.artifact_prefix_for(
         target,
         &spec.scope.id,
         index_version_id,
         &sealed.artifact_id,
     );
+
+    // ClearView R4: the decision to publish. A queued build commits ONE
+    // immutable manifest key and digest under the job row's lock, while its
+    // generation is current, and before the catalog insert or any upload. A
+    // generation retired before this commit publishes nothing; one retired
+    // after it may only finish this exact intent and never binds.
+    let intent = match &ctx.job_fence {
+        None => None,
+        Some(fence) => {
+            let intent = PublicationIntent {
+                attempt_id: attempt_id.to_string(),
+                index_version_id: index_version_id.to_string(),
+                job_id: fence.job_id.clone(),
+                job_generation: fence.generation,
+                artifact_id: sealed.artifact_id.clone(),
+                manifest_key: manifest_key(&final_prefix),
+                // The artifact id IS the sha256 of the canonical manifest
+                // bytes; `publish_and_verify` re-checks the stored object
+                // against this digest before anything is recorded.
+                manifest_sha256: sealed.artifact_id.clone(),
+                state: IntentState::Pending,
+                outcome_detail: None,
+            };
+            if !ctx
+                .attempts
+                .commit_publication_intent(
+                    fence,
+                    attempt_id,
+                    index_version_id,
+                    &intent.artifact_id,
+                    &intent.manifest_key,
+                    &intent.manifest_sha256,
+                )
+                .await?
+            {
+                return Err(fence.stale());
+            }
+            Some((fence, intent))
+        }
+    };
+
+    // Step 7: catalog as `sealed`, converging on conflict.
     let new = NewArtifact {
         index_version_id: index_version_id.to_string(),
         artifact_id: sealed.artifact_id.clone(),
@@ -731,9 +818,14 @@ async fn mirror_body(
     };
     match ctx.catalog.insert_sealed(&new).await? {
         InsertOutcome::Converged { .. } => {
+            if intent.is_some() {
+                ctx.attempts
+                    .resolve_publication_intent(attempt_id, IntentState::Converged, None)
+                    .await?;
+            }
             return Ok(MirrorOutcome::Converged {
                 artifact_id: sealed.artifact_id,
-            })
+            });
         }
         InsertOutcome::Inserted | InsertOutcome::Adopted { .. } => {}
         InsertOutcome::Blocked { existing_state } => {
@@ -760,8 +852,14 @@ async fn mirror_body(
         &sealed.artifact_id,
         &sealed.manifest,
         &ctx.staging_dir(attempt_id),
+        intent.as_ref().map(|(fence, intent)| (*fence, intent)),
     )
     .await?;
+    if intent.is_some() {
+        ctx.attempts
+            .resolve_publication_intent(attempt_id, IntentState::Published, None)
+            .await?;
+    }
 
     timer.finished_publish();
     timer.bytes = new.bytes_len.max(0) as u64;
@@ -807,6 +905,13 @@ fn report(
 /// prefix, `mark_verified` only moves `sealed`→`verified`, and the binding is
 /// inserted only into an empty slot. Re-running it after a crash reproduces the
 /// same bytes at the same keys.
+///
+/// `fenced` is a queued build's job claim and the publication intent it
+/// committed (ClearView R4). With it, publication is limited to that intent:
+/// the manifest key and digest must be the recorded ones, an object already at
+/// the key must verify against the digest and is never overwritten, and the
+/// `staged` binding is made only while the claim is current. `None` is the
+/// unfenced publication, unchanged.
 async fn publish_and_verify(
     ctx: &MirrorContext,
     index_version_id: &str,
@@ -814,7 +919,12 @@ async fn publish_and_verify(
     artifact_id: &str,
     manifest: &ArtifactManifest,
     staging_dir: &Path,
+    fenced: Option<(&JobFence, &PublicationIntent)>,
 ) -> Result<bool> {
+    if let Some((_, intent)) = fenced {
+        require_intent_target(intent, index_version_id, final_prefix, artifact_id)?;
+    }
+    let intent_digest = fenced.map(|(_, intent)| intent.manifest_sha256.clone());
     // Steps 8 and 9 run on the BLOCKING pool.
     //
     // `ArtifactStore` is a synchronous trait — the datastore crate is
@@ -839,6 +949,31 @@ async fn publish_and_verify(
         };
         let staging =
             LocalFileStore::new(dir).map_err(|e| KernelError::Storage(format!("staging: {e}")))?;
+
+        // A fenced publication first checks what is already at the intent's
+        // key. Matching bytes mean an earlier run already published this
+        // exact intent (the manifest goes last, after every component), so
+        // nothing is written again; bytes that do not match are refused and
+        // left in place for an operator rather than overwritten.
+        if let Some(digest) = &intent_digest {
+            if store
+                .exists(MANIFEST)
+                .map_err(|e| KernelError::Storage(format!("manifest probe: {e}")))?
+            {
+                let existing = store
+                    .get_component(MANIFEST, None)
+                    .map_err(|e| KernelError::Storage(format!("existing manifest: {e}")))?;
+                munarium_datastore::verify::verify_manifest_bytes(&existing, digest).map_err(
+                    |e| {
+                        KernelError::Storage(format!(
+                            "the publication intent's key already holds a different manifest; \
+                             it was not overwritten: {e}"
+                        ))
+                    },
+                )?;
+                return Ok(());
+            }
+        }
 
         // Step 8: components to the immutable prefix. The manifest is NOT among
         // them; it goes last, after everything it names is durable.
@@ -890,8 +1025,82 @@ async fn publish_and_verify(
     // Step 11: a `staged` binding if the version has none — and NEVER
     // `serving`, and never the active pointer. A mirror adds an implementation
     // of a version that already exists; promoting it is a separate operation
-    // with its own safety argument.
-    bind_staged_if_empty(ctx, index_version_id, artifact_id).await
+    // with its own safety argument. A fenced publication binds only while its
+    // claim is current: a retired generation never calls the unfenced bind.
+    match fenced {
+        None => bind_staged_if_empty(ctx, index_version_id, artifact_id).await,
+        Some((fence, _)) => bind_staged_fenced(ctx, index_version_id, artifact_id, fence).await,
+    }
+}
+
+/// The canonical manifest's full object key under an artifact prefix.
+fn manifest_key(final_prefix: &str) -> String {
+    format!("{final_prefix}/{MANIFEST}")
+}
+
+/// Refuse to publish anything other than the intent's exact target.
+fn require_intent_target(
+    intent: &PublicationIntent,
+    index_version_id: &str,
+    final_prefix: &str,
+    artifact_id: &str,
+) -> Result<()> {
+    if intent.index_version_id != index_version_id
+        || intent.artifact_id != artifact_id
+        || intent.manifest_sha256 != artifact_id
+        || intent.manifest_key != manifest_key(final_prefix)
+    {
+        return Err(KernelError::InvalidInput(format!(
+            "attempt {} may publish only its recorded intent; this publication names another \
+             manifest key or digest",
+            intent.attempt_id
+        )));
+    }
+    Ok(())
+}
+
+/// Step 11 for a queued build: bind `staged` only if the slot is empty AND
+/// the job claim is still current, both under the job row's lock.
+async fn bind_staged_fenced(
+    ctx: &MirrorContext,
+    index_version_id: &str,
+    artifact_id: &str,
+    fence: &JobFence,
+) -> Result<bool> {
+    match ctx
+        .catalog
+        .bind_new_if_empty_fenced(
+            index_version_id,
+            BindingSlot::Staged,
+            artifact_id,
+            &ctx.node_id,
+            Some("mirror build"),
+            fence,
+        )
+        .await?
+    {
+        FencedBind::Bound(_) => Ok(true),
+        FencedBind::Occupied => Ok(false),
+        FencedBind::Superseded => {
+            tracing::warn!(
+                artifact_id = %artifact_id,
+                "build job claim was superseded; the published artifact was left unbound"
+            );
+            Ok(false)
+        }
+    }
+}
+
+/// Mark a queued build's pending intent failed, best effort. Used when the
+/// build fails before it sealed, so nothing will resume the intent.
+async fn fail_pending_intent(ctx: &MirrorContext, attempt_id: &str, detail: &str) {
+    if let Err(e) = ctx
+        .attempts
+        .resolve_publication_intent(attempt_id, IntentState::Failed, Some(detail))
+        .await
+    {
+        tracing::warn!(error = %e, "could not record a failed publication intent");
+    }
 }
 
 /// Step 11 on its own: bind `artifact_id` into the version's `staged` slot if
@@ -1007,6 +1216,8 @@ pub async fn reconcile_attempts(ctx: &MirrorContext) -> Result<ReconcileReport> 
         match reconcile_sealed(&row, &ctx.node_id, staging_present) {
             SealedVerdict::NotOurs { .. } => report.left_alone += 1,
             SealedVerdict::Abandon { reason } => {
+                // A queued build's pending intent, if any, ends with it.
+                fail_pending_intent(ctx, &row.attempt_id, reason).await;
                 ctx.attempts
                     .mark_failed(&row.attempt_id, "publication_abandoned", reason)
                     .await?;
@@ -1022,6 +1233,7 @@ pub async fn reconcile_attempts(ctx: &MirrorContext) -> Result<ReconcileReport> 
                     }
                     Err(e) => {
                         tracing::warn!(error = %e, "could not resume a sealed build");
+                        fail_pending_intent(ctx, &row.attempt_id, &e.to_string()).await;
                         ctx.attempts
                             .mark_failed(&row.attempt_id, "publication_abandoned", &e.to_string())
                             .await?;
@@ -1082,6 +1294,41 @@ async fn resume_publication(
             kind: "artifact",
             id: artifact_id.clone(),
         })?;
+    // ClearView R4: an attempt a queued build acquired may finish only the
+    // intent its generation committed, and binds only if that generation is
+    // still current. An unlinked attempt (a synchronous build, or one from a
+    // v1.4 builder) resumes exactly as before.
+    let intent = match ctx.attempts.job_link(attempt_id).await? {
+        None => None,
+        Some(link) => {
+            let intent = ctx
+                .attempts
+                .publication_intent(attempt_id)
+                .await?
+                .ok_or_else(|| {
+                    KernelError::Storage(format!(
+                        "attempt {attempt_id} belongs to build job {} but recorded no \
+                         publication intent; it cannot be resumed",
+                        link.job_id
+                    ))
+                })?;
+            if intent.job_id != link.job_id || intent.job_generation != link.job_generation {
+                return Err(KernelError::Storage(format!(
+                    "attempt {attempt_id}'s publication intent does not match its job link"
+                )));
+            }
+            require_intent_target(
+                &intent,
+                &row.index_version_id,
+                &artifact.artifact_uri,
+                &artifact_id,
+            )?;
+            let fence = intent.fence(ctx.catalog.tenant_id(), &row.owner_node_id);
+            Some((fence, intent))
+        }
+    };
+    let fenced = intent.as_ref().map(|(fence, intent)| (fence, intent));
+
     if artifact.state == ArtifactState::Verified {
         // Someone finished publication — or THIS attempt did, and crashed
         // between marking the artifact verified (step 10) and binding it
@@ -1089,7 +1336,17 @@ async fn resume_publication(
         // there before the caller marks the attempt succeeded: a verified
         // artifact with no binding is not servable, and the slot is filled
         // only if it is empty, so a finished publication is left alone.
-        bind_staged_if_empty(ctx, &row.index_version_id, &artifact_id).await?;
+        match fenced {
+            None => {
+                bind_staged_if_empty(ctx, &row.index_version_id, &artifact_id).await?;
+            }
+            Some((fence, _)) => {
+                bind_staged_fenced(ctx, &row.index_version_id, &artifact_id, fence).await?;
+                ctx.attempts
+                    .resolve_publication_intent(attempt_id, IntentState::Published, None)
+                    .await?;
+            }
+        }
         return Ok(());
     }
 
@@ -1100,8 +1357,14 @@ async fn resume_publication(
         &artifact_id,
         &manifest,
         staging_dir,
+        fenced,
     )
     .await?;
+    if fenced.is_some() {
+        ctx.attempts
+            .resolve_publication_intent(attempt_id, IntentState::Published, None)
+            .await?;
+    }
     Ok(())
 }
 
