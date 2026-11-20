@@ -12,12 +12,24 @@ tracing = { workspace = true }
 
 # DOCX = a ZIP holding word/document.xml.
 #
-# `default-features = false` matters: zip's defaults pull bzip2, lzma, zstd
-# and xz, all of which bind C libraries and would break the static musl link.
-# The `deflate` feature is the pure-Rust path (it selects
-# `flate2/rust_backend`); `deflate-zlib` and `deflate-zlib-ng` are the C ones
-# and must never be selected here. DOCX only ever uses deflate anyway.
-zip = { version = "2", default-features = false, features = ["deflate"] }
+# `default-features = false` matters: zip's defaults pull bzip2, lzma, zstd,
+# xz, ppmd and AES, some of which bind C libraries and would break the static
+# musl link. DOCX only ever uses deflate, so only `deflate-flate2` is selected:
+# the inflate path, without zopfli (a compressor this read-only use never
+# runs). `deflate-flate2-zlib` and `deflate-flate2-zlib-ng` are the C backends
+# and must never be selected here.
+#
+# >=9.0.5 is required, not preferred: earlier versions carry RUSTSEC-2026-0367,
+# -0368, -0369, -0429, -0545 and -0548 (extraction, AES authentication and
+# stream-name advisories). Only `ZipArchive::by_name` is used here, but a
+# vulnerable zip in the graph fails cargo-deny all the same.
+zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2"] }
+# Declared only to pin zip's inflate backend. zip 9 has no feature that selects
+# flate2's pure-Rust miniz_oxide backend, and flate2 with no backend does not
+# compile. This is the crate and backend zip 2's `deflate` feature selected,
+# already in the graph (lopdf uses it too), so DOCX inflation keeps the same
+# implementation and no new crate arrives.
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
 # >=0.41 is required, not preferred: earlier versions carry an unbounded
 # allocation advisory on namespace declarations, and a DOCX is untrusted
 # caller-supplied XML — precisely the input that advisory describes.

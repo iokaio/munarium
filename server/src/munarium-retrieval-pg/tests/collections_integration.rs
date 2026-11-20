@@ -869,7 +869,7 @@ async fn docx_sources_are_extracted_before_indexing() {
         let mut buf = Vec::new();
         {
             let mut zw = zip::ZipWriter::new(Cursor::new(&mut buf));
-            let opts: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default();
+            let opts = zip::write::SimpleFileOptions::default();
             zw.start_file("word/document.xml", opts).expect("start");
             zw.write_all(
                 br#"<w:document xmlns:w="x"><w:body>

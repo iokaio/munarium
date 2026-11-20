@@ -45,12 +45,14 @@ impl TextExtractor for DocxExtractor {
             ));
         }
         // `entry.size()` is the DECLARED uncompressed size from the central
-        // directory, which the archive's author wrote; the zip reader bounds
-        // itself by the compressed size only and never enforces the declared
-        // one. So the header check above is a cheap pre-filter and this
-        // `take` is the guard: a crafted entry declaring 100 bytes over a
-        // deflate stream that inflates to gigabytes stops one byte past the
-        // ceiling instead of allocating the whole inflation.
+        // directory, which the archive's author wrote. The header check above
+        // is a cheap pre-filter and this `take` is the guard: a crafted entry
+        // declaring 100 bytes over a deflate stream that inflates to gigabytes
+        // stops one byte past the ceiling instead of allocating the whole
+        // inflation. zip >= 9 also fails a read once an entry outgrows its
+        // declared size, so today that entry is refused after 101 bytes, with
+        // zip's error under the read label below. The `take` stays so the
+        // ceiling holds on our side whatever the zip reader enforces.
         let mut xml = String::new();
         let mut bounded = entry.take(MAX_DOCUMENT_XML + 1);
         bounded
@@ -171,7 +173,7 @@ mod tests {
         let mut buf = Vec::new();
         {
             let mut zw = zip::ZipWriter::new(Cursor::new(&mut buf));
-            let opts: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default()
+            let opts = zip::write::SimpleFileOptions::default()
                 .compression_method(zip::CompressionMethod::Deflated);
             zw.start_file("word/document.xml", opts).expect("start");
             zw.write_all(document_xml.as_bytes()).expect("write");
@@ -242,7 +244,7 @@ mod tests {
         let mut buf = Vec::new();
         {
             let mut zw = zip::ZipWriter::new(Cursor::new(&mut buf));
-            let opts: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default();
+            let opts = zip::write::SimpleFileOptions::default();
             zw.start_file("other.txt", opts).expect("start");
             zw.write_all(b"hi").expect("write");
             zw.finish().expect("finish");
@@ -253,5 +255,76 @@ mod tests {
     #[test]
     fn a_non_zip_is_an_error_not_a_panic() {
         assert!(DocxExtractor.extract(b"not a zip at all").is_err());
+    }
+
+    /// Overwrite the declared uncompressed size of the single entry in `zip`,
+    /// in both the local file header and the central directory header, the
+    /// way a crafted archive would. Only valid for archives this module builds:
+    /// one small entry, no ZIP64 extra field, no data descriptor.
+    fn set_declared_size(zip: &mut [u8], declared: u32) {
+        let le = declared.to_le_bytes();
+        let mut patched = 0;
+        for i in 0..zip.len().saturating_sub(4) {
+            match zip[i..i + 4] {
+                // Local file header: uncompressed size at offset 22.
+                [0x50, 0x4b, 0x03, 0x04] => {
+                    zip[i + 22..i + 26].copy_from_slice(&le);
+                    patched += 1;
+                }
+                // Central directory file header: uncompressed size at offset 24.
+                [0x50, 0x4b, 0x01, 0x02] => {
+                    zip[i + 24..i + 28].copy_from_slice(&le);
+                    patched += 1;
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(patched, 2, "expected one local and one central header");
+    }
+
+    #[test]
+    fn a_declared_size_past_the_ceiling_is_rejected_before_inflating() {
+        let mut bytes = docx(BODY);
+        let declared = u32::try_from(MAX_DOCUMENT_XML + 1).expect("fits in u32");
+        set_declared_size(&mut bytes, declared);
+        let err = DocxExtractor
+            .extract(&bytes)
+            .expect_err("a declared size past the ceiling must be rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("implausibly large") && msg.contains(&declared.to_string()),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[test]
+    fn an_entry_inflating_past_the_ceiling_is_rejected_despite_a_small_declared_size() {
+        // A real deflate stream that inflates one byte past the ceiling,
+        // behind a header that declares 100 bytes: the zip-bomb shape the
+        // header pre-filter cannot see. It must fail, not return text.
+        let mut buf = Vec::new();
+        {
+            let mut zw = zip::ZipWriter::new(Cursor::new(&mut buf));
+            let opts = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            zw.start_file("word/document.xml", opts).expect("start");
+            let chunk = vec![b' '; 1024 * 1024];
+            let mut left = MAX_DOCUMENT_XML + 1;
+            while left > 0 {
+                let n = left.min(chunk.len() as u64) as usize;
+                zw.write_all(&chunk[..n]).expect("write");
+                left -= n as u64;
+            }
+            zw.finish().expect("finish");
+        }
+        set_declared_size(&mut buf, 100);
+        let err = DocxExtractor
+            .extract(&buf)
+            .expect_err("an entry inflating past the ceiling must be rejected");
+        // Either guard may stop it first: zip's own declared-size check or
+        // the `take` ceiling ("... while declaring 100"). Both name the
+        // declaration; a rejection for any other reason would not.
+        let msg = err.to_string();
+        assert!(msg.contains("declar"), "unexpected error: {msg}");
     }
 }
