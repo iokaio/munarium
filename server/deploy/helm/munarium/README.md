@@ -70,8 +70,13 @@ digest value; use a Helm post-renderer to replace the image with
 | `image.repository` | _(required)_ | server image; `helm install` refuses without it |
 | `image.tag` | `"1.4.0"` | image tag — the update lever |
 | `replicas` | `2` | server pods |
-| `providerReplicaCount` | _(omitted)_ | `MUNARIUM_REPLICA_COUNT`, the provider RPM/TPM divisor that arms the cluster startup checks. Omitted: no entry is rendered, as in v1.4. `auto`: `replicas`. A positive integer: that divisor. Anything else fails the render. See [replica count](#replica-count-and-provider-limits) |
+| `providerReplicaCount` | _(omitted)_ | `MUNARIUM_REPLICA_COUNT`, the provider RPM/TPM divisor that arms the cluster startup checks. Omitted: no entry is rendered, as in v1.4. `auto`: `replicas`, plus `builder.replicas` when the builder group is enabled. A positive integer: that divisor. Anything else fails the render. See [replica count](#replica-count-and-provider-limits) |
 | `strategy` | `{}` | Deployment update strategy, rendered verbatim when set. Empty keeps the Kubernetes default (RollingUpdate, 25% surge) |
+| `builder.enabled` | `false` | Renders the optional [builder group](#builder-group): a separate `munarium-builder` Deployment that runs the build-job worker and serves no traffic. Off renders exactly the v1.4 objects |
+| `builder.replicas` | `1` | builder pods, independent of `replicas`; a non-negative integer |
+| `builder.resources` / `builder.strategy` | `{}` / `{}` | the builder container's resources and the builder Deployment's update strategy, rendered verbatim when set |
+| `builder.shutdownGraceSecs` / `builder.terminationGracePeriodSeconds` | `20` / `30` | the builders' `MUNARIUM_SHUTDOWN_GRACE_SECS` (drain bound) and the pod termination grace. The render fails unless `1 <= shutdownGraceSecs < terminationGracePeriodSeconds` |
+| `builder.staging.sizeLimit` | `""` | a size such as `64Gi` mounts disk-backed `emptyDir` volumes for the build workspace (`MUNARIUM_DATASTORE_STAGING_ROOT=/var/munarium/staging`) and `/tmp` scratch. Empty mounts none |
 | `staticTokens` | `demo-rw-token:demo:rw,demo-ro-token:demo:ro` | `MUNARIUM_STATIC_TOKENS` — demo literals; replace them |
 | `workloadIdentity.clientId` | `""` | Azure workload-identity UAMI client id. Set: pods get the `azure.workload.identity/use` label + a `munarium` ServiceAccount annotated for federation. Empty: no annotation, so the chart still installs on a non-Azure cluster |
 | `sourceStore.account` | `""` | Azure storage account for document bytes. Set: `MUNARIUM_SOURCE_STORE=az` via workload identity. Empty: `MUNARIUM_SOURCE_STORE=pg` (bytes in Postgres), which is what keeps a plain `helm install` working with no Azure at all |
@@ -104,7 +109,7 @@ stay off. `providerReplicaCount` controls it
 | Setting | Rendered on every pod | Use |
 |---|---|---|
 | omitted (bare chart) | nothing | v1.4 behavior. A count supplied by a post-render or `kubectl set env` override keeps its effect |
-| `auto` | `replicas` (at least 1) | the [production profile](values-production.yaml). The chart has one Server group, so a pod that serves and builds counts once |
+| `auto` | `replicas`, plus `builder.replicas` when `builder.enabled` (at least 1) | the [production profile](values-production.yaml). Every Server process counts once: a serving pod that also builds through an override is one process, and each separate builder is one more |
 | a positive integer | that integer | a fixed divisor, even when it differs from `replicas` |
 
 **Fresh production install.** Pass `-f deploy/helm/munarium/values-production.yaml`
@@ -156,6 +161,70 @@ aggregate admissions at steady state and during surge, two upgrades and a
 rollback ([SCALE-1-T1](../../../docs/design/scale-out.md#scale-1-t1)). The
 rendering cases are checked by `scripts/test_helm_chart.py` from the
 repository root.
+
+## Builder group
+
+`builder.enabled: true` adds a second Server group for the durable build-job
+worker ([design](../../../docs/design/scale-out.md#scale-2-t1)). Builds and
+queries then scale independently. The builder runs the same image with the
+same shared environment as the serving pods, plus four role settings:
+
+| Setting | Effect |
+|---|---|
+| `MUNARIUM_DATASTORE_BUILDER=enabled` | Runs the build-job worker ([datastore guide](../../../docs/guides/datastore.md)) |
+| `MUNARIUM_DEPLOYMENT_PLANE=builder` | Reports the pod as plane `builder` in the fleet table, so it never counts as a ready serving node for promotion gates |
+| `MUNARIUM_GRPC_ADDR=disabled` | Starts no direct gRPC listener. REST stays up for the liveness and readiness probes |
+| `MUNARIUM_SHUTDOWN_GRACE_SECS` | `builder.shutdownGraceSecs`, the drain bound described below |
+
+Its pods are labelled `app: munarium-builder`. The `munarium-server` and
+`munarium-grpc-direct` Services and the gateway routes select
+`app: munarium-server`, so no client traffic reaches a builder, whatever its
+readiness. The builder's readiness probe only gates its own rollout. Add a
+NetworkPolicy if pod-to-pod access to its REST port must also be refused.
+
+The serving group is unchanged by enabling the builder group; the chart never
+sets `MUNARIUM_DATASTORE_BUILDER` on it. A serving pod builds only if an
+override enables the worker there. With `providerReplicaCount: auto`, every
+pod in both groups sees `replicas + builder.replicas`, so two serving pods
+and one builder each see 3. Size PostgreSQL connections for both groups: each
+builder pod has its own `MUNARIUM_DB_MAX_CONNS` pool
+([pool math](../../../docs/ops/clustering.md#pool-math)).
+
+**Staging.** The root filesystem is read-only. A build that writes artifacts
+needs `builder.staging.sizeLimit` and a matching ephemeral-storage request in
+`builder.resources`; see the
+[datastore guide](../../../docs/guides/datastore.md) for the artifact store
+and the remaining `MUNARIUM_DATASTORE_*` settings, which go through the same
+override mechanism as the other unexposed settings below.
+
+**Add a builder.** Enable the group (or raise `builder.replicas`) on upgrade.
+With `auto`, the serving pods roll as well, because their divisor changes.
+Check that `kubectl get endpoints munarium-server` lists only serving pods,
+that each builder's log shows `build-job builder starting`, and that the
+queue gauges on its ops port (`munarium_index_build_jobs`) move.
+
+**Drain a builder.** Lower `builder.replicas`, or delete a builder pod. On
+SIGTERM the builder claims no further jobs. A build in flight stops at its
+next safe boundary (between sources, between versions, before seal and before
+upload) and its claim is released: the job stays `running` with its lease
+expired, and the next poll of any remaining builder reclaims it under a new
+generation, so the drained holder can no longer write. A build that finishes
+before its next boundary records its result as usual. A release counts as one
+of the job's three claims, as a crash does; a released final claim is failed
+with `attempts_exhausted` by the next cleanup and must be enqueued again. A
+build still running when `builder.shutdownGraceSecs` expires (for example
+inside a long uninterruptible parse) is abandoned and reclaimed once the job
+lease (`MUNARIUM_DATASTORE_JOB_LEASE_SECS`) lapses. With zero builders left,
+released jobs wait in the queue until a builder returns.
+
+**Not supported with platform-v1**, which requires exactly one Server process.
+
+What is not yet qualified on a cluster: adding and draining a builder with
+work in flight, fencing and reclaim across pods, continued foreground service
+and staging capacity ([SCALE-2-T1](../../../docs/design/scale-out.md#scale-2-t1),
+[plan](../../../docs/design/cluster-qualification-plan.md#plan-scale-2-t1)).
+`scripts/test_helm_chart.py` checks the rendering; PostgreSQL tests check the
+drain and release.
 
 ## What the chart does NOT wire (and the workaround)
 

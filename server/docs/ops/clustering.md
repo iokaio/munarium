@@ -95,6 +95,15 @@ well. See the
 [chart's replica-count section](../../deploy/helm/munarium/README.md#replica-count-and-provider-limits)
 for upgrade, migration, `platform-v1` and rollback.
 
+**Separate builders (SCALE-2).** `builder.enabled: true` adds a
+`munarium-builder` Deployment with its own replicas, resources and drain
+bound. It runs the build-job worker (`MUNARIUM_DATASTORE_BUILDER=enabled`),
+reports plane `builder`, starts no direct gRPC listener and is selected by no
+Service or gateway route, so builds and queries scale independently. With
+`auto`, both groups render `replicas + builder.replicas`. Add a builder by
+raising `builder.replicas`; drain one by lowering it. See the
+[chart's builder group](../../deploy/helm/munarium/README.md#builder-group).
+
 **The proof harness**: `.\test.ps1 -Cluster` builds once, starts two
 servers on 18082/18083 against the compose postgres with a fresh shared
 tenant and `MUNARIUM_REGISTRY_TTL_SECS=1`, and runs
@@ -109,6 +118,17 @@ idempotency (replay + mismatch), interleaved seq allocation with a stale
 (default 20) to finish. Give the orchestrator a termination grace period of
 at least that plus a few seconds. On Kubernetes add a short `preStop` sleep
 so endpoint deregistration outruns the drain.
+
+A process running the build-job worker drains its builder on the same signal
+and within the same grace window: it claims no further jobs, and a build in
+flight either finishes or stops at its next safe boundary and releases its
+claim. A released job keeps its state and generation with the lease expired,
+so the next poll of any remaining builder reclaims it under a new generation
+and the drained holder's fenced writes are refused. A release counts as one of
+the job's three claims, like a crash. A build still running at the deadline is
+abandoned and reclaimed once its job lease lapses. Neither path records a
+failure for a routine drain, except that a drained final claim is failed with
+`attempts_exhausted`.
 
 ## Pool math
 

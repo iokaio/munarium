@@ -457,7 +457,25 @@ async fn serve() {
     }
 
     let grace = std::time::Duration::from_secs(state.config.shutdown_grace_secs);
-    if supervision::supervise(tasks, shutdown, &state.draining, grace).await {
+    // SCALE-2: the builder loop, where enabled, stops claiming on the same
+    // signal and finishes or releases its claim within the same grace window,
+    // while the planes drain. A builder still working at the deadline is
+    // aborted and its claim lapses as after a crash.
+    let builder = {
+        let state = state.clone();
+        let shutdown = shutdown.clone();
+        async move {
+            if datastore_jobs::has_builder(&state) {
+                shutdown.wait().await;
+                datastore_jobs::drain_builder(&state, grace).await;
+            }
+        }
+    };
+    let (failed, ()) = tokio::join!(
+        supervision::supervise(tasks, shutdown, &state.draining, grace),
+        builder
+    );
+    if failed {
         std::process::exit(1);
     }
 }

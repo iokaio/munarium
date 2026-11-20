@@ -213,6 +213,10 @@ pub struct AppState {
     /// planes' /readyz flip to 503 "draining" so load balancers stop
     /// routing while in-flight work finishes under the grace window.
     pub draining: std::sync::atomic::AtomicBool,
+    /// The build-job builder loop, when this process runs one
+    /// (`MUNARIUM_DATASTORE_BUILDER=enabled`). Taken by main's shutdown path,
+    /// which waits for the loop to finish or release its claim (SCALE-2).
+    pub(crate) builder_task: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// Chronology rules assets in MEMORY-store mode only (dev/tests); pg
     /// mode persists to the chronology_rules table. (tenant, name) -> yaml.
     chrono_rules_mem: Mutex<HashMap<(String, String), String>>,
@@ -734,6 +738,7 @@ impl AppState {
             admission,
             inference,
             draining: std::sync::atomic::AtomicBool::new(false),
+            builder_task: std::sync::Mutex::new(None),
             console: crate::console_sessions::ConsoleSessions::new(console),
             mcp,
             chrono_rules_mem: Mutex::new(HashMap::new()),

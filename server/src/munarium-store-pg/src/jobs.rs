@@ -209,13 +209,18 @@ pub enum StopReason {
     /// The claim's generation was retired some other way: the lease lapsed
     /// and the job was reclaimed, completed, or failed by cleanup.
     LeaseLost,
+    /// This process is draining (SCALE-2): it received a stop signal, so the
+    /// build stops at its next safe boundary and the builder releases the
+    /// claim with [`BuildJobs::release_fenced`] instead of recording a
+    /// failure. The claim is still current when this reason is set.
+    Draining,
 }
 
 type StopHook = Box<dyn FnOnce(StopReason) + Send>;
 
 #[derive(Default)]
 struct SignalInner {
-    /// 0 = running, 1 = cancelled, 2 = lease lost.
+    /// 0 = running, 1 = cancelled, 2 = lease lost, 3 = draining.
     stop: std::sync::atomic::AtomicU8,
     /// The last lease renewal failed with an error, so whether the claim is
     /// still current is unknown until it is revalidated.
@@ -264,6 +269,7 @@ impl JobSignal {
         let code = match reason {
             StopReason::Cancelled => 1,
             StopReason::LeaseLost => 2,
+            StopReason::Draining => 3,
         };
         if self
             .inner
@@ -285,6 +291,7 @@ impl JobSignal {
         match self.inner.stop.load(std::sync::atomic::Ordering::SeqCst) {
             0 => None,
             1 => Some(StopReason::Cancelled),
+            3 => Some(StopReason::Draining),
             _ => Some(StopReason::LeaseLost),
         }
     }
@@ -898,6 +905,38 @@ impl BuildJobs {
         .bind(job_id)
         .bind(node_id)
         .bind(generation)
+        .execute(&self.pool)
+        .await
+        .map_err(storage_err)?;
+        Ok(updated.rows_affected() == 1)
+    }
+
+    /// Give a claim back at a safe boundary because this process is draining
+    /// (SCALE-2). Fenced like completion: only the holder of `fence`'s
+    /// generation, still `running`, can release, and `false` means the claim
+    /// was already retired (cancelled, completed, reclaimed or failed).
+    ///
+    /// Releasing expires the lease at once and changes nothing else: the job
+    /// stays `running` with its generation, exactly as if its holder had
+    /// died, so the next poll of any builder reclaims it under a new
+    /// generation (or, after the final claim, fails it with
+    /// `attempts_exhausted`) through the same paths R4 already fences. The
+    /// drained claim therefore counts as one of the job's claims. No event is
+    /// recorded for the release itself; the reclaim records one.
+    ///
+    /// Call it only after the build has stopped and its lease renewal ended:
+    /// a renewal by the same generation would restore the lease.
+    pub async fn release_fenced(&self, fence: &JobFence) -> Result<bool> {
+        let updated = sqlx::query(
+            "UPDATE index_build_jobs
+                SET claimed_at = 'epoch'::timestamptz, updated_at = now()
+              WHERE tenant_id = $1 AND job_id = $2
+                AND state = 'running' AND claimed_by = $3 AND attempts = $4",
+        )
+        .bind(&fence.tenant_id)
+        .bind(&fence.job_id)
+        .bind(&fence.node_id)
+        .bind(fence.generation)
         .execute(&self.pool)
         .await
         .map_err(storage_err)?;

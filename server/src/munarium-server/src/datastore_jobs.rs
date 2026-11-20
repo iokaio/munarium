@@ -116,57 +116,113 @@ pub async fn run_one_job(
     }
 }
 
-/// The builder loop: claim, execute, complete, repeat. Spawned only where the
-/// operator enabled it.
-pub fn spawn_builder(state: &Arc<AppState>) {
-    let enabled = std::env::var("MUNARIUM_DATASTORE_BUILDER")
-        .map(|v| v.eq_ignore_ascii_case("enabled"))
-        .unwrap_or(false);
-    if !enabled {
-        return;
+/// The builder's settings, read once at startup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BuilderSettings {
+    pub poll_ms: u64,
+    pub policy: ClaimPolicy,
+    pub events_per_tenant: Option<i32>,
+    pub lease_secs: i64,
+}
+
+impl BuilderSettings {
+    /// `None` when `MUNARIUM_DATASTORE_BUILDER` is not `enabled`. `Some(Err)`
+    /// names a setting that stops the builder from starting.
+    fn from_env() -> Option<std::result::Result<Self, String>> {
+        let enabled = std::env::var("MUNARIUM_DATASTORE_BUILDER")
+            .map(|v| v.eq_ignore_ascii_case("enabled"))
+            .unwrap_or(false);
+        if !enabled {
+            return None;
+        }
+        let poll_ms = std::env::var("MUNARIUM_DATASTORE_BUILDER_POLL_MS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(5_000u64)
+            .max(250);
+        // ClearView R8: opt-in tenant-fair claiming. Unset keeps the v1.4 FIFO
+        // queue; an unknown value is refused rather than silently ignored.
+        let policy = match std::env::var("MUNARIUM_DATASTORE_JOB_SCHEDULING") {
+            Err(_) => ClaimPolicy::Fifo,
+            Ok(raw) => match ClaimPolicy::parse(&raw) {
+                Ok(p) => p,
+                Err(e) => return Some(Err(e.to_string())),
+            },
+        };
+        // ClearView B2: the per-tenant event retention count. Unset keeps the
+        // value in the database (the provisional default from migration 0046).
+        let events_per_tenant = match std::env::var("MUNARIUM_DATASTORE_JOB_EVENTS_PER_TENANT") {
+            Err(_) => None,
+            Ok(raw) => match raw.trim().parse::<i32>() {
+                Ok(n) if n >= 1 => Some(n),
+                _ => {
+                    return Some(Err(
+                        "MUNARIUM_DATASTORE_JOB_EVENTS_PER_TENANT must be a positive integer"
+                            .into(),
+                    ))
+                }
+            },
+        };
+        let lease_secs = std::env::var("MUNARIUM_DATASTORE_JOB_LEASE_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(600i64)
+            .max(30);
+        Some(Ok(Self {
+            poll_ms,
+            policy,
+            events_per_tenant,
+            lease_secs,
+        }))
     }
+}
+
+/// How often an idle or working builder looks for the drain flag. Bounds how
+/// long a stop signal waits before the builder stops claiming, and before an
+/// in-flight build is told to stop at its next safe boundary.
+const DRAIN_CHECK: std::time::Duration = std::time::Duration::from_millis(200);
+
+/// The builder loop: claim, execute, complete, repeat. Spawned only where the
+/// operator enabled it. The loop's handle is kept on the state so shutdown
+/// can wait for it (SCALE-2).
+pub fn spawn_builder(state: &Arc<AppState>) {
+    let settings = match BuilderSettings::from_env() {
+        None => return,
+        Some(Ok(s)) => s,
+        Some(Err(e)) => {
+            tracing::error!(error = %e, "the builder was not started");
+            return;
+        }
+    };
     let Some(pool) = state.pg_pool().cloned() else {
         tracing::error!("MUNARIUM_DATASTORE_BUILDER=enabled requires the postgres store");
         return;
     };
-    let poll_ms = std::env::var("MUNARIUM_DATASTORE_BUILDER_POLL_MS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(5_000u64)
-        .max(250);
-    // ClearView R8: opt-in tenant-fair claiming. Unset keeps the v1.4 FIFO
-    // queue; an unknown value is refused rather than silently ignored.
-    let policy = match std::env::var("MUNARIUM_DATASTORE_JOB_SCHEDULING") {
-        Err(_) => ClaimPolicy::Fifo,
-        Ok(raw) => match ClaimPolicy::parse(&raw) {
-            Ok(p) => p,
-            Err(e) => {
-                tracing::error!(error = %e, "the builder was not started");
-                return;
-            }
-        },
-    };
-    tracing::info!(scheduling = policy.as_str(), "build-job builder starting");
-    // ClearView B2: the per-tenant event retention count. Unset keeps the
-    // value in the database (the provisional default from migration 0046).
-    let events_per_tenant = match std::env::var("MUNARIUM_DATASTORE_JOB_EVENTS_PER_TENANT") {
-        Err(_) => None,
-        Ok(raw) => match raw.trim().parse::<i32>() {
-            Ok(n) if n >= 1 => Some(n),
-            _ => {
-                tracing::error!(
-                    "MUNARIUM_DATASTORE_JOB_EVENTS_PER_TENANT must be a positive integer; the builder was not started"
-                );
-                return;
-            }
-        },
-    };
-    let lease_secs = std::env::var("MUNARIUM_DATASTORE_JOB_LEASE_SECS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(600i64)
-        .max(30);
+    let handle = spawn_builder_with(state, pool, settings);
+    *state.builder_task.lock().unwrap_or_else(|e| e.into_inner()) = Some(handle);
+}
 
+/// The loop itself, with explicit settings.
+///
+/// Draining (SCALE-2): once `state.draining` is set by a stop signal, the
+/// loop claims nothing more and returns. A build in flight is told to stop
+/// at its next safe boundary ([`StopReason::Draining`]); if it finishes
+/// first, its outcome is recorded as usual, otherwise the claim is released
+/// for another builder (see [`settle_claim`]).
+///
+/// [`StopReason::Draining`]: munarium_store_pg::jobs::StopReason::Draining
+pub(crate) fn spawn_builder_with(
+    state: &Arc<AppState>,
+    pool: sqlx::PgPool,
+    settings: BuilderSettings,
+) -> tokio::task::JoinHandle<()> {
+    let BuilderSettings {
+        poll_ms,
+        policy,
+        events_per_tenant,
+        lease_secs,
+    } = settings;
+    tracing::info!(scheduling = policy.as_str(), "build-job builder starting");
     let weak = Arc::downgrade(state);
     tokio::spawn(async move {
         if let Some(n) = events_per_tenant {
@@ -178,6 +234,10 @@ pub fn spawn_builder(state: &Arc<AppState>) {
         let jobs = BuildJobs::new(pool);
         loop {
             let Some(state) = weak.upgrade() else { return };
+            if is_draining(&state) {
+                tracing::info!("builder draining: no further claims");
+                return;
+            }
             let node = state.config.instance_id.clone();
             // Fail expired final claims before claiming (ClearView R4). This
             // runs on every poll, including an empty queue, and consumes no
@@ -196,6 +256,11 @@ pub fn spawn_builder(state: &Arc<AppState>) {
                     }
                 }
                 Err(e) => tracing::warn!(error = %e, "expired-claim cleanup failed"),
+            }
+            // A stop signal may have arrived during the cleanup.
+            if is_draining(&state) {
+                tracing::info!("builder draining: no further claims");
+                return;
             }
             match jobs
                 .claim_next(&node, lease_secs, MAX_JOB_ATTEMPTS, policy)
@@ -221,31 +286,24 @@ pub fn spawn_builder(state: &Arc<AppState>) {
                         signal.clone(),
                         std::time::Duration::from_secs((lease_secs as u64 / 3).max(5)),
                     );
-                    let outcome = run_one_job(&state, &job, Some(&fence), Some(&signal))
-                        .await
-                        .map_err(|e| job_failure(&job, generation, &e));
+                    // SCALE-2: a stop signal stops the build at its next safe
+                    // boundary.
+                    let drain = spawn_drain_watch(weak.clone(), signal.clone());
+                    let outcome = run_one_job(&state, &job, Some(&fence), Some(&signal)).await;
                     drop(beat);
+                    drop(drain);
                     if let Some(reason) = signal.stopped() {
                         tracing::info!(
                             job_id = %job.job_id,
                             generation,
                             cancelled = reason == munarium_store_pg::jobs::StopReason::Cancelled,
+                            draining = reason == munarium_store_pg::jobs::StopReason::Draining,
                             "build job stopped at a safe boundary; builder slot released"
                         );
                     }
-                    match jobs
-                        .complete_fenced_classified(
-                            &job.tenant_id,
-                            &job.job_id,
-                            &node,
-                            generation,
-                            outcome,
-                            None,
-                        )
-                        .await
-                    {
-                        Ok(true) => {}
-                        Ok(false) => tracing::warn!(
+                    match settle_claim(&jobs, &job, &fence, &signal, outcome).await {
+                        Ok(Settled::Recorded | Settled::Released) => {}
+                        Ok(Settled::NotOurs) => tracing::warn!(
                             job_id = %job.job_id,
                             "job completion was a no-op; the lease lapsed and another builder owns it"
                         ),
@@ -259,9 +317,152 @@ pub fn spawn_builder(state: &Arc<AppState>) {
                 Err(e) => tracing::warn!(error = %e, "job claim failed"),
             }
             drop(state);
-            tokio::time::sleep(std::time::Duration::from_millis(poll_ms)).await;
+            idle(&weak, std::time::Duration::from_millis(poll_ms)).await;
         }
-    });
+    })
+}
+
+fn is_draining(state: &AppState) -> bool {
+    state.draining.load(std::sync::atomic::Ordering::Acquire)
+}
+
+/// Sleep for `poll`, returning early once the process is draining (or gone).
+async fn idle(weak: &std::sync::Weak<AppState>, poll: std::time::Duration) {
+    let until = tokio::time::Instant::now() + poll;
+    loop {
+        match weak.upgrade() {
+            Some(state) if !is_draining(&state) => {}
+            _ => return,
+        }
+        let now = tokio::time::Instant::now();
+        if now >= until {
+            return;
+        }
+        tokio::time::sleep(DRAIN_CHECK.min(until - now)).await;
+    }
+}
+
+/// Stop `signal` with [`StopReason::Draining`] once the process is draining
+/// (SCALE-2). Ends with the build: the guard aborts it.
+///
+/// [`StopReason::Draining`]: munarium_store_pg::jobs::StopReason::Draining
+fn spawn_drain_watch(weak: std::sync::Weak<AppState>, signal: JobSignal) -> AbortOnDrop {
+    AbortOnDrop(tokio::spawn(async move {
+        loop {
+            match weak.upgrade() {
+                Some(state) if !is_draining(&state) => {}
+                _ => {
+                    signal.stop(munarium_store_pg::jobs::StopReason::Draining);
+                    return;
+                }
+            }
+            tokio::time::sleep(DRAIN_CHECK).await;
+        }
+    }))
+}
+
+/// What became of a claim once its build returned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Settled {
+    /// The outcome (success or classified failure) was recorded.
+    Recorded,
+    /// The build stopped at a safe boundary because this process is
+    /// draining; the claim was released for another builder.
+    Released,
+    /// The claim had already been retired; nothing was written.
+    NotOurs,
+}
+
+/// Record a build's outcome, or release its claim when it stopped for a
+/// drain (SCALE-2).
+///
+/// A build that stopped at a safe boundary on [`StopReason::Draining`]
+/// returns the fence's stale error without having failed. Recording that as
+/// a failure would end the job for a routine rollout, so the claim is
+/// released instead and the next builder reclaims it. A build that finished
+/// before reaching a boundary records its outcome as usual, and so does a
+/// genuine failure that happened to coincide with the drain.
+///
+/// [`StopReason::Draining`]: munarium_store_pg::jobs::StopReason::Draining
+pub(crate) async fn settle_claim(
+    jobs: &BuildJobs,
+    job: &BuildJob,
+    fence: &JobFence,
+    signal: &JobSignal,
+    outcome: Result<serde_json::Value>,
+) -> Result<Settled> {
+    let generation = fence.generation;
+    let drained = signal.stopped() == Some(munarium_store_pg::jobs::StopReason::Draining)
+        && matches!(&outcome, Err(KernelError::Storage(m))
+            if m == munarium_store_pg::jobs::STALE_GENERATION_MESSAGE);
+    if drained {
+        if jobs.release_fenced(fence).await? {
+            tracing::info!(
+                job_id = %job.job_id,
+                generation,
+                "build job released for another builder: this builder is draining"
+            );
+            return Ok(Settled::Released);
+        }
+        return Ok(Settled::NotOurs);
+    }
+    let outcome = outcome.map_err(|e| job_failure(job, generation, &e));
+    let recorded = jobs
+        .complete_fenced_classified(
+            &job.tenant_id,
+            &job.job_id,
+            &fence.node_id,
+            generation,
+            outcome,
+            None,
+        )
+        .await?;
+    Ok(if recorded {
+        Settled::Recorded
+    } else {
+        Settled::NotOurs
+    })
+}
+
+/// Wait for this process's builder loop to finish or release its claim,
+/// for at most `grace` (SCALE-2). Called once a stop signal has fired. A
+/// loop still running at the deadline is aborted: its claim then stays until
+/// its lease lapses, as after a crash, and another builder reclaims it.
+/// Returns false only in that case, and true when there is no builder.
+pub(crate) async fn drain_builder(state: &AppState, grace: std::time::Duration) -> bool {
+    state
+        .draining
+        .store(true, std::sync::atomic::Ordering::Release);
+    let handle = state
+        .builder_task
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take();
+    let Some(mut handle) = handle else {
+        return true;
+    };
+    match tokio::time::timeout(grace, &mut handle).await {
+        Ok(_) => {
+            tracing::info!("builder drained");
+            true
+        }
+        Err(_) => {
+            tracing::warn!(
+                "builder drain exceeded the grace period; its claim is left to lapse and be reclaimed"
+            );
+            handle.abort();
+            false
+        }
+    }
+}
+
+/// Whether this process runs a builder loop that shutdown should wait for.
+pub(crate) fn has_builder(state: &AppState) -> bool {
+    state
+        .builder_task
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_some()
 }
 
 /// The failure a builder records for a job (ClearView C2): classified from
@@ -823,6 +1024,10 @@ pub async fn list_job_versions(
 #[cfg(test)]
 #[path = "datastore_jobs_c2_tests.rs"]
 mod c2_tests;
+
+#[cfg(test)]
+#[path = "datastore_jobs_drain_tests.rs"]
+mod drain_tests;
 
 #[cfg(test)]
 mod tests {

@@ -1,0 +1,99 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{- if include "munarium.builderEnabled" . }}
+{{- $b := .Values.builder }}
+{{- $replicas := $b.replicas | default 0 | int }}
+{{- if or (not (regexMatch "^[0-9]+$" (toString $b.replicas))) (lt $replicas 0) }}
+{{- fail (printf "builder.replicas must be a non-negative integer; got %v" $b.replicas) }}
+{{- end }}
+{{- $grace := $b.shutdownGraceSecs | int }}
+{{- $term := $b.terminationGracePeriodSeconds | int }}
+{{- if or (lt $grace 1) (ge $grace $term) }}
+{{- fail (printf "builder.shutdownGraceSecs (%v) must be at least 1 and below builder.terminationGracePeriodSeconds (%v), so a draining builder can finish or release its claim before Kubernetes kills it" $b.shutdownGraceSecs $b.terminationGracePeriodSeconds) }}
+{{- end }}
+# The optional builder group (scale-out.md, SCALE-2). The same image runs the
+# durable build-job worker with its own replicas and resources. Its pods are
+# labelled app: munarium-builder, so no Service or gateway route selects them,
+# and they report plane `builder` in the fleet table, so they never count as
+# ready serving nodes. On SIGTERM a builder stops claiming and finishes or
+# releases its claim within MUNARIUM_SHUTDOWN_GRACE_SECS.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: munarium-builder
+  labels: { app: munarium-builder }
+spec:
+  replicas: {{ $replicas }}
+  {{- with $b.strategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  selector:
+    matchLabels: { app: munarium-builder }
+  template:
+    metadata:
+      {{- if .Values.metrics.scrapeAnnotations }}
+      # The builder's ops plane carries the build-queue gauges (SCALE-3).
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+      {{- end }}
+      labels:
+        app: munarium-builder
+        {{- if .Values.workloadIdentity.clientId }}
+        azure.workload.identity/use: "true"
+        {{- end }}
+    spec:
+      {{- if .Values.workloadIdentity.clientId }}
+      serviceAccountName: munarium
+      {{- end }}
+      terminationGracePeriodSeconds: {{ $term }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: munarium-builder
+          image: "{{ required "image.repository is required: set it to a registry you can pull munarium-server from (there is no official public image for the open edition)" .Values.image.repository }}:{{ .Values.image.tag }}"
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+          # REST stays up for the probes; nothing routes client traffic here.
+          ports:
+            - { name: rest, containerPort: 8080 }
+            - { name: ops, containerPort: 9090 }
+          env:
+            {{- include "munarium.serverEnv" . | nindent 12 }}
+            # The builder role (SCALE-2): run the build-job worker, report as
+            # plane `builder`, take no direct gRPC traffic, and bound the drain.
+            - { name: MUNARIUM_DATASTORE_BUILDER, value: enabled }
+            - { name: MUNARIUM_DEPLOYMENT_PLANE, value: builder }
+            - { name: MUNARIUM_GRPC_ADDR, value: disabled }
+            - { name: MUNARIUM_SHUTDOWN_GRACE_SECS, value: {{ $grace | quote }} }
+            {{- if $b.staging.sizeLimit }}
+            - { name: MUNARIUM_DATASTORE_STAGING_ROOT, value: /var/munarium/staging }
+            {{- end }}
+          {{- with $b.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8080 }
+          {{- if $b.staging.sizeLimit }}
+          volumeMounts:
+            - { name: staging, mountPath: /var/munarium/staging }
+            - { name: scratch, mountPath: /tmp }
+          {{- end }}
+      {{- if $b.staging.sizeLimit }}
+      # Build workspace and Tantivy scratch (TMPDIR defaults to /tmp): the
+      # root filesystem is read-only. Disk-backed, lost with the pod.
+      volumes:
+        - name: staging
+          emptyDir: { sizeLimit: {{ $b.staging.sizeLimit | quote }} }
+        - name: scratch
+          emptyDir: { sizeLimit: {{ $b.staging.sizeLimit | quote }} }
+      {{- end }}
+{{- end }}

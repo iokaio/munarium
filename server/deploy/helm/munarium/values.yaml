@@ -13,7 +13,8 @@ replicas: 2
 # off, and a count supplied by a post-render or `kubectl set env` override
 # keeps its effect. `auto` renders `replicas`; a positive integer renders that
 # fixed divisor. The production profile (values-production.yaml) sets `auto`;
-# keep it in the release values on every upgrade.
+# keep it in the release values on every upgrade. With the builder group
+# enabled, `auto` renders `replicas + builder.replicas` on every pod.
 # providerReplicaCount: auto
 
 # Deployment update strategy, rendered verbatim when set. Empty keeps the
@@ -21,6 +22,37 @@ replicas: 2
 # each take a full provider share; `rollingUpdate: {maxSurge: 0}` bounds the
 # live processes at `replicas`. platform-v1 requires `type: Recreate`.
 strategy: {}
+
+# Optional builder group (scale-out.md, SCALE-2). Off by default, which renders
+# exactly the single Server group of v1.4. Enabled, a separate
+# `munarium-builder` Deployment runs the durable build-job worker
+# (MUNARIUM_DATASTORE_BUILDER=enabled) with its own replicas and resources.
+# Its pods are labelled `app: munarium-builder`, so no Service or gateway route
+# selects them; they report plane `builder` to the fleet table and run no
+# direct gRPC listener. The serving group is unchanged: it builds only if an
+# override enables the worker there. On SIGTERM a builder stops claiming and
+# finishes or releases its claim within `shutdownGraceSecs`, which must stay
+# below `terminationGracePeriodSeconds`. Not supported with platform-v1, which
+# requires exactly one Server process.
+builder:
+  enabled: false
+  replicas: 1
+  # Container resources, rendered verbatim (requests/limits, including
+  # ephemeral-storage for the staging volume).
+  resources: {}
+  # Deployment update strategy for the builder group, rendered verbatim.
+  strategy: {}
+  # MUNARIUM_SHUTDOWN_GRACE_SECS on the builders. After SIGTERM an in-flight
+  # build stops at its next safe boundary and its claim is released; this
+  # bounds that wait. A build still running at the deadline is abandoned and
+  # its claim is reclaimed once the job lease lapses, as after a crash.
+  shutdownGraceSecs: 20
+  terminationGracePeriodSeconds: 30
+  # A size such as 64Gi mounts disk-backed emptyDir volumes for the build
+  # workspace (MUNARIUM_DATASTORE_STAGING_ROOT) and /tmp scratch. Empty mounts
+  # none: the root filesystem is read-only.
+  staging:
+    sizeLimit: ""
 
 # static demo auth; production swaps MUNARIUM_AUTH_MODE=oidc via values
 staticTokens: "demo-rw-token:demo:rw,demo-ro-token:demo:ro"

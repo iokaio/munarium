@@ -169,7 +169,7 @@ The [example AKS module](../../deploy/terraform/example-aks/README.md) is author
 - Prometheus and kube-state-metrics;
 - a budget alert on the resource group.
 
-The chart lacks: `nodeSelector`/`affinity`/`tolerations`, `terminationGracePeriodSeconds` and a `preStop` sleep (the [cluster guide](../ops/clustering.md#how-to-run-it) recommends both), an `extraEnv` hook (so `MUNARIUM_TOKEN_SECRET`, `MUNARIUM_DATASTORE_BUILDER` and the admission settings need a post-render patch), a separate builder group (SCALE-2), a second Deployment for held mixed-version replicas, and Lens. Until those land, use a post-renderer overlay kept with the qualification tooling.
+The chart lacks: `nodeSelector`/`affinity`/`tolerations`, `terminationGracePeriodSeconds` and a `preStop` sleep (the [cluster guide](../ops/clustering.md#how-to-run-it) recommends both), an `extraEnv` hook (so `MUNARIUM_TOKEN_SECRET`, the serving group's `MUNARIUM_DATASTORE_BUILDER` and the admission settings need a post-render patch), a second Deployment for held mixed-version replicas, and Lens. Until those land, use a post-renderer overlay kept with the qualification tooling.
 
 ## Receipt format
 
@@ -306,7 +306,7 @@ Hours come from the local rehearsal timings plus the provisioning and teardown t
 
 **Purpose.** Add and drain a builder in its own group with work in flight; verify fencing and reclaim, continued foreground service and sufficient staging space. [SCALE-2-T1](scale-out.md#scale-2-t1)
 
-**Prerequisites.** Ledger row SCALE-2 (planned: chart builder group outside the gateway selector), R4 (implemented), R6 cooperative cancellation and R9 fenced progress (planned). Chart support for a builder-only group and the `auto` divisor counting it.
+**Prerequisites.** The chart's optional builder group (`builder.enabled`, outside every Service and route, counted by `auto`; [chart](../../deploy/helm/munarium/README.md#builder-group)) and the drain release on SIGTERM, both implemented with local render and PostgreSQL tests; R4, R6 cooperative cancellation and R9 fenced progress.
 
 **Topology.** C1: 2 serving replicas, builder group 0 → 1 → 2 → 1 on the third Server node (one builder pod per node where the staging disk is measured). Object store for artifacts.
 
@@ -314,7 +314,7 @@ Hours come from the local rehearsal timings plus the provisioning and teardown t
 
 1. With 2 serving and 0 separate builders, verify the serving group builds (or not) as configured and record the divisor (2).
 2. Add 1 builder. Verify the divisor becomes 3 on all processes (`auto`), the builder is not in the Service endpoints (`kubectl get endpoints munarium-server`), and it claims jobs.
-3. Enqueue long builds. While a job is running, drain the builder (`kubectl delete pod` with grace, then scale to 0). Verify the lease lapses, another builder reclaims under a new generation, the retired holder writes nothing after reclaim (inspect `index_build_attempts`, `index_build_publication_intents` with the queries in the [datastore guide](../guides/datastore.md#mixed-version-builders-drain-before-switching)), and the job completes once.
+3. Enqueue long builds. While a job is running, drain the builder (`kubectl delete pod` with grace, then scale to 0). Verify the builder logs `builder draining: no further claims` and either records the result or logs `build job released for another builder`, that the released job is reclaimed under a new generation at the next poll of a remaining builder (and waits in the queue while none remains), that a build outliving `builder.shutdownGraceSecs` is reclaimed only after its lease lapses, the retired holder writes nothing after reclaim (inspect `index_build_attempts`, `index_build_publication_intents` with the queries in the [datastore guide](../guides/datastore.md#mixed-version-builders-drain-before-switching)), and the job completes once.
 4. Kill a builder (`--grace-period=0 --force`) mid-publication and verify the reconciler finishes or fails the intent without binding a retired generation.
 5. Throughout, run foreground queries from the load generator and record p95 latency and refusals.
 6. Record staging disk use per builder at peak and compare with the node's ephemeral storage.
