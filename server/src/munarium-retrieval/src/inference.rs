@@ -77,6 +77,39 @@ pub struct RerankStage {
     pub max_candidates: usize,
     /// A candidate passage longer than this is a refusal, never truncated.
     pub max_document_bytes: usize,
+    /// The binding's rerank instruction (hub ADR 0029: Server applies it,
+    /// the endpoint applies none). `None` sends the query unchanged.
+    pub instruction: Option<String>,
+}
+
+impl RerankStage {
+    /// The stage identity a receipt records: see [`rerank_identity`].
+    pub fn identity(&self) -> String {
+        rerank_identity(&self.model, self.instruction.as_deref())
+    }
+}
+
+/// The `query` a reranking stage sends. With an instruction it is the
+/// Qwen3-Reranker card's query part, `<Instruct>: {instruction}\n<Query>:
+/// {query}`; the endpoint's fixed template supplies the system prompt, the
+/// role markers and `\n<Document>: `. Without one the query is unchanged,
+/// exactly as before the setting existed.
+pub fn rerank_query(instruction: Option<&str>, query: &str) -> String {
+    match instruction {
+        Some(instruction) => format!("<Instruct>: {instruction}\n<Query>: {query}"),
+        None => query.to_string(),
+    }
+}
+
+/// The reranking stage's identity: the model name alone when no instruction
+/// is configured (the Phase 6 identity, unchanged), otherwise the model name
+/// with a digest of the instruction, so a receipt shows which instruction
+/// shaped the order without carrying its text.
+pub fn rerank_identity(model: &str, instruction: Option<&str>) -> String {
+    match instruction {
+        Some(instruction) => format!("{model}#instruct-{}", fingerprint(instruction)),
+        None => model.to_string(),
+    }
 }
 
 /// Explicitly authorized shadow work for one collection. The endpoints here
@@ -250,10 +283,11 @@ async fn rerank_order(
     if documents.iter().any(|d| d.len() > stage.max_document_bytes) {
         return Err(failed(FailureKind::InputTooLarge, "document_bytes"));
     }
+    let query = rerank_query(stage.instruction.as_deref(), query);
     let reply = endpoint
         .rerank(RerankCall {
             model: &stage.model,
-            query,
+            query: &query,
             documents: &documents,
             deadline,
         })
@@ -488,7 +522,7 @@ impl crate::Retrieval {
                             state: "ready",
                             reason: None,
                             fallback: None,
-                            identity: Some(stage.model.clone()),
+                            identity: Some(stage.identity()),
                             scored: Some(scored as u64),
                         });
                     }
@@ -509,7 +543,7 @@ impl crate::Retrieval {
                             state: failure.kind.state(),
                             reason: Some(failure.reason),
                             fallback: Some("fused_order"),
-                            identity: Some(stage.model.clone()),
+                            identity: Some(stage.identity()),
                             scored: None,
                         });
                     }
@@ -804,6 +838,32 @@ mod tests {
         let (both, w) = query_inputs(&prepared("a", "a b", 0.25), "I:");
         assert_eq!(both, vec!["I:a", "I:a b"]);
         assert!((w - 0.25).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_rerank_query_is_the_qwen3_card_format_or_unchanged() {
+        let task = "Given a web search query, retrieve relevant passages that answer the query";
+        assert_eq!(
+            rerank_query(Some(task), "What is the capital of China?").as_bytes(),
+            b"<Instruct>: Given a web search query, retrieve relevant passages that answer the query\n<Query>: What is the capital of China?"
+        );
+        // Unset: the query is sent byte for byte as before.
+        assert_eq!(rerank_query(None, "orchid  nebula\n"), "orchid  nebula\n");
+    }
+
+    #[test]
+    fn the_rerank_identity_records_the_instruction() {
+        // Unset keeps the Phase 6 identity: the model name.
+        assert_eq!(rerank_identity("m", None), "m");
+        let a = rerank_identity("m", Some("find the passage"));
+        let b = rerank_identity("m", Some("find the passages"));
+        assert!(a.starts_with("m#instruct-"), "{a}");
+        assert_eq!(a.len(), "m#instruct-".len() + 32);
+        assert_ne!(a, b, "a changed instruction is a changed identity");
+        assert_ne!(a, rerank_identity("n", Some("find the passage")));
+        assert_eq!(a, rerank_identity("m", Some("find the passage")));
+        // The identity carries a digest, never the instruction text.
+        assert!(!a.contains("find"));
     }
 
     #[test]

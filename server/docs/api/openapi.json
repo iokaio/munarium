@@ -10933,7 +10933,7 @@
               "string",
               "null"
             ],
-            "description": "Prefixed to every query before embedding. Part of the index identity."
+            "description": "Prefixed to every query before embedding, exactly as given: the full\nliteral prefix, labels and separators included. Part of the index\nidentity."
           }
         },
         "additionalProperties": false
@@ -11046,6 +11046,13 @@
           "model"
         ],
         "properties": {
+          "instruction": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The task instruction for an instruction-aware reranker (hub ADR 0029:\nServer applies it, the endpoint applies none). When set, Server sends\nthe rerank `query` as `<Instruct>: {instruction}\\n<Query>: {query}`,\nthe Qwen3-Reranker card format; when omitted the query is sent\nunchanged. Part of the reranking stage identity. 1 to 1,024\ncharacters, no control characters. Absent from responses when unset."
+          },
           "max_candidates": {
             "type": [
               "integer",
@@ -11123,7 +11130,7 @@
               "string",
               "null"
             ],
-            "description": "The semantic space id (embedding only)."
+            "description": "The stage identity: the semantic space id (embedding), or the\nreranking model name, followed by `#instruct-` and a digest of the\nrerank instruction when one is configured."
           },
           "model": {
             "type": "string"

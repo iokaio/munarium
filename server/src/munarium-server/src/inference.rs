@@ -40,8 +40,8 @@ use munarium_providers::openai_compatible::{
 };
 use munarium_providers::{parse_provider_config, ProviderConfigDoc};
 use munarium_retrieval::inference::{
-    CollectionPlan, EmbeddingStage, InferenceGovernor, InferenceRecorder, RerankStage,
-    ShadowComparison, ShadowPlan, StageEndpoint, StageEvent,
+    rerank_identity, CollectionPlan, EmbeddingStage, InferenceGovernor, InferenceRecorder,
+    RerankStage, ShadowComparison, ShadowPlan, StageEndpoint, StageEvent,
 };
 use munarium_retrieval::{SemanticSpace, SEMANTIC_DIMS};
 use sqlx::{PgPool, Row};
@@ -1047,6 +1047,7 @@ impl StagePieces {
             max_document_bytes: settings
                 .max_document_bytes
                 .unwrap_or(DEFAULT_MAX_DOCUMENT_BYTES) as usize,
+            instruction: settings.instruction.clone(),
         })
     }
 }
@@ -1417,6 +1418,18 @@ pub async fn op_bind(
                 "rerank.max_candidates must be 2-100 and max_document_bytes 256-1048576".into(),
             ));
         }
+        if let Some(i) = &r.instruction {
+            // The instruction sits inside the card's query template: one
+            // line, so it can never forge the `<Query>:` label.
+            if i.trim().is_empty()
+                || i.chars().count() > MAX_INSTRUCTION_CHARS
+                || i.chars().any(char::is_control)
+            {
+                return Err(KernelError::InvalidInput(
+                    "rerank.instruction must be 1-1,024 characters with no control characters; omit it for none".into(),
+                ));
+            }
+        }
         r.max_candidates = Some(candidates);
         r.max_document_bytes = Some(bytes);
         r.policy = Some(StagePolicy::parse(r.policy.as_deref())?.as_str().into());
@@ -1720,7 +1733,7 @@ pub async fn describe(
             policy: policy_of(&r.policy).as_str().into(),
             state: st,
             reason,
-            identity: Some(r.model.clone()),
+            identity: Some(rerank_identity(&r.model, r.instruction.as_deref())),
         });
     }
     let coverage = match &b.semantic_index_id {

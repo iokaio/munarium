@@ -105,8 +105,9 @@ curl -X PUT -H "Authorization: Bearer $MGMT" -H "Content-Type: application/json"
     "expected_revision": 0,
     "provider_config": "lens",
     "embedding": {"model": "qwen3-embedding-0.6b-fp16-1024d",
-                  "query_instruction": "Instruct: find the passage that answers the question\nQuery: "},
-    "rerank": {"model": "qwen3-reranker-0.6b-fp16", "max_candidates": 20},
+                  "query_instruction": "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:"},
+    "rerank": {"model": "qwen3-reranker-0.6b-fp16", "max_candidates": 20,
+               "instruction": "Given a web search query, retrieve relevant passages that answer the query"},
     "shadow": {"semantic_index": true, "rerank": true},
     "timeout_ms": 5000
   }'
@@ -120,12 +121,62 @@ curl -X PUT -H "Authorization: Bearer $MGMT" -H "Content-Type: application/json"
   fingerprint, dimension, L2 normalization and no-truncation rule together
   are the **semantic space**. Its digest (`sem-…`) is part of the semantic
   index's identity, so a change of any of them needs a new index.
+- The rerank `instruction`, when set, is part of the **reranking stage
+  identity**: the model name followed by `#instruct-` and a digest of the
+  instruction (receipts and `stages[].identity` never carry its text).
+  Without it the identity is the model name, as before. It does not affect
+  the semantic space, so changing it needs no new index. See
+  [Qwen3 instruction settings](#qwen3-instruction-settings).
 - `policy` per stage is `require` when omitted. See [Outage policy](#outage-policy).
 - `max_candidates` (2 to 100, default 20) bounds the reranked head;
   `max_document_bytes` (default 8,192) refuses, never truncates, a longer
   candidate.
 
 A binding in state `bound` serves nothing: reads stay on the hash path.
+
+### Qwen3 instruction settings
+
+The recommended model pair is Qwen3-Embedding-0.6B and Qwen3-Reranker-0.6B.
+Under hub ADR 0029 (instruction-prefix ownership), Server owns retrieval
+instructions and records them in the identity they affect; Lens, like any
+endpoint, applies none. The settings take two forms:
+
+| Setting | Form | What Server sends |
+|---|---|---|
+| `embedding.query_instruction` | The full literal prefix, labels and separators included. Server prepends it unchanged. | `{query_instruction}{query}` as each query `input` |
+| `embedding.passage_instruction` | The full literal prefix. | `{passage_instruction}{passage}` as each passage `input` |
+| `rerank.instruction` | The task text only. Server adds the labels. | `<Instruct>: {instruction}\n<Query>: {query}` as the rerank `query`; when unset, `{query}` unchanged |
+
+Recommended values, with the model cards' example task:
+
+| Setting | Value (JSON string) |
+|---|---|
+| `embedding.query_instruction` | `"Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:"` |
+| `embedding.passage_instruction` | Omit it: the card embeds documents without a prefix. |
+| `rerank.instruction` | `"Given a web search query, retrieve relevant passages that answer the query"` |
+
+- **No space after `Query:`.** The embedding card's query format is
+  `Instruct: {task}\nQuery:{query}`. Because `query_instruction` is a literal
+  prefix, end it with `Query:`, not `Query: `. A trailing space is a
+  different prefix, so it defines a different semantic space and index, and
+  it is not the card's input.
+- **Server adds the rerank labels.** With `rerank.instruction` set, the
+  query `orchid survey` is sent as
+  `<Instruct>: Given a web search query, retrieve relevant passages that answer the query\n<Query>: orchid survey`.
+  The endpoint's fixed template adds the system prompt, the role markers and
+  `\n<Document>: ` before each document, so the scored prompt equals the
+  Qwen3-Reranker card's byte for byte. The instruction is 1 to 1,024
+  characters with no control characters, so it cannot add a label line of
+  its own.
+- **Unset is unchanged.** A binding without `rerank.instruction` sends the
+  query exactly as before and keeps the model name as its identity. Existing
+  bindings and semantic indexes keep their identities.
+- **Replace the example task** with one that describes the collection's
+  retrieval task once you have evidence that it helps; the cards recommend
+  task-specific instructions written in English. Changing either instruction
+  is a rebind (a new binding revision). An embedding instruction change also
+  needs a rollback first and a new semantic index. A rerank instruction change
+  takes effect on the next read and changes the reranking identity.
 
 ## Build the semantic index
 
@@ -354,7 +405,9 @@ Server matches the Munarium Lens LENS-1 profile.
 - **Base URL.** A configured path ending in `/v1` is used as is; otherwise
   `/v1` is appended once. A private prefix (`https://gateway/lens`) is kept.
 - **Instructions.** Server applies query and passage instructions as text
-  prefixes; the endpoint applies none.
+  prefixes and the rerank instruction as the query's `<Instruct>:` and
+  `<Query>:` lines; the endpoint applies none (hub ADR 0029). See
+  [Qwen3 instruction settings](#qwen3-instruction-settings).
 - **Usage.** `usage.prompt_tokens`, else `usage.total_tokens`.
 - **Authentication.** Optional `Authorization: Bearer`; redirects are not
   followed.

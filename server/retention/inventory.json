@@ -2617,10 +2617,10 @@
         "updated_at": "timestamptz",
         "placement": "jsonb"
       },
-      "content": "Current inference binding per collection: state, revision, bound configuration name, stage settings (model names, query/passage instructions, caps, policies), shadow switches, the semantic and prior approved index ids, the placement requirement, last actor and time.",
+      "content": "Current inference binding per collection: state, revision, bound configuration name, stage settings (model names, query/passage/rerank instructions, caps, policies), shadow switches, the semantic and prior approved index ids, the placement requirement, last actor and time.",
       "json_content": {
         "embedding": "{model, query_instruction, passage_instruction, policy}; instructions are operator-authored text.",
-        "rerank": "{model, max_candidates, max_document_bytes, policy}.",
+        "rerank": "{model, max_candidates, max_document_bytes, policy, instruction}; the optional instruction is operator-authored text.",
         "shadow": "{rerank, semantic_index} booleans.",
         "placement": "SC2 placement requirement {isolation, processing}: dedicated or shared, and operator-chosen processing attribute names and values (for example location, retention). NULL means no placement check (Phase 6)."
       },

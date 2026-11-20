@@ -62,6 +62,10 @@ impl Calls {
 struct Stub {
     calls: Calls,
     mode: StdMutex<Mode>,
+    /// The exact `input` of the latest embedding request and `query` of the
+    /// latest rerank request, as received on the wire.
+    last_input: StdMutex<Vec<String>>,
+    last_query: StdMutex<Option<String>>,
 }
 
 #[derive(Clone)]
@@ -77,6 +81,12 @@ impl StubHandle {
     }
     fn calls(&self) -> &Calls {
         &self.stub.calls
+    }
+    fn last_input(&self) -> Vec<String> {
+        self.stub.last_input.lock().unwrap().clone()
+    }
+    fn last_query(&self) -> Option<String> {
+        self.stub.last_query.lock().unwrap().clone()
     }
     /// Stop serving: the port refuses connections from now on.
     fn shut_down(&self) {
@@ -190,6 +200,7 @@ async fn stub_embeddings(
     ) else {
         return refusal(StatusCode::BAD_REQUEST, "invalid_request", "embedding");
     };
+    *stub.last_input.lock().unwrap() = input.clone();
     if *stub.mode.lock().unwrap() == Mode::Down {
         return refusal(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -237,6 +248,7 @@ async fn stub_rerank(
     ) else {
         return refusal(StatusCode::BAD_REQUEST, "invalid_request", "reranking");
     };
+    *stub.last_query.lock().unwrap() = Some(query.to_string());
     let mode = *stub.mode.lock().unwrap();
     if mode == Mode::Down {
         return refusal(
@@ -274,6 +286,8 @@ async fn start_stub() -> StubHandle {
     let stub = Arc::new(Stub {
         calls: Calls::default(),
         mode: StdMutex::new(Mode::Healthy),
+        last_input: StdMutex::new(Vec::new()),
+        last_query: StdMutex::new(None),
     });
     let app = axum::Router::new()
         .route("/v1/models", axum::routing::get(stub_models))
@@ -1297,4 +1311,215 @@ async fn sc2_processing_rules_must_be_compatible_and_phase6_is_unchanged() {
         ]
     );
     assert_eq!(stub.calls().inference(), 0);
+}
+
+// ---------------------------------------------------------------------------
+// Qwen3 instructions (hub ADR 0029)
+// ---------------------------------------------------------------------------
+
+/// The Qwen3 model cards' example retrieval task.
+const QWEN3_TASK: &str =
+    "Given a web search query, retrieve relevant passages that answer the query";
+
+async fn bind_stages(h: &Harness, expected: u64, embedding: Value, rerank: Value) -> (u16, Value) {
+    call(
+        &h.router,
+        "PUT",
+        "/v1/collections/alpha/inference",
+        MGMT,
+        Some(
+            json!({"expected_revision": expected, "provider_config": "lens",
+            "embedding": embedding, "rerank": rerank}),
+        ),
+    )
+    .await
+}
+
+fn rerank_receipt(body: &Value) -> &Value {
+    let stages = body["execution"]["stages"].as_array().unwrap();
+    assert_eq!(stages[1]["stage"], "reranking", "{body}");
+    &stages[1]
+}
+
+/// The rerank instruction: unset sends the query and records the identity
+/// exactly as before; set sends the Qwen3-Reranker card's query part and
+/// records an identity that changes with the instruction.
+#[tokio::test]
+async fn rerank_instruction_is_the_qwen3_card_query_and_part_of_the_identity() {
+    let Some(url) = db_url("rerank_instruction") else {
+        return;
+    };
+    let h = harness(url, true).await;
+    let (stub, revision) = enrolled(&h, None).await;
+    let embedding = json!({"model": EMBED_MODEL, "query_instruction": "Query: "});
+
+    // Unset: the wire query is the read's query, byte for byte, and the
+    // identity is the model name, as in Phase 6.
+    let (status, body) = search(&h, "orchid nebula survey").await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(stub.last_query().as_deref(), Some("orchid nebula survey"));
+    assert_eq!(rerank_receipt(&body)["identity"], RERANK_MODEL);
+    assert_eq!(rerank_receipt(&body)["applied"], true);
+    let (_, described) = call(
+        &h.router,
+        "GET",
+        "/v1/collections/alpha/inference",
+        MGMT,
+        None,
+    )
+    .await;
+    assert!(
+        described["rerank"].get("instruction").is_none(),
+        "{described}"
+    );
+    assert_eq!(described["stages"][1]["identity"], RERANK_MODEL);
+    let semantic = described["semantic_index_id"].clone();
+    let stored: Value =
+        sqlx::query_scalar("SELECT rerank FROM collection_inference_bindings WHERE tenant_id = $1")
+            .bind(&h.tenant)
+            .fetch_one(h.state.pg_pool().unwrap())
+            .await
+            .unwrap();
+    assert!(stored.get("instruction").is_none(), "{stored}");
+
+    // Malformed instructions are refused before anything is stored.
+    let long = "x".repeat(1_025);
+    for bad in ["", "   ", "two\nlines", "tab\there", long.as_str()] {
+        let (status, body) = bind_stages(
+            &h,
+            revision,
+            embedding.clone(),
+            json!({"model": RERANK_MODEL, "max_candidates": 10, "instruction": bad}),
+        )
+        .await;
+        assert_eq!(status, 400, "{bad:?}: {body}");
+    }
+
+    // Set: a rebind; the wire query is exactly the card's query part.
+    let (status, rebound) = bind_stages(
+        &h,
+        revision,
+        embedding.clone(),
+        json!({"model": RERANK_MODEL, "max_candidates": 10, "instruction": QWEN3_TASK}),
+    )
+    .await;
+    assert_eq!(status, 200, "{rebound}");
+    assert_eq!(rebound["rerank"]["instruction"], QWEN3_TASK);
+    assert_eq!(
+        rebound["semantic_index_id"], semantic,
+        "the semantic space is unchanged"
+    );
+    let (status, body) = search(&h, "orchid nebula survey").await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        stub.last_query().unwrap().as_bytes(),
+        b"<Instruct>: Given a web search query, retrieve relevant passages that answer the query\n<Query>: orchid nebula survey"
+    );
+    let first = rerank_receipt(&body)["identity"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        first.starts_with(&format!("{RERANK_MODEL}#instruct-")),
+        "{first}"
+    );
+    assert!(
+        !first.contains("web search"),
+        "the identity carries no instruction text"
+    );
+    assert_eq!(rerank_receipt(&body)["policy_revision"], revision + 1);
+    assert_eq!(rebound["stages"][1]["identity"], first.as_str());
+    assert_eq!(body["hits"][0]["source_path"], "orchid.txt");
+
+    // A changed instruction is a changed identity.
+    let (status, changed) = bind_stages(
+        &h,
+        revision + 1,
+        embedding.clone(),
+        json!({"model": RERANK_MODEL, "max_candidates": 10,
+               "instruction": "Find the passage that answers the question"}),
+    )
+    .await;
+    assert_eq!(status, 200, "{changed}");
+    let (_, body) = search(&h, "orchid nebula survey").await;
+    let second = rerank_receipt(&body)["identity"].as_str().unwrap();
+    assert!(second.starts_with(&format!("{RERANK_MODEL}#instruct-")));
+    assert_ne!(second, first);
+    assert_eq!(
+        stub.last_query().as_deref(),
+        Some(
+            "<Instruct>: Find the passage that answers the question\n<Query>: orchid nebula survey"
+        )
+    );
+
+    // Removing it restores the unchanged query and the model identity.
+    let (status, _) = bind_stages(
+        &h,
+        revision + 2,
+        embedding,
+        json!({"model": RERANK_MODEL, "max_candidates": 10}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    let (_, body) = search(&h, "orchid nebula survey").await;
+    assert_eq!(rerank_receipt(&body)["identity"], RERANK_MODEL);
+    assert_eq!(stub.last_query().as_deref(), Some("orchid nebula survey"));
+}
+
+/// The embedding `query_instruction` is a full literal prefix. The Qwen3
+/// recommendation, `Instruct: {task}\nQuery:` with no trailing space, puts
+/// the card's exact query on the wire; passages carry no prefix.
+#[tokio::test]
+async fn qwen3_embedding_query_instruction_is_the_card_format() {
+    let Some(url) = db_url("qwen3_embedding_prefix") else {
+        return;
+    };
+    let h = harness(url, true).await;
+    let stub = start_stub().await;
+    apply_config(&h, &config_yaml(&stub.base, 1_000_000, None)).await;
+    let (_, probe) = call(
+        &h.router,
+        "POST",
+        "/v1/providers/lens/inference-probe",
+        MGMT,
+        None,
+    )
+    .await;
+    assert_eq!(probe["passed"], true, "{probe}");
+    let instruction = format!("Instruct: {QWEN3_TASK}\nQuery:");
+    let (status, bound) = bind_stages(
+        &h,
+        0,
+        json!({"model": EMBED_MODEL, "query_instruction": instruction}),
+        json!({"model": RERANK_MODEL, "max_candidates": 10, "instruction": QWEN3_TASK}),
+    )
+    .await;
+    assert_eq!(status, 200, "{bound}");
+    let built = build_semantic(&h).await;
+    assert_eq!(built["complete"], true, "{built}");
+    assert!(
+        stub.last_input()
+            .iter()
+            .all(|p| !p.starts_with("Instruct:")),
+        "passages are sent without a prefix"
+    );
+    let (status, enrolled) = call(
+        &h.router,
+        "POST",
+        "/v1/collections/alpha/inference/enroll",
+        MGMT,
+        Some(json!({"expected_revision": 2})),
+    )
+    .await;
+    assert_eq!(status, 200, "{enrolled}");
+    let (status, body) = search(&h, "orchid nebula survey").await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        stub.last_input()[0].as_bytes(),
+        b"Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:orchid nebula survey"
+    );
+    assert_eq!(
+        stub.last_query().unwrap().as_bytes(),
+        b"<Instruct>: Given a web search query, retrieve relevant passages that answer the query\n<Query>: orchid nebula survey"
+    );
 }

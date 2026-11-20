@@ -46,7 +46,9 @@ pub struct InferenceProbeResponse {
 pub struct InferenceEmbeddingSettings {
     /// A model listed in the configuration's `models.embed`.
     pub model: String,
-    /// Prefixed to every query before embedding. Part of the index identity.
+    /// Prefixed to every query before embedding, exactly as given: the full
+    /// literal prefix, labels and separators included. Part of the index
+    /// identity.
     #[serde(default)]
     pub query_instruction: Option<String>,
     /// Prefixed to every passage before embedding. Part of the index identity.
@@ -73,6 +75,14 @@ pub struct InferenceRerankSettings {
     /// `require` (the default when omitted) | `prefer`.
     #[serde(default)]
     pub policy: Option<String>,
+    /// The task instruction for an instruction-aware reranker (hub ADR 0029:
+    /// Server applies it, the endpoint applies none). When set, Server sends
+    /// the rerank `query` as `<Instruct>: {instruction}\n<Query>: {query}`,
+    /// the Qwen3-Reranker card format; when omitted the query is sent
+    /// unchanged. Part of the reranking stage identity. 1 to 1,024
+    /// characters, no control characters. Absent from responses when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instruction: Option<String>,
 }
 
 /// Explicitly authorized shadow comparisons. Both require the
@@ -151,7 +161,9 @@ pub struct InferenceStageStatusDto {
     pub state: String,
     #[serde(default)]
     pub reason: Option<String>,
-    /// The semantic space id (embedding only).
+    /// The stage identity: the semantic space id (embedding), or the
+    /// reranking model name, followed by `#instruct-` and a digest of the
+    /// rerank instruction when one is configured.
     #[serde(default)]
     pub identity: Option<String>,
 }
