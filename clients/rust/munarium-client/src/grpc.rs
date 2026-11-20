@@ -997,6 +997,14 @@ impl GrpcTransport {
 #[async_trait]
 impl RetrievalPlane for GrpcTransport {
     async fn search(&self, req: dto::SearchRequest) -> Result<dto::SearchResponse> {
+        reject_disclose_execution(&req)?;
+        Ok(self.search_disclosed(req).await?.result)
+    }
+
+    async fn search_disclosed(
+        &self,
+        req: dto::SearchRequest,
+    ) -> Result<dto::DisclosedSearchResponse> {
         reject_zero("top_k", req.top_k.map(|v| v as u64))?;
         let msg = pb::HybridSearchRequest {
             query: req.query.unwrap_or_default(),
@@ -1004,10 +1012,9 @@ impl RetrievalPlane for GrpcTransport {
             top_k: req.top_k.unwrap_or(0),
             filter_json: req.filter.map(|v| v.to_string()).unwrap_or_default(),
             index_version: req.index_version.unwrap_or_default(),
-            // ClearView R1: this facade does not return the
-            // `execution` disclosure yet, so it always sends the v1.4 value
-            // rather than asking the server for data it would drop.
-            disclose_execution: false,
+            // ClearView R1: false (proto3's default, and `None`) is the
+            // v1.4 request.
+            disclose_execution: req.disclose_execution.unwrap_or(false),
         };
         // Search is a read: same retry class as the query plane.
         let resp = self
@@ -1018,14 +1025,7 @@ impl RetrievalPlane for GrpcTransport {
             })
             .await?
             .into_inner();
-        let envelope = resp.envelope.ok_or_else(|| MunariumError::Unexpected {
-            status: None,
-            detail: "HybridSearchResponse without ProvenanceEnvelope".into(),
-        })?;
-        Ok(dto::SearchResponse {
-            hits: resp.hits.into_iter().map(Into::into).collect(),
-            envelope: envelope.into(),
-        })
+        disclosed_search_dto(resp)
     }
 
     async fn index_status(&self, shape_ref: &str) -> Result<dto::IndexStatusResponse> {
@@ -1602,6 +1602,15 @@ impl SessionsPlane for GrpcTransport {
     }
 
     async fn turn(&self, session_id: &str, req: dto::TurnRequest) -> Result<dto::TurnResponse> {
+        reject_collection_availability(&req)?;
+        Ok(self.turn_covered(session_id, req).await?.turn)
+    }
+
+    async fn turn_covered(
+        &self,
+        session_id: &str,
+        req: dto::TurnRequest,
+    ) -> Result<dto::CoveredTurnResponse> {
         reject_zero("top_k", req.top_k.map(u64::from))?;
         let msg = pb::TurnRequest {
             session_id: session_id.to_string(),
@@ -1620,10 +1629,11 @@ impl SessionsPlane for GrpcTransport {
             // profile NAME is not a legal profile, so proto3's zero value
             // and `None` genuinely mean the same thing here.
             research_profile: req.research_profile.unwrap_or_default(),
-            // ClearView C1: "" is the v1.4 behavior. This
-            // facade does not return `coverage` yet, so it does not select a
-            // partial-read policy it could not report on.
-            collection_availability: String::new(),
+            // ClearView C1: "" (`None`) is the v1.4 behavior.
+            collection_availability: req
+                .collection_availability
+                .map(|p| p.as_str().to_string())
+                .unwrap_or_default(),
         };
         // A turn spends provider tokens — send once, never auto-retried,
         // and DEADLINE-EXEMPT like the REST twin: aborting client-side does
@@ -1636,7 +1646,7 @@ impl SessionsPlane for GrpcTransport {
             .await
             .map_err(from_status)?
             .into_inner();
-        turn_response_dto(resp)
+        covered_turn_response_dto(resp)
     }
 
     async fn turn_stream(&self, _session_id: &str, _req: dto::TurnRequest) -> Result<TurnStream> {
@@ -1676,6 +1686,79 @@ impl SessionsPlane for GrpcTransport {
             .into_inner();
         Ok(session_dto(resp))
     }
+}
+
+/// `HybridSearchResponse` to the R1 disclosed response. `execution` is a
+/// message field, so its presence is the disclosure's presence; unset
+/// `optional` leg members stay `None` (not measured), never 0 or false. The
+/// typed message has no inference stages, so `stages` is empty.
+fn disclosed_search_dto(resp: pb::HybridSearchResponse) -> Result<dto::DisclosedSearchResponse> {
+    let envelope = resp.envelope.ok_or_else(|| MunariumError::Unexpected {
+        status: None,
+        detail: "HybridSearchResponse without ProvenanceEnvelope".into(),
+    })?;
+    Ok(dto::DisclosedSearchResponse {
+        result: dto::SearchResponse {
+            hits: resp.hits.into_iter().map(Into::into).collect(),
+            envelope: envelope.into(),
+        },
+        execution: resp.execution.map(|e| dto::SearchExecutionDto {
+            version: e.version,
+            engine: e.engine,
+            lexical_domain: e.lexical_domain,
+            legs: e
+                .legs
+                .into_iter()
+                .map(|l| dto::SearchLegDto {
+                    leg: l.leg,
+                    candidate_limit: l.candidate_limit,
+                    fetched: l.fetched,
+                    exhausted: l.exhausted,
+                })
+                .collect(),
+            stages: Vec::new(),
+        }),
+    })
+}
+
+/// `TurnResponse` to the C1 covered response. `coverage` is present only
+/// when the request selected a policy; empty `layer`/`reason` strings are
+/// proto3's spelling of absent and go back to `None`, and `hits` is a proto3
+/// `optional` (unset when the member was unavailable).
+fn covered_turn_response_dto(mut resp: pb::TurnResponse) -> Result<dto::CoveredTurnResponse> {
+    let coverage = resp
+        .coverage
+        .take()
+        .map(|c| {
+            let policy = dto::CollectionAvailabilityDto::parse(&c.policy).ok_or_else(|| {
+                MunariumError::Unexpected {
+                    status: None,
+                    detail: format!("TurnCoverage with an unknown policy '{}'", c.policy),
+                }
+            })?;
+            Ok::<_, MunariumError>(dto::TurnCoverageDto {
+                policy,
+                complete: c.complete,
+                members: c
+                    .members
+                    .into_iter()
+                    .map(|m| dto::CollectionOutcomeDto {
+                        collection: m.collection,
+                        layer: opt(m.layer),
+                        stage: m.stage,
+                        outcome: m.outcome,
+                        hits: m.hits,
+                        reason: opt(m.reason),
+                    })
+                    .collect(),
+                withheld_claims: c.withheld_claims,
+            })
+        })
+        .transpose()?;
+    Ok(dto::CoveredTurnResponse {
+        turn: turn_response_dto(resp)?,
+        coverage,
+    })
 }
 
 fn turn_response_dto(resp: pb::TurnResponse) -> Result<dto::TurnResponse> {
@@ -2122,5 +2205,134 @@ mod max_tokens_tests {
             matches!(write, Err(MunariumError::Unsupported { .. })),
             "POST /v1/max-tokens has no gRPC twin: {write:?}"
         );
+    }
+}
+
+/// The typed-gRPC mapping of the ClearView C1 `coverage` and R1 `execution`
+/// members: proto3 absence (unset message, empty string, unset `optional`)
+/// maps to the same `None` the REST twin decodes.
+#[cfg(test)]
+mod clearview_mapping_tests {
+    use super::*;
+
+    #[test]
+    fn coverage_maps_like_the_rest_twin() {
+        let resp = pb::TurnResponse {
+            session_id: "s-1".into(),
+            ordinal: 1,
+            coverage: Some(pb::TurnCoverage {
+                policy: "report".into(),
+                complete: false,
+                members: vec![
+                    pb::CollectionOutcome {
+                        collection: "contracts".into(),
+                        stage: "search".into(),
+                        outcome: "complete".into(),
+                        hits: Some(3),
+                        ..Default::default()
+                    },
+                    pb::CollectionOutcome {
+                        collection: "memos".into(),
+                        stage: "search".into(),
+                        outcome: "empty".into(),
+                        hits: Some(0),
+                        ..Default::default()
+                    },
+                    pb::CollectionOutcome {
+                        collection: "letters".into(),
+                        stage: "probe".into(),
+                        outcome: "unavailable".into(),
+                        reason: "no_active_index".into(),
+                        ..Default::default()
+                    },
+                ],
+                withheld_claims: vec!["absence".into(), "exhaustive_coverage".into()],
+            }),
+            ..Default::default()
+        };
+        let grpc = covered_turn_response_dto(resp)
+            .expect("maps")
+            .coverage
+            .expect("coverage");
+        let rest: dto::TurnCoverageDto = serde_json::from_value(serde_json::json!({
+            "policy": "report",
+            "complete": false,
+            "members": [
+                {"collection": "contracts", "stage": "search", "outcome": "complete", "hits": 3},
+                {"collection": "memos", "stage": "search", "outcome": "empty", "hits": 0},
+                {"collection": "letters", "stage": "probe", "outcome": "unavailable",
+                 "reason": "no_active_index"}
+            ],
+            "withheld_claims": ["absence", "exhaustive_coverage"]
+        }))
+        .expect("rest twin");
+        assert_eq!(grpc, rest);
+    }
+
+    #[test]
+    fn a_turn_without_coverage_maps_to_none() {
+        let resp = pb::TurnResponse {
+            session_id: "s-1".into(),
+            ..Default::default()
+        };
+        assert!(covered_turn_response_dto(resp)
+            .expect("maps")
+            .coverage
+            .is_none());
+    }
+
+    #[test]
+    fn execution_keeps_unset_leg_members_unknown() {
+        let envelope = pb::ProvenanceEnvelope {
+            index_version: "iv-1".into(),
+            event_watermark: 9,
+            ..Default::default()
+        };
+        let resp = pb::HybridSearchResponse {
+            hits: vec![],
+            envelope: Some(envelope.clone()),
+            execution: Some(pb::SearchExecution {
+                version: 1,
+                engine: "postgresql".into(),
+                lexical_domain: "ts_rank".into(),
+                legs: vec![
+                    pb::SearchLegExecution {
+                        leg: "lexical".into(),
+                        candidate_limit: Some(50),
+                        fetched: Some(0),
+                        exhausted: None,
+                    },
+                    pb::SearchLegExecution {
+                        leg: "vector".into(),
+                        ..Default::default()
+                    },
+                ],
+            }),
+        };
+        let e = disclosed_search_dto(resp)
+            .expect("maps")
+            .execution
+            .expect("execution");
+        // A measured zero stays zero; an unset optional stays unknown.
+        assert_eq!(
+            (
+                e.legs[0].candidate_limit,
+                e.legs[0].fetched,
+                e.legs[0].exhausted
+            ),
+            (Some(50), Some(0), None)
+        );
+        assert_eq!((e.legs[1].candidate_limit, e.legs[1].fetched), (None, None));
+        assert!(e.stages.is_empty());
+
+        let plain = pb::HybridSearchResponse {
+            hits: vec![],
+            envelope: Some(envelope),
+            execution: None,
+        };
+        assert!(disclosed_search_dto(plain)
+            .expect("maps")
+            .execution
+            .is_none());
     }
 }

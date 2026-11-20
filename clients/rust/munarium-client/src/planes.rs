@@ -285,7 +285,37 @@ pub async fn put_source_bytes(
 /// `ProvenanceEnvelope` — surface it, don't hide it. Postgres store only.
 #[async_trait]
 pub trait RetrievalPlane: Send + Sync {
+    /// The v1.4 search. Its response has no `execution` member, so a request
+    /// with `disclose_execution: Some(true)` is refused client-side with
+    /// `InvalidInput` rather than asking for a disclosure it would drop: use
+    /// [`RetrievalPlane::search_disclosed`].
     async fn search(&self, req: dto::SearchRequest) -> Result<dto::SearchResponse>;
+
+    /// ClearView R1: the same search, returning the server's `execution`
+    /// disclosure beside the v1.4 members. `execution` is present when the
+    /// request sets `disclose_execution: Some(true)`, and on a REST read of
+    /// an inference-enrolled collection; absent (`None`) otherwise and from
+    /// every v1.4 server. The typed gRPC message carries no inference
+    /// `stages`, so that transport's `stages` is always empty.
+    ///
+    /// Both shipped transports implement it. The default, for other
+    /// implementers of this trait, serves a request that does not ask for
+    /// disclosure through [`RetrievalPlane::search`] and refuses one that
+    /// does with `Unsupported`, rather than silently dropping it.
+    async fn search_disclosed(
+        &self,
+        req: dto::SearchRequest,
+    ) -> Result<dto::DisclosedSearchResponse> {
+        if req.disclose_execution == Some(true) {
+            return Err(crate::MunariumError::Unsupported {
+                detail: "this RetrievalPlane does not return the execution disclosure".into(),
+            });
+        }
+        Ok(dto::DisclosedSearchResponse {
+            result: self.search(req).await?,
+            execution: None,
+        })
+    }
     async fn index_status(&self, shape_ref: &str) -> Result<dto::IndexStatusResponse>;
     /// Side-by-side build + atomic flip. REST-only today — the gRPC client
     /// returns `Unsupported` (no BuildIndex RPC exists).
@@ -448,6 +478,48 @@ pub enum TurnStreamEvent {
 /// The stream `sessions.turn_stream` yields.
 pub type TurnStream = BoxStream<'static, Result<TurnStreamEvent>>;
 
+/// One item on the streaming turn plane as
+/// [`SessionsPlane::turn_stream_covered`] yields it: the same progress
+/// events, then exactly one `Done` carrying the v1.4 response members plus
+/// the ClearView C1 `coverage` (present only when the request selected a
+/// `collection_availability` policy). Under a policy the `probe` and
+/// `retrieval` progress events also carry `outcome` and `reason`.
+#[derive(Debug, Clone)]
+pub enum CoveredTurnStreamEvent {
+    Progress(dto::TurnProgressEvent),
+    // Boxed for the same reason as `TurnStreamEvent::Done`.
+    Done(Box<dto::CoveredTurnResponse>),
+}
+
+/// The stream `sessions.turn_stream_covered` yields.
+pub type CoveredTurnStream = BoxStream<'static, Result<CoveredTurnStreamEvent>>;
+
+/// The refusal [`SessionsPlane::turn`] and [`SessionsPlane::turn_stream`]
+/// give a request that selects a ClearView C1 policy: their response type
+/// has no `coverage` member, and a partial read without its coverage report
+/// would read as a complete one.
+pub(crate) fn reject_collection_availability(req: &dto::TurnRequest) -> Result<()> {
+    if req.collection_availability.is_some() {
+        return Err(crate::MunariumError::InvalidInput {
+            detail: "collection_availability needs the coverage report: use \
+                     turn_covered or turn_stream_covered"
+                .into(),
+        });
+    }
+    Ok(())
+}
+
+/// The refusal [`RetrievalPlane::search`] gives a request that asks for the
+/// ClearView R1 disclosure its response type cannot carry.
+pub(crate) fn reject_disclose_execution(req: &dto::SearchRequest) -> Result<()> {
+    if req.disclose_execution == Some(true) {
+        return Err(crate::MunariumError::InvalidInput {
+            detail: "disclose_execution needs the execution member: use search_disclosed".into(),
+        });
+    }
+    Ok(())
+}
+
 /// GET /version body — the server's own `VersionInfo` DTO (shared wire
 /// type since C11; the alias keeps this crate's exported name stable).
 pub type ServerVersionInfo = dto::VersionInfo;
@@ -483,7 +555,39 @@ pub trait SessionsPlane: Send + Sync {
     /// `None`, the request and the response are byte-identical to what this
     /// client sent and parsed before the field existed — which is the point
     /// of the field being optional on both ends.
+    ///
+    /// `req.collection_availability` (ClearView C1) is refused here with
+    /// `InvalidInput`: this response type has no `coverage` member, so use
+    /// [`SessionsPlane::turn_covered`] to select a policy.
     async fn turn(&self, session_id: &str, req: dto::TurnRequest) -> Result<dto::TurnResponse>;
+
+    /// ClearView C1: the same turn, returning the v1.4 response members plus
+    /// `coverage`. Set `req.collection_availability` to `Report` (verified,
+    /// authorized results of the members that completed, with a report of
+    /// every visible member's outcome and the claims withheld) or `Require`
+    /// (the turn is refused when any visible member is unavailable). Without
+    /// a policy the request is the v1.4 request and `coverage` is `None`, as
+    /// it is from every v1.4 server. Send-once, like `turn`.
+    ///
+    /// Both shipped transports implement it. The default, for other
+    /// implementers of this trait, serves a request without a policy through
+    /// [`SessionsPlane::turn`] and refuses one with a policy with
+    /// `Unsupported`, rather than silently dropping its coverage.
+    async fn turn_covered(
+        &self,
+        session_id: &str,
+        req: dto::TurnRequest,
+    ) -> Result<dto::CoveredTurnResponse> {
+        if req.collection_availability.is_some() {
+            return Err(crate::MunariumError::Unsupported {
+                detail: "this SessionsPlane does not return turn coverage".into(),
+            });
+        }
+        Ok(dto::CoveredTurnResponse {
+            turn: self.turn(session_id, req).await?,
+            coverage: None,
+        })
+    }
 
     /// The same turn, streamed: N progress events at real stage boundaries,
     /// then exactly one [`TurnStreamEvent::Done`]. Pre-stream failures
@@ -491,7 +595,44 @@ pub trait SessionsPlane: Send + Sync {
     /// item. A stream that ends without a terminal event is a typed
     /// transport error — never a silent success. REST-only: the gRPC client
     /// returns `Unsupported` (SessionService has no streaming RPC).
+    ///
+    /// Like `turn`, it refuses `req.collection_availability` with
+    /// `InvalidInput`; use [`SessionsPlane::turn_stream_covered`].
     async fn turn_stream(&self, session_id: &str, req: dto::TurnRequest) -> Result<TurnStream>;
+
+    /// ClearView C1: the streamed turn whose terminal `Done` carries
+    /// `coverage` (see [`SessionsPlane::turn_covered`]). REST-only, like
+    /// `turn_stream`: the gRPC client returns `Unsupported`.
+    ///
+    /// The default, for other implementers of this trait, maps
+    /// [`SessionsPlane::turn_stream`] when no policy is selected and refuses
+    /// a policy with `Unsupported`.
+    async fn turn_stream_covered(
+        &self,
+        session_id: &str,
+        req: dto::TurnRequest,
+    ) -> Result<CoveredTurnStream> {
+        use futures_util::StreamExt as _;
+        if req.collection_availability.is_some() {
+            return Err(crate::MunariumError::Unsupported {
+                detail: "this SessionsPlane does not return turn coverage".into(),
+            });
+        }
+        let stream = self.turn_stream(session_id, req).await?;
+        Ok(stream
+            .map(|item| {
+                item.map(|event| match event {
+                    TurnStreamEvent::Progress(p) => CoveredTurnStreamEvent::Progress(p),
+                    TurnStreamEvent::Done(turn) => {
+                        CoveredTurnStreamEvent::Done(Box::new(dto::CoveredTurnResponse {
+                            turn: *turn,
+                            coverage: None,
+                        }))
+                    }
+                })
+            })
+            .boxed())
+    }
 
     /// The session envelope + stored turn transcript.
     async fn get(&self, session_id: &str) -> Result<dto::SessionResponse>;
@@ -536,7 +677,7 @@ pub trait ReportsPlane: Send + Sync {
     /// Model-spend token rollup (dollar pricing lives upstream).
     async fn cost(&self, from: Option<&str>, to: Option<&str>) -> Result<dto::CostResponse>;
     /// Bucketed request/error/latency series. `window`: 1h | 24h | 7d | 30d
-    /// (server default 24h); `plane`: rest | grpc.
+    /// (server default 24h); `plane`: rest | grpc | mcp.
     async fn timeseries(
         &self,
         window: Option<&str>,

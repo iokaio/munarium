@@ -811,7 +811,17 @@ impl IngestPlane for RestTransport {
 #[async_trait]
 impl RetrievalPlane for RestTransport {
     async fn search(&self, req: dto::SearchRequest) -> Result<dto::SearchResponse> {
+        reject_disclose_execution(&req)?;
         // A read that happens to be a POST — same retry class as GETs.
+        self.post_json_read("/v1/search", &req).await
+    }
+
+    async fn search_disclosed(
+        &self,
+        req: dto::SearchRequest,
+    ) -> Result<dto::DisclosedSearchResponse> {
+        // `disclose_execution` is skipped when `None`, so a request that
+        // does not ask posts the v1.4 bytes.
         self.post_json_read("/v1/search", &req).await
     }
 
@@ -1045,45 +1055,40 @@ impl SessionsPlane for RestTransport {
     }
 
     async fn turn(&self, session_id: &str, req: dto::TurnRequest) -> Result<dto::TurnResponse> {
-        // A turn spends provider tokens — send-once, never auto-retried,
-        // and DEADLINE-EXEMPT: a client-side abort does not stop the
-        // server's paid completion (the transcript ordinal still advances),
-        // so a 30 s cap on a capable-tier completion is a double-spend
-        // invitation. The SSE variant is the way to watch a long turn.
-        let path = format!("/v1/sessions/{}/turns", seg(session_id));
-        let send = self
-            .http_stream
-            .post(self.url(&path))
-            .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .json(&req)
-            .send();
-        match send.await {
-            Ok(resp) => Self::decode(resp).await,
-            Err(e) => Err(Self::transport_err(e)),
-        }
+        reject_collection_availability(&req)?;
+        self.post_turn(session_id, &req).await
+    }
+
+    async fn turn_covered(
+        &self,
+        session_id: &str,
+        req: dto::TurnRequest,
+    ) -> Result<dto::CoveredTurnResponse> {
+        // `collection_availability` is skipped when `None`: the v1.4 bytes.
+        self.post_turn(session_id, &req).await
     }
 
     async fn turn_stream(&self, session_id: &str, req: dto::TurnRequest) -> Result<TurnStream> {
-        // No overall deadline (a capable-tier completion can exceed 30 s),
-        // but a 60 s idle watchdog: the server heartbeats keep-alive
-        // comments every 15 s, so a silent wire means a wedged peer and the
-        // caller gets a typed transport error instead of hanging forever.
-        let resp = self
-            .http_sse
-            .post(self.url(&format!("/v1/sessions/{}/turns/stream", seg(session_id))))
-            .header(reqwest::header::ACCEPT, "text/event-stream")
-            .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .json(&req)
-            .send()
-            .await
-            .map_err(Self::transport_err)?;
-        if !resp.status().is_success() {
-            // Pre-stream failures (auth, refusals, shed) are plain
-            // problem+json — decoded by the ONE error path, Retry-After
-            // included.
-            return Err(Self::decode_error(resp).await);
-        }
-        Ok(turn_event_stream(resp.bytes_stream().boxed()))
+        reject_collection_availability(&req)?;
+        // Without a policy the terminal event carries no `coverage`, so
+        // unwrapping it loses nothing.
+        let stream = self.post_turn_stream(session_id, &req).await?;
+        Ok(stream
+            .map(|item| {
+                item.map(|event| match event {
+                    CoveredTurnStreamEvent::Progress(p) => TurnStreamEvent::Progress(p),
+                    CoveredTurnStreamEvent::Done(t) => TurnStreamEvent::Done(Box::new(t.turn)),
+                })
+            })
+            .boxed())
+    }
+
+    async fn turn_stream_covered(
+        &self,
+        session_id: &str,
+        req: dto::TurnRequest,
+    ) -> Result<CoveredTurnStream> {
+        self.post_turn_stream(session_id, &req).await
     }
 
     async fn get(&self, session_id: &str) -> Result<dto::SessionResponse> {
@@ -1101,29 +1106,84 @@ impl SessionsPlane for RestTransport {
     }
 }
 
+impl RestTransport {
+    /// The unary turn POST, decoded as `T` (the v1.4 response, or the C1
+    /// covered response, which reads the same body plus `coverage`).
+    async fn post_turn<T: DeserializeOwned>(
+        &self,
+        session_id: &str,
+        req: &dto::TurnRequest,
+    ) -> Result<T> {
+        // A turn spends provider tokens — send-once, never auto-retried,
+        // and DEADLINE-EXEMPT: a client-side abort does not stop the
+        // server's paid completion (the transcript ordinal still advances),
+        // so a 30 s cap on a capable-tier completion is a double-spend
+        // invitation. The SSE variant is the way to watch a long turn.
+        let path = format!("/v1/sessions/{}/turns", seg(session_id));
+        let send = self
+            .http_stream
+            .post(self.url(&path))
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .json(req)
+            .send();
+        match send.await {
+            Ok(resp) => Self::decode(resp).await,
+            Err(e) => Err(Self::transport_err(e)),
+        }
+    }
+
+    async fn post_turn_stream(
+        &self,
+        session_id: &str,
+        req: &dto::TurnRequest,
+    ) -> Result<CoveredTurnStream> {
+        // No overall deadline (a capable-tier completion can exceed 30 s),
+        // but a 60 s idle watchdog: the server heartbeats keep-alive
+        // comments every 15 s, so a silent wire means a wedged peer and the
+        // caller gets a typed transport error instead of hanging forever.
+        let resp = self
+            .http_sse
+            .post(self.url(&format!("/v1/sessions/{}/turns/stream", seg(session_id))))
+            .header(reqwest::header::ACCEPT, "text/event-stream")
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .json(req)
+            .send()
+            .await
+            .map_err(Self::transport_err)?;
+        if !resp.status().is_success() {
+            // Pre-stream failures (auth, refusals, shed) are plain
+            // problem+json — decoded by the ONE error path, Retry-After
+            // included.
+            return Err(Self::decode_error(resp).await);
+        }
+        Ok(turn_event_stream(resp.bytes_stream().boxed()))
+    }
+}
+
 /// Classify one SSE event from the turn stream. Returns the item to yield
 /// (None = skip) and whether it is terminal. Undecodable PROGRESS data is
 /// skipped — a newer server may add stages this build cannot name, and
 /// progress is informational — but an undecodable terminal event is an
-/// error: the caller was owed a TurnResponse.
-fn classify_turn_event(
-    ev: crate::sse::SseEvent,
-) -> Option<(Result<crate::planes::TurnStreamEvent>, bool)> {
-    use crate::planes::TurnStreamEvent as E;
+/// error: the caller was owed a TurnResponse. `done` decodes as the C1
+/// covered response, which reads a v1.4 body exactly (`coverage` = `None`).
+fn classify_turn_event(ev: crate::sse::SseEvent) -> Option<(Result<CoveredTurnStreamEvent>, bool)> {
+    use CoveredTurnStreamEvent as E;
     match ev.event.as_str() {
         "progress" => serde_json::from_str::<dto::TurnProgressEvent>(&ev.data)
             .ok()
             .map(|p| (Ok(E::Progress(p)), false)),
-        "done" => Some(match serde_json::from_str::<dto::TurnResponse>(&ev.data) {
-            Ok(t) => (Ok(E::Done(Box::new(t))), true),
-            Err(e) => (
-                Err(MunariumError::Unexpected {
-                    status: None,
-                    detail: format!("undecodable SSE done event: {e}"),
-                }),
-                true,
-            ),
-        }),
+        "done" => Some(
+            match serde_json::from_str::<dto::CoveredTurnResponse>(&ev.data) {
+                Ok(t) => (Ok(E::Done(Box::new(t))), true),
+                Err(e) => (
+                    Err(MunariumError::Unexpected {
+                        status: None,
+                        detail: format!("undecodable SSE done event: {e}"),
+                    }),
+                    true,
+                ),
+            },
+        ),
         "error" => Some(match serde_json::from_str::<serde_json::Value>(&ev.data) {
             // The error event carries the same problem+json body the unary
             // route would have returned — decode through the one registry.
@@ -1157,11 +1217,11 @@ fn classify_turn_event(
 type ByteStream =
     futures_core::stream::BoxStream<'static, std::result::Result<bytes::Bytes, reqwest::Error>>;
 
-fn turn_event_stream(bytes: ByteStream) -> TurnStream {
+fn turn_event_stream(bytes: ByteStream) -> CoveredTurnStream {
     struct State {
         bytes: ByteStream,
         parser: crate::sse::SseParser,
-        queue: std::collections::VecDeque<Result<crate::planes::TurnStreamEvent>>,
+        queue: std::collections::VecDeque<Result<CoveredTurnStreamEvent>>,
         terminal: bool,
     }
     let state = State {
@@ -1634,7 +1694,7 @@ mod hierarchy_wire_tests {
             data: json.to_string(),
         };
         match classify_turn_event(ev) {
-            Some((Ok(crate::planes::TurnStreamEvent::Progress(p)), false)) => Some(p),
+            Some((Ok(CoveredTurnStreamEvent::Progress(p)), false)) => Some(p),
             None => None,
             Some((item, terminal)) => {
                 panic!("expected a non-terminal progress item, got terminal={terminal} {item:?}")
@@ -1757,16 +1817,16 @@ mod max_tokens_tests {
 
     /// What the responder saw: the request line, the raw header block, and
     /// the body bytes (exactly `Content-Length` of them).
-    struct Captured {
-        request_line: String,
-        headers: String,
-        body: Vec<u8>,
+    pub(super) struct Captured {
+        pub(super) request_line: String,
+        pub(super) headers: String,
+        pub(super) body: Vec<u8>,
     }
 
     /// Serve exactly one HTTP/1.1 exchange: capture the request, answer
     /// with the canned status + JSON body, close. Returns the base URL to
     /// point a transport at and the handle that yields the capture.
-    async fn canned_responder(
+    pub(super) async fn canned_responder(
         status: u16,
         content_type: &'static str,
         body: String,
@@ -1827,7 +1887,7 @@ mod max_tokens_tests {
         (base, handle)
     }
 
-    fn transport(base: &str) -> RestTransport {
+    pub(super) fn transport(base: &str) -> RestTransport {
         RestTransport::new(
             MunariumClientOptions::new(base)
                 .token("devtoken")
@@ -1986,5 +2046,288 @@ mod max_tokens_tests {
             matches!(err, MunariumError::Forbidden { .. }),
             "expected Forbidden, got {err:?}"
         );
+    }
+}
+
+/// The Server 1.5 (ClearView) wire fields on the typed REST facade: C1
+/// `collection_availability`/`coverage` and R1 `disclose_execution`/
+/// `execution`. Each request option leaves the process only when set, and a
+/// v1.4 body without the response member still decodes. Asserted on the
+/// bytes a loopback responder saw, not on serde derives alone.
+#[cfg(test)]
+mod clearview_wire_tests {
+    use super::max_tokens_tests::{canned_responder, transport};
+    use super::*;
+
+    fn legacy_turn() -> serde_json::Value {
+        serde_json::json!({
+            "session_id": "s-1",
+            "ordinal": 1,
+            "collections_searched": ["contracts", "letters"],
+            "skipped": [],
+            "hits": [],
+            "envelopes": []
+        })
+    }
+
+    fn coverage() -> serde_json::Value {
+        serde_json::json!({
+            "policy": "report",
+            "complete": false,
+            "members": [
+                {"collection": "contracts", "stage": "search", "outcome": "complete", "hits": 3},
+                {"collection": "memos", "stage": "search", "outcome": "empty", "hits": 0},
+                {"collection": "letters", "stage": "probe", "outcome": "unavailable",
+                 "reason": "no_active_index"}
+            ],
+            "withheld_claims": ["absence", "exhaustive_coverage"]
+        })
+    }
+
+    fn covered_turn() -> serde_json::Value {
+        let mut body = legacy_turn();
+        body["coverage"] = coverage();
+        body
+    }
+
+    fn assert_coverage(c: &dto::TurnCoverageDto) {
+        assert_eq!(c.policy, dto::CollectionAvailabilityDto::Report);
+        assert!(!c.complete);
+        assert_eq!(c.withheld_claims, ["absence", "exhaustive_coverage"]);
+        let [complete, empty, unavailable] = &c.members[..] else {
+            panic!("three members expected: {:?}", c.members);
+        };
+        assert_eq!(
+            (
+                complete.collection.as_str(),
+                complete.outcome.as_str(),
+                complete.hits
+            ),
+            ("contracts", "complete", Some(3))
+        );
+        assert_eq!(
+            (complete.layer.as_deref(), complete.reason.as_deref()),
+            (None, None)
+        );
+        // An authorized empty member is a successful outcome with a zero count.
+        assert_eq!((empty.outcome.as_str(), empty.hits), ("empty", Some(0)));
+        assert_eq!(
+            (unavailable.stage.as_str(), unavailable.outcome.as_str()),
+            ("probe", "unavailable")
+        );
+        assert_eq!(unavailable.hits, None, "unavailable has no count, not zero");
+        assert_eq!(unavailable.reason.as_deref(), Some("no_active_index"));
+    }
+
+    fn turn_request(policy: Option<dto::CollectionAvailabilityDto>) -> dto::TurnRequest {
+        dto::TurnRequest {
+            query: "q".into(),
+            collection_availability: policy,
+            ..Default::default()
+        }
+    }
+
+    fn sent_json(body: &[u8]) -> serde_json::Value {
+        serde_json::from_slice(body).expect("json request body")
+    }
+
+    #[tokio::test]
+    async fn turn_covered_sends_the_policy_and_decodes_coverage() {
+        let (base, seen) =
+            canned_responder(200, "application/json", covered_turn().to_string()).await;
+        let resp = transport(&base)
+            .turn_covered(
+                "s-1",
+                turn_request(Some(dto::CollectionAvailabilityDto::Report)),
+            )
+            .await
+            .expect("turn");
+        let body = sent_json(&seen.await.expect("captured").body);
+        assert_eq!(body["collection_availability"], "report");
+        assert_coverage(resp.coverage.as_ref().expect("coverage present"));
+        assert_eq!(resp.turn.collections_searched, ["contracts", "letters"]);
+    }
+
+    #[tokio::test]
+    async fn turn_covered_without_a_policy_sends_v14_bytes_and_reads_a_v14_body() {
+        let (base, seen) =
+            canned_responder(200, "application/json", legacy_turn().to_string()).await;
+        let resp = transport(&base)
+            .turn_covered("s-1", turn_request(None))
+            .await
+            .expect("turn");
+        let body = sent_json(&seen.await.expect("captured").body);
+        assert!(body.get("collection_availability").is_none(), "{body}");
+        assert!(resp.coverage.is_none());
+        assert_eq!(
+            serde_json::to_value(&resp).expect("serializes"),
+            legacy_turn(),
+            "a v1.4 turn must not grow a `coverage` key on the way back out"
+        );
+    }
+
+    #[test]
+    fn coverage_round_trips_through_json() {
+        let decoded: dto::CoveredTurnResponse =
+            serde_json::from_str(&covered_turn().to_string()).expect("decodes");
+        assert_eq!(
+            serde_json::to_value(&decoded).expect("serializes"),
+            covered_turn()
+        );
+        let text = serde_json::to_string(&decoded).expect("text");
+        let again: dto::CoveredTurnResponse = serde_json::from_str(&text).expect("again");
+        assert_coverage(again.coverage.as_ref().expect("coverage"));
+    }
+
+    #[tokio::test]
+    async fn the_plain_turn_refuses_a_policy_it_could_not_report_on() {
+        // Port 1: nothing listens, so a request that left the process would
+        // surface as a transport error, not the client-side refusal.
+        let t = transport("http://127.0.0.1:1");
+        let err = t
+            .turn(
+                "s-1",
+                turn_request(Some(dto::CollectionAvailabilityDto::Require)),
+            )
+            .await
+            .expect_err("refused");
+        assert!(matches!(err, MunariumError::InvalidInput { .. }), "{err:?}");
+        let err = t
+            .turn_stream(
+                "s-1",
+                turn_request(Some(dto::CollectionAvailabilityDto::Report)),
+            )
+            .await
+            .err()
+            .expect("refused");
+        assert!(matches!(err, MunariumError::InvalidInput { .. }), "{err:?}");
+    }
+
+    #[tokio::test]
+    async fn sse_done_carries_coverage_and_member_progress_keeps_outcome() {
+        let progress = serde_json::json!({
+            "stage": "retrieval", "collection": "letters", "hits": 0, "skipped": false,
+            "outcome": "unavailable", "reason": "engine_unavailable"
+        });
+        let stream = format!(
+            "event: progress\ndata: {progress}\n\nevent: done\ndata: {}\n\n",
+            covered_turn()
+        );
+        let (base, seen) = canned_responder(200, "text/event-stream", stream).await;
+        let mut events = transport(&base)
+            .turn_stream_covered(
+                "s-1",
+                turn_request(Some(dto::CollectionAvailabilityDto::Report)),
+            )
+            .await
+            .expect("stream opens");
+        let mut items = Vec::new();
+        while let Some(item) = events.next().await {
+            items.push(item.expect("item"));
+        }
+        let body = sent_json(&seen.await.expect("captured").body);
+        assert_eq!(body["collection_availability"], "report");
+        let [CoveredTurnStreamEvent::Progress(progress), CoveredTurnStreamEvent::Done(done)] =
+            &items[..]
+        else {
+            panic!("progress then done expected: {items:?}");
+        };
+        match progress {
+            dto::TurnProgressEvent::Retrieval {
+                outcome, reason, ..
+            } => {
+                assert_eq!(outcome.as_deref(), Some("unavailable"));
+                assert_eq!(reason.as_deref(), Some("engine_unavailable"));
+            }
+            other => panic!("retrieval expected: {other:?}"),
+        }
+        assert_coverage(done.coverage.as_ref().expect("coverage on done"));
+    }
+
+    #[tokio::test]
+    async fn the_plain_stream_still_reads_a_v14_done() {
+        let stream = format!("event: done\ndata: {}\n\n", legacy_turn());
+        let (base, _seen) = canned_responder(200, "text/event-stream", stream).await;
+        let mut events = transport(&base)
+            .turn_stream("s-1", turn_request(None))
+            .await
+            .expect("stream opens");
+        let item = events.next().await.expect("one item").expect("ok");
+        assert!(matches!(item, TurnStreamEvent::Done(t) if t.ordinal == 1));
+        assert!(events.next().await.is_none());
+    }
+
+    fn search_body(execution: Option<serde_json::Value>) -> String {
+        let mut body = serde_json::json!({
+            "hits": [],
+            "envelope": {
+                "chunk_ids": [], "source_ids": [], "source_paths": [],
+                "source_content_hashes": [], "index_version": "iv-1", "event_watermark": 9
+            }
+        });
+        if let Some(e) = execution {
+            body["execution"] = e;
+        }
+        body.to_string()
+    }
+
+    fn search_request(disclose: Option<bool>) -> dto::SearchRequest {
+        dto::SearchRequest {
+            query: Some("q".into()),
+            shape_ref: Some("docs".into()),
+            disclose_execution: disclose,
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn search_disclosed_sends_the_flag_and_decodes_execution() {
+        let execution = serde_json::json!({
+            "version": 1, "engine": "postgresql", "lexical_domain": "ts_rank",
+            "legs": [
+                {"leg": "lexical", "candidate_limit": 50, "fetched": 12, "exhausted": true},
+                {"leg": "vector", "candidate_limit": 50, "fetched": null, "exhausted": null}
+            ],
+            "stages": [{"stage": "reranking", "policy": "prefer", "policy_revision": 4,
+                        "applied": false, "state": "unavailable", "fallback": "fused_order"}]
+        });
+        let (base, seen) =
+            canned_responder(200, "application/json", search_body(Some(execution))).await;
+        let resp = transport(&base)
+            .search_disclosed(search_request(Some(true)))
+            .await
+            .expect("search");
+        let body = sent_json(&seen.await.expect("captured").body);
+        assert_eq!(body["disclose_execution"], true);
+        let e = resp.execution.expect("execution");
+        assert_eq!((e.version, e.engine.as_str()), (1, "postgresql"));
+        assert_eq!(
+            (e.legs[0].fetched, e.legs[0].exhausted),
+            (Some(12), Some(true))
+        );
+        // null is "not measured": unknown, never zero.
+        assert_eq!((e.legs[1].fetched, e.legs[1].exhausted), (None, None));
+        assert_eq!(e.stages[0].fallback.as_deref(), Some("fused_order"));
+    }
+
+    #[tokio::test]
+    async fn search_disclosed_without_the_flag_sends_v14_bytes_and_reads_a_v14_body() {
+        let (base, seen) = canned_responder(200, "application/json", search_body(None)).await;
+        let resp = transport(&base)
+            .search_disclosed(search_request(None))
+            .await
+            .expect("search");
+        let body = sent_json(&seen.await.expect("captured").body);
+        assert!(body.get("disclose_execution").is_none(), "{body}");
+        assert!(resp.execution.is_none());
+    }
+
+    #[tokio::test]
+    async fn the_plain_search_refuses_a_disclosure_it_would_drop() {
+        let err = transport("http://127.0.0.1:1")
+            .search(search_request(Some(true)))
+            .await
+            .expect_err("refused");
+        assert!(matches!(err, MunariumError::InvalidInput { .. }), "{err:?}");
     }
 }

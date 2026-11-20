@@ -49,11 +49,11 @@ mod wire_compat;
 pub use error::{MunariumError, Result};
 pub use planes::{
     chunks_from_bytes, chunks_from_vec, put_source_bytes, AuditQuery, AuthoringPlane, ChunkSource,
-    ClaimOutcome, CommandsPlane, ContextQuery, EvidencePlane, EvidenceRowsQuery, FactsQuery,
-    FindingsQuery, IdemKey, IngestPlane, MetaPlane, ProvidersPlane, QueryPlane, ReportsPlane,
-    RetrievalPlane, RunbooksPlane, ServerVersionInfo, SessionsPlane, SourceMeta, TokenListQuery,
-    TokensPlane, TurnStream, TurnStreamEvent, UsageQuery, ValidateOptions,
-    BULK_MAX_FILES_PER_CHUNK,
+    ClaimOutcome, CommandsPlane, ContextQuery, CoveredTurnStream, CoveredTurnStreamEvent,
+    EvidencePlane, EvidenceRowsQuery, FactsQuery, FindingsQuery, IdemKey, IngestPlane, MetaPlane,
+    ProvidersPlane, QueryPlane, ReportsPlane, RetrievalPlane, RunbooksPlane, ServerVersionInfo,
+    SessionsPlane, SourceMeta, TokenListQuery, TokensPlane, TurnStream, TurnStreamEvent,
+    UsageQuery, ValidateOptions, BULK_MAX_FILES_PER_CHUNK,
 };
 
 /// Re-exported wire models — the server's own JSON-casing truth.
