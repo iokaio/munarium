@@ -265,4 +265,233 @@ async fn the_job_queue_dedups_claims_leases_and_cancels() {
     )
     .await
     .unwrap();
+    // --- R4 fence: a same-name reclaim supersedes the earlier claim. -------
+    // A restarted replica keeps its node name, so `claimed_by` alone cannot
+    // tell the two executions apart; the generation captured at claim can.
+    let EnqueueOutcome::Enqueued(fence_id) = q
+        .enqueue(
+            &tenant,
+            JobKind::Rebuild,
+            JobTarget::Version("idx-fence"),
+            serde_json::json!({}),
+            "test",
+            None,
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("enqueue");
+    };
+    let first = q.claim_any("builder-same", 0, 3).await.unwrap().unwrap();
+    assert_eq!(
+        (first.job_id.as_str(), first.attempts),
+        (fence_id.as_str(), 1)
+    );
+    let second = q.claim_any("builder-same", 0, 3).await.unwrap().unwrap();
+    assert_eq!(
+        (second.job_id.as_str(), second.attempts),
+        (fence_id.as_str(), 2),
+        "the claim returns its own generation, captured in the claiming transaction"
+    );
+    assert!(
+        !q.heartbeat_fenced(&tenant, &fence_id, "builder-same", first.attempts)
+            .await
+            .unwrap(),
+        "the superseded claim cannot renew the lease"
+    );
+    assert!(
+        !q.complete_fenced(
+            &tenant,
+            &fence_id,
+            "builder-same",
+            first.attempts,
+            Ok(serde_json::json!({"stale": true})),
+            Some("att-stale"),
+        )
+        .await
+        .unwrap(),
+        "the superseded claim cannot complete the job"
+    );
+    let still = q.get(&tenant, &fence_id).await.unwrap().unwrap();
+    assert_eq!((still.state.as_str(), still.attempts), ("running", 2));
+    assert!(still.result.is_none() && still.attempt_ids.is_empty());
+    assert!(q
+        .heartbeat_fenced(&tenant, &fence_id, "builder-same", second.attempts)
+        .await
+        .unwrap());
+    assert!(q
+        .complete_fenced(
+            &tenant,
+            &fence_id,
+            "builder-same",
+            second.attempts,
+            Ok(serde_json::json!({"n": 2})),
+            None,
+        )
+        .await
+        .unwrap());
+    assert_eq!(
+        q.get(&tenant, &fence_id).await.unwrap().unwrap().result,
+        Some(serde_json::json!({"n": 2}))
+    );
+
+    // --- R4 cleanup: an expired final claim fails once and frees its target.
+    let EnqueueOutcome::Enqueued(exhaust_id) = q
+        .enqueue(
+            &tenant,
+            JobKind::Rebuild,
+            JobTarget::Version("idx-exhaust"),
+            serde_json::json!({}),
+            "test",
+            None,
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("enqueue");
+    };
+    let mut last = None;
+    for _ in 0..3 {
+        last = q.claim_any("builder-crash", 0, 3).await.unwrap();
+    }
+    let last = last.expect("third claim");
+    assert_eq!(
+        (last.job_id.as_str(), last.attempts),
+        (exhaust_id.as_str(), 3)
+    );
+    assert!(q.claim_any("builder-other", 0, 3).await.unwrap().is_none());
+    // Two cleaners race with no other work; each job is failed exactly once.
+    let (a, b) = tokio::join!(
+        q.fail_expired_final_claims(0, 3, 32),
+        q.fail_expired_final_claims(0, 3, 32)
+    );
+    let mine: Vec<_> = a
+        .unwrap()
+        .into_iter()
+        .chain(b.unwrap())
+        .filter(|(t, _)| t == &tenant)
+        .collect();
+    assert_eq!(mine, vec![(tenant.clone(), exhaust_id.clone())]);
+    let failed = q.get(&tenant, &exhaust_id).await.unwrap().unwrap();
+    assert_eq!(failed.state, "failed");
+    assert_eq!(
+        failed.error.as_deref(),
+        Some(munarium_store_pg::jobs::ATTEMPTS_EXHAUSTED_MESSAGE)
+    );
+    // Late writes from the crashed holder are refused, fenced or not.
+    assert!(!q
+        .heartbeat_fenced(&tenant, &exhaust_id, "builder-crash", 3)
+        .await
+        .unwrap());
+    assert!(!q
+        .heartbeat(&tenant, &exhaust_id, "builder-crash")
+        .await
+        .unwrap());
+    assert!(!q
+        .complete_fenced(
+            &tenant,
+            &exhaust_id,
+            "builder-crash",
+            3,
+            Ok(serde_json::json!({})),
+            None
+        )
+        .await
+        .unwrap());
+    // The target is released: exactly one replacement can be enqueued.
+    let replacement = q
+        .enqueue(
+            &tenant,
+            JobKind::Rebuild,
+            JobTarget::Version("idx-exhaust"),
+            serde_json::json!({}),
+            "test",
+            None,
+        )
+        .await
+        .unwrap();
+    let EnqueueOutcome::Enqueued(replacement_id) = replacement else {
+        panic!("the released target enqueues a replacement: {replacement:?}");
+    };
+    assert_eq!(
+        q.enqueue(
+            &tenant,
+            JobKind::Rebuild,
+            JobTarget::Version("idx-exhaust"),
+            serde_json::json!({}),
+            "test",
+            None,
+        )
+        .await
+        .unwrap(),
+        EnqueueOutcome::AlreadyOpen(replacement_id.clone())
+    );
+    let r = q
+        .claim_any("drain", 600, 3)
+        .await
+        .unwrap()
+        .expect("replacement");
+    assert_eq!(r.job_id, replacement_id);
+    assert!(q
+        .complete_fenced(
+            &tenant,
+            &r.job_id,
+            "drain",
+            r.attempts,
+            Ok(serde_json::json!({})),
+            None
+        )
+        .await
+        .unwrap());
+
+    // --- R4 cleanup races a valid renewal: exactly one transition wins. ----
+    let EnqueueOutcome::Enqueued(race_id) = q
+        .enqueue(
+            &tenant,
+            JobKind::Rebuild,
+            JobTarget::Version("idx-race"),
+            serde_json::json!({}),
+            "test",
+            None,
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("enqueue");
+    };
+    let mut held = None;
+    for _ in 0..3 {
+        held = q.claim_any("builder-race", 0, 3).await.unwrap();
+    }
+    let held = held.expect("final claim");
+    assert_eq!((held.job_id.as_str(), held.attempts), (race_id.as_str(), 3));
+    // Let the lease (1 s below) lapse, then renew and clean concurrently.
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    let (renewed, cleaned) = tokio::join!(
+        q.heartbeat_fenced(&tenant, &race_id, "builder-race", 3),
+        q.fail_expired_final_claims(1, 3, 32)
+    );
+    let renewed = renewed.unwrap();
+    let cleaned = cleaned
+        .unwrap()
+        .iter()
+        .any(|(t, j)| t == &tenant && j == &race_id);
+    let state = q.get(&tenant, &race_id).await.unwrap().unwrap().state;
+    assert!(
+        (renewed && !cleaned && state == "running") || (!renewed && cleaned && state == "failed"),
+        "exactly one of renewal and cleanup takes effect: renewed={renewed} cleaned={cleaned} state={state}"
+    );
+    if renewed {
+        assert!(q
+            .complete_fenced(
+                &tenant,
+                &race_id,
+                "builder-race",
+                3,
+                Ok(serde_json::json!({})),
+                None
+            )
+            .await
+            .unwrap());
+    }
 }

@@ -171,7 +171,7 @@ complete object-store lifecycle policy or authorize deleting catalog rows.
 |---|---|---|
 | `MUNARIUM_DATASTORE_BUILDER` | Off | Case-insensitive `enabled` starts the durable build-job worker; it requires PostgreSQL. Does not enqueue work or select a serving engine |
 | `MUNARIUM_DATASTORE_BUILDER_POLL_MS` | `5000` | Queue polling milliseconds, clamped to at least 250 |
-| `MUNARIUM_DATASTORE_JOB_LEASE_SECS` | `600` | Claimed-job lease seconds, clamped to at least 30; the worker renews it during execution |
+| `MUNARIUM_DATASTORE_JOB_LEASE_SECS` | `600` | Claimed-job lease seconds, clamped to at least 30; the worker renews it during execution. Each claim has a generation (the job's `attempts` after that claim), and renewal and completion require it, so a superseded claim cannot write, even from a replica restarted under the same instance name. A lapsed lease is re-offered until the job has been claimed three times. On each poll, the builder moves jobs whose final claim lapsed to `failed` and releases their target for a new request |
 | `MUNARIUM_DATASTORE_RECONCILE_INTERVAL_SECS` | `60` | Interrupted sealed-build reconciliation interval, clamped to at least 30 seconds; also runs at startup |
 | `MUNARIUM_DATASTORE_ROLLOUT_REFRESH_MS` | `15000` | Serving warmer/selector refresh interval, clamped to at least 1000 milliseconds |
 | `MUNARIUM_DATASTORE_STARTUP_HYDRATE_TIMEOUT_MS` | `120000` | Startup hydration deadline used by the readiness warmer; does not permit serving incomplete scopes after expiry |
@@ -817,6 +817,7 @@ readiness. L1 and L0 are caches, not substitutes for backups. Follow the
 | Cloud artifact creation fails with PostgreSQL sources | Cloud artifact client comes from cloud source configuration; use local file artifacts or configure matching cloud source/artifact stores |
 | Permission denied on local files | UID 65532 ownership/access for the cache, staging and artifact directories |
 | Job stays pending | Builder enabled on a worker with database and storage access; inspect worker logs and lease state |
+| Job `failed` with "its final attempt stopped renewing its lease" | Its third claim stopped renewing (worker crash, restart or partition). Inspect that worker's logs, fix the cause, then enqueue the target again. A v1.4 builder leaves such a job `running` until a newer builder fails it |
 | Backfill responds successfully but is incomplete | Check every version outcome; retry deferred work and fix actual failed builds |
 | Promotion rejected | Staged/serving generations, verified candidate, fleet revision/mode/readiness and staged-open residency |
 | Rollout rejected | Every active/within-horizon version needs a verified serving binding; an empty scope cannot be Datastore-served |

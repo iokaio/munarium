@@ -26,6 +26,13 @@ use munarium_core::{KernelError, Result};
 
 use crate::storage_err;
 
+/// The safe, human-readable `error` recorded when an expired final claim is
+/// failed by [`BuildJobs::fail_expired_final_claims`]. It names no table,
+/// node or driver detail. The machine-readable code (`attempts_exhausted`)
+/// waits for the C2 hub record and is not stored or returned yet.
+pub const ATTEMPTS_EXHAUSTED_MESSAGE: &str =
+    "build job failed: its final attempt stopped renewing its lease before completing";
+
 /// What a job builds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JobKind {
@@ -191,6 +198,13 @@ impl BuildJobs {
 
     /// Claim the next runnable job: pending FIFO, plus lease-lapsed running
     /// jobs with attempts to spare. One short SKIP LOCKED transaction.
+    ///
+    /// The returned job is the row as THIS claim wrote it, captured with
+    /// `RETURNING` inside the claiming transaction. Its `attempts` is the
+    /// claim's fencing generation (ClearView R4): pass it to
+    /// [`heartbeat_fenced`](Self::heartbeat_fenced) and
+    /// [`complete_fenced`](Self::complete_fenced). Reading the row after
+    /// commit, as v1.4 did, could observe a later claimant's generation.
     pub async fn claim_any(
         &self,
         node_id: &str,
@@ -218,20 +232,71 @@ impl BuildJobs {
         };
         let tenant: String = row.get("tenant_id");
         let job_id: String = row.get("job_id");
-        sqlx::query(
+        let claimed = sqlx::query(
             "UPDATE index_build_jobs
                 SET state = 'running', claimed_by = $3, claimed_at = now(),
                     attempts = attempts + 1, updated_at = now()
-              WHERE tenant_id = $1 AND job_id = $2",
+              WHERE tenant_id = $1 AND job_id = $2
+          RETURNING tenant_id, job_id, kind, scope_kind, scope_id, index_version_id,
+                    params, state, attempt_ids, correlation_id, claimed_by, attempts,
+                    result, error, requested_by, created_at::text AS created_at_text",
         )
         .bind(&tenant)
         .bind(&job_id)
         .bind(node_id)
-        .execute(&mut *tx)
+        .fetch_one(&mut *tx)
         .await
         .map_err(storage_err)?;
+        let job = row_to_job(claimed);
         tx.commit().await.map_err(storage_err)?;
-        self.get(&tenant, &job_id).await
+        Ok(Some(job))
+    }
+
+    /// Move expired FINAL claims to `failed` and release their targets.
+    ///
+    /// A running job whose lease lapsed with `attempts >= max_attempts` is
+    /// never re-offered by [`claim_any`](Self::claim_any). In v1.4 it stayed
+    /// `running` forever and held the open-target index, so the target could
+    /// not be enqueued again. Each row is rechecked under its row lock (lease,
+    /// state and ceiling), so a lease renewal that commits first wins and the
+    /// row is skipped; a renewal that arrives second finds the job `failed`.
+    /// Rows locked by another cleaner are skipped, so concurrent cleaners
+    /// fail each job once. Committed build effects are left for recovery.
+    ///
+    /// Global across tenants, like claiming. Returns `(tenant_id, job_id)`
+    /// for each job this call failed.
+    pub async fn fail_expired_final_claims(
+        &self,
+        lease_secs: i64,
+        max_attempts: i32,
+        limit: i64,
+    ) -> Result<Vec<(String, String)>> {
+        let rows = sqlx::query(
+            "WITH expired AS (
+                 SELECT tenant_id, job_id FROM index_build_jobs
+                  WHERE state = 'running'
+                    AND attempts >= $2
+                    AND claimed_at < now() - make_interval(secs => $1)
+                  ORDER BY claimed_at
+                  FOR UPDATE SKIP LOCKED
+                  LIMIT $3)
+             UPDATE index_build_jobs j
+                SET state = 'failed', error = $4, updated_at = now()
+               FROM expired e
+              WHERE j.tenant_id = e.tenant_id AND j.job_id = e.job_id
+          RETURNING j.tenant_id, j.job_id",
+        )
+        .bind(lease_secs as f64)
+        .bind(max_attempts)
+        .bind(limit.clamp(1, 1000))
+        .bind(ATTEMPTS_EXHAUSTED_MESSAGE)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(storage_err)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| (r.get("tenant_id"), r.get("job_id")))
+            .collect())
     }
 
     /// Extend the holder's lease: `claimed_at` moves to now, so `claim_any`'s
@@ -246,15 +311,44 @@ impl BuildJobs {
     /// to a second replica mid-flight, the first builder's `complete` became
     /// a no-op, and its real outcome was lost.
     pub async fn heartbeat(&self, tenant_id: &str, job_id: &str, node_id: &str) -> Result<bool> {
+        self.renew(tenant_id, job_id, node_id, None).await
+    }
+
+    /// [`heartbeat`](Self::heartbeat) fenced by the claim's generation.
+    ///
+    /// Also requires `attempts = generation`, so a holder whose lease lapsed
+    /// and was reclaimed under the same node name (a restarted StatefulSet
+    /// pod, a fixed `MUNARIUM_INSTANCE_ID`) is refused instead of renewing a
+    /// lease that now belongs to the newer claim.
+    pub async fn heartbeat_fenced(
+        &self,
+        tenant_id: &str,
+        job_id: &str,
+        node_id: &str,
+        generation: i32,
+    ) -> Result<bool> {
+        self.renew(tenant_id, job_id, node_id, Some(generation))
+            .await
+    }
+
+    async fn renew(
+        &self,
+        tenant_id: &str,
+        job_id: &str,
+        node_id: &str,
+        generation: Option<i32>,
+    ) -> Result<bool> {
         let updated = sqlx::query(
             "UPDATE index_build_jobs
                 SET claimed_at = now(), updated_at = now()
               WHERE tenant_id = $1 AND job_id = $2
-                AND state = 'running' AND claimed_by = $3",
+                AND state = 'running' AND claimed_by = $3
+                AND ($4::int IS NULL OR attempts = $4)",
         )
         .bind(tenant_id)
         .bind(job_id)
         .bind(node_id)
+        .bind(generation)
         .execute(&self.pool)
         .await
         .map_err(storage_err)?;
@@ -275,6 +369,42 @@ impl BuildJobs {
         outcome: std::result::Result<serde_json::Value, String>,
         attempt_id: Option<&str>,
     ) -> Result<bool> {
+        self.finish(tenant_id, job_id, node_id, None, outcome, attempt_id)
+            .await
+    }
+
+    /// [`complete`](Self::complete) fenced by the claim's generation: a
+    /// holder whose claim was superseded, even under the same node name,
+    /// gets `false` and records nothing.
+    pub async fn complete_fenced(
+        &self,
+        tenant_id: &str,
+        job_id: &str,
+        node_id: &str,
+        generation: i32,
+        outcome: std::result::Result<serde_json::Value, String>,
+        attempt_id: Option<&str>,
+    ) -> Result<bool> {
+        self.finish(
+            tenant_id,
+            job_id,
+            node_id,
+            Some(generation),
+            outcome,
+            attempt_id,
+        )
+        .await
+    }
+
+    async fn finish(
+        &self,
+        tenant_id: &str,
+        job_id: &str,
+        node_id: &str,
+        generation: Option<i32>,
+        outcome: std::result::Result<serde_json::Value, String>,
+        attempt_id: Option<&str>,
+    ) -> Result<bool> {
         let (state, result, error) = match outcome {
             Ok(v) => ("succeeded", Some(v), None),
             Err(e) => ("failed", None, Some(e)),
@@ -286,7 +416,8 @@ impl BuildJobs {
                                        ELSE array_append(attempt_ids, $7) END,
                     updated_at = now()
               WHERE tenant_id = $1 AND job_id = $2
-                AND state = 'running' AND claimed_by = $3",
+                AND state = 'running' AND claimed_by = $3
+                AND ($8::int IS NULL OR attempts = $8)",
         )
         .bind(tenant_id)
         .bind(job_id)
@@ -295,6 +426,7 @@ impl BuildJobs {
         .bind(result)
         .bind(error)
         .bind(attempt_id)
+        .bind(generation)
         .execute(&self.pool)
         .await
         .map_err(storage_err)?;

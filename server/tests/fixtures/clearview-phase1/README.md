@@ -9,7 +9,7 @@ the recorded outputs are v1.4 behavior. All identifiers and text are fictional.
 
 | File | Cases | Checked by | Consumers |
 |---|---|---|---|
-| `v14-build-jobs.json` | Seven job rows: pending, live lease, expired final claim, historical storage-text failure, v1.4 free-text failure, success and cancellation after claim. Each has its exact v1.4 REST DTO and the list order. | `munarium-server` unit tests `datastore_jobs::tests::v14_*` (DTO bytes); `munarium-store-pg` test `v14_job_fixtures` (PostgreSQL read-back and R4 baseline observations) | R4-T1, R5/C2-T1, R6-T1, R8, R9, U12 |
+| `v14-build-jobs.json` | Seven job rows: pending, live lease, expired final claim, historical storage-text failure, v1.4 free-text failure, success and cancellation after claim. Each has its exact v1.4 REST DTO and the list order. | `munarium-server` unit tests `datastore_jobs::tests::v14_*` (DTO bytes); `munarium-store-pg` test `v14_job_fixtures` (PostgreSQL read-back, the v1.4 baseline observations, and the R4 contrast that `heartbeat_fenced` refuses a stale generation on the same row) | R4-T1, R5/C2-T1, R6-T1, R8, R9, U12 |
 | `v14-console.json` | Twelve untrusted-text cases for `charts::esc`, including three negative controls, and five overview failed-read cases. | `munarium-server` unit test `charts::tests::v14_console_fixture_records_esc_output` | U9, U5, U14, COMPAT-T5 |
 
 ## Changing an expectation

@@ -118,9 +118,30 @@ pub fn spawn_builder(state: &Arc<AppState>) {
         loop {
             let Some(state) = weak.upgrade() else { return };
             let node = state.config.instance_id.clone();
+            // Fail expired final claims before claiming (ClearView R4). This
+            // runs on every poll, including an empty queue, and consumes no
+            // scheduling turn: a bounded batch, then the normal claim.
+            match jobs
+                .fail_expired_final_claims(lease_secs, MAX_JOB_ATTEMPTS, EXPIRED_CLAIM_BATCH)
+                .await
+            {
+                Ok(failed) => {
+                    for (tenant, job_id) in failed {
+                        tracing::warn!(
+                            tenant_id = %tenant,
+                            job_id = %job_id,
+                            "build job failed: final attempt's lease expired; target released"
+                        );
+                    }
+                }
+                Err(e) => tracing::warn!(error = %e, "expired-claim cleanup failed"),
+            }
             match jobs.claim_any(&node, lease_secs, MAX_JOB_ATTEMPTS).await {
                 Ok(Some(job)) => {
-                    tracing::info!(job_id = %job.job_id, kind = %job.kind, "build job claimed");
+                    // The claim's fencing generation, captured in the claiming
+                    // transaction. Every later write for this job carries it.
+                    let generation = job.attempts;
+                    tracing::info!(job_id = %job.job_id, kind = %job.kind, generation, "build job claimed");
                     // Keep the JOB lease alive for as long as the build runs.
                     // The attempt lease underneath is heartbeated by the
                     // mirror; the job lease was not, so any build longer than
@@ -136,7 +157,10 @@ pub fn spawn_builder(state: &Arc<AppState>) {
                         AbortOnDrop(tokio::spawn(async move {
                             loop {
                                 tokio::time::sleep(every).await;
-                                match jobs.heartbeat(&tenant, &job_id, &node).await {
+                                match jobs
+                                    .heartbeat_fenced(&tenant, &job_id, &node, generation)
+                                    .await
+                                {
                                     Ok(true) => {}
                                     Ok(false) => {
                                         tracing::warn!(
@@ -155,7 +179,14 @@ pub fn spawn_builder(state: &Arc<AppState>) {
                     let outcome = run_one_job(&state, &job).await.map_err(|e| e.to_string());
                     drop(beat);
                     match jobs
-                        .complete(&job.tenant_id, &job.job_id, &node, outcome, None)
+                        .complete_fenced(
+                            &job.tenant_id,
+                            &job.job_id,
+                            &node,
+                            generation,
+                            outcome,
+                            None,
+                        )
                         .await
                     {
                         Ok(true) => {}
@@ -181,6 +212,10 @@ pub fn spawn_builder(state: &Arc<AppState>) {
 /// A job that has been claimed this many times has failed enough. Its last
 /// error stands; an operator re-enqueues deliberately.
 pub const MAX_JOB_ATTEMPTS: i32 = 3;
+
+/// How many expired final claims one builder poll fails. Bounded so cleanup
+/// after a long outage cannot turn one poll into an unbounded transaction.
+const EXPIRED_CLAIM_BATCH: i64 = 32;
 
 /// A spawned task stopped when its guard goes out of scope — the job-lease
 /// heartbeat, which must end on every path out of a build (success, failure,

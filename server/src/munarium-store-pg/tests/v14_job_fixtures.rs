@@ -133,32 +133,24 @@ async fn v14_job_fixture_reads_back_and_shows_the_r4_baseline() {
         seed(&pool, &tenant, row).await;
     }
 
-    // Every row reads back exactly through get.
+    // Collect everything first, then remove this tenant's rows before any
+    // assertion: the pending and live-lease rows are claimable, and a
+    // leftover would be taken by another test's global claim_any.
+    let mut read_back = Vec::new();
     for row in rows {
         let job = jobs
             .get(&tenant, row["job_id"].as_str().unwrap())
             .await
-            .unwrap()
-            .expect("seeded row is readable");
-        assert_row(&job, row);
-        assert!(
-            same_instant(&pool, &job.created_at, row["created_at"].as_str().unwrap()).await,
-            "{}: created_at {} differs from the fixture",
-            row["case"],
-            job.created_at
-        );
+            .unwrap();
+        let instant_ok = match &job {
+            Some(j) => {
+                same_instant(&pool, &j.created_at, row["created_at"].as_str().unwrap()).await
+            }
+            None => false,
+        };
+        read_back.push((job, instant_ok));
     }
-
-    // list: newest first, all rows, same values.
     let listed = jobs.list(&tenant, 50).await.unwrap();
-    let order: Vec<&str> = listed.iter().map(|j| j.job_id.as_str()).collect();
-    let expected: Vec<&str> = fixture["expected_v14_list_order"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_str().unwrap())
-        .collect();
-    assert_eq!(order, expected);
 
     // R4 baseline: the expired final claim still holds its open target.
     let held = jobs
@@ -172,20 +164,53 @@ async fn v14_job_fixture_reads_back_and_shows_the_r4_baseline() {
         )
         .await
         .unwrap();
-    assert_eq!(
-        held,
-        EnqueueOutcome::AlreadyOpen("job-v14-running-expired-final".into()),
-        "v1.4 baseline: an expired final claim occupies the open-target index"
-    );
-
+    // R4: the fenced heartbeat refuses a stale generation on the same row
+    // and node name that the v1.4 heartbeat accepts.
+    let fenced_stale = jobs
+        .heartbeat_fenced(&tenant, "job-v14-running-expired-final", "builder-a", 2)
+        .await
+        .unwrap();
     // R4 baseline: a replica reusing the node name renews a lapsed final
     // claim it never held. Last, because it moves claimed_at.
     let renewed = jobs
         .heartbeat(&tenant, "job-v14-running-expired-final", "builder-a")
         .await
         .unwrap();
+
+    sqlx::query("DELETE FROM index_build_jobs WHERE tenant_id = $1")
+        .bind(&tenant)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    for (row, (job, instant_ok)) in rows.iter().zip(&read_back) {
+        let job = job.as_ref().expect("seeded row is readable");
+        assert_row(job, row);
+        assert!(
+            instant_ok,
+            "{}: created_at {} differs from the fixture",
+            row["case"], job.created_at
+        );
+    }
+    let order: Vec<&str> = listed.iter().map(|j| j.job_id.as_str()).collect();
+    let expected: Vec<&str> = fixture["expected_v14_list_order"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert_eq!(order, expected);
+    assert_eq!(
+        held,
+        EnqueueOutcome::AlreadyOpen("job-v14-running-expired-final".into()),
+        "v1.4 baseline: an expired final claim occupies the open-target index"
+    );
+    assert!(
+        !fenced_stale,
+        "R4: a stale generation cannot renew the lease under the same node name"
+    );
     assert!(
         renewed,
-        "v1.4 baseline: a same-name heartbeat renews the lapsed final claim"
+        "v1.4 baseline: a same-name unfenced heartbeat renews the lapsed final claim"
     );
 }
