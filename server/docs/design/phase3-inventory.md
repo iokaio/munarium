@@ -96,6 +96,54 @@ Each of these holds one ordinary permit for the whole request today.
 B4 adds a new extractor identity for the opt-in child-process profile and leaves
 `pdf-text@1` and the set identity above available to v1.4 rebuilds.
 
+## B3-T2 classification (proposed)
+
+Recorded 19 November 2026 for review. The classes are proposals that R7
+implements. This section does not change any behavior.
+
+**Rules.**
+
+1. Reserved capacity is granted only by an explicit allowlist keyed on method
+   and route template. A route that is not on the allowlist, including any route
+   added later, is ordinary and can never take a reserved slot.
+2. Today the REST permit is taken before authentication. A reserve slot can be
+   granted only after the route's own authentication and role check pass. R7
+   therefore tries an ordinary slot first. Only when none is free does it
+   authenticate, check the role and take a reserved slot.
+3. Heavy routes count against the same plane ceiling and never use the reserve.
+4. The native bridge reaches these routes through the REST router, so a bridged
+   call gets the same class as its REST route and is charged once.
+
+**Control: eligible for the reserve after authentication and role check.**
+
+| Operation | Authorization verified at helper level |
+|---|---|
+| `PUT /v1/retrieval-rollout` | `auth_ctx` → `AppState::authenticate`; `TenantCtx::require_rw` accepts only role `rw` |
+| `POST /v1/index-build-jobs/{job_id}/cancel` | `auth_ctx`; `require_rw` |
+| `POST /v1/index-artifacts/{index_version_id}/promote` | `auth_ctx`; `require_rw` |
+| `POST /v1/access-tokens/{jti}/revoke` and `AdminService.RevokeAccessToken` | `auth_ctx`; `require_mgmt` accepts role `mgmt`, or any caller when `MUNARIUM_AUTH_MODE=disabled` |
+| Status reads: `GET /v1/index-build-jobs/{job_id}`, `GET /v1/retrieval-rollout/{scope_kind}/{scope_id}`, `GET /v1/index-artifacts/{index_version_id}` | `auth_ctx` (any authenticated role). Proposed so an operator can see the effect of a control action under saturation. |
+
+**Heavy: bounded within the ordinary ceiling.**
+
+These are the routes in [Candidate heavy requests](#candidate-heavy-requests),
+with one change from the candidate list. `POST /v1/runs/{run_id}/steps/{ordinal}/approve` and
+`RunbookService.ApproveStep` are **heavy, not control**, because approval runs the
+remaining steps inline. A split into approve-only and resume would let approval
+become control; that is a design choice for R7. The typed gRPC heavy methods are
+`IngestService.PutSource` and `IngestFiles`, `ProviderService.Complete` and
+`Embed`, `RunbookService.RunRunbook` and `ApproveStep`, and `SessionService.Turn`.
+
+**Ordinary.** Every other `/v1/` and `/v1.2/` operation and every other typed gRPC
+method.
+
+**Unadmitted.** Console, ops-port and unversioned routes stay outside admission.
+
+**Finding for R7.** The console action `POST /admin/runs/{run_id}/steps/{ordinal}/approve`
+runs the same inline `execute` as the REST approval, with no admission permit. A
+console approval can therefore start heavy work at any load. R7 should either
+admit console actions as heavy or have the console enqueue the resume.
+
 ## Limits and follow-ups
 
 - Admission columns are derived from path prefixes in the middleware. A route
