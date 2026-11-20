@@ -372,3 +372,81 @@ pub async fn cancel_job(
         .await?;
     Ok(axum::Json(dto::OkResponse { ok: cancelled }))
 }
+
+#[cfg(test)]
+mod tests {
+    //! v1.4 job DTO baseline for ClearView Phase 1 (R4, R5/C2). The fixture
+    //! records each stored row and the exact JSON v1.4.0 returned for it.
+    //! When C2 lands, the failure rows' expectations change deliberately and
+    //! this test is updated alongside the error registry; the other rows must
+    //! keep their v1.4 bytes.
+    use super::*;
+
+    const FIXTURE: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/fixtures/clearview-phase1/v14-build-jobs.json"
+    ));
+
+    fn opt(v: &serde_json::Value, k: &str) -> Option<String> {
+        v[k].as_str().map(str::to_owned)
+    }
+
+    fn job_from_row(row: &serde_json::Value) -> BuildJob {
+        BuildJob {
+            tenant_id: "tenant-fixture".into(),
+            job_id: opt(row, "job_id").unwrap(),
+            kind: opt(row, "kind").unwrap(),
+            scope_kind: opt(row, "scope_kind"),
+            scope_id: opt(row, "scope_id"),
+            index_version_id: opt(row, "index_version_id"),
+            params: row["params"].clone(),
+            state: opt(row, "state").unwrap(),
+            attempt_ids: row["attempt_ids"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|a| a.as_str().unwrap().to_owned())
+                .collect(),
+            correlation_id: opt(row, "correlation_id"),
+            claimed_by: opt(row, "claimed_by"),
+            attempts: row["attempts"].as_i64().unwrap() as i32,
+            result: (!row["result"].is_null()).then(|| row["result"].clone()),
+            error: opt(row, "error"),
+            requested_by: opt(row, "requested_by").unwrap(),
+            created_at: opt(row, "created_at").unwrap(),
+        }
+    }
+
+    #[test]
+    fn v14_job_fixture_serializes_to_the_recorded_dtos() {
+        let fixture: serde_json::Value = serde_json::from_str(FIXTURE).unwrap();
+        let rows = fixture["rows"].as_array().unwrap();
+        assert!(rows.len() >= 7, "fixture lost rows");
+        for row in rows {
+            let got = serde_json::to_value(job_dto(job_from_row(row))).unwrap();
+            assert_eq!(
+                got, row["expected_v14_dto"],
+                "case {} no longer serializes as v1.4 did",
+                row["case"]
+            );
+        }
+        // Success keeps every failure member omitted (C2-T1's existing rule).
+        let ok = rows.iter().find(|r| r["case"] == "succeeded").unwrap();
+        let ok = serde_json::to_value(job_dto(job_from_row(ok))).unwrap();
+        assert!(ok.get("error").is_none() && ok.get("error_code").is_none());
+    }
+
+    #[test]
+    fn v14_job_list_wraps_dtos_in_a_jobs_array() {
+        let fixture: serde_json::Value = serde_json::from_str(FIXTURE).unwrap();
+        let rows = fixture["rows"].as_array().unwrap();
+        let list = dto::IndexBuildJobListResponse {
+            jobs: rows.iter().map(|r| job_dto(job_from_row(r))).collect(),
+        };
+        let got = serde_json::to_value(list).unwrap();
+        let obj = got.as_object().unwrap();
+        assert_eq!(obj.len(), 1, "list response grew a member: {got}");
+        let expected: Vec<_> = rows.iter().map(|r| r["expected_v14_dto"].clone()).collect();
+        assert_eq!(got["jobs"], serde_json::Value::Array(expected));
+    }
+}

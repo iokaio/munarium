@@ -418,6 +418,30 @@ pub fn state_color(state: &str) -> &'static str {
 mod tests {
     use super::*;
 
+    /// ClearView Phase 1 baseline (U9): what v1.4 `esc` does with untrusted
+    /// text containing invisible and direction-changing characters. U9
+    /// changes the `visible` cases deliberately; the `unchanged` negative
+    /// controls must keep their v1.4 output.
+    #[test]
+    fn v14_console_fixture_records_esc_output() {
+        const FIXTURE: &str = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/clearview-phase1/v14-console.json"
+        ));
+        let fixture: serde_json::Value = serde_json::from_str(FIXTURE).unwrap();
+        let cases = fixture["untrusted_text"]["cases"].as_array().unwrap();
+        assert!(cases.len() >= 12, "fixture lost cases");
+        for c in cases {
+            let input = c["input"].as_str().unwrap();
+            assert_eq!(
+                esc(input),
+                c["expected_v14_esc"].as_str().unwrap(),
+                "case {}",
+                c["case"]
+            );
+        }
+    }
+
     #[test]
     fn esc_neutralizes_hostile_strings() {
         assert_eq!(

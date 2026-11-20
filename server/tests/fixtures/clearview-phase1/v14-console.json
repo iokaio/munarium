@@ -1,0 +1,150 @@
+{
+  "fixture": "clearview-phase1/v14-console",
+  "fixture_version": 1,
+  "captured_from": {
+    "release": "v1.4.0",
+    "commit": "25012c22087fbaa8ce29ddd68d2880d6e9499b1c",
+    "sources": [
+      "server/src/munarium-server/src/charts.rs",
+      "server/src/munarium-server/src/dashboard/monitoring.rs"
+    ],
+    "note": "Both sources are byte-identical between v1.4.0 and the commit that added this fixture."
+  },
+  "consumers": ["U9", "U5", "U14", "COMPAT-T5"],
+  "untrusted_text": {
+    "function": "charts::esc",
+    "v15_rule": "U9: every case marked visible must render its invisible or direction-changing characters as visible escapes; cases marked unchanged must keep their v1.4 output. The escape spelling is decided by U9 and recorded here when it lands.",
+    "cases": [
+      {
+        "case": "rlo_file_name",
+        "purpose": "A right-to-left override makes a file name read as an image while the bytes end in .exe.",
+        "input": "invoice‮gpj.exe",
+        "expected_v14_esc": "invoice‮gpj.exe",
+        "v15": "visible"
+      },
+      {
+        "case": "rlo_inside_markup",
+        "purpose": "HTML metacharacters are escaped and the override passes through.",
+        "input": "<‮b>",
+        "expected_v14_esc": "&lt;‮b&gt;",
+        "v15": "visible"
+      },
+      {
+        "case": "zero_width_space_in_uid",
+        "purpose": "Two token uids that look identical on screen.",
+        "input": "user​admin",
+        "expected_v14_esc": "user​admin",
+        "v15": "visible"
+      },
+      {
+        "case": "bidi_isolates",
+        "purpose": "First-strong and pop isolates around a citation reference.",
+        "input": "⁨doc-7⁩ ⁦p.3⁩",
+        "expected_v14_esc": "⁨doc-7⁩ ⁦p.3⁩",
+        "v15": "visible"
+      },
+      {
+        "case": "directional_marks",
+        "purpose": "Left-to-right and right-to-left marks.",
+        "input": "a‎b‏c",
+        "expected_v14_esc": "a‎b‏c",
+        "v15": "visible"
+      },
+      {
+        "case": "byte_order_mark_and_word_joiner",
+        "purpose": "A leading BOM and an embedded word joiner and soft hyphen.",
+        "input": "﻿token⁠id­x",
+        "expected_v14_esc": "﻿token⁠id­x",
+        "v15": "visible"
+      },
+      {
+        "case": "c0_and_c1_controls",
+        "purpose": "NUL, BEL, ESC and NEL inside a model answer.",
+        "input": "line1\u0000\u0007\u001b[31mline2\u0085",
+        "expected_v14_esc": "line1\u0000\u0007\u001b[31mline2\u0085",
+        "v15": "visible"
+      },
+      {
+        "case": "line_and_paragraph_separators",
+        "purpose": "Unicode separators that break a single-line cell.",
+        "input": "a b c",
+        "expected_v14_esc": "a b c",
+        "v15": "visible"
+      },
+      {
+        "case": "tag_characters",
+        "purpose": "Invisible Unicode tag characters (U+E0041, U+E0042) carrying hidden text.",
+        "input": "ok󠁁󠁂",
+        "expected_v14_esc": "ok󠁁󠁂",
+        "v15": "visible"
+      },
+      {
+        "case": "ordinary_non_ascii",
+        "purpose": "Negative control: accented and CJK text must not be escaped.",
+        "input": "café 東京 Ω",
+        "expected_v14_esc": "café 東京 Ω",
+        "v15": "unchanged"
+      },
+      {
+        "case": "ordinary_whitespace",
+        "purpose": "Negative control: space, tab and newline keep their v1.4 output.",
+        "input": "a b\tc\nd",
+        "expected_v14_esc": "a b\tc\nd",
+        "v15": "unchanged"
+      },
+      {
+        "case": "html_metacharacters",
+        "purpose": "Negative control: the five v1.4 escapes are unchanged.",
+        "input": "<a href=\"x\">'&'</a>",
+        "expected_v14_esc": "&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;",
+        "v15": "unchanged"
+      }
+    ]
+  },
+  "failed_reads": {
+    "page": "/admin (overview)",
+    "v15_rule": "U5: a failed read renders as unavailable with its reason, in the style of the existing store notice, never as 0. A successful read of zero items still renders 0.",
+    "cases": [
+      {
+        "case": "shapes_list_fails",
+        "call": "runbooks_api::op_list_shapes",
+        "source_line": "dashboard/monitoring.rs:37-40",
+        "tile": "shapes",
+        "expected_v14_value": "0",
+        "v15": "unavailable"
+      },
+      {
+        "case": "providers_list_fails",
+        "call": "providers_api::op_list_providers",
+        "source_line": "dashboard/monitoring.rs:41-44",
+        "tile": "providers",
+        "expected_v14_value": "0",
+        "v15": "unavailable"
+      },
+      {
+        "case": "sessions_report_fails",
+        "call": "reports_api::op_sessions_report",
+        "source_line": "dashboard/monitoring.rs:137-140",
+        "tile": "sessions opened · 24h",
+        "expected_v14_value": "0",
+        "v15": "unavailable"
+      },
+      {
+        "case": "control_plane_counts_fail",
+        "call": "reports_api::op_control_plane_counts",
+        "source_line": "dashboard/monitoring.rs:45-109",
+        "tile": "inventory tiles",
+        "expected_v14_value": "store notice; shapes and providers tiles still shown",
+        "v15": "unchanged notice; shapes and providers follow their own case"
+      },
+      {
+        "case": "empty_registries_succeed",
+        "call": "op_list_shapes and op_list_providers return empty lists",
+        "source_line": "dashboard/monitoring.rs:37-44",
+        "tile": "shapes, providers",
+        "expected_v14_value": "0",
+        "v15": "0 (negative control: an authorized empty result stays zero)"
+      }
+    ]
+  }
+}
