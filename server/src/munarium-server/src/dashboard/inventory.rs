@@ -926,8 +926,9 @@ pub(super) async fn tokens(
                             // A read: the review page states what would
                             // change; only its typed confirmation acts (U4).
                             format!(
-                                r#"<form class="action" method="get" action="{}/revoke"><button type="submit" class="danger">revoke…</button></form>"#,
+                                r#"<form class="action" method="get" action="{}/revoke"><button type="submit" class="danger" aria-label="review revoking token {}">revoke…</button></form>"#,
                                 esc(&token_path(&t.jti)),
+                                esc(&t.jti),
                             ),
                         )
                     } else {

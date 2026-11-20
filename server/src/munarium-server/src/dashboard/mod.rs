@@ -377,7 +377,7 @@ fn docs_line(docs: &[&str]) -> String {
 
 fn page(admin: &AdminCtx, active: &str, title: &str, actions: &str, body: &str) -> Html<String> {
     Html(format!(
-        r#"<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{} — munarium admin</title>{}</head><body>{}<main>{}{body}</main></body></html>"#,
+        r##"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{} — munarium admin</title>{}</head><body><a class="skip" href="#main">skip to content</a>{}<main id="main">{}{body}</main></body></html>"##,
         charts::esc(title),
         charts::STYLE,
         nav(active, admin.view_only),
@@ -764,7 +764,7 @@ fn login_page(error: Option<&str>) -> Html<String> {
         .map(|e| format!(r#"<div class="notice">{}</div>"#, charts::esc(e)))
         .unwrap_or_default();
     Html(format!(
-        r#"<!doctype html><html><head><meta charset="utf-8"><title>munarium admin login</title>{}</head><body>
+        r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>munarium admin login</title>{}</head><body>
 <form class="login" method="post" action="/admin/login">
 <h1>munarium admin</h1>{err}
 <label for="token">management token</label>
@@ -2235,6 +2235,176 @@ mod tests {
             assert!(!body.contains("<script"), "{path}");
             assert_classes_styled(path, &body);
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // U14: the pages as pages
+    // -----------------------------------------------------------------------
+
+    /// Every page that renders without a database, as an operator and
+    /// behind a view-only proxy: one h1, a language, labelled controls,
+    /// CSRF on every post form, no script or positive tabindex, and focus
+    /// that moves skip link → navigation → content.
+    #[tokio::test]
+    async fn every_page_is_labelled_and_keyboard_operable() {
+        let state = state(static_auth()).await;
+        for path in memory_pages() {
+            for view_only in [false, true] {
+                let resp = get(&state, &path, Some("m"), view_only).await;
+                let body = body_string(resp).await;
+                html_checks::assert_operable(&path, &body);
+                if view_only && path != "/admin/login" {
+                    // A view-only proxy is offered no form that posts.
+                    assert!(
+                        !html_checks::tags(&body)
+                            .iter()
+                            .any(|t| t.name == "form" && t.attr("method") == Some("post")),
+                        "{path}: post form behind view-only"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Navigation by role: every console page, list or detail, is served to
+    /// the mgmt role only. No credential, a non-mgmt role and an unknown
+    /// token all land on the login page; nothing is rendered for them.
+    #[tokio::test]
+    async fn every_page_refuses_roles_other_than_mgmt() {
+        let state = state(static_auth()).await;
+        let mut paths: Vec<String> = memory_pages()
+            .into_iter()
+            .filter(|p| p != "/admin/login")
+            .collect();
+        paths.extend(
+            [
+                "/admin/runs/run-x",
+                "/admin/sessions/ses-x",
+                "/admin/collections/col-x",
+                "/admin/runbooks/rb",
+                "/admin/chronology-rules/r",
+            ]
+            .map(String::from),
+        );
+        for path in &paths {
+            for who in [None, Some("w"), Some("w2"), Some("nope")] {
+                let resp = get(&state, path, who, false).await;
+                assert_eq!(resp.status(), StatusCode::SEE_OTHER, "{path} as {who:?}");
+                assert_eq!(resp.headers()["location"], "/admin/login", "{path}");
+            }
+            let resp = get(&state, path, Some("m"), false).await;
+            assert_ne!(resp.status(), StatusCode::SEE_OTHER, "{path} as mgmt");
+        }
+    }
+
+    /// Against PostgreSQL, the pages that carry the console's actions: the
+    /// token list, the revocation review with its typed confirmation, the
+    /// issue page and a run awaiting approval. Each passes the same checks,
+    /// and the confirmation form is fully labelled, CSRF-bound and leaves a
+    /// way back that changes nothing.
+    #[tokio::test]
+    async fn action_pages_are_labelled_and_keyboard_operable_on_postgres() {
+        let Ok(url) = std::env::var("MUNARIUM_TEST_DATABASE_URL") else {
+            eprintln!("console U14 PostgreSQL test NOT RUN: MUNARIUM_TEST_DATABASE_URL unset");
+            return;
+        };
+        let tenant = format!("console-u14-{}", uuid::Uuid::new_v4().simple());
+        let mut cfg = test_config(AuthMode::Static(vec![(
+            "m".into(),
+            tenant.clone(),
+            "mgmt".into(),
+        )]));
+        cfg.store = StoreKind::Postgres;
+        cfg.database_url = Some(url);
+        let state = AppState::new(cfg).await.expect("state");
+        let pool = state.pg_pool().expect("pool").clone();
+        let jti = issue(&state, &tenant, "alice").await;
+        for sql in [
+            "INSERT INTO runbook_runs (tenant_id, id, runbook_ref, state)
+             VALUES ($1, 'run-u14', 'rb@1', 'awaiting_approval')",
+            "INSERT INTO runbook_steps (tenant_id, run_id, ordinal, name, state)
+             VALUES ($1, 'run-u14', 0, 'cutover', 'awaiting_approval')",
+            "INSERT INTO sessions (tenant_id, id, uid, runbook_ref, access_level)
+             VALUES ($1, 'ses-u14', 'u', 'rb@1', 0)",
+            "INSERT INTO collections (tenant_id, id, name, shape_ref)
+             VALUES ($1, 'col-u14', 'u14', 's@1')",
+        ] {
+            sqlx::query(sql)
+                .bind(&tenant)
+                .execute(&pool)
+                .await
+                .unwrap_or_else(|e| panic!("{sql}: {e}"));
+        }
+        let review = format!("/admin/tokens/{jti}/revoke");
+        for path in [
+            "/admin",
+            "/admin/tokens",
+            "/admin/tokens/issue",
+            review.as_str(),
+            "/admin/runs/run-u14",
+            "/admin/sessions",
+            "/admin/sessions/ses-u14",
+            "/admin/collections",
+            "/admin/collections/col-u14",
+            "/admin/findings",
+            "/admin/storage",
+        ] {
+            for view_only in [false, true] {
+                let body = body_string(get(&state, path, Some("m"), view_only).await).await;
+                html_checks::assert_operable(path, &body);
+                assert_classes_styled(path, &body);
+                assert_status_cues_have_text(path, &body);
+            }
+        }
+
+        // The list's revoke control names its target for assistive tech.
+        let body = body_string(get(&state, "/admin/tokens", Some("m"), false).await).await;
+        assert!(
+            body.contains(&format!(r#"aria-label="review revoking token {jti}""#)),
+            "{body}"
+        );
+        // The confirmation: inside one post form, the CSRF token, the plan,
+        // a labelled required field for the typed jti and a named danger
+        // button; after it, a link back that changes nothing.
+        let body = body_string(get(&state, &review, Some("m"), false).await).await;
+        let tags = html_checks::tags(&body);
+        let form = tags
+            .iter()
+            .position(|t| {
+                t.name == "form" && !t.closing && t.attr("class") == Some("action confirm")
+            })
+            .expect("confirmation form");
+        let end = tags[form..]
+            .iter()
+            .position(|t| t.name == "form" && t.closing)
+            .unwrap()
+            + form;
+        let inside = &tags[form..end];
+        assert_eq!(tags[form].attr("method"), Some("post"));
+        let input = |name: &str| {
+            inside
+                .iter()
+                .find(|t| t.name == "input" && t.attr("name") == Some(name))
+        };
+        assert_eq!(input("_csrf").and_then(|t| t.attr("type")), Some("hidden"));
+        assert_eq!(input("plan").and_then(|t| t.attr("type")), Some("hidden"));
+        let typed = input("confirm").expect("typed field");
+        assert!(typed.has("required") && typed.attr("type") == Some("text"));
+        assert!(inside.iter().any(|t| t.name == "label" && !t.closing));
+        assert!(inside
+            .iter()
+            .any(|t| t.name == "button" && t.attr("class") == Some("danger")));
+        let after = &body[tags[end].at..];
+        assert!(
+            after.contains(r#"<a href="/admin/tokens">← back to tokens (nothing changes)</a>"#),
+            "{after}"
+        );
+        // The approve form names its credential field.
+        let body = body_string(get(&state, "/admin/runs/run-u14", Some("m"), false).await).await;
+        assert!(
+            body.contains(r#"<label>rw token <input type="password" name="rw_token""#),
+            "{body}"
+        );
     }
 
     // -----------------------------------------------------------------------
