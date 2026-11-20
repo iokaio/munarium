@@ -249,6 +249,23 @@ The same authenticated report functions are available as structured data for
 another monitoring system. The console is implemented in
 [the dashboard module](../src/munarium-server/src/dashboard/mod.rs).
 
+Each console page states its purpose, the context it was read in (tenant,
+instance, store and read time) and links to the guides under `docs/` that
+explain it. The overview starts with an attention strip that lists only
+abnormal conditions as observed counts, each linked to its page: runs awaiting
+approval, blocking findings in the last day, datastore scopes this replica
+cannot serve, applied provider configs whose credential does not resolve,
+failed or lapsed index builds, and unresolved guarded commands. A check whose
+read fails is shown as unavailable, never as zero, and the strip then does not
+claim an all-clear. Collection pages show status, active index version, serving
+engine, residency on the rendering replica and build jobs as separate facts.
+Run, runbook, collection, session and chronology-rule pages end with the
+equivalent API request, the `mmctl` command where one exists, and the complete
+result. Status colors always appear with a text label. Router tests check every
+page for one heading, labelled controls, CSRF on each posting form, no script
+and a skip link before the navigation; they do not replace a browser check of
+layout, contrast, focus visibility or screen-reader output.
+
 The persistent reports aggregate across every server instance sharing the
 tenant database. They provide:
 
