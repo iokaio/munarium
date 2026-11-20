@@ -9,7 +9,7 @@
 //! terminal states, so no claimer can take them. Skips loudly when
 //! `MUNARIUM_TEST_DATABASE_URL` is unset.
 
-use munarium_store_pg::jobs::{BuildJobs, HistoryStatus};
+use munarium_store_pg::jobs::{BuildJobs, HistoryStatus, JobId, VersionCursor};
 use munarium_store_pg::PgStore;
 
 const FIXTURE: &str = include_str!(concat!(
@@ -82,7 +82,7 @@ async fn a_v14_job_reports_history_unavailable_never_an_empty_success() {
     for row in &terminal {
         let id = row["job_id"].as_str().unwrap();
         let h = jobs
-            .version_history(&tenant, id, None, 50)
+            .version_history(&tenant, &JobId::parse(id).unwrap(), None, 50)
             .await
             .unwrap()
             .expect("the tenant's job");
@@ -111,7 +111,7 @@ async fn a_v14_job_reports_history_unavailable_never_an_empty_success() {
     .await
     .unwrap();
     let h = jobs
-        .version_history(&tenant, "bjob-r6-partial", None, 50)
+        .version_history(&tenant, &JobId::parse("bjob-r6-partial").unwrap(), None, 50)
         .await
         .unwrap()
         .unwrap();
@@ -119,7 +119,12 @@ async fn a_v14_job_reports_history_unavailable_never_an_empty_success() {
 
     // Another tenant cannot read it, even knowing the id.
     assert!(jobs
-        .version_history("tenant-r6-someone-else", "bjob-r6-partial", None, 50)
+        .version_history(
+            "tenant-r6-someone-else",
+            &JobId::parse("bjob-r6-partial").unwrap(),
+            None,
+            50
+        )
         .await
         .unwrap()
         .is_none());
@@ -149,7 +154,7 @@ async fn a_v14_job_reports_history_unavailable_never_an_empty_success() {
         .unwrap();
     }
     let first = jobs
-        .version_history(&tenant, "bjob-r6-recorded", None, 2)
+        .version_history(&tenant, &JobId::parse("bjob-r6-recorded").unwrap(), None, 2)
         .await
         .unwrap()
         .unwrap();
@@ -162,7 +167,16 @@ async fn a_v14_job_reports_history_unavailable_never_an_empty_success() {
     assert_eq!(ids, ["iv-r6-a", "iv-r6-b"]);
     assert_eq!(first.next_after.as_deref(), Some("iv-r6-b"));
     let second = jobs
-        .version_history(&tenant, "bjob-r6-recorded", first.next_after.as_deref(), 2)
+        .version_history(
+            &tenant,
+            &JobId::parse("bjob-r6-recorded").unwrap(),
+            first
+                .next_after
+                .as_deref()
+                .map(|v| VersionCursor::parse(v).unwrap())
+                .as_ref(),
+            2,
+        )
         .await
         .unwrap()
         .unwrap();

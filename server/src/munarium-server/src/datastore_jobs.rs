@@ -21,8 +21,8 @@ use std::sync::Arc;
 
 use munarium_core::{KernelError, Result};
 use munarium_store_pg::jobs::{
-    BuildJob, BuildJobs, ClaimPolicy, EnqueueOutcome, JobFence, JobKind, JobSignal, JobTarget,
-    JobVersionOutcome,
+    BuildJob, BuildJobs, ClaimPolicy, EnqueueOutcome, JobFence, JobId, JobKind, JobSignal,
+    JobTarget, JobVersionOutcome, VersionCursor,
 };
 
 use crate::error::ApiError;
@@ -560,6 +560,27 @@ fn version_dto(v: JobVersionOutcome) -> dto::IndexBuildJobVersionDto {
     }
 }
 
+/// The `job_id` path segment of the ClearView job reads (R12). Validated
+/// before any work; the schema declares the same syntax as
+/// [`munarium_store_pg::jobs::OPAQUE_ID_PATTERN`], which a test checks.
+#[derive(Debug, serde::Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Path)]
+pub struct JobPath {
+    /// Build job id.
+    #[param(
+        pattern = "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$",
+        min_length = 1,
+        max_length = 200
+    )]
+    pub job_id: String,
+}
+
+impl JobPath {
+    fn parse(&self) -> ApiResult<JobId> {
+        Ok(JobId::parse(&self.job_id)?)
+    }
+}
+
 /// Paging for the job history reads.
 #[derive(Debug, Default, serde::Deserialize, utoipa::IntoParams)]
 #[into_params(parameter_in = Query)]
@@ -590,19 +611,20 @@ impl JobPage {
     get,
     path = "/v1/index-build-jobs/{job_id}/progress",
     tag = "index-artifacts",
-    params(("job_id" = String, Path, description = "build job id")),
+    params(JobPath),
     responses(
         (status = 200, description = "the job's fenced progress for its current claim", body = dto::IndexBuildJobProgressDto),
-        (status = 400, description = "the memory store"),
+        (status = 400, description = "a malformed job id, or the memory store"),
         (status = 404, description = "no such job")
     )
 )]
 pub async fn get_job_progress(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
-    axum::extract::Path(job_id): axum::extract::Path<String>,
+    axum::extract::Path(path): axum::extract::Path<JobPath>,
     headers: axum::http::HeaderMap,
 ) -> ApiResult<axum::Json<dto::IndexBuildJobProgressDto>> {
     let ctx = crate::rest::auth_ctx(&state, &headers)?;
+    let job_id = path.parse()?;
     let pool = state.pg_pool().ok_or_else(|| {
         ApiError::from(KernelError::InvalidInput(
             "build jobs require the postgres store".into(),
@@ -613,7 +635,7 @@ pub async fn get_job_progress(
         .await?
         .ok_or(KernelError::NotFound {
             kind: "build job",
-            id: job_id,
+            id: job_id.to_string(),
         })?;
     Ok(axum::Json(dto::IndexBuildJobProgressDto {
         job_id: p.job.job_id,
@@ -663,32 +685,34 @@ fn decode_event_cursor(tenant_id: &str, job_id: &str, cursor: &str) -> ApiResult
     get,
     path = "/v1/index-build-jobs/{job_id}/events",
     tag = "index-artifacts",
-    params(("job_id" = String, Path, description = "build job id"), JobPage),
+    params(JobPath, JobPage),
     responses(
         (status = 200, description = "one page of the job's recorded transitions, oldest first; `gap` marks pruned history", body = dto::IndexBuildJobEventsResponse),
-        (status = 400, description = "a malformed cursor or limit, a cursor issued for another tenant or job, or the memory store"),
+        (status = 400, description = "a malformed job id, cursor or limit, a cursor issued for another tenant or job, or the memory store"),
         (status = 404, description = "no such job")
     )
 )]
 pub async fn list_job_events(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
-    axum::extract::Path(job_id): axum::extract::Path<String>,
+    axum::extract::Path(path): axum::extract::Path<JobPath>,
     axum::extract::Query(page): axum::extract::Query<JobPage>,
     headers: axum::http::HeaderMap,
 ) -> ApiResult<axum::Json<dto::IndexBuildJobEventsResponse>> {
     let ctx = crate::rest::auth_ctx(&state, &headers)?;
+    let job = path.parse()?;
     let pool = state.pg_pool().ok_or_else(|| {
         ApiError::from(KernelError::InvalidInput(
             "build jobs require the postgres store".into(),
         ))
     })?;
     let limit = page.limit()?;
+    let job_id = job.to_string();
     let after = match page.cursor.as_deref() {
         None => 0,
         Some(c) => decode_event_cursor(&ctx.tenant_id, &job_id, c)?,
     };
     let events = BuildJobs::new(pool.clone())
-        .events(&ctx.tenant_id, &job_id, after, limit)
+        .events(&ctx.tenant_id, &job, after, limit)
         .await?
         .ok_or(KernelError::NotFound {
             kind: "build job",
@@ -720,20 +744,26 @@ pub async fn list_job_events(
     get,
     path = "/v1/index-build-jobs/{job_id}/versions",
     tag = "index-artifacts",
-    params(("job_id" = String, Path, description = "build job id"), JobPage),
+    params(JobPath, JobPage),
     responses(
         (status = 200, description = "one page of the job's per-version outcomes; `history` says whether an empty page means nothing or unknown", body = dto::IndexBuildJobVersionsResponse),
-        (status = 400, description = "a malformed cursor or limit, or the memory store"),
+        (status = 400, description = "a malformed job id, cursor or limit, or the memory store"),
         (status = 404, description = "no such job")
     )
 )]
 pub async fn list_job_versions(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
-    axum::extract::Path(job_id): axum::extract::Path<String>,
+    axum::extract::Path(path): axum::extract::Path<JobPath>,
     axum::extract::Query(page): axum::extract::Query<JobPage>,
     headers: axum::http::HeaderMap,
 ) -> ApiResult<axum::Json<dto::IndexBuildJobVersionsResponse>> {
     let ctx = crate::rest::auth_ctx(&state, &headers)?;
+    let job_id = path.parse()?;
+    let cursor = page
+        .cursor
+        .as_deref()
+        .map(VersionCursor::parse)
+        .transpose()?;
     let pool = state.pg_pool().ok_or_else(|| {
         ApiError::from(KernelError::InvalidInput(
             "build jobs require the postgres store".into(),
@@ -741,11 +771,11 @@ pub async fn list_job_versions(
     })?;
     let limit = page.limit()?;
     let history = BuildJobs::new(pool.clone())
-        .version_history(&ctx.tenant_id, &job_id, page.cursor.as_deref(), limit)
+        .version_history(&ctx.tenant_id, &job_id, cursor.as_ref(), limit)
         .await?
         .ok_or(KernelError::NotFound {
             kind: "build job",
-            id: job_id,
+            id: job_id.to_string(),
         })?;
     Ok(axum::Json(dto::IndexBuildJobVersionsResponse {
         job_id: history.job.job_id,
@@ -925,6 +955,74 @@ mod tests {
                 "{bad:?}"
             );
         }
+    }
+
+    /// R12-T1: every id Server has issued, and every fixture id, round-trips
+    /// through the new validator; malformed ids are rejected before work;
+    /// and the generated OpenAPI declares exactly the validator's syntax.
+    #[test]
+    fn job_ids_validate_at_the_new_boundaries_and_match_the_schema() {
+        let fixture: serde_json::Value = serde_json::from_str(FIXTURE).unwrap();
+        let mut issued: Vec<String> = fixture["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["job_id"].as_str().unwrap().to_string())
+            .collect();
+        issued.push(format!("bjob-{}", uuid::Uuid::new_v4().simple()));
+        for id in &issued {
+            assert_eq!(JobId::parse(id).unwrap().as_str(), id, "issued id {id}");
+        }
+        for v in [
+            "idx-0123abcd",
+            "idx2-9f86d081884c7d65",
+            "iv-fixture-expired",
+        ] {
+            assert_eq!(VersionCursor::parse(v).unwrap().as_str(), v);
+        }
+        let long = "a".repeat(201);
+        for bad in [
+            "",
+            "-leading",
+            ".x",
+            "a b",
+            "a/b",
+            "a%2Fb",
+            "job\u{e9}",
+            "a\n",
+            long.as_str(),
+        ] {
+            assert!(JobId::parse(bad).is_err(), "{bad:?}");
+            assert!(VersionCursor::parse(bad).is_err(), "{bad:?}");
+        }
+        assert!(JobId::parse(&"a".repeat(200)).is_ok());
+
+        let doc = serde_json::to_value(crate::openapi::doc()).unwrap();
+        for route in ["versions", "progress", "events"] {
+            let path = format!("/v1/index-build-jobs/{{job_id}}/{route}");
+            let params = doc["paths"][&path]["get"]["parameters"].as_array().unwrap();
+            let job = params.iter().find(|p| p["name"] == "job_id").unwrap();
+            assert_eq!(job["in"], "path");
+            let schema = &job["schema"];
+            assert_eq!(
+                schema["pattern"].as_str(),
+                Some(munarium_store_pg::jobs::OPAQUE_ID_PATTERN),
+                "{path}"
+            );
+            assert_eq!(schema["maxLength"].as_u64(), Some(200), "{path}");
+            assert_eq!(schema["minLength"].as_u64(), Some(1), "{path}");
+            let limit = params
+                .iter()
+                .find(|p| p["name"] == "limit")
+                .map(|p| &p["schema"]);
+            if let Some(limit) = limit {
+                assert_eq!(
+                    (limit["minimum"].as_f64(), limit["maximum"].as_f64()),
+                    (Some(1.0), Some(200.0))
+                );
+            }
+        }
+        assert_eq!(munarium_store_pg::jobs::OPAQUE_ID_MAX_LEN, 200);
     }
 
     #[test]

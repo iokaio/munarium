@@ -529,7 +529,12 @@ async fn the_job_queue_dedups_claims_leases_and_cancels() {
         "a cancelled job is never claimed"
     );
     let history = q
-        .version_history(&tenant, &early_id, None, 50)
+        .version_history(
+            &tenant,
+            &munarium_store_pg::jobs::JobId::parse(&early_id).unwrap(),
+            None,
+            50,
+        )
         .await
         .unwrap()
         .unwrap();

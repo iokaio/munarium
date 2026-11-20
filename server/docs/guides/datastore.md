@@ -703,6 +703,12 @@ job activates an index, and recovery never changes the job's terminal state.
 The records are `index_build_job_runs` and `index_build_job_versions`
 (migration 0044).
 
+The three ClearView job reads (`versions`, `progress` and `events`) validate the
+`job_id` path segment, and the `versions` cursor, before any work: 1 to 200
+characters, an ASCII letter or digit followed by letters, digits, `.`, `_`, `:` or
+`-`. Every job and index version ID Server has issued has that form. A malformed
+value is 400 `invalid-input`; the v1.4 job routes are unchanged.
+
 #### Progress and event history
 
 A queued build records its progress on the job row at the same safe boundaries

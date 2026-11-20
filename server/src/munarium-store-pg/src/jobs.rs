@@ -500,6 +500,75 @@ pub async fn event_retention(pool: &PgPool) -> Result<i32> {
     Ok(n.unwrap_or(DEFAULT_EVENTS_PER_TENANT))
 }
 
+/// The opaque-identifier syntax the ClearView job reads accept (R12): an
+/// ASCII letter or digit, then up to 199 letters, digits, `.`, `_`, `:` or
+/// `-`. Every job id and index version id Server has issued fits it
+/// (`bjob-<32 hex>`, `idx-...`, `idx2-...`), as do the fixture ids
+/// (`job-v14-pending`, `iv-fixture-expired`). Declared once here so the
+/// OpenAPI schema and the validator can be checked against each other.
+pub const OPAQUE_ID_PATTERN: &str = "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$";
+/// The longest accepted opaque identifier, in bytes.
+pub const OPAQUE_ID_MAX_LEN: usize = 200;
+
+fn valid_opaque_id(s: &str) -> bool {
+    let b = s.as_bytes();
+    !b.is_empty()
+        && b.len() <= OPAQUE_ID_MAX_LEN
+        && b[0].is_ascii_alphanumeric()
+        && b[1..]
+            .iter()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'.' | b'_' | b':' | b'-'))
+}
+
+/// A build job's id at the boundaries ClearView added (R12): the per-version,
+/// progress and event reads. Parsing rejects a malformed id before any work;
+/// every id Server has issued parses. A distinct type, so a job id cannot be
+/// passed where a tenant or version id is expected. The v1.4 job routes keep
+/// their unvalidated `String`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct JobId(String);
+
+impl JobId {
+    pub fn parse(s: &str) -> Result<Self> {
+        if !valid_opaque_id(s) {
+            return Err(KernelError::InvalidInput(format!(
+                "a build job id is 1 to {OPAQUE_ID_MAX_LEN} characters matching {OPAQUE_ID_PATTERN}"
+            )));
+        }
+        Ok(Self(s.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for JobId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// An index version id used as a page position in a job's per-version
+/// history (R12). Same syntax as [`JobId`]; every issued version id parses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VersionCursor(String);
+
+impl VersionCursor {
+    pub fn parse(s: &str) -> Result<Self> {
+        if !valid_opaque_id(s) {
+            return Err(KernelError::InvalidInput(format!(
+                "a version cursor is an index version id matching {OPAQUE_ID_PATTERN}"
+            )));
+        }
+        Ok(Self(s.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// What an enqueue did.
 #[derive(Debug, Clone, PartialEq)]
 pub enum EnqueueOutcome {
@@ -996,7 +1065,8 @@ impl BuildJobs {
     }
 
     /// A job's recorded progress. Tenant-scoped; `None` for no such job.
-    pub async fn progress(&self, tenant_id: &str, job_id: &str) -> Result<Option<JobProgress>> {
+    pub async fn progress(&self, tenant_id: &str, job_id: &JobId) -> Result<Option<JobProgress>> {
+        let job_id = job_id.as_str();
         let Some(job) = self.get(tenant_id, job_id).await? else {
             return Ok(None);
         };
@@ -1027,10 +1097,11 @@ impl BuildJobs {
     pub async fn events(
         &self,
         tenant_id: &str,
-        job_id: &str,
+        job_id: &JobId,
         after: i64,
         limit: i64,
     ) -> Result<Option<JobEventPage>> {
+        let job_id = job_id.as_str();
         let after = after.max(0);
         let limit = limit.clamp(1, 200);
         let mut tx = self.pool.begin().await.map_err(storage_err)?;
@@ -1130,10 +1201,12 @@ impl BuildJobs {
     pub async fn version_history(
         &self,
         tenant_id: &str,
-        job_id: &str,
-        after: Option<&str>,
+        job_id: &JobId,
+        after: Option<&VersionCursor>,
         limit: i64,
     ) -> Result<Option<JobVersionHistory>> {
+        let job_id = job_id.as_str();
+        let after = after.map(VersionCursor::as_str);
         let Some(job) = self.get(tenant_id, job_id).await? else {
             return Ok(None);
         };

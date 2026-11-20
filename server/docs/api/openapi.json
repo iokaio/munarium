@@ -2771,10 +2771,13 @@
           {
             "name": "job_id",
             "in": "path",
-            "description": "build job id",
+            "description": "Build job id.",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "maxLength": 200,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
             }
           },
           {
@@ -2811,7 +2814,7 @@
             }
           },
           "400": {
-            "description": "a malformed cursor or limit, a cursor issued for another tenant or job, or the memory store"
+            "description": "a malformed job id, cursor or limit, a cursor issued for another tenant or job, or the memory store"
           },
           "404": {
             "description": "no such job"
@@ -2841,10 +2844,13 @@
           {
             "name": "job_id",
             "in": "path",
-            "description": "build job id",
+            "description": "Build job id.",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "maxLength": 200,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
             }
           }
         ],
@@ -2860,7 +2866,7 @@
             }
           },
           "400": {
-            "description": "the memory store"
+            "description": "a malformed job id, or the memory store"
           },
           "404": {
             "description": "no such job"
@@ -2890,10 +2896,13 @@
           {
             "name": "job_id",
             "in": "path",
-            "description": "build job id",
+            "description": "Build job id.",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "maxLength": 200,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$"
             }
           },
           {
@@ -2930,7 +2939,7 @@
             }
           },
           "400": {
-            "description": "a malformed cursor or limit, or the memory store"
+            "description": "a malformed job id, cursor or limit, or the memory store"
           },
           "404": {
             "description": "no such job"

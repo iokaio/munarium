@@ -30,7 +30,7 @@ use munarium_retrieval_pg::PgRetrieval;
 use munarium_store_pg::artifacts::{ArtifactCatalog, BindingSlot};
 use munarium_store_pg::attempts::{AttemptState, BuildAttempts, IntentState};
 use munarium_store_pg::jobs::{
-    BuildJobs, EnqueueOutcome, HistoryStatus, JobFence, JobKind, JobSignal, JobTarget,
+    BuildJobs, EnqueueOutcome, HistoryStatus, JobFence, JobId, JobKind, JobSignal, JobTarget,
     ProgressPhase, StopReason, STALE_GENERATION_MESSAGE,
 };
 use munarium_store_pg::PgStore;
@@ -284,7 +284,12 @@ impl Fixture {
 
     async fn history(&self, fence: &JobFence) -> munarium_store_pg::jobs::JobVersionHistory {
         self.jobs()
-            .version_history(&self.tenant, &fence.job_id, None, 50)
+            .version_history(
+                &self.tenant,
+                &JobId::parse(&fence.job_id).unwrap(),
+                None,
+                50,
+            )
             .await
             .unwrap()
             .unwrap()
@@ -664,7 +669,7 @@ async fn cancel_after_completion_keeps_the_recorded_outcome() {
     // the trigger recorded the phase changes as events.
     let p = f
         .jobs()
-        .progress(&f.tenant, &gen1.job_id)
+        .progress(&f.tenant, &JobId::parse(&gen1.job_id).unwrap())
         .await
         .unwrap()
         .unwrap();
@@ -672,7 +677,7 @@ async fn cancel_after_completion_keeps_the_recorded_outcome() {
     f.finish(&gen1).await;
     let page = f
         .jobs()
-        .events(&f.tenant, &gen1.job_id, 0, 50)
+        .events(&f.tenant, &JobId::parse(&gen1.job_id).unwrap(), 0, 50)
         .await
         .unwrap()
         .unwrap();
