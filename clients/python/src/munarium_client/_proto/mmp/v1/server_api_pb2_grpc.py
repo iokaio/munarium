@@ -344,6 +344,21 @@ class ServerApiServiceStub:
                 request_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
                 response_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
                 _registered_method=True)
+        self.ListJobEvents = channel.unary_unary(
+                '/mmp.v1.ServerApiService/ListJobEvents',
+                request_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+                response_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+                _registered_method=True)
+        self.GetJobProgress = channel.unary_unary(
+                '/mmp.v1.ServerApiService/GetJobProgress',
+                request_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+                response_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+                _registered_method=True)
+        self.ListJobVersions = channel.unary_unary(
+                '/mmp.v1.ServerApiService/ListJobVersions',
+                request_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+                response_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+                _registered_method=True)
         self.GetIndex = channel.unary_unary(
                 '/mmp.v1.ServerApiService/GetIndex',
                 request_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
@@ -1168,6 +1183,27 @@ class ServerApiServiceServicer:
 
     def CancelJob(self, request, context):
         """POST /v1/index-build-jobs/{job_id}/cancel
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListJobEvents(self, request, context):
+        """GET /v1/index-build-jobs/{job_id}/events
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetJobProgress(self, request, context):
+        """GET /v1/index-build-jobs/{job_id}/progress
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListJobVersions(self, request, context):
+        """GET /v1/index-build-jobs/{job_id}/versions
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -2029,6 +2065,21 @@ def add_ServerApiServiceServicer_to_server(servicer, server):
             ),
             'CancelJob': grpc.unary_unary_rpc_method_handler(
                     servicer.CancelJob,
+                    request_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.FromString,
+                    response_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.SerializeToString,
+            ),
+            'ListJobEvents': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListJobEvents,
+                    request_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.FromString,
+                    response_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.SerializeToString,
+            ),
+            'GetJobProgress': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetJobProgress,
+                    request_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.FromString,
+                    response_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.SerializeToString,
+            ),
+            'ListJobVersions': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListJobVersions,
                     request_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.FromString,
                     response_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.SerializeToString,
             ),
@@ -4095,6 +4146,87 @@ class ServerApiService:
             request,
             target,
             '/mmp.v1.ServerApiService/CancelJob',
+            mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+            mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListJobEvents(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/mmp.v1.ServerApiService/ListJobEvents',
+            mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+            mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetJobProgress(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/mmp.v1.ServerApiService/GetJobProgress',
+            mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+            mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListJobVersions(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/mmp.v1.ServerApiService/ListJobVersions',
             mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
             mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
             options,
