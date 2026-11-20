@@ -483,8 +483,10 @@ async fn a_generation_retired_before_the_publication_lock_publishes_nothing() {
 /// execution is paused during its upload, the job is reclaimed, and the old
 /// execution resumes and finishes. It publishes exactly the recorded
 /// manifest key and digest, records the result, and never binds. The
-/// replacement defers while the sealed attempt is live, then reuses the
-/// verified artifact and binds it under the current generation.
+/// replacement, a newer generation of the same job, waits while the sealed
+/// attempt is live rather than deferring to it (deferring would let the job
+/// finish with the version unbound), then reuses the verified artifact and
+/// binds it under the current generation.
 ///
 /// The pause is inside the upload, after the component writes. ClearView R6
 /// added a safe boundary between the catalog insert and the upload: an
@@ -516,13 +518,12 @@ async fn an_intent_committed_before_reclaim_finishes_only_its_manifest() {
     assert_eq!(intent.job_generation, gen1.generation);
 
     let gen2 = f.reclaim(&gen1).await;
-    // While the old sealed attempt is live, the replacement defers.
-    let deferred = backfill_one(&f.ctx(Some(&gen2), None), &f.pg, f.target(), &f.version_id)
-        .await
-        .unwrap();
+    // While the old sealed attempt is live, the replacement waits for it.
+    let replacement = spawn_mirror(&f, f.ctx(Some(&gen2), None));
+    tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
     assert!(
-        matches!(deferred, MirrorOutcome::AlreadyRunning { .. }),
-        "{deferred:?}"
+        !replacement.is_finished(),
+        "the replacement waits for its predecessor's sealed attempt"
     );
 
     pause.resume.send(()).unwrap();
@@ -563,21 +564,13 @@ async fn an_intent_committed_before_reclaim_finishes_only_its_manifest() {
         )],
         "exactly the intent's artifact, and nothing else"
     );
-    let catalog = ArtifactCatalog::new(f.pool.clone(), &f.tenant);
-    assert!(
-        catalog
-            .binding(&f.version_id, BindingSlot::Staged)
-            .await
-            .unwrap()
-            .is_none(),
-        "a retired generation never binds"
-    );
-    assert_eq!(f.binding_events(&f.version_id).await, 0);
     f.assert_stale_writes_refused(&gen1, &gen2).await;
 
     // The current generation reuses the artifact and binds it.
-    let reused = backfill_one(&f.ctx(Some(&gen2), None), &f.pg, f.target(), &f.version_id)
+    let reused = tokio::time::timeout(std::time::Duration::from_secs(30), replacement)
         .await
+        .expect("the replacement finishes once the attempt resolves")
+        .unwrap()
         .unwrap();
     assert_eq!(
         reused,
@@ -585,6 +578,7 @@ async fn an_intent_committed_before_reclaim_finishes_only_its_manifest() {
             artifact_id: intent.artifact_id.clone()
         }
     );
+    let catalog = ArtifactCatalog::new(f.pool.clone(), &f.tenant);
     assert_eq!(
         catalog
             .binding(&f.version_id, BindingSlot::Staged)
@@ -593,6 +587,11 @@ async fn an_intent_committed_before_reclaim_finishes_only_its_manifest() {
             .expect("bound by the current generation")
             .artifact_id,
         intent.artifact_id
+    );
+    assert_eq!(
+        f.binding_events(&f.version_id).await,
+        1,
+        "one binding, by the current generation: the retired one never binds"
     );
     f.finish(&gen2).await;
 }

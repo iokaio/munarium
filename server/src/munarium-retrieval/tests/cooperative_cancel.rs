@@ -935,3 +935,418 @@ async fn an_uncertain_lease_is_revalidated_before_the_next_write() {
         "the newest attempt is the replacement's"
     );
 }
+
+/// Stop `signal` for a drain the first time the build reaches `phase`, from
+/// inside the build, the way the drain watch does while it runs.
+fn drain_at(phase: BuildPhase, signal: &JobSignal) -> FaultHook {
+    let signal = signal.clone();
+    Arc::new(move |p| {
+        if p == phase {
+            signal.stop(StopReason::Draining);
+        }
+        Ok(())
+    })
+}
+
+/// SCALE-2 with R4. A drain that arrives after the attempt is sealed,
+/// catalogued and its intent committed does NOT stop the build at the
+/// boundary before upload: the claim is still current, so the build finishes
+/// the upload and binds `staged` under its own generation. Stopping there
+/// would hand the claim to a replacement while the sealed attempt belonged
+/// to a generation that can no longer bind. A drain at an earlier boundary
+/// still stops, and a claim retired at the upload boundary still stops there
+/// whatever the drain says.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_drain_at_the_upload_boundary_finishes_and_binds() {
+    guard!();
+    let f = fixture("drain-upload", 1).await;
+    let gen1 = f.seed_claimed_job("rebuild", false, NODE_A).await;
+    let signal = JobSignal::new();
+    let outcome = backfill_one(
+        &f.ctx(
+            NODE_A,
+            Some(&gen1),
+            Some(&signal),
+            Some(drain_at(BuildPhase::AfterCatalogInsert, &signal)),
+        ),
+        &f.pg,
+        f.target(),
+        f.version(),
+    )
+    .await
+    .expect("a draining build finishes its upload");
+    assert_eq!(signal.stopped(), Some(StopReason::Draining));
+    let MirrorOutcome::Published {
+        artifact_id,
+        bound_staged,
+        ..
+    } = outcome
+    else {
+        panic!("published: {outcome:?}");
+    };
+    assert!(bound_staged, "bound by the still-current generation");
+    let attempt = f.linked_attempts(&gen1).await.pop().expect("linked");
+    let attempts = BuildAttempts::new(f.pool.clone(), &f.tenant);
+    assert_eq!(
+        attempts.get(&attempt).await.unwrap().unwrap().state,
+        AttemptState::Succeeded
+    );
+    let intent = attempts
+        .publication_intent(&attempt)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(intent.state, IntentState::Published);
+    let stored = f.object_at(&intent.manifest_key).expect("manifest");
+    assert_eq!(sha256_hex(&stored), artifact_id);
+    assert_eq!(
+        ArtifactCatalog::new(f.pool.clone(), &f.tenant)
+            .binding(f.version(), BindingSlot::Staged)
+            .await
+            .unwrap()
+            .expect("staged")
+            .artifact_id,
+        artifact_id
+    );
+    f.finish(&gen1).await;
+
+    // Control: a drain at an EARLIER boundary still stops the build, and the
+    // attempt is failed rather than left sealed.
+    let g = fixture("drain-seal", 1).await;
+    let job = g.seed_claimed_job("rebuild", false, NODE_A).await;
+    let early = JobSignal::new();
+    let err = backfill_one(
+        &g.ctx(
+            NODE_A,
+            Some(&job),
+            Some(&early),
+            Some(drain_at(BuildPhase::AfterSeal, &early)),
+        ),
+        &g.pg,
+        g.target(),
+        g.version(),
+    )
+    .await
+    .unwrap_err();
+    assert!(err.to_string().contains(STALE_GENERATION_MESSAGE), "{err}");
+    let stopped = g.linked_attempts(&job).await.pop().expect("linked");
+    assert_eq!(
+        BuildAttempts::new(g.pool.clone(), &g.tenant)
+            .get(&stopped)
+            .await
+            .unwrap()
+            .unwrap()
+            .state,
+        AttemptState::Failed
+    );
+    g.finish(&job).await;
+
+    // A drain does not override the fence: a claim retired before the
+    // upload boundary still stops there, leaving only its recorded intent.
+    let h = fixture("drain-retired", 1).await;
+    let job = h.seed_claimed_job("rebuild", false, NODE_A).await;
+    let retired = JobSignal::new();
+    let s = retired.clone();
+    let pool = h.pool.clone();
+    let tenant = h.tenant.clone();
+    let job_id = job.job_id.clone();
+    let hook: FaultHook = Arc::new(move |p| {
+        if p == BuildPhase::AfterCatalogInsert {
+            s.stop(StopReason::Draining);
+            let (pool, tenant, job_id) = (pool.clone(), tenant.clone(), job_id.clone());
+            // Retire the generation (a reclaim) before the boundary.
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(async move {
+                    sqlx::query(
+                        "UPDATE index_build_jobs SET attempts = attempts + 1
+                          WHERE tenant_id = $1 AND job_id = $2",
+                    )
+                    .bind(&tenant)
+                    .bind(&job_id)
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+                })
+            });
+        }
+        Ok(())
+    });
+    let err = backfill_one(
+        &h.ctx(NODE_A, Some(&job), Some(&retired), Some(hook)),
+        &h.pg,
+        h.target(),
+        h.version(),
+    )
+    .await
+    .unwrap_err();
+    assert!(err.to_string().contains(STALE_GENERATION_MESSAGE), "{err}");
+    let sealed = h.linked_attempts(&job).await.pop().expect("linked");
+    let attempts = BuildAttempts::new(h.pool.clone(), &h.tenant);
+    assert_eq!(
+        attempts.get(&sealed).await.unwrap().unwrap().state,
+        AttemptState::Sealed,
+        "the retired generation stopped before upload"
+    );
+    let intent = attempts.publication_intent(&sealed).await.unwrap().unwrap();
+    assert!(
+        h.object_at(&intent.manifest_key).is_none(),
+        "nothing uploaded"
+    );
+    // Leave the job terminal and the sealed attempt resolved.
+    sqlx::query(
+        "UPDATE index_build_jobs SET state = 'cancelled'
+          WHERE tenant_id = $1 AND job_id = $2",
+    )
+    .bind(&h.tenant)
+    .bind(&job.job_id)
+    .execute(&h.pool)
+    .await
+    .unwrap();
+    let report = reconcile_attempts(&h.ctx(NODE_A, None, None, None))
+        .await
+        .unwrap();
+    assert_eq!(report.resumed, 1, "{report:?}");
+    assert!(
+        ArtifactCatalog::new(h.pool.clone(), &h.tenant)
+            .binding(h.version(), BindingSlot::Staged)
+            .await
+            .unwrap()
+            .is_none(),
+        "a retired generation never binds"
+    );
+}
+
+/// R4 with SCALE-2: the replacement generation of the SAME job does not
+/// defer to a sealed attempt its retired predecessor left behind (a drain
+/// whose grace ran out, or a lease lost at the upload boundary). Deferring
+/// would record the job's version `deferred` and let it finish with nothing
+/// bound, because the retired generation can never bind. It waits instead:
+/// once the owner's reconciler publishes the recorded intent, the current
+/// generation reuses the verified artifact and binds it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_replacement_generation_waits_for_its_predecessors_sealed_attempt_and_binds_it() {
+    guard!();
+    let f = fixture("wait-resume", 1).await;
+    let gen1 = f.seed_claimed_job("rebuild", false, NODE_A).await;
+    // The predecessor stops after its intent and catalog insert, as at the
+    // upload boundary: the attempt is sealed, with a live lease.
+    backfill_one(
+        &f.ctx(
+            NODE_A,
+            Some(&gen1),
+            None,
+            Some(crash_at(BuildPhase::AfterCatalogInsert)),
+        ),
+        &f.pg,
+        f.target(),
+        f.version(),
+    )
+    .await
+    .unwrap_err();
+    let old = f.linked_attempts(&gen1).await.pop().expect("linked");
+    let attempts = BuildAttempts::new(f.pool.clone(), &f.tenant);
+    let intent = attempts.publication_intent(&old).await.unwrap().unwrap();
+    assert_eq!(
+        attempts.get(&old).await.unwrap().unwrap().state,
+        AttemptState::Sealed
+    );
+
+    // The job is reclaimed: generation 2 of the same job.
+    let gen2 = f.claim_row(&gen1.job_id, NODE_B).await;
+    let replacement = spawn_rebuild(&f, f.ctx(NODE_B, Some(&gen2), None, None));
+    tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+    assert!(
+        !replacement.is_finished(),
+        "the replacement waits for the sealed attempt instead of deferring to it"
+    );
+    assert!(
+        f.linked_attempts(&gen2).await.is_empty(),
+        "and builds nothing meanwhile"
+    );
+
+    // The owner's reconciler finishes exactly the recorded intent; the
+    // retired generation does not bind.
+    let report = reconcile_attempts(&f.ctx(NODE_A, None, None, None))
+        .await
+        .unwrap();
+    assert_eq!((report.resumed, report.abandoned), (1, 0), "{report:?}");
+
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(30), replacement)
+        .await
+        .expect("the replacement resumes once the attempt resolves")
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        outcome,
+        MirrorOutcome::AlreadyBuilt {
+            artifact_id: intent.artifact_id.clone()
+        }
+    );
+    assert_eq!(
+        ArtifactCatalog::new(f.pool.clone(), &f.tenant)
+            .binding(f.version(), BindingSlot::Staged)
+            .await
+            .unwrap()
+            .expect("bound by the current generation")
+            .artifact_id,
+        intent.artifact_id
+    );
+    f.finish(&gen2).await;
+    let v = f.history(&gen2).await.versions.pop().unwrap();
+    assert_eq!(v.disposition.as_deref(), Some("reused"));
+    assert!(v.staged_bound);
+}
+
+/// The same, when nobody resumes the predecessor's attempt (its pod came
+/// back under a new instance id): the replacement waits until the attempt's
+/// lease lapses and then builds and binds the version itself. A sealed
+/// attempt of ANOTHER job is still deferred to, as before.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_replacement_generation_builds_once_its_predecessors_attempt_lapses() {
+    guard!();
+    let f = fixture("wait-lapse", 1).await;
+    let gen1 = f.seed_claimed_job("rebuild", false, NODE_A).await;
+    backfill_one(
+        &f.ctx(
+            NODE_A,
+            Some(&gen1),
+            None,
+            Some(crash_at(BuildPhase::AfterCatalogInsert)),
+        ),
+        &f.pg,
+        f.target(),
+        f.version(),
+    )
+    .await
+    .unwrap_err();
+    let old = f.linked_attempts(&gen1).await.pop().expect("linked");
+
+    // A different job is not this job's replacement: it defers, unchanged.
+    let other = f.seed_claimed_job("backfill", true, NODE_B).await;
+    let deferred = backfill_one(
+        &f.ctx(NODE_B, Some(&other), None, None),
+        &f.pg,
+        f.target(),
+        f.version(),
+    )
+    .await
+    .unwrap();
+    assert!(
+        matches!(deferred, MirrorOutcome::AlreadyRunning { .. }),
+        "{deferred:?}"
+    );
+    f.finish(&other).await;
+
+    let gen2 = f.claim_row(&gen1.job_id, NODE_B).await;
+    let replacement = spawn_rebuild(&f, f.ctx(NODE_B, Some(&gen2), None, None));
+    tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+    assert!(!replacement.is_finished(), "waiting on a live lease");
+    // Nobody renews or resumes it; its lease lapses.
+    sqlx::query(
+        "UPDATE index_build_attempts SET lease_expires_at = now() - interval '1 second'
+          WHERE tenant_id = $1 AND attempt_id = $2",
+    )
+    .bind(&f.tenant)
+    .bind(&old)
+    .execute(&f.pool)
+    .await
+    .unwrap();
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(60), replacement)
+        .await
+        .expect("the replacement proceeds once the lease lapses")
+        .unwrap()
+        .unwrap();
+    assert!(
+        matches!(
+            outcome,
+            MirrorOutcome::Published {
+                bound_staged: true,
+                ..
+            }
+        ),
+        "{outcome:?}"
+    );
+    // Any node may then abandon the lapsed attempt; its intent fails.
+    let report = reconcile_attempts(&f.ctx("builder-c", None, None, None))
+        .await
+        .unwrap();
+    assert_eq!(report.abandoned, 1, "{report:?}");
+    let attempts = BuildAttempts::new(f.pool.clone(), &f.tenant);
+    assert_eq!(
+        attempts
+            .publication_intent(&old)
+            .await
+            .unwrap()
+            .unwrap()
+            .state,
+        IntentState::Failed
+    );
+    f.finish(&gen2).await;
+}
+
+/// SCALE-2: a drain that lands inside the LAST version of a queued backfill
+/// ends the backfill with the stale error, as a stop at any other boundary
+/// does, so the builder releases the claim. It must not come back as an
+/// ordinary incomplete report, which the builder would record `succeeded`.
+/// A backfill that completed every version before the stop keeps its result.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_drain_in_the_last_backfill_version_stops_the_backfill() {
+    guard!();
+    let f = fixture("drain-last", 2).await;
+    let gen1 = f.seed_claimed_job("backfill", true, NODE_A).await;
+    let signal = JobSignal::new();
+    // The second export is the last version's.
+    let s = signal.clone();
+    let seen = Arc::new(AtomicUsize::new(0));
+    let hook: FaultHook = Arc::new(move |p| {
+        if p == BuildPhase::AfterExport && seen.fetch_add(1, Ordering::SeqCst) == 1 {
+            s.stop(StopReason::Draining);
+        }
+        Ok(())
+    });
+    let err = backfill_collection(
+        &f.ctx(NODE_A, Some(&gen1), Some(&signal), Some(hook)),
+        &f.pg,
+        &f.collection_id,
+        RequiredVersionsPolicy::ActivePinnedAndHorizon,
+        86_400,
+    )
+    .await
+    .expect_err("a stopped, incomplete backfill is not a result");
+    assert!(err.to_string().contains(STALE_GENERATION_MESSAGE), "{err}");
+    let h = f.history(&gen1).await;
+    assert_eq!(h.versions.len(), 2);
+    let published = h
+        .versions
+        .iter()
+        .filter(|v| v.intent_state.as_deref() == Some("published"))
+        .count();
+    assert_eq!(
+        published, 1,
+        "the first version was published before the drain"
+    );
+    f.finish(&gen1).await;
+
+    // Control: a backfill that completed every version before the stop
+    // keeps its result.
+    let g = fixture("drain-after-last", 1).await;
+    let done = g.seed_claimed_job("backfill", true, NODE_B).await;
+    let late = JobSignal::new();
+    let report = backfill_collection(
+        &g.ctx(
+            NODE_B,
+            Some(&done),
+            Some(&late),
+            Some(drain_at(BuildPhase::BeforeBinding, &late)),
+        ),
+        &g.pg,
+        &g.collection_id,
+        RequiredVersionsPolicy::ActivePinnedAndHorizon,
+        86_400,
+    )
+    .await
+    .unwrap();
+    assert!(report.is_complete(), "{report:?}");
+    assert_eq!(late.stopped(), Some(StopReason::Draining));
+    g.finish(&done).await;
+}

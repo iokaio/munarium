@@ -678,6 +678,47 @@ impl BuildAttempts {
         }))
     }
 
+    /// Whether an EARLIER generation of `fence`'s own job still holds this
+    /// plan: a `running` or `sealed` attempt on it, with a live lease, linked
+    /// to the same job under a lower generation.
+    ///
+    /// A newer generation that finds such an attempt must not record the
+    /// version `deferred` and finish: that attempt can no longer bind (its
+    /// generation is retired), so the job would end with nothing bound and,
+    /// once the attempt's owner is gone, nothing published. The caller waits
+    /// instead, until the attempt publishes (and the current generation binds
+    /// the verified artifact), fails, or its lease lapses (and the current
+    /// generation builds). An attempt of another job, or an unlinked one,
+    /// is not reported: deferring to it is unchanged.
+    pub async fn earlier_generation_holds_plan(
+        &self,
+        fence: &JobFence,
+        index_version_id: &str,
+        artifact_plan_sha256: &str,
+    ) -> Result<bool> {
+        fence.require_tenant(&self.tenant_id)?;
+        sqlx::query_scalar(
+            "SELECT EXISTS (
+                 SELECT 1
+                   FROM index_build_attempts a
+                   JOIN index_build_attempt_jobs l
+                     ON l.tenant_id = a.tenant_id AND l.attempt_id = a.attempt_id
+                  WHERE a.tenant_id = $1 AND a.index_version_id = $2
+                    AND a.artifact_plan_sha256 = $3
+                    AND a.state IN ('running', 'sealed')
+                    AND a.lease_expires_at > now()
+                    AND l.job_id = $4 AND l.job_generation < $5)",
+        )
+        .bind(&self.tenant_id)
+        .bind(index_version_id)
+        .bind(artifact_plan_sha256)
+        .bind(&fence.job_id)
+        .bind(fence.generation)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(storage_err)
+    }
+
     /// Commit the decision to publish one immutable manifest, while the
     /// fence's generation is current.
     ///

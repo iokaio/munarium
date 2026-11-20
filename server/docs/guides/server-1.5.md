@@ -51,6 +51,7 @@ Published 1.4.0 packages keep their 1.4/1.3 range. See
 | 0081 | Inference placement requirement on a binding |
 | 0082 | Artifact damage assurance columns (`independent` for every existing incident) |
 | 0083 | Enrolled artifact damage verifier keys (empty until an operator enrolls one) |
+| 0086 | Build-job event prune that skips rows a concurrent prune holds (function only) |
 
 Every migration is additive. Their effect on existing rows and the rollback
 boundary of each is in the

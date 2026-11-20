@@ -122,7 +122,13 @@ so endpoint deregistration outruns the drain.
 A process running the build-job worker drains its builder on the same signal
 and within the same grace window: it claims no further jobs, and a build in
 flight either finishes or stops at its next safe boundary and releases its
-claim. A released job keeps its state and generation with the lease expired,
+claim. A build already past its publication intent (sealed, catalogued and
+about to upload) does not stop: its claim is still current, so it finishes
+the upload and binds the artifact. A build that stopped for the drain and did
+not succeed is released, never recorded as failed; that includes a backfill
+stopped inside its last version, and a failure that coincides with the drain,
+which the next builder retries. A newer claim of the same job waits for a
+sealed attempt an earlier claim left behind, rather than deferring to it. A released job keeps its state and generation with the lease expired,
 so the next poll of any remaining builder reclaims it under a new generation
 and the drained holder's fenced writes are refused. A release counts as one of
 the job's three claims, like a crash. A build still running at the deadline is

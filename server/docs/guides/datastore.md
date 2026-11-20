@@ -664,9 +664,15 @@ recorded an intent, that execution or the reconciler may finish only that
 manifest. An existing object at the key must match the recorded digest; a
 different object is left in place and the intent is recorded as `failed`. The
 superseded claim never binds the artifact. A rebuild or backfill under the
-current claim that finds the verified artifact fills the empty `staged` slot,
-so if the replacement job reported `deferred`, enqueue it again. Synchronous
-rebuild, backfill and verify endpoints are unchanged. The records are kept in
+current claim that finds the verified artifact fills the empty `staged` slot.
+The newer claim of the SAME job does not defer to an attempt that one of its
+own earlier claims still holds (`running` or `sealed`, with a live lease):
+it waits, rechecking each second at a safe boundary, until that attempt
+publishes (and then binds the verified artifact itself), fails or lapses
+(and then builds the version). A cancel, lost lease or drain stops the wait.
+An attempt held by a different job is deferred to as before, so if such a
+job reported `deferred`, enqueue it again. Synchronous rebuild, backfill and
+verify endpoints are unchanged. The records are kept in
 `index_version_job_commits`, `index_build_attempt_jobs` and
 `index_build_publication_intents` (migration 0043).
 
@@ -747,7 +753,11 @@ recorded too. Each job numbers its events 1, 2, 3, and so on.
 `next_cursor` bound to the tenant and job; keep polling with it for newer events.
 
 The table keeps the newest events for each tenant, independently of other
-tenants, and prunes older ones in the writing transaction. When events after
+tenants, and prunes older ones in the writing transaction. A prune skips an
+old event that a concurrent transaction is already pruning rather than
+waiting for it (migration 0086), so two job changes never block or deadlock
+on each other's prune; if that transaction rolls back, the next event for the
+tenant prunes the rows it held. When events after
 your cursor were pruned, including when none of them survive, the page reports
 `gap: true`. A job created before migration 0046 also reports a gap for its
 unrecorded earlier history. The job row's state and outcome never depend on the

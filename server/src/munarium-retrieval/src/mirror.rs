@@ -286,6 +286,13 @@ impl MirrorContext {
     /// the build does not go on to its next shared write. `None` counters
     /// keep their recorded values. A synchronous build has no fence and
     /// always continues.
+    ///
+    /// A DRAIN does not stop the build at [`ProgressPhase::Uploading`] (see
+    /// [`drain_finishes`]): past that point the attempt is sealed and
+    /// catalogued under a committed intent, the claim is still current, and
+    /// finishing is the only way the current generation can bind it. The
+    /// claim is still revalidated there, so a cancel or lost lease stops the
+    /// build exactly as before (ClearView R6).
     pub async fn checkpoint(
         &self,
         phase: ProgressPhase,
@@ -296,8 +303,16 @@ impl MirrorContext {
             return Ok(());
         };
         if let Some(signal) = &self.job_signal {
-            if signal.stopped().is_some() {
-                return Err(fence.stale());
+            match signal.stopped() {
+                None => {}
+                Some(StopReason::Draining) if drain_finishes(phase) => {
+                    tracing::info!(
+                        job_id = %fence.job_id,
+                        generation = fence.generation,
+                        "queued build draining past its publication intent; finishing the upload"
+                    );
+                }
+                Some(_) => return Err(fence.stale()),
             }
         }
         let current = self
@@ -335,6 +350,172 @@ impl MirrorContext {
             }
         }
     }
+}
+
+/// Whether a DRAINING builder carries on through the safe boundary at
+/// `phase` rather than stopping there (SCALE-2).
+///
+/// Only the boundary before upload. A build there has sealed its attempt,
+/// committed its publication intent and catalogued the artifact while its
+/// claim was current. Stopping would release the claim to a replacement
+/// while the attempt stays `sealed` under a generation that can no longer
+/// bind, and only the owning node's reconciler could still publish it. A
+/// draining claim is still current, so the build finishes and binds within
+/// the shutdown grace. If the grace runs out first the process is aborted,
+/// the claim lapses as after a crash, and the replacement generation waits
+/// for the sealed attempt rather than deferring to it (see
+/// [`await_earlier_generation`]). Every earlier boundary still stops: the
+/// attempt is then failed and its staging removed, and the replacement
+/// builds afresh. A cancel or lost lease stops at every boundary.
+pub fn drain_finishes(phase: ProgressPhase) -> bool {
+    phase == ProgressPhase::Uploading
+}
+
+/// How often a queued build re-examines a plan that an earlier generation
+/// of its own job still holds (see [`await_earlier_generation`]).
+const EARLIER_GENERATION_POLL: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// What acquiring a plan's single-flight attempt came to.
+enum Acquired {
+    /// This build claimed a fresh attempt and does the work.
+    Claimed(String),
+    /// No work for this build: the outcome to report.
+    Finished(MirrorOutcome),
+}
+
+/// Steps 3a and 3b, shared by mirror and direct builds: reuse a verified
+/// artifact, defer to a live attempt on the plan, or claim a new attempt.
+///
+/// A queued build does NOT defer to an attempt an earlier generation of its
+/// own job still holds. That generation is retired and never binds, so
+/// deferring would let the job finish with the version unbound, and with
+/// nothing published once that attempt's owner is gone. It waits instead,
+/// at safe boundaries, until the attempt resolves; then the loop runs
+/// again: a verified artifact is reused and bound by the current
+/// generation, and a failed or lapsed attempt leaves the plan free to
+/// claim. A retired generation still never binds, and only its recorded
+/// intent can finish (ClearView R4).
+async fn acquire_attempt(
+    ctx: &MirrorContext,
+    index_version_id: &str,
+    plan_hash: &str,
+    mode: AttemptMode,
+) -> Result<Acquired> {
+    loop {
+        // Step 3a: reuse. A verified artifact for this exact plan means the
+        // work is already done, and doing it again would spend a build
+        // producing the same bytes under a new attempt.
+        for existing in ctx.catalog.artifacts_for_version(index_version_id).await? {
+            if existing.artifact_plan_sha256 == plan_hash
+                && existing.state == ArtifactState::Verified
+            {
+                // A queued build under the CURRENT claim fills an empty
+                // `staged` slot for the artifact it reuses. A retired
+                // generation that finished its recorded intent never binds,
+                // so without this the replacement would leave the version
+                // verified but unbound.
+                if let Some(fence) = &ctx.job_fence {
+                    bind_staged_fenced(ctx, index_version_id, &existing.artifact_id, fence).await?;
+                    record_disposition(ctx, fence, index_version_id, "reused").await;
+                }
+                return Ok(Acquired::Finished(MirrorOutcome::AlreadyBuilt {
+                    artifact_id: existing.artifact_id,
+                }));
+            }
+        }
+
+        // An earlier generation of this job still holds the plan: wait for
+        // it rather than deferring to it. Checked BEFORE the deferrals below,
+        // so an attempt seen there cannot be that generation's: a retired
+        // generation links no new attempt, and one it already held would
+        // have been seen here.
+        if await_earlier_generation(ctx, index_version_id, plan_hash).await? {
+            continue;
+        }
+
+        // An attempt that sealed and then failed before publishing is still
+        // in-flight work on this plan, but it has dropped out of the
+        // `running` single-flight index. Rebuilding past it would duplicate
+        // the work and — because the lexical engine is not byte-deterministic
+        // — produce a SECOND artifact id for one plan. Defer to it while its
+        // lease is fresh; once the lease lapses the reconciler abandons it
+        // and this proceeds.
+        if let Some(sealed) = ctx
+            .attempts
+            .sealed_for_plan(index_version_id, plan_hash)
+            .await?
+        {
+            if let Some(fence) = &ctx.job_fence {
+                record_disposition(ctx, fence, index_version_id, "deferred").await;
+            }
+            return Ok(Acquired::Finished(MirrorOutcome::AlreadyRunning {
+                owner_node_id: sealed.owner_node_id,
+            }));
+        }
+
+        // Step 3b: claim. Single-flight is the database's decision, not a
+        // read-then-write here.
+        match ctx
+            .attempts
+            .claim(
+                index_version_id,
+                plan_hash,
+                mode,
+                &ctx.node_id,
+                // The ROOT, because the attempt id that names this build's
+                // own directory is minted by the claim itself. The directory
+                // is always `<this>/<attempt_id>`, which is how the
+                // reconciler finds it, so recording the root states
+                // something true rather than a path that will not exist.
+                ctx.staging_root.to_str(),
+            )
+            .await?
+        {
+            ClaimOutcome::Claimed(id) => return Ok(Acquired::Claimed(id)),
+            ClaimOutcome::AlreadyRunning { owner_node_id } => {
+                if let Some(fence) = &ctx.job_fence {
+                    record_disposition(ctx, fence, index_version_id, "deferred").await;
+                }
+                return Ok(Acquired::Finished(MirrorOutcome::AlreadyRunning {
+                    owner_node_id,
+                }));
+            }
+        }
+    }
+}
+
+/// Wait one poll for a plan an earlier generation of this queued build's
+/// own job still holds. `Ok(false)` at once when no such attempt exists, or
+/// for a synchronous build.
+///
+/// Each poll is a safe boundary: a cancel, lost lease or drain stops the
+/// waiting build there (a drain then releases the claim, which holds no
+/// work yet). The wait is bounded by the attempt's own lease: it ends when
+/// the attempt publishes, fails, or lapses unrenewed.
+async fn await_earlier_generation(
+    ctx: &MirrorContext,
+    index_version_id: &str,
+    plan_hash: &str,
+) -> Result<bool> {
+    let Some(fence) = &ctx.job_fence else {
+        return Ok(false);
+    };
+    if !ctx
+        .attempts
+        .earlier_generation_holds_plan(fence, index_version_id, plan_hash)
+        .await?
+    {
+        return Ok(false);
+    }
+    ctx.checkpoint(ProgressPhase::Publishing, None, None)
+        .await?;
+    tracing::debug!(
+        job_id = %fence.job_id,
+        generation = fence.generation,
+        "an earlier generation of this build job still holds the plan; waiting for it"
+    );
+    tokio::time::sleep(EARLIER_GENERATION_POLL).await;
+    Ok(true)
 }
 
 /// How often the lease is extended while chunks stream.
@@ -389,76 +570,15 @@ pub async fn mirror_index(
         .plan_sha256()
         .map_err(|e| KernelError::InvalidInput(format!("canonical plan: {e}")))?;
 
-    // Step 3a: reuse. A verified artifact for this exact plan means the work is
-    // already done, and doing it again would spend a build producing the same
-    // bytes under a new attempt.
-    for existing in ctx.catalog.artifacts_for_version(index_version_id).await? {
-        if existing.artifact_plan_sha256 == plan_hash && existing.state == ArtifactState::Verified {
-            // A queued build under the CURRENT claim fills an empty `staged`
-            // slot for the artifact it reuses. A retired generation that
-            // finished its recorded intent never binds, so without this the
-            // replacement would leave the version verified but unbound.
-            if let Some(fence) = &ctx.job_fence {
-                bind_staged_fenced(ctx, index_version_id, &existing.artifact_id, fence).await?;
-                record_disposition(ctx, fence, index_version_id, "reused").await;
+    let attempt_id =
+        match acquire_attempt(ctx, index_version_id, &plan_hash, AttemptMode::Mirror).await? {
+            Acquired::Claimed(id) => id,
+            Acquired::Finished(done) => {
+                let outcome = Ok(done);
+                report(ctx, "mirror", &BuildTimer::start(), &outcome);
+                return outcome;
             }
-            let outcome = Ok(MirrorOutcome::AlreadyBuilt {
-                artifact_id: existing.artifact_id,
-            });
-            report(ctx, "mirror", &BuildTimer::start(), &outcome);
-            return outcome;
-        }
-    }
-
-    // An attempt that sealed and then failed before publishing is still
-    // in-flight work on this plan, but it has dropped out of the `running`
-    // single-flight index. Rebuilding past it would duplicate the work and —
-    // because the lexical engine is not byte-deterministic — produce a SECOND
-    // artifact id for one plan. Defer to it while its lease is fresh; once the
-    // lease lapses the reconciler abandons it and this proceeds.
-    if let Some(sealed) = ctx
-        .attempts
-        .sealed_for_plan(index_version_id, &plan_hash)
-        .await?
-    {
-        if let Some(fence) = &ctx.job_fence {
-            record_disposition(ctx, fence, index_version_id, "deferred").await;
-        }
-        let outcome = Ok(MirrorOutcome::AlreadyRunning {
-            owner_node_id: sealed.owner_node_id,
-        });
-        report(ctx, "mirror", &BuildTimer::start(), &outcome);
-        return outcome;
-    }
-
-    // Step 3b: claim. Single-flight is the database's decision, not a
-    // read-then-write here.
-    let attempt_id = match ctx
-        .attempts
-        .claim(
-            index_version_id,
-            &plan_hash,
-            AttemptMode::Mirror,
-            &ctx.node_id,
-            // The ROOT, because the attempt id that names this build's own
-            // directory is minted by the claim itself. The directory is always
-            // `<this>/<attempt_id>`, which is how the reconciler finds it, so
-            // recording the root states something true rather than a path that
-            // will not exist.
-            ctx.staging_root.to_str(),
-        )
-        .await?
-    {
-        ClaimOutcome::Claimed(id) => id,
-        ClaimOutcome::AlreadyRunning { owner_node_id } => {
-            if let Some(fence) = &ctx.job_fence {
-                record_disposition(ctx, fence, index_version_id, "deferred").await;
-            }
-            let outcome = Ok(MirrorOutcome::AlreadyRunning { owner_node_id });
-            report(ctx, "mirror", &BuildTimer::start(), &outcome);
-            return outcome;
-        }
-    };
+        };
 
     // Everything past the claim must reach a terminal attempt state or the
     // lease leaks until it expires. Run the body once and record the outcome.
@@ -579,58 +699,15 @@ pub async fn direct_index(
         .plan_sha256()
         .map_err(|e| KernelError::InvalidInput(format!("canonical plan: {e}")))?;
 
-    for existing in ctx.catalog.artifacts_for_version(index_version_id).await? {
-        if existing.artifact_plan_sha256 == plan_hash && existing.state == ArtifactState::Verified {
-            // A queued build under the CURRENT claim fills an empty `staged`
-            // slot for the artifact it reuses. A retired generation that
-            // finished its recorded intent never binds, so without this the
-            // replacement would leave the version verified but unbound.
-            if let Some(fence) = &ctx.job_fence {
-                bind_staged_fenced(ctx, index_version_id, &existing.artifact_id, fence).await?;
-                record_disposition(ctx, fence, index_version_id, "reused").await;
+    let attempt_id =
+        match acquire_attempt(ctx, index_version_id, &plan_hash, AttemptMode::Direct).await? {
+            Acquired::Claimed(id) => id,
+            Acquired::Finished(done) => {
+                let outcome = Ok(done);
+                report(ctx, "direct", &BuildTimer::start(), &outcome);
+                return outcome;
             }
-            let outcome = Ok(MirrorOutcome::AlreadyBuilt {
-                artifact_id: existing.artifact_id,
-            });
-            report(ctx, "direct", &BuildTimer::start(), &outcome);
-            return outcome;
-        }
-    }
-    if let Some(sealed) = ctx
-        .attempts
-        .sealed_for_plan(index_version_id, &plan_hash)
-        .await?
-    {
-        if let Some(fence) = &ctx.job_fence {
-            record_disposition(ctx, fence, index_version_id, "deferred").await;
-        }
-        let outcome = Ok(MirrorOutcome::AlreadyRunning {
-            owner_node_id: sealed.owner_node_id,
-        });
-        report(ctx, "direct", &BuildTimer::start(), &outcome);
-        return outcome;
-    }
-    let attempt_id = match ctx
-        .attempts
-        .claim(
-            index_version_id,
-            &plan_hash,
-            AttemptMode::Direct,
-            &ctx.node_id,
-            ctx.staging_root.to_str(),
-        )
-        .await?
-    {
-        ClaimOutcome::Claimed(id) => id,
-        ClaimOutcome::AlreadyRunning { owner_node_id } => {
-            if let Some(fence) = &ctx.job_fence {
-                record_disposition(ctx, fence, index_version_id, "deferred").await;
-            }
-            let outcome = Ok(MirrorOutcome::AlreadyRunning { owner_node_id });
-            report(ctx, "direct", &BuildTimer::start(), &outcome);
-            return outcome;
-        }
-    };
+        };
 
     let mut timer = BuildTimer::start();
     let outcome = mirror_body(
@@ -953,8 +1030,11 @@ async fn mirror_body(
         .await?;
     ctx.fault(BuildPhase::AfterCatalogInsert)?;
     // ClearView R6: the boundary before upload. A queued build stopped here
-    // leaves its attempt `sealed` and its intent pending; only that exact
-    // intent can still finish, through the sealed-attempt reconciler.
+    // (cancelled, or its lease lost) leaves its attempt `sealed` and its
+    // intent pending; only that exact intent can still finish, through the
+    // sealed-attempt reconciler, and a newer generation of the same job waits
+    // for it and binds the result. A DRAINING build does not stop here: its
+    // claim is still current, so it finishes and binds (`drain_finishes`).
     ctx.checkpoint(ProgressPhase::Uploading, None, None).await?;
 
     let bound_staged = publish_and_verify(

@@ -133,11 +133,23 @@ pub async fn backfill_collection(
         });
     }
 
-    Ok(BackfillReport {
+    let report = BackfillReport {
         scope_id: collection_id.to_string(),
         policy: policy.as_str(),
         versions,
-    })
+    };
+    // The boundary above runs only BEFORE each version, so a stop that landed
+    // inside the last one would otherwise reach the caller as an ordinary
+    // incomplete report, and a queued backfill stopped for a drain would be
+    // recorded `succeeded` with that version never retried. A stopped build
+    // that is not complete ends with the fence's stale error instead, like a
+    // stop at any other boundary: a drained claim is then released for
+    // another builder, and a cancelled or superseded one records nothing. A
+    // backfill that completed every version before the stop keeps its result.
+    if !report.is_complete() {
+        ctx.stop_if_signalled()?;
+    }
+    Ok(report)
 }
 
 /// Mirror one version, reconstructing its spec and plan from what it recorded.

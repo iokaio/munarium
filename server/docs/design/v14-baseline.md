@@ -85,8 +85,9 @@ release.
 | 0080 | ClearView IR-1–IR-4 | Inference stage tables, empty without an enrolled collection | As for 0043 |
 | 0082 | ClearView ART1/ART2 amendment | `block_assurance` and `clear_assurance` on artifact damage incidents; existing rows are `independent`, and the independence CHECKs keep their condition for them | As for 0043 |
 | 0083 | ClearView ART1/ART2 amendment | Enrolled verifier public keys, empty until an operator enrolls one | As for 0043 |
+| 0086 | ClearView B2 follow-up | Replaces the build-job event trigger function so its prune skips event rows a concurrent prune holds; no row is touched | As for 0043 |
 
-In short, once any of 0043–0083 is applied, the v1.4.0 image cannot serve that
+In short, once any of 0043–0086 is applied, the v1.4.0 image cannot serve that
 database. The local [COMPAT-T3 negative control](compat-local-receipts.md#compat-t3)
 reproduces this. By maintainer decision of 20 November 2026 the rollback route
 is a **pre-upgrade backup restore**: take a backup before upgrading and restore

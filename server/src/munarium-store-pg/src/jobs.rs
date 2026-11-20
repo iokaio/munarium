@@ -887,6 +887,14 @@ impl BuildJobs {
             .await
     }
 
+    /// The renewal itself. A claim [`release_fenced`](Self::release_fenced)
+    /// gave back carries the release sentinel (`claimed_at = 'epoch'`) and is
+    /// never renewed: aborting the lease watch does not stop a renewal that is
+    /// already on the wire, and one that committed after the release would
+    /// push `claimed_at` forward and delay the reclaim by a whole lease. Under
+    /// READ COMMITTED a renewal that waited on the release's row lock
+    /// re-evaluates this predicate against the released row and matches
+    /// nothing.
     async fn renew(
         &self,
         tenant_id: &str,
@@ -899,7 +907,8 @@ impl BuildJobs {
                 SET claimed_at = now(), updated_at = now()
               WHERE tenant_id = $1 AND job_id = $2
                 AND state = 'running' AND claimed_by = $3
-                AND ($4::int IS NULL OR attempts = $4)",
+                AND ($4::int IS NULL OR attempts = $4)
+                AND claimed_at <> 'epoch'::timestamptz",
         )
         .bind(tenant_id)
         .bind(job_id)
@@ -924,8 +933,9 @@ impl BuildJobs {
     /// drained claim therefore counts as one of the job's claims. No event is
     /// recorded for the release itself; the reclaim records one.
     ///
-    /// Call it only after the build has stopped and its lease renewal ended:
-    /// a renewal by the same generation would restore the lease.
+    /// Call it only after the build has stopped. The lease renewal refuses a
+    /// released claim, so a renewal still in flight when the watch is
+    /// aborted cannot restore the lease (see `renew`).
     pub async fn release_fenced(&self, fence: &JobFence) -> Result<bool> {
         let updated = sqlx::query(
             "UPDATE index_build_jobs

@@ -377,11 +377,21 @@ pub(crate) enum Settled {
 /// drain (SCALE-2).
 ///
 /// A build that stopped at a safe boundary on [`StopReason::Draining`]
-/// returns the fence's stale error without having failed. Recording that as
-/// a failure would end the job for a routine rollout, so the claim is
-/// released instead and the next builder reclaims it. A build that finished
-/// before reaching a boundary records its outcome as usual, and so does a
-/// genuine failure that happened to coincide with the drain.
+/// returns an error without having failed. Recording that as a failure would
+/// end the job for a routine rollout, so the claim is released instead and
+/// the next builder reclaims it. A build that finished, including one that
+/// carried on past the drain to finish its upload, records its outcome as
+/// usual.
+///
+/// The decision is made from the TYPED stop signal, never from the error's
+/// text: a build whose signal was stopped for a drain and that did not
+/// succeed is released. `release_fenced` is the fence recheck: it releases
+/// only while this generation is still the current claim, and otherwise
+/// nothing is written. A genuine failure that coincides with a drain is
+/// therefore released too, and the next builder retries it; a stop and a
+/// coinciding failure cannot be told apart without reading the error text,
+/// and a retry (bounded by the job's claim ceiling) is the conservative
+/// outcome.
 ///
 /// [`StopReason::Draining`]: munarium_store_pg::jobs::StopReason::Draining
 pub(crate) async fn settle_claim(
@@ -392,9 +402,8 @@ pub(crate) async fn settle_claim(
     outcome: Result<serde_json::Value>,
 ) -> Result<Settled> {
     let generation = fence.generation;
-    let drained = signal.stopped() == Some(munarium_store_pg::jobs::StopReason::Draining)
-        && matches!(&outcome, Err(KernelError::Storage(m))
-            if m == munarium_store_pg::jobs::STALE_GENERATION_MESSAGE);
+    let drained =
+        signal.stopped() == Some(munarium_store_pg::jobs::StopReason::Draining) && outcome.is_err();
     if drained {
         if jobs.release_fenced(fence).await? {
             tracing::info!(

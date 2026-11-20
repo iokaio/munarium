@@ -322,7 +322,9 @@ async fn a_build_stopped_for_the_drain_releases_its_claim() {
         ("succeeded".to_string(), 1)
     );
 
-    // A genuine failure during the drain is recorded, not released.
+    // The decision is the typed drain signal, not the error's text: any
+    // failure of a build stopped for the drain releases the claim (the
+    // release itself is fenced), and the next builder retries it.
     let broken = enqueue(&jobs, tenant, "iv-drain-broken").await;
     let job = claim("builder-a").await;
     assert_eq!(job.job_id, broken);
@@ -332,6 +334,29 @@ async fn a_build_stopped_for_the_drain_releases_its_claim() {
         &job,
         &fence,
         &draining(),
+        Err(KernelError::InvalidInput(
+            "a failure during the drain".into(),
+        )),
+    )
+    .await
+    .unwrap();
+    assert_eq!(settled, Settled::Released);
+    assert_eq!(
+        job_state(&jobs, tenant, &broken).await,
+        ("running".to_string(), 1)
+    );
+    let again = claim("builder-b").await;
+    assert_eq!(
+        (again.job_id.as_str(), again.attempts),
+        (broken.as_str(), 2)
+    );
+    // Without a drain the same failure is recorded, as before.
+    let fence = JobFence::of_claim(&again, "builder-b");
+    let settled = settle_claim(
+        &jobs,
+        &again,
+        &fence,
+        &JobSignal::new(),
         Err(KernelError::InvalidInput("a real failure".into())),
     )
     .await
@@ -339,7 +364,7 @@ async fn a_build_stopped_for_the_drain_releases_its_claim() {
     assert_eq!(settled, Settled::Recorded);
     assert_eq!(
         job_state(&jobs, tenant, &broken).await,
-        ("failed".to_string(), 1)
+        ("failed".to_string(), 2)
     );
 
     // The stale error without a drain (a cancel or lost lease) is still
@@ -448,4 +473,239 @@ async fn shutdown_waits_for_the_builder_within_the_grace_period() {
     assert!(!drain_builder(&state, Duration::from_millis(200)).await);
     assert!(started.elapsed() < Duration::from_secs(5));
     assert!(!stuck.load(Ordering::Acquire));
+}
+
+/// A lease renewal that commits AFTER the drain release (one already on the
+/// wire when the lease watch was aborted) must not restore the lease: the
+/// released claim stays immediately reclaimable.
+#[tokio::test]
+async fn a_renewal_after_the_release_does_not_restore_the_lease() {
+    let Ok(base) = std::env::var("MUNARIUM_TEST_DATABASE_URL") else {
+        eprintln!("SKIPPED: MUNARIUM_TEST_DATABASE_URL is unset");
+        return;
+    };
+    let db = ScratchDatabase::create(&base).await;
+    let tenant = "tenant-scale2-renewal";
+    let store = munarium_store_pg::PgStore::connect(&db.url, tenant)
+        .await
+        .unwrap();
+    let pool = store.pool().clone();
+    let jobs = BuildJobs::new(pool.clone());
+    let job_id = enqueue(&jobs, tenant, "iv-drain-renewal").await;
+    let job = jobs
+        .claim_next("builder-a", 600, MAX_JOB_ATTEMPTS, ClaimPolicy::Fifo)
+        .await
+        .unwrap()
+        .expect("claimable");
+    let fence = JobFence::of_claim(&job, "builder-a");
+    assert!(jobs
+        .heartbeat_fenced(tenant, &job_id, "builder-a", fence.generation)
+        .await
+        .unwrap());
+    assert!(jobs.release_fenced(&fence).await.unwrap());
+    // The late renewal, by the same generation.
+    assert!(
+        !jobs
+            .heartbeat_fenced(tenant, &job_id, "builder-a", fence.generation)
+            .await
+            .unwrap(),
+        "a released claim is not renewed"
+    );
+    assert!(!jobs.heartbeat(tenant, &job_id, "builder-a").await.unwrap());
+    let again = jobs
+        .claim_next("builder-b", 600, MAX_JOB_ATTEMPTS, ClaimPolicy::Fifo)
+        .await
+        .unwrap()
+        .expect("reclaimable at once");
+    assert_eq!(
+        (again.job_id.as_str(), again.attempts),
+        (job_id.as_str(), 2)
+    );
+    // The new holder renews normally.
+    assert!(jobs
+        .heartbeat_fenced(tenant, &job_id, "builder-b", 2)
+        .await
+        .unwrap());
+    assert!(jobs
+        .complete_fenced(
+            tenant,
+            &job_id,
+            "builder-b",
+            2,
+            Ok(serde_json::json!({})),
+            None
+        )
+        .await
+        .unwrap());
+    pool.close().await;
+    drop(db);
+}
+
+/// SCALE-2 end to end for a queued backfill: a drain that lands inside the
+/// LAST version stops the backfill, and the builder releases the claim
+/// rather than recording the job `succeeded` with that version unbuilt. The
+/// next builder reclaims it and completes every version.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_drain_in_the_last_backfill_version_releases_the_job() {
+    use munarium_retrieval::mirror::{
+        BuildPhase, FaultHook, LocalStoreFactory, MirrorContext, VectorPolicy,
+    };
+    let Ok(base) = std::env::var("MUNARIUM_TEST_DATABASE_URL") else {
+        eprintln!("SKIPPED: MUNARIUM_TEST_DATABASE_URL is unset");
+        return;
+    };
+    let db = ScratchDatabase::create(&base).await;
+    let tenant = "tenant-scale2-backfill";
+    let state = AppState::new(config(StoreKind::Postgres, Some(db.url.clone())))
+        .await
+        .unwrap();
+    let pool = state.pg_pool().cloned().unwrap();
+    let jobs = BuildJobs::new(pool.clone());
+    let retrieval = state.retrieval_for(tenant).unwrap();
+    let collection = retrieval
+        .ensure_collection("drain-backfill", "para", 0, &[], Some("SCALE-2 drain"))
+        .await
+        .unwrap();
+    // Two versions, each activated in turn: the older one is retired but
+    // within the pin horizon, so the backfill selects both.
+    for (i, seq) in [(0usize, 1u64), (1, 2)] {
+        let body = format!(
+            "Drained document {i}. The keeper logged the tide at the harbour wall.\n\n\
+             A second paragraph about the lighthouse and the shoal beyond it."
+        );
+        let (source_id, _, _) = retrieval
+            .put_source(
+                "",
+                "text/markdown",
+                &format!("drain/doc-{i}.md"),
+                Some("para"),
+                body.as_bytes(),
+            )
+            .await
+            .unwrap();
+        retrieval
+            .bind_source(&collection.id, &source_id, None)
+            .await
+            .unwrap();
+        retrieval
+            .build_collection_index(&collection.id, 400, seq, true)
+            .await
+            .unwrap();
+    }
+    let EnqueueOutcome::Enqueued(job_id) = jobs
+        .enqueue(
+            tenant,
+            JobKind::Backfill,
+            JobTarget::Scope {
+                scope_kind: "collection",
+                scope_id: &collection.id,
+            },
+            serde_json::json!({}),
+            "drain-test",
+            None,
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("a new job");
+    };
+    let artifacts = tempfile::tempdir().unwrap();
+    let staging = tempfile::tempdir().unwrap();
+    let ctx = |node: &str, fence: &JobFence, signal: &JobSignal, faults: Option<FaultHook>| {
+        MirrorContext {
+            catalog: munarium_store_pg::artifacts::ArtifactCatalog::new(pool.clone(), tenant),
+            attempts: munarium_store_pg::attempts::BuildAttempts::new(pool.clone(), tenant),
+            stores: Arc::new(LocalStoreFactory::new(artifacts.path())),
+            node_id: node.into(),
+            staging_root: staging.path().to_path_buf(),
+            artifact_prefix: "v1".into(),
+            tenant_path_hash: "t0000".into(),
+            faults,
+            observer: None,
+            vector_policy: VectorPolicy {
+                approx_threshold: None,
+            },
+            job_fence: Some(fence.clone()),
+            job_signal: Some(signal.clone()),
+        }
+    };
+    // What `run_one_job` does for a backfill, with this test's context.
+    let run = |c: MirrorContext| {
+        let retrieval = retrieval.clone();
+        let collection_id = collection.id.clone();
+        async move {
+            retrieval
+                .backfill_collection(
+                    &c,
+                    &collection_id,
+                    munarium_retrieval::RequiredVersionsPolicy::ActivePinnedAndHorizon,
+                    86_400,
+                )
+                .await
+                .map(|r| {
+                    serde_json::json!({
+                        "complete": r.is_complete(),
+                        "versions": r.versions.len(),
+                    })
+                })
+        }
+    };
+
+    let job = jobs
+        .claim_next("builder-a", 600, MAX_JOB_ATTEMPTS, ClaimPolicy::Fifo)
+        .await
+        .unwrap()
+        .expect("claimable");
+    assert_eq!(job.job_id, job_id);
+    let fence = JobFence::of_claim(&job, "builder-a");
+    let signal = JobSignal::new();
+    // The drain arrives while the LAST version is being exported.
+    let s = signal.clone();
+    let exports = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let hook: FaultHook = Arc::new(move |p| {
+        if p == BuildPhase::AfterExport && exports.fetch_add(1, Ordering::SeqCst) == 1 {
+            s.stop(StopReason::Draining);
+        }
+        Ok(())
+    });
+    let outcome = run(ctx("builder-a", &fence, &signal, Some(hook))).await;
+    let settled = settle_claim(&jobs, &job, &fence, &signal, outcome)
+        .await
+        .unwrap();
+    assert_eq!(settled, Settled::Released, "released, not recorded");
+    assert_eq!(
+        job_state(&jobs, tenant, &job_id).await,
+        ("running".to_string(), 1),
+        "not succeeded"
+    );
+
+    // The next builder reclaims it and finishes the remaining version.
+    let job = jobs
+        .claim_next("builder-b", 600, MAX_JOB_ATTEMPTS, ClaimPolicy::Fifo)
+        .await
+        .unwrap()
+        .expect("reclaimable");
+    assert_eq!((job.job_id.as_str(), job.attempts), (job_id.as_str(), 2));
+    let fence = JobFence::of_claim(&job, "builder-b");
+    let signal = JobSignal::new();
+    let outcome = run(ctx("builder-b", &fence, &signal, None)).await;
+    let result = outcome.as_ref().unwrap();
+    assert_eq!(
+        (&result["complete"], &result["versions"]),
+        (&serde_json::json!(true), &serde_json::json!(2))
+    );
+    assert_eq!(
+        settle_claim(&jobs, &job, &fence, &signal, outcome)
+            .await
+            .unwrap(),
+        Settled::Recorded
+    );
+    assert_eq!(
+        job_state(&jobs, tenant, &job_id).await,
+        ("succeeded".to_string(), 2)
+    );
+    drop(retrieval);
+    drop(state);
+    pool.close().await;
+    drop(db);
 }
