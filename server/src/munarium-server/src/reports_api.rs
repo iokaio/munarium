@@ -561,17 +561,32 @@ pub struct FindingRow {
     pub recorded_at: String,
 }
 
-/// The tenant's most recent gate findings across every lineage — the
-/// cross-version view the per-version `GET /v1/versions/{id}/findings` read
-/// cannot give. Newest first; `severity` filters to one of info|warn|block.
+/// The tenant's gate findings across every lineage — the cross-version view
+/// the per-version `GET /v1/versions/{id}/findings` read cannot give.
+/// Newest first; `severity` filters to one of info|warn|block. Paginated
+/// for the console (ClearView U8): `gate_findings` has no unique key, so
+/// the cursor is `(recorded_at, rows already shown at that recorded_at)`
+/// over a total order of every displayed column — rows identical in all of
+/// them are indistinguishable on the page, so skipping any of them is
+/// exact. A page returns the filter's total too.
 #[allow(clippy::type_complexity)]
-pub async fn op_recent_findings(
+pub async fn op_findings_page(
     state: &AppState,
     tenant: &str,
     severity: Option<&str>,
     rule_prefix: Option<&str>,
+    before: Option<&str>,
     limit: i64,
-) -> Result<Vec<FindingRow>> {
+) -> Result<ListPage<FindingRow>> {
+    let cursor = parse_keyset(before)?;
+    let skip: i64 = match &cursor {
+        Some((_, k)) => k.parse::<i64>().ok().filter(|n| *n >= 0).ok_or_else(|| {
+            KernelError::InvalidInput(
+                "before: pass the cursor from a previous page's \"older\" link".into(),
+            )
+        })?,
+        None => 0,
+    };
     // The prefix is a plain string prefix, escaped for LIKE so an underscore
     // in a rule id matches itself. Kept as a literal `||` concatenation so
     // the planner can use the index on rule_id when one exists.
@@ -580,24 +595,71 @@ pub async fn op_recent_findings(
             .replace('%', "\\%")
             .replace('_', "\\_")
     });
-    let rows: Vec<(String, i64, String, String, String, Option<String>, String)> = sqlx::query_as(
-        "SELECT version_id, seq, rule_id, severity, message, scope_path, recorded_at::text
+    let pool = pool(state)?;
+    let rows: Vec<(
+        String,
+        i64,
+        String,
+        String,
+        String,
+        Option<String>,
+        String,
+        String,
+    )> = sqlx::query_as(&format!(
+        "SELECT version_id, seq, rule_id, severity, message, scope_path, recorded_at::text,
+                to_char(recorded_at AT TIME ZONE 'UTC', {CURSOR_TS_SQL})
            FROM gate_findings
           WHERE tenant_id = $1 AND ($2::text IS NULL OR severity = $2)
             AND ($4::text IS NULL OR rule_id LIKE $4 || '%')
-          ORDER BY recorded_at DESC, seq DESC LIMIT $3",
+            AND ($5::timestamptz IS NULL OR recorded_at <= $5)
+          ORDER BY recorded_at DESC, seq DESC, version_id DESC, rule_id DESC,
+                   severity DESC, scope_path DESC NULLS LAST, message DESC
+          LIMIT $3 OFFSET $6"
+    ))
+    .bind(tenant)
+    .bind(severity)
+    .bind(limit + 1)
+    .bind(&prefix)
+    .bind(cursor.as_ref().map(|c| c.0))
+    .bind(skip)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| KernelError::Storage(e.to_string()))?;
+    let (total,): (i64,) = sqlx::query_as(
+        "SELECT count(*) FROM gate_findings
+          WHERE tenant_id = $1 AND ($2::text IS NULL OR severity = $2)
+            AND ($3::text IS NULL OR rule_id LIKE $3 || '%')",
     )
     .bind(tenant)
     .bind(severity)
-    .bind(limit)
-    .bind(prefix)
-    .fetch_all(pool(state)?)
+    .bind(&prefix)
+    .fetch_one(pool)
     .await
     .map_err(|e| KernelError::Storage(e.to_string()))?;
-    Ok(rows
-        .into_iter()
-        .map(
-            |(version_id, seq, rule_id, severity, message, scope_path, recorded_at)| FindingRow {
+    // The tiebreaker for each row is how many rows at its timestamp have
+    // been shown up to and including it (on this page and, when the page
+    // started inside the same timestamp, the pages before it).
+    let mut out = Vec::with_capacity(rows.len());
+    let mut run_ts: Option<String> = None;
+    let mut run_len: i64 = 0;
+    for (version_id, seq, rule_id, severity, message, scope_path, recorded_at, ts) in rows {
+        if run_ts.as_deref() == Some(ts.as_str()) {
+            run_len += 1;
+        } else {
+            let continues_cursor = cursor.as_ref().is_some_and(|(c, _)| {
+                chrono::DateTime::parse_from_rfc3339(&ts)
+                    .map(|t| t.with_timezone(&chrono::Utc) == *c)
+                    .unwrap_or(false)
+            });
+            run_len = if continues_cursor && run_ts.is_none() {
+                skip + 1
+            } else {
+                1
+            };
+            run_ts = Some(ts.clone());
+        }
+        out.push((
+            FindingRow {
                 version_id,
                 seq,
                 rule_id,
@@ -606,8 +668,11 @@ pub async fn op_recent_findings(
                 scope_path,
                 recorded_at,
             },
-        )
-        .collect())
+            ts,
+            run_len.to_string(),
+        ));
+    }
+    Ok(keyset_page(out, limit, total))
 }
 
 /// The control-plane inventory on the /admin overview (2026-08-27): one
@@ -1174,6 +1239,163 @@ pub async fn op_revoke_token_if_unrevoked(
     .await
     .map_err(|e| KernelError::Storage(e.to_string()))?;
     Ok(updated.rows_affected() == 1)
+}
+
+// ---------------------------------------------------------------------------
+// bounded console lists (ClearView U8)
+// ---------------------------------------------------------------------------
+
+/// One page of a console list: the rows, how many rows match the filter in
+/// total (the cursor aside), and the cursor for the next, older page when
+/// one exists.
+pub struct ListPage<T> {
+    pub rows: Vec<T>,
+    pub total: i64,
+    pub next_before: Option<String>,
+}
+
+/// The console's list page size: default 50, bounded to 1..=200. A blank or
+/// unparsable value is "not given", like the other console form fields.
+pub fn console_page_limit(raw: Option<&str>) -> i64 {
+    raw.and_then(|s| s.trim().parse::<i64>().ok())
+        .unwrap_or(50)
+        .clamp(1, 200)
+}
+
+/// The sort timestamp of a console list row, rendered for its cursor: RFC
+/// 3339 in UTC at the column's full (microsecond) precision, so the cursor
+/// round-trips exactly.
+pub const CURSOR_TS_SQL: &str = r#"'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'"#;
+
+/// A console keyset cursor: `<RFC 3339 timestamp>~<tiebreaker>`. The
+/// tiebreaker is the row key (tokens, sessions) or, for findings, which
+/// have no unique key, how many rows at that exact timestamp were already
+/// shown.
+pub fn encode_keyset(ts: &str, key: &str) -> String {
+    format!("{ts}~{key}")
+}
+
+/// Parse a console keyset cursor; anything malformed is caller error (422),
+/// never a storage 500.
+pub fn parse_keyset(raw: Option<&str>) -> Result<Option<(chrono::DateTime<chrono::Utc>, String)>> {
+    let Some(raw) = raw.map(str::trim).filter(|r| !r.is_empty()) else {
+        return Ok(None);
+    };
+    let bad = || {
+        KernelError::InvalidInput(
+            "before: pass the cursor from a previous page's \"older\" link".into(),
+        )
+    };
+    let (ts, key) = raw.split_once('~').ok_or_else(bad)?;
+    if key.is_empty() {
+        return Err(bad());
+    }
+    let ts = chrono::DateTime::parse_from_rfc3339(ts)
+        .map_err(|_| bad())?
+        .with_timezone(&chrono::Utc);
+    Ok(Some((ts, key.to_string())))
+}
+
+/// Trim a `limit + 1` fetch to `limit` rows and derive the next cursor from
+/// the last row kept, only when a further row exists.
+pub fn keyset_page<T>(mut rows: Vec<(T, String, String)>, limit: i64, total: i64) -> ListPage<T> {
+    let more = rows.len() as i64 > limit;
+    rows.truncate(limit.max(0) as usize);
+    let next_before = if more {
+        rows.last().map(|(_, ts, key)| encode_keyset(ts, key))
+    } else {
+        None
+    };
+    ListPage {
+        rows: rows.into_iter().map(|(row, _, _)| row).collect(),
+        total,
+        next_before,
+    }
+}
+
+/// The issuance audit for the console's tokens list: newest first, keyset
+/// paginated on `(issued_at, jti)`, with the filter's total. The `/v1` list
+/// keeps `op_list_tokens` and its v1.4 shape.
+#[allow(clippy::type_complexity)]
+pub async fn op_tokens_page(
+    state: &AppState,
+    tenant: &str,
+    uid: Option<&str>,
+    active: bool,
+    before: Option<&str>,
+    limit: i64,
+) -> Result<ListPage<dto::TokenInfoDto>> {
+    let cursor = parse_keyset(before)?;
+    let pool = pool(state)?;
+    let rows: Vec<(
+        String,
+        String,
+        i32,
+        Vec<String>,
+        Vec<String>,
+        Option<Vec<String>>,
+        String,
+        String,
+        String,
+        Option<String>,
+        String,
+    )> = sqlx::query_as(&format!(
+        "SELECT jti, uid, access_level, compartments, scopes, runbook_refs,
+                issued_by, issued_at::text, expires_at::text, revoked_at::text,
+                to_char(issued_at AT TIME ZONE 'UTC', {CURSOR_TS_SQL})
+           FROM access_tokens
+          WHERE tenant_id = $1
+            AND ($2::text IS NULL OR uid = $2)
+            AND (NOT $3 OR (revoked_at IS NULL AND expires_at > now()))
+            AND ($4::timestamptz IS NULL OR (issued_at, jti) < ($4, $5::text))
+          ORDER BY issued_at DESC, jti DESC LIMIT $6"
+    ))
+    .bind(tenant)
+    .bind(uid)
+    .bind(active)
+    .bind(cursor.as_ref().map(|c| c.0))
+    .bind(cursor.as_ref().map(|c| c.1.clone()))
+    .bind(limit + 1)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| KernelError::Storage(e.to_string()))?;
+    let (total,): (i64,) = sqlx::query_as(
+        "SELECT count(*) FROM access_tokens
+          WHERE tenant_id = $1
+            AND ($2::text IS NULL OR uid = $2)
+            AND (NOT $3 OR (revoked_at IS NULL AND expires_at > now()))",
+    )
+    .bind(tenant)
+    .bind(uid)
+    .bind(active)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| KernelError::Storage(e.to_string()))?;
+    let rows = rows
+        .into_iter()
+        .map(
+            |(jti, uid, lvl, cmp, scopes, rb, issued_by, issued_at, expires_at, revoked_at, ts)| {
+                let key = jti.clone();
+                (
+                    dto::TokenInfoDto {
+                        jti,
+                        uid,
+                        access_level: lvl,
+                        compartments: cmp,
+                        scopes,
+                        runbook_refs: rb,
+                        issued_by,
+                        issued_at,
+                        expires_at,
+                        revoked_at,
+                    },
+                    ts,
+                    key,
+                )
+            },
+        )
+        .collect();
+    Ok(keyset_page(rows, limit, total))
 }
 
 // ---------------------------------------------------------------------------

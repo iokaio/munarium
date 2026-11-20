@@ -1653,13 +1653,21 @@ pub struct SessionSummary {
     pub turns: i64,
 }
 
+/// The console's sessions list (ClearView U8): most recent activity first,
+/// keyset paginated on `(COALESCE(last_turn_at, created_at), id)`, with the
+/// filter's total. A session that takes a turn while an operator pages
+/// moves to the front, as on any activity-ordered list.
 #[allow(clippy::type_complexity)]
-pub async fn op_recent_sessions(
+pub async fn op_sessions_page(
     state: &AppState,
     tenant: &str,
     state_filter: Option<&str>,
+    before: Option<&str>,
     limit: i64,
-) -> Result<Vec<SessionSummary>> {
+) -> Result<crate::reports_api::ListPage<SessionSummary>> {
+    use crate::reports_api::{keyset_page, parse_keyset, CURSOR_TS_SQL};
+    let cursor = parse_keyset(before)?;
+    let pool = crate::runbooks_api::pool(state)?;
     let rows: Vec<(
         String,
         String,
@@ -1670,22 +1678,37 @@ pub async fn op_recent_sessions(
         String,
         Option<String>,
         i64,
-    )> = sqlx::query_as(
+        String,
+    )> = sqlx::query_as(&format!(
         "SELECT s.id, s.uid, s.runbook_ref, s.state, s.access_level, s.compartments,
                 s.created_at::text, s.last_turn_at::text,
                 (SELECT count(*) FROM session_turns t
-                  WHERE t.tenant_id = s.tenant_id AND t.session_id = s.id)
+                  WHERE t.tenant_id = s.tenant_id AND t.session_id = s.id),
+                to_char(COALESCE(s.last_turn_at, s.created_at) AT TIME ZONE 'UTC', {CURSOR_TS_SQL})
            FROM sessions s
           WHERE s.tenant_id = $1 AND ($2::text IS NULL OR s.state = $2)
-          ORDER BY COALESCE(s.last_turn_at, s.created_at) DESC LIMIT $3",
+            AND ($4::timestamptz IS NULL
+                 OR (COALESCE(s.last_turn_at, s.created_at), s.id) < ($4, $5::text))
+          ORDER BY COALESCE(s.last_turn_at, s.created_at) DESC, s.id DESC LIMIT $3"
+    ))
+    .bind(tenant)
+    .bind(state_filter)
+    .bind(limit + 1)
+    .bind(cursor.as_ref().map(|c| c.0))
+    .bind(cursor.as_ref().map(|c| c.1.clone()))
+    .fetch_all(pool)
+    .await
+    .map_err(|e| KernelError::Storage(e.to_string()))?;
+    let (total,): (i64,) = sqlx::query_as(
+        "SELECT count(*) FROM sessions
+          WHERE tenant_id = $1 AND ($2::text IS NULL OR state = $2)",
     )
     .bind(tenant)
     .bind(state_filter)
-    .bind(limit)
-    .fetch_all(crate::runbooks_api::pool(state)?)
+    .fetch_one(pool)
     .await
     .map_err(|e| KernelError::Storage(e.to_string()))?;
-    Ok(rows
+    let rows = rows
         .into_iter()
         .map(
             |(
@@ -1698,19 +1721,28 @@ pub async fn op_recent_sessions(
                 created_at,
                 last_turn_at,
                 turns,
-            )| SessionSummary {
-                id,
-                uid,
-                runbook_ref,
-                state: session_state,
-                access_level,
-                compartments,
-                created_at,
-                last_turn_at,
-                turns,
+                ts,
+            )| {
+                let key = id.clone();
+                (
+                    SessionSummary {
+                        id,
+                        uid,
+                        runbook_ref,
+                        state: session_state,
+                        access_level,
+                        compartments,
+                        created_at,
+                        last_turn_at,
+                        turns,
+                    },
+                    ts,
+                    key,
+                )
             },
         )
-        .collect())
+        .collect();
+    Ok(keyset_page(rows, limit, total))
 }
 
 // ---------------------------------------------------------------------------

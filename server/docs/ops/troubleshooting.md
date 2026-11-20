@@ -53,7 +53,8 @@ sources are the guide chapters and script comments cited inline.
    series, slowest endpoints, and (2026-08-27) the control plane itself:
    hosted runbooks/shapes with their applied YAML, run step machines
    (approve a waiting gate with an rw token), collections and index
-   versions, sessions turn by turn, capability tokens (issue/revoke), the
+   versions, sessions turn by turn, capability tokens (issue, and
+   revoke after a review and typed confirmation), the
    audit trail with the same filters as `/v1/reports/audit`, and recent
    gate findings across every lineage. `/admin/health` shows the effective
    non-secret configuration — the fastest way to confirm what the instance

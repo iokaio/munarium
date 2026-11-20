@@ -8,7 +8,8 @@
 
 use super::{
     action, admin_auth, csrf_field, csrf_ok, error_panel, html_table, json_block, kv, link, notice,
-    opt, pre, render, severity_badge, short, stale_form, store_note, window_of, CsrfOnlyForm,
+    opt, pre, render, render_with_actions, severity_badge, short, stale_form, store_note,
+    window_of, CsrfOnlyForm,
 };
 use crate::charts::{self, esc};
 use crate::reports_api;
@@ -25,6 +26,38 @@ fn list_or_dash(items: &[String]) -> String {
     } else {
         esc(&items.join(", "))
     }
+}
+
+/// A console list URL with its query parameters percent-encoded; empty
+/// values are left out. The result is a URL, not HTML — callers escape it.
+fn list_href(path: &str, params: &[(&str, Option<&str>)]) -> String {
+    let qs: Vec<String> = params
+        .iter()
+        .filter_map(|(k, v)| {
+            v.filter(|v| !v.is_empty())
+                .map(|v| format!("{k}={}", urlencode(v)))
+        })
+        .collect();
+    if qs.is_empty() {
+        path.to_string()
+    } else {
+        format!("{path}?{}", qs.join("&"))
+    }
+}
+
+/// The bound under every paginated list (ClearView U8): how many rows this
+/// page shows of how many match, a link back to the newest page when this
+/// is not it, and an "older" link when more rows exist.
+fn pager(shown: usize, total: i64, newest: Option<String>, older: Option<String>) -> String {
+    let newest = newest
+        .map(|h| format!(r#" · <a href="{}">← newest</a>"#, esc(&h)))
+        .unwrap_or_default();
+    let older = older
+        .map(|h| format!(r#" · <a href="{}">older →</a>"#, esc(&h)))
+        .unwrap_or_default();
+    format!(
+        r#"<p class="legend pager">showing {shown} of {total}, newest first{newest}{older}</p>"#
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -324,6 +357,12 @@ pub struct SessionsParams {
     window: Option<String>,
     #[serde(default)]
     state: Option<String>,
+    /// Keyset cursor from a previous page's "older" link (U8).
+    #[serde(default)]
+    before: Option<String>,
+    /// Page size; text so `limit=` cannot 422.
+    #[serde(default)]
+    limit: Option<String>,
 }
 
 pub(super) async fn sessions(
@@ -415,9 +454,30 @@ pub(super) async fn sessions(
         })
         .collect::<Vec<_>>()
         .join(" · ");
-    let table =
-        match crate::sessions_api::op_recent_sessions(&state, tenant, state_filter, 50).await {
-            Ok(rows) => html_table(
+    let limit = reports_api::console_page_limit(q.limit.as_deref());
+    let limit_s = limit.to_string();
+    let href = |before: Option<&str>| {
+        list_href(
+            "/admin/sessions",
+            &[
+                ("state", state_filter),
+                ("window", Some(window)),
+                ("limit", Some(limit_s.as_str())),
+                ("before", before),
+            ],
+        )
+    };
+    let table = match crate::sessions_api::op_sessions_page(
+        &state,
+        tenant,
+        state_filter,
+        q.before.as_deref(),
+        limit,
+    )
+    .await
+    {
+        Ok(page) => {
+            let table = html_table(
                 &[
                     "session",
                     "uid",
@@ -429,7 +489,8 @@ pub(super) async fn sessions(
                     "created",
                     "last turn",
                 ],
-                &rows
+                &page
+                    .rows
                     .iter()
                     .map(|s| {
                         vec![
@@ -448,9 +509,16 @@ pub(super) async fn sessions(
                         ]
                     })
                     .collect::<Vec<_>>(),
-            ),
-            Err(e) => store_note(&e),
-        };
+            );
+            let newest = q.before.as_ref().map(|_| href(None));
+            let older = page.next_before.as_deref().map(|nb| href(Some(nb)));
+            format!(
+                "{table}{}",
+                pager(page.rows.len(), page.total, newest, older)
+            )
+        }
+        Err(e) => store_note(&e),
+    };
     let body = format!(
         r#"<h2>session activity</h2>{chart}
 <h2>recent sessions</h2><div class="legend">state: {picker}</div><div class="card">{table}</div>"#
@@ -560,6 +628,12 @@ pub struct TokensParams {
     /// Present = include expired and revoked tokens.
     #[serde(default)]
     all: Option<String>,
+    /// Keyset cursor from a previous page's "older" link (U8).
+    #[serde(default)]
+    before: Option<String>,
+    /// Page size; text so `limit=` cannot 422.
+    #[serde(default)]
+    limit: Option<String>,
 }
 
 fn issue_form(admin: &super::AdminCtx) -> String {
@@ -592,8 +666,31 @@ pub(super) async fn tokens(
     let tenant = admin.tenant.tenant_id.as_str();
     let uid = q.uid.as_deref().filter(|u| !u.is_empty());
     let active_only = q.all.is_none();
-    let list = match reports_api::op_list_tokens(&state, tenant, uid, active_only).await {
-        Ok(rows) => html_table(
+    let limit = reports_api::console_page_limit(q.limit.as_deref());
+    let limit_s = limit.to_string();
+    let href = |before: Option<&str>| {
+        list_href(
+            "/admin/tokens",
+            &[
+                ("uid", uid),
+                ("all", (!active_only).then_some("1")),
+                ("limit", Some(limit_s.as_str())),
+                ("before", before),
+            ],
+        )
+    };
+    let list = match reports_api::op_tokens_page(
+        &state,
+        tenant,
+        uid,
+        active_only,
+        q.before.as_deref(),
+        limit,
+    )
+    .await
+    {
+        Ok(page) => {
+            let table = html_table(
             &[
                 "jti",
                 "uid",
@@ -607,7 +704,8 @@ pub(super) async fn tokens(
                 "revoked",
                 "action",
             ],
-            &rows
+            &page
+                .rows
                 .iter()
                 .map(|t| {
                     let revoke = if t.revoked_at.is_none() {
@@ -641,7 +739,14 @@ pub(super) async fn tokens(
                     ]
                 })
                 .collect::<Vec<_>>(),
-        ),
+            );
+            let newest = q.before.as_ref().map(|_| href(None));
+            let older = page.next_before.as_deref().map(|nb| href(Some(nb)));
+            format!(
+                "{table}{}",
+                pager(page.rows.len(), page.total, newest, older)
+            )
+        }
         Err(e) => store_note(&e),
     };
     let filter = format!(
@@ -654,14 +759,34 @@ pub(super) async fn tokens(
     } else {
         "Revocation is recorded but NOT enforced at verify time (MUNARIUM_TOKEN_REVOCATION_CHECK is off): a revoked token keeps working until it expires."
     };
+    // One task per view (U8): the list is the page; issuing is its own page.
+    let issue = action(
+        &admin,
+        r#"<a class="button" href="/admin/tokens/issue">issue a token</a>"#.into(),
+    );
     let body = format!(
-        r#"<h2>issue a capability token</h2><div class="card">{}</div>
+        r#"<h2>issued tokens</h2><div class="legend">{filter}</div><div class="card">{list}</div>
+<div class="notice">{enforcement}</div>"#
+    );
+    render_with_actions(&admin, "tokens", "Tokens", &issue, &body)
+}
+
+/// `GET /admin/tokens/issue` — the issue form on its own page (U8).
+pub(super) async fn token_issue_page(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Response {
+    let admin = match admin_auth(&state, &headers) {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    let body = format!(
+        r#"<div class="card">{}</div>
 <div class="legend">Minted for the API-management layer's end user: least-privilege claims, short ttl, audited by jti — the token material shows once and is never stored.</div>
-<h2>issued tokens</h2><div class="legend">{filter}</div><div class="card">{list}</div>
-<div class="notice">{enforcement}</div>"#,
+<p><a href="/admin/tokens">← back to tokens</a></p>"#,
         issue_form(&admin)
     );
-    render(&admin, "tokens", "Tokens", &body)
+    render(&admin, "tokens", "Issue a capability token", &body)
 }
 
 #[derive(Debug, Default, serde::Deserialize)]
@@ -1195,6 +1320,12 @@ pub struct FindingsParams {
     /// findings). Anything else is ignored, not queried.
     #[serde(default)]
     rule: Option<String>,
+    /// Keyset cursor from a previous page's "older" link (U8).
+    #[serde(default)]
+    before: Option<String>,
+    /// Page size; text so `limit=` cannot 422.
+    #[serde(default)]
+    limit: Option<String>,
 }
 
 pub(super) async fn findings(
@@ -1244,15 +1375,36 @@ pub(super) async fn findings(
         })
         .collect::<Vec<_>>()
         .join(" · ");
-    let table =
-        match reports_api::op_recent_findings(&state, &admin.tenant.tenant_id, severity, rule, 200)
-            .await
-        {
-            Ok(rows) => html_table(
+    let limit = reports_api::console_page_limit(q.limit.as_deref());
+    let limit_s = limit.to_string();
+    let href = |before: Option<&str>| {
+        list_href(
+            "/admin/findings",
+            &[
+                ("severity", severity),
+                ("rule", rule),
+                ("limit", Some(limit_s.as_str())),
+                ("before", before),
+            ],
+        )
+    };
+    let table = match reports_api::op_findings_page(
+        &state,
+        &admin.tenant.tenant_id,
+        severity,
+        rule,
+        q.before.as_deref(),
+        limit,
+    )
+    .await
+    {
+        Ok(page) => {
+            let table = html_table(
                 &[
                     "recorded", "severity", "rule", "version", "seq", "scope", "message",
                 ],
-                &rows
+                &page
+                    .rows
                     .iter()
                     .map(|f| {
                         vec![
@@ -1266,12 +1418,19 @@ pub(super) async fn findings(
                         ]
                     })
                     .collect::<Vec<_>>(),
-            ),
-            Err(e) => store_note(&e),
-        };
+            );
+            let newest = q.before.as_ref().map(|_| href(None));
+            let older = page.next_before.as_deref().map(|nb| href(Some(nb)));
+            format!(
+                "{table}{}",
+                pager(page.rows.len(), page.total, newest, older)
+            )
+        }
+        Err(e) => store_note(&e),
+    };
     let body = format!(
         r#"<div class="legend">severity: {picker} &nbsp;·&nbsp; rule: {rule_picker}</div><div class="card">{table}</div>
-<div class="notice">Persisted findings across every lineage, newest first (200 max). A <strong>block</strong> is a refused write; a <strong>warn</strong> disputed a claim without refusing it. <code>gate.</code> findings come from the kernel gates at write time; <code>matrix.</code> findings are filed by Munarium Matrix's reconciliation (warn/info only — they never block). Per-version detail: <code>GET /v1/versions/{{id}}/findings?rule_prefix=</code>.</div>"#
+<div class="notice">Persisted findings across every lineage, newest first, one bounded page at a time. A <strong>block</strong> is a refused write; a <strong>warn</strong> disputed a claim without refusing it. <code>gate.</code> findings come from the kernel gates at write time; <code>matrix.</code> findings are filed by Munarium Matrix's reconciliation (warn/info only — they never block). Per-version detail: <code>GET /v1/versions/{{id}}/findings?rule_prefix=</code>.</div>"#
     );
     render(&admin, "findings", "Gate findings", &body)
 }

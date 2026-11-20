@@ -364,6 +364,18 @@ pub(crate) fn render(admin: &AdminCtx, active: &str, title: &str, body: &str) ->
     page(admin, active, title, "", body).into_response()
 }
 
+/// A full page whose header carries actions (trusted HTML — build them with
+/// `action` so a view-only proxy gets the note instead).
+pub(crate) fn render_with_actions(
+    admin: &AdminCtx,
+    active: &str,
+    title: &str,
+    actions: &str,
+    body: &str,
+) -> Response {
+    page(admin, active, title, actions, body).into_response()
+}
+
 /// The honest panel for a page whose ONLY source failed (most commonly: the
 /// memory store, no postgres). A missing object answers 404 so scripts and
 /// proxies see the truth; everything else stays 200 with the message.
@@ -724,7 +736,11 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/admin/sessions", get(inventory::sessions))
         .route("/admin/sessions/{id}", get(inventory::session))
         .route("/admin/tokens", get(inventory::tokens))
-        .route("/admin/tokens/issue", post(inventory::token_issue))
+        // GET is the issue form on its own page (U8); POST mints, as in v1.4.
+        .route(
+            "/admin/tokens/issue",
+            get(inventory::token_issue_page).post(inventory::token_issue),
+        )
         // GET reviews; the v1.4 POST also reviews now (ClearView U4) and
         // only the typed confirmation below acts.
         .route(
@@ -1002,15 +1018,25 @@ mod tests {
     #[tokio::test]
     async fn view_only_header_replaces_every_action_form() {
         let state = state(static_auth()).await;
-        // Without the header the tokens page offers the issue form.
+        // Without the header the tokens list offers the issue button, and the
+        // issue page (its own view since U8) offers the issue form.
         let body = body_string(get(&state, "/admin/tokens", Some("m"), false).await).await;
+        assert!(body.contains(r#"href="/admin/tokens/issue""#), "{body}");
+        let body = body_string(get(&state, "/admin/tokens/issue", Some("m"), false).await).await;
         assert!(body.contains(r#"action="/admin/tokens/issue""#), "{body}");
         assert!(body.contains(r#"name="_csrf""#));
-        // With it: the note, the badge, and no form.
-        let body = body_string(get(&state, "/admin/tokens", Some("m"), true).await).await;
-        assert!(body.contains("view-only passthrough"), "{body}");
-        assert!(body.contains(r#"<span class="badge">view-only</span>"#));
-        assert!(!body.contains(r#"name="_csrf""#), "{body}");
+        // With it: the note, the badge, and no form or button on either.
+        for path in ["/admin/tokens", "/admin/tokens/issue"] {
+            let body = body_string(get(&state, path, Some("m"), true).await).await;
+            assert!(body.contains("view-only passthrough"), "{body}");
+            assert!(body.contains(r#"<span class="badge">view-only</span>"#));
+            assert!(!body.contains(r#"name="_csrf""#), "{body}");
+            assert!(!body.contains(r#"href="/admin/tokens/issue""#), "{body}");
+            assert!(
+                !body.contains("<form class=\"action\" method=\"post\""),
+                "{body}"
+            );
+        }
     }
 
     #[tokio::test]
@@ -1416,6 +1442,241 @@ mod tests {
         .await;
         assert_eq!(resp.status(), StatusCode::CONFLICT);
         assert_eq!(revoked_at(&state, &tenant, &changed).await, Some(v1_time));
+    }
+
+    // -----------------------------------------------------------------------
+    // U8: bounded lists
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn console_list_bounds_and_cursors() {
+        use crate::reports_api::{console_page_limit, keyset_page, parse_keyset};
+        assert_eq!(console_page_limit(None), 50);
+        assert_eq!(console_page_limit(Some("")), 50);
+        assert_eq!(console_page_limit(Some("x")), 50);
+        assert_eq!(console_page_limit(Some("0")), 1);
+        assert_eq!(console_page_limit(Some("-5")), 1);
+        assert_eq!(console_page_limit(Some("7")), 7);
+        assert_eq!(console_page_limit(Some("100000")), 200);
+        // Cursors: absent is the first page; malformed is caller error.
+        assert!(parse_keyset(None).unwrap().is_none());
+        assert!(parse_keyset(Some(" ")).unwrap().is_none());
+        for bad in ["2026-01-01", "nope~tok-1", "2026-01-01T00:00:00Z~", "~tok"] {
+            assert!(
+                matches!(parse_keyset(Some(bad)), Err(KernelError::InvalidInput(_))),
+                "{bad}"
+            );
+        }
+        let (ts, key) = parse_keyset(Some("2026-01-01T00:00:00.000123Z~tok-1"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(ts.timestamp_subsec_micros(), 123);
+        assert_eq!(key, "tok-1");
+        // A full page plus one: trimmed, cursor from the last row kept.
+        let rows = (0..4)
+            .map(|i| (i, format!("ts{i}"), format!("k{i}")))
+            .collect::<Vec<_>>();
+        let page = keyset_page(rows.clone(), 3, 9);
+        assert_eq!(page.rows, vec![0, 1, 2]);
+        assert_eq!(page.total, 9);
+        assert_eq!(page.next_before.as_deref(), Some("ts2~k2"));
+        // Exactly the limit: no further page, so no cursor.
+        let page = keyset_page(rows[..3].to_vec(), 3, 3);
+        assert_eq!(page.rows.len(), 3);
+        assert!(page.next_before.is_none());
+    }
+
+    /// The "older" link of a rendered list page, unescaped, if any.
+    fn older_href(body: &str) -> Option<String> {
+        let end = body.find(r#"">older →</a>"#)?;
+        let start = body[..end].rfind(r#"href=""#)? + r#"href=""#.len();
+        Some(body[start..end].replace("&amp;", "&"))
+    }
+
+    /// Walk a list from its first page through every "older" link, checking
+    /// each page's bound and count, and return each page's row keys in order.
+    async fn walk_pages(
+        state: &Arc<AppState>,
+        first: &str,
+        limit: usize,
+        total: usize,
+        row_key: &dyn Fn(&str) -> Vec<String>,
+    ) -> Vec<String> {
+        let mut seen = Vec::new();
+        let mut next = Some(first.to_string());
+        let mut pages = 0;
+        while let Some(url) = next {
+            pages += 1;
+            assert!(pages <= total + 1, "pagination does not terminate");
+            let resp = get(state, &url, Some("m"), false).await;
+            assert_eq!(resp.status(), StatusCode::OK, "{url}");
+            let body = body_string(resp).await;
+            let keys = row_key(&body);
+            assert!(keys.len() <= limit, "{url}: {} rows", keys.len());
+            assert!(
+                body.contains(&format!("showing {} of {total}", keys.len())),
+                "{url}: {body}"
+            );
+            if pages > 1 {
+                assert!(body.contains("← newest</a>"), "{url}: {body}");
+            }
+            let shown = keys.len();
+            seen.extend(keys);
+            next = older_href(&body);
+            if next.is_none() {
+                assert_eq!(seen.len(), total, "last page {url}");
+            } else {
+                assert_eq!(shown, limit, "a page before the last is full: {url}");
+            }
+        }
+        seen
+    }
+
+    /// Every `<code>…</code>` cell whose text starts with `prefix`.
+    fn codes(body: &str, prefix: &str) -> Vec<String> {
+        body.split("<code>")
+            .skip(1)
+            .filter_map(|c| c.split_once("</code>").map(|(v, _)| v.to_string()))
+            .filter(|v| v.starts_with(prefix))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn token_session_and_finding_lists_are_bounded_on_postgres() {
+        let Ok(url) = std::env::var("MUNARIUM_TEST_DATABASE_URL") else {
+            eprintln!("console U8 PostgreSQL test NOT RUN: MUNARIUM_TEST_DATABASE_URL unset");
+            return;
+        };
+        let tenant = format!("console-u8-{}", uuid::Uuid::new_v4().simple());
+        let mut cfg = test_config(AuthMode::Static(vec![(
+            "m".into(),
+            tenant.clone(),
+            "mgmt".into(),
+        )]));
+        cfg.store = StoreKind::Postgres;
+        cfg.database_url = Some(url);
+        let state = AppState::new(cfg).await.expect("state");
+        let pool = state.pg_pool().expect("pool").clone();
+
+        // Tokens: seven, three sharing one issued_at so the jti tiebreaker
+        // is exercised at a page boundary.
+        let mut jtis = Vec::new();
+        for i in 0..7 {
+            jtis.push(issue(&state, &tenant, &format!("user{i}")).await);
+        }
+        sqlx::query(
+            "UPDATE access_tokens SET issued_at = '2026-01-01T00:00:00.5Z'
+              WHERE tenant_id = $1 AND jti = ANY($2)",
+        )
+        .bind(&tenant)
+        .bind(&jtis[1..4])
+        .execute(&pool)
+        .await
+        .unwrap();
+        let tokens = walk_pages(&state, "/admin/tokens?limit=2", 2, 7, &|b: &str| {
+            codes(b, "tok-")
+        })
+        .await;
+        let mut sorted = tokens.clone();
+        sorted.sort();
+        sorted.dedup();
+        let mut expected = jtis.clone();
+        expected.sort();
+        assert_eq!(sorted, expected, "every token exactly once: {tokens:?}");
+        // The uid filter carries through the count and the links.
+        let body =
+            body_string(get(&state, "/admin/tokens?uid=user3", Some("m"), false).await).await;
+        assert!(body.contains("showing 1 of 1"), "{body}");
+        // The bound holds without a limit parameter, and a huge one clamps.
+        let body = body_string(get(&state, "/admin/tokens", Some("m"), false).await).await;
+        assert!(body.contains("showing 7 of 7"), "{body}");
+        assert!(older_href(&body).is_none());
+        let body =
+            body_string(get(&state, "/admin/tokens?limit=99999", Some("m"), false).await).await;
+        assert!(body.contains("showing 7 of 7"), "{body}");
+        // A malformed cursor is a caller error on the page, never a 500.
+        let resp = get(&state, "/admin/tokens?before=garbage", Some("m"), false).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(body_string(resp).await.contains("before:"));
+
+        // Sessions: five, two sharing their activity time.
+        let mut ids = Vec::new();
+        for i in 0..5 {
+            let id = format!("ses-u8-{i}");
+            let at = if i < 2 {
+                "2026-02-01T00:00:00Z".to_string()
+            } else {
+                format!("2026-02-0{}T00:00:00Z", i + 1)
+            };
+            sqlx::query(
+                "INSERT INTO sessions (tenant_id, id, uid, runbook_ref, access_level, created_at)
+                 VALUES ($1, $2, 'u', 'rb@1', 0, $3::timestamptz)",
+            )
+            .bind(&tenant)
+            .bind(&id)
+            .bind(&at)
+            .execute(&pool)
+            .await
+            .unwrap();
+            ids.push(id);
+        }
+        let session_rows = |b: &str| -> Vec<String> {
+            b.split(r#"<a href="/admin/sessions/"#)
+                .skip(1)
+                .filter_map(|c| c.split_once('"').map(|(v, _)| v.to_string()))
+                .collect()
+        };
+        let sessions = walk_pages(&state, "/admin/sessions?limit=2", 2, 5, &session_rows).await;
+        let mut sorted = sessions.clone();
+        sorted.sort();
+        assert_eq!(sorted, ids, "every session exactly once: {sessions:?}");
+        assert_eq!(sessions[0], "ses-u8-4", "newest first");
+
+        // Findings: six at one recorded_at, two of them identical in every
+        // displayed column, so only the tie-count cursor can page them.
+        for (i, msg) in ["a", "b", "c", "dup", "dup", "e"].iter().enumerate() {
+            sqlx::query(
+                "INSERT INTO gate_findings
+                   (tenant_id, version_id, seq, rule_id, severity, message, recorded_at)
+                 VALUES ($1, 'ver-u8', $2, 'gate.u8', 'warn', $3, '2026-03-01T00:00:00Z')",
+            )
+            .bind(&tenant)
+            .bind(if *msg == "dup" { 9 } else { i as i64 })
+            .bind(*msg)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        let finding_rows = |b: &str| -> Vec<String> {
+            b.split("<tr><td>")
+                .skip(1)
+                .map(|row| {
+                    row.split("<td>")
+                        .last()
+                        .and_then(|c| c.split_once("</td>"))
+                        .map(|(v, _)| v.to_string())
+                        .unwrap_or_default()
+                })
+                .collect()
+        };
+        let mut findings = walk_pages(&state, "/admin/findings?limit=4", 4, 6, &finding_rows).await;
+        findings.sort();
+        assert_eq!(findings, ["a", "b", "c", "dup", "dup", "e"]);
+        // Filters narrow the count, and a page of one walks all six.
+        let body =
+            body_string(get(&state, "/admin/findings?severity=block", Some("m"), false).await)
+                .await;
+        assert!(body.contains("showing 0 of 0"), "{body}");
+        let mut findings = walk_pages(
+            &state,
+            "/admin/findings?rule=gate.&severity=warn&limit=1",
+            1,
+            6,
+            &finding_rows,
+        )
+        .await;
+        findings.sort();
+        assert_eq!(findings, ["a", "b", "c", "dup", "dup", "e"]);
     }
 
     const SHAPE: &str = "apiVersion: munarium.ioka.io/v1\nkind: Shape\n\
