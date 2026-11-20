@@ -81,6 +81,7 @@ mod query_api;
 mod reports_api;
 mod rest;
 mod runbooks_api;
+mod scale_diagnostics;
 mod search_v12;
 mod service;
 mod sessions_api;

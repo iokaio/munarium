@@ -40,12 +40,19 @@ async fn readyz(State(state): State<Arc<AppState>>) -> impl IntoResponse {
 }
 
 async fn metrics(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    // The all-tenant build backlog (SCALE-3): one bounded, read-only query
+    // per scrape on the postgres store; a failed read reports up=0.
+    let queue = match state.pg_pool() {
+        Some(pool) => Some(crate::scale_diagnostics::read_build_queue(pool, None).await),
+        None => None,
+    };
+    let extra = crate::scale_diagnostics::queue_exposition(queue.as_ref());
     (
         [(
             axum::http::header::CONTENT_TYPE,
             "text/plain; version=0.0.4",
         )],
-        crate::metrics::render(&state),
+        crate::metrics::render_with(&state, &extra),
     )
 }
 

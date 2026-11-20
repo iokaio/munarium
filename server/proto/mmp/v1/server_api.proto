@@ -212,6 +212,8 @@ service ServerApiService {
   rpc MonetaryReport(ServerApiRequest) returns (ServerApiResponse);
   // GET /v1/reports/runbooks
   rpc RunbookReport(ServerApiRequest) returns (ServerApiResponse);
+  // GET /v1/reports/scale
+  rpc ScaleReport(ServerApiRequest) returns (ServerApiResponse);
   // GET /v1/reports/sessions
   rpc SessionsReport(ServerApiRequest) returns (ServerApiResponse);
   // GET /v1/reports/timeseries

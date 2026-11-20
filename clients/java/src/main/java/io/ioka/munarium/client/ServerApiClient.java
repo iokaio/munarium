@@ -291,6 +291,9 @@ public final class ServerApiClient extends ServerApiTransport {
     /** GET /v1/reports/runbooks */
     public ApiResponse runbookReport(ApiRequest request) { return call("RunbookReport", "GET", "/v1/reports/runbooks", "application/json", request); }
     public CompletableFuture<ApiResponse> runbookReportAsync(ApiRequest request) { return async(() -> runbookReport(request)); }
+    /** GET /v1/reports/scale */
+    public ApiResponse scaleReport(ApiRequest request) { return call("ScaleReport", "GET", "/v1/reports/scale", "application/json", request); }
+    public CompletableFuture<ApiResponse> scaleReportAsync(ApiRequest request) { return async(() -> scaleReport(request)); }
     /** GET /v1/reports/sessions */
     public ApiResponse sessionsReport(ApiRequest request) { return call("SessionsReport", "GET", "/v1/reports/sessions", "application/json", request); }
     public CompletableFuture<ApiResponse> sessionsReportAsync(ApiRequest request) { return async(() -> sessionsReport(request)); }

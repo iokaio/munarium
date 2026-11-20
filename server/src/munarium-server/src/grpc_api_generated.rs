@@ -285,6 +285,9 @@ impl pb::server_api_service_server::ServerApiService for ServerApiSvc {
     async fn runbook_report(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "GET", "/v1/reports/runbooks", "application/json").await
     }
+    async fn scale_report(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "GET", "/v1/reports/scale", "application/json").await
+    }
     async fn sessions_report(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "GET", "/v1/reports/sessions", "application/json").await
     }

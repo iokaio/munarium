@@ -1686,6 +1686,10 @@ pub fn router(state: Arc<AppState>) -> Router {
             get(crate::reports_api::sessions_report),
         )
         .route(
+            "/v1/reports/scale",
+            get(crate::scale_diagnostics::scale_report),
+        )
+        .route(
             "/v1/collections",
             post(crate::collections_api::create_collection)
                 .get(crate::collections_api::list_collections),

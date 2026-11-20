@@ -1230,6 +1230,19 @@ class ServerApiClient(BaseServerApi):
             request,
         )
 
+    def scale_report(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/reports/scale"""
+        return self._call(
+            "ScaleReport",
+            "GET",
+            "/v1/reports/scale",
+            "application/json",
+            request,
+        )
+
     def sessions_report(
         self,
         request: ApiRequest | None = None,
@@ -3035,6 +3048,19 @@ class AsyncServerApiClient(BaseAsyncServerApi):
             "RunbookReport",
             "GET",
             "/v1/reports/runbooks",
+            "application/json",
+            request,
+        )
+
+    async def scale_report(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/reports/scale"""
+        return await self._call(
+            "ScaleReport",
+            "GET",
+            "/v1/reports/scale",
             "application/json",
             request,
         )

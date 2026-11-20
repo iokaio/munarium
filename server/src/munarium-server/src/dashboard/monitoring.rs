@@ -541,8 +541,12 @@ pub(super) async fn health(State(state): State<Arc<AppState>>, headers: HeaderMa
         ),
         ("shutdown grace", format!("{} s", cfg.shutdown_grace_secs)),
     ]);
+    let scale = crate::scale_diagnostics::health_section(
+        &crate::scale_diagnostics::op_scale_report(&state, &admin.tenant.tenant_id).await,
+    );
     let body = format!(
         r#"<div class="tiles">{}{}{}{}{}{}</div>
+{scale}
 <h2>effective configuration</h2><div class="card">{config}</div>
 <div class="notice">Process state only — never calls the paid <a href="/healthai">/healthai</a> probe.
 Scrape target: <code>GET /metrics</code> on the ops plane (:9090). Secrets never render here: the database URL, static token values, and the token secret show only as present or absent.</div>"#,

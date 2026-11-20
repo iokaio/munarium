@@ -504,6 +504,11 @@ class ServerApiServiceStub:
                 request_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
                 response_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
                 _registered_method=True)
+        self.ScaleReport = channel.unary_unary(
+                '/mmp.v1.ServerApiService/ScaleReport',
+                request_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+                response_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+                _registered_method=True)
         self.SessionsReport = channel.unary_unary(
                 '/mmp.v1.ServerApiService/SessionsReport',
                 request_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
@@ -1392,6 +1397,13 @@ class ServerApiServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ScaleReport(self, request, context):
+        """GET /v1/reports/scale
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def SessionsReport(self, request, context):
         """GET /v1/reports/sessions
         """
@@ -2177,6 +2189,11 @@ def add_ServerApiServiceServicer_to_server(servicer, server):
             ),
             'RunbookReport': grpc.unary_unary_rpc_method_handler(
                     servicer.RunbookReport,
+                    request_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.FromString,
+                    response_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.SerializeToString,
+            ),
+            'ScaleReport': grpc.unary_unary_rpc_method_handler(
+                    servicer.ScaleReport,
                     request_deserializer=mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.FromString,
                     response_serializer=mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.SerializeToString,
             ),
@@ -4942,6 +4959,33 @@ class ServerApiService:
             request,
             target,
             '/mmp.v1.ServerApiService/RunbookReport',
+            mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
+            mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ScaleReport(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/mmp.v1.ServerApiService/ScaleReport',
             mmp_dot_v1_dot_server__api__pb2.ServerApiRequest.SerializeToString,
             mmp_dot_v1_dot_server__api__pb2.ServerApiResponse.FromString,
             options,

@@ -60,6 +60,32 @@ const METRICS_META: &[(&str, &str, &str)] = &[
         "gauge",
         "Idle connections in the sqlx pool (postgres store only).",
     ),
+    // Replica, pool and queue diagnostics (SCALE-3, scale_diagnostics.rs).
+    (
+        "munarium_db_pool_max_connections",
+        "gauge",
+        "Configured MUNARIUM_DB_MAX_CONNS for the sqlx pool (postgres store only).",
+    ),
+    (
+        "munarium_replica_count",
+        "gauge",
+        "Configured MUNARIUM_REPLICA_COUNT: the provider RPM/TPM divisor. Compare with the number of live scrape targets.",
+    ),
+    (
+        "munarium_index_build_queue_up",
+        "gauge",
+        "1 when this scrape read the durable build-job backlog, 0 when the read failed (the backlog series are then absent). Postgres store only.",
+    ),
+    (
+        "munarium_index_build_jobs",
+        "gauge",
+        "Open durable build jobs across all tenants, by state (pending|running). Every replica reports the same shared queue.",
+    ),
+    (
+        "munarium_index_build_oldest_pending_seconds",
+        "gauge",
+        "Age of the oldest pending durable build job across all tenants; 0 when none is pending.",
+    ),
     (
         "munarium_interactions_queue_depth",
         "gauge",
@@ -338,8 +364,19 @@ pub fn status_class(status: u16) -> &'static str {
     }
 }
 
-/// The full exposition: build info + polled gauges + recorded series.
+/// The full exposition with no asynchronously read samples. The ops plane
+/// uses [`render_with`].
+#[cfg(test)]
 pub fn render(state: &crate::state::AppState) -> String {
+    render_with(state, &[])
+}
+
+/// [`render`] plus `extra` samples read asynchronously by the caller (the
+/// ops plane's build-queue read). Samples of one metric must be adjacent.
+pub fn render_with(
+    state: &crate::state::AppState,
+    extra: &[crate::scale_diagnostics::Sample],
+) -> String {
     let mut out = String::with_capacity(4096);
     let mut emitted: Vec<&'static str> = Vec::new();
 
@@ -354,6 +391,26 @@ pub fn render(state: &crate::state::AppState) -> String {
         out.push_str(&format!("munarium_db_pool_connections {}\n", pool.size()));
         help_type_once(&mut out, "munarium_db_pool_idle", &mut emitted);
         out.push_str(&format!("munarium_db_pool_idle {}\n", pool.num_idle()));
+        help_type_once(&mut out, "munarium_db_pool_max_connections", &mut emitted);
+        out.push_str(&format!(
+            "munarium_db_pool_max_connections {}\n",
+            state.config.db_max_conns
+        ));
+    }
+
+    help_type_once(&mut out, "munarium_replica_count", &mut emitted);
+    out.push_str(&format!(
+        "munarium_replica_count {}\n",
+        state.config.replica_count
+    ));
+
+    for (metric, labels, value) in extra {
+        help_type_once(&mut out, metric, &mut emitted);
+        if labels.is_empty() {
+            out.push_str(&format!("{metric} {value}\n"));
+        } else {
+            out.push_str(&format!("{metric}{{{labels}}} {value}\n"));
+        }
     }
 
     let tx = &state.interactions_tx;
@@ -497,6 +554,11 @@ mod tests {
             "munarium_admission_shed_total",
             "munarium_admission_slots",
             "munarium_admission_slots_in_use",
+            "munarium_db_pool_max_connections",
+            "munarium_replica_count",
+            "munarium_index_build_queue_up",
+            "munarium_index_build_jobs",
+            "munarium_index_build_oldest_pending_seconds",
         ] {
             assert!(
                 METRICS_META.iter().any(|(n, _, _)| *n == name),

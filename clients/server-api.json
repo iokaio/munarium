@@ -754,6 +754,14 @@
       "streaming": false
     },
     {
+      "name": "scale_report",
+      "rpc": "ScaleReport",
+      "method": "GET",
+      "path": "/v1/reports/scale",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
       "name": "sessions_report",
       "rpc": "SessionsReport",
       "method": "GET",

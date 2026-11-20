@@ -378,6 +378,10 @@ impl ServerApiClient {
     pub async fn runbook_report(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("RunbookReport", "GET", "/v1/reports/runbooks", "application/json", request).await
     }
+    /// GET /v1/reports/scale
+    pub async fn scale_report(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("ScaleReport", "GET", "/v1/reports/scale", "application/json", request).await
+    }
     /// GET /v1/reports/sessions
     pub async fn sessions_report(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("SessionsReport", "GET", "/v1/reports/sessions", "application/json", request).await

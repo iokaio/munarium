@@ -191,6 +191,8 @@ public sealed partial class ServerApiClient {
     public Task<ApiResponse> MonetaryReportAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("MonetaryReport", "GET", "/v1/reports/money", "application/json", request ?? new(), ct);
     /// <summary>GET /v1/reports/runbooks</summary>
     public Task<ApiResponse> RunbookReportAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("RunbookReport", "GET", "/v1/reports/runbooks", "application/json", request ?? new(), ct);
+    /// <summary>GET /v1/reports/scale</summary>
+    public Task<ApiResponse> ScaleReportAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("ScaleReport", "GET", "/v1/reports/scale", "application/json", request ?? new(), ct);
     /// <summary>GET /v1/reports/sessions</summary>
     public Task<ApiResponse> SessionsReportAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("SessionsReport", "GET", "/v1/reports/sessions", "application/json", request ?? new(), ct);
     /// <summary>GET /v1/reports/timeseries</summary>

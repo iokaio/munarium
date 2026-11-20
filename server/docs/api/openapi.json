@@ -4158,6 +4158,38 @@
         }
       }
     },
+    "/v1/reports/scale": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on legacy /v1 requests (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "reports"
+        ],
+        "summary": "GET /v1/reports/scale — this replica's identity, pools and admission,\nand the caller's tenant's build-job backlog (SCALE-3).",
+        "operationId": "scale_report",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScaleReport"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/reports/sessions": {
       "parameters": [
         {
@@ -6466,6 +6498,36 @@
         },
         "additionalProperties": false
       },
+      "AdmissionPoolUsage": {
+        "type": "object",
+        "description": "One admission pool on one plane (R7/B3, `docs/ops/admission.md`).",
+        "required": [
+          "plane",
+          "pool",
+          "capacity",
+          "in_use"
+        ],
+        "properties": {
+          "capacity": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "in_use": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "plane": {
+            "type": "string",
+            "description": "`rest` or `grpc`."
+          },
+          "pool": {
+            "type": "string",
+            "description": "`ordinary`, or `reserve` / `heavy` when configured."
+          }
+        }
+      },
       "AnchorDto": {
         "type": "object",
         "required": [
@@ -7241,6 +7303,65 @@
             ],
             "format": "int64",
             "minimum": 0
+          }
+        }
+      },
+      "BuildQueueBacklog": {
+        "type": "object",
+        "description": "Open durable build jobs, as read from `index_build_jobs`.",
+        "required": [
+          "pending",
+          "running"
+        ],
+        "properties": {
+          "oldest_pending_age_seconds": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Seconds since the oldest pending job was enqueued; null when nothing\nis pending."
+          },
+          "pending": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Jobs waiting for a builder (`state = 'pending'`)."
+          },
+          "running": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Jobs claimed by a builder (`state = 'running'`), including any whose\nlease has lapsed and that a builder may reclaim."
+          }
+        }
+      },
+      "BuildQueueReport": {
+        "type": "object",
+        "description": "The caller's tenant's build backlog, or why it could not be read.",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "backlog": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BuildQueueBacklog",
+                "description": "The counts, present only when `status` is `observed`."
+              }
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A short reason when `status` is `unavailable`."
+          },
+          "status": {
+            "type": "string",
+            "description": "`observed`; `unavailable` when the read failed or timed out (the\ncounts are then null, never 0); `not_applicable` on the memory store,\nwhich has no durable job queue."
           }
         }
       },
@@ -8382,6 +8503,42 @@
         "properties": {
           "version_id": {
             "type": "string"
+          }
+        }
+      },
+      "DbPoolUsage": {
+        "type": "object",
+        "description": "The SQL connection pool of this process (PostgreSQL store only).",
+        "required": [
+          "max_connections",
+          "open",
+          "idle",
+          "in_use"
+        ],
+        "properties": {
+          "idle": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Open connections not checked out.",
+            "minimum": 0
+          },
+          "in_use": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Open connections checked out by work in progress.",
+            "minimum": 0
+          },
+          "max_connections": {
+            "type": "integer",
+            "format": "int32",
+            "description": "`MUNARIUM_DB_MAX_CONNS`: the most connections this process opens.",
+            "minimum": 0
+          },
+          "open": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Connections open now.",
+            "minimum": 0
           }
         }
       },
@@ -12022,6 +12179,69 @@
           }
         },
         "additionalProperties": false
+      },
+      "ScaleReport": {
+        "type": "object",
+        "description": "GET /v1/reports/scale.",
+        "required": [
+          "instance_id",
+          "version",
+          "replica_count",
+          "builder_enabled",
+          "admission",
+          "build_queue"
+        ],
+        "properties": {
+          "admission": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdmissionPoolUsage"
+            },
+            "description": "Per plane and pool; `MUNARIUM_MAX_CONCURRENCY` with the optional\ncontrol reserve and heavy bound."
+          },
+          "build_queue": {
+            "$ref": "#/components/schemas/BuildQueueReport",
+            "description": "The caller's tenant only. `/metrics` carries the all-tenant backlog."
+          },
+          "builder_enabled": {
+            "type": "boolean",
+            "description": "Whether this process runs the durable build-job loop\n(`MUNARIUM_DATASTORE_BUILDER=enabled`)."
+          },
+          "db_pool": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DbPoolUsage",
+                "description": "Null on the memory store."
+              }
+            ]
+          },
+          "instance_id": {
+            "type": "string",
+            "description": "The replica that answered: `MUNARIUM_INSTANCE_ID`, else the host name."
+          },
+          "observed_replicas": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Live Server processes observed sharing the database. Always null in\nthis release: membership is not recorded, so it is unknown here.\nCompare `replica_count` with ready pods or scrape targets.",
+            "minimum": 0
+          },
+          "replica_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "`MUNARIUM_REPLICA_COUNT` this process runs with: the divisor of each\nprovider RPM/TPM limit. 1 is also the default when it is unset.",
+            "minimum": 0
+          },
+          "version": {
+            "type": "string",
+            "description": "Server version of this process."
+          }
+        }
       },
       "SealEvidenceRequest": {
         "type": "object",

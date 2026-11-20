@@ -14364,6 +14364,7 @@ route family needs one rule there.
 | `/v1/reports/evidence` | GET | reports | §20; rest.md Reports rows |
 | `/v1/reports/matrix` | GET | reports | §20; rest.md Reports rows |
 | `/v1/reports/runbooks` | GET | reports | §20; rest.md Reports rows |
+| `/v1/reports/scale` | GET | reports | [Replica diagnostics](../ops/clustering.md#replica-pool-and-queue-diagnostics) |
 | `/v1/reports/sessions` | GET | reports | §20; rest.md Reports rows |
 | `/v1/reports/timeseries` | GET | reports | §20; rest.md Reports rows |
 | `/v1/reports/usage` | GET | reports | §20; rest.md Reports rows |
