@@ -107,9 +107,20 @@ replica, is in `GET /v1/reports/scale` and on the console Health page
 
 ## Known limits
 
-- The console's `/admin` actions stay outside admission. The console run-step
-  approval runs the same inline resume as the REST approval with no admission
-  slot; that finding is a recorded follow-up.
+- The console's `/admin` pages and actions stay outside the capture
+  middleware's admission, with one exception. The console run-step approval
+  confirmation (`POST /admin/runs/{run_id}/steps/{ordinal}/approve/confirm`)
+  runs the same inline resume as the REST approval, so it admits itself as
+  **heavy** on the REST plane: an ordinary slot plus, when
+  `MUNARIUM_HEAVY_CONCURRENCY` is on, a heavy token, and never the control
+  reserve. It is admitted after its own role, view-only, CSRF, typed-id and rw
+  credential checks and before any store read, and holds the slot until the
+  resume finishes. Without a slot it answers 503 with `Retry-After: 1` and an
+  "overloaded" notice, approves nothing, and counts in
+  `munarium_admission_shed_total{plane="rest",class="heavy"}` and
+  `munarium_load_shed_total` like a shed `/v1` request. The list is
+  `CONSOLE_HEAVY` in `admission.rs`. The review pages are reads and are never
+  admitted.
 - A gRPC slot is released when the response head is returned, as in v1.4; a REST
   streaming turn holds its slot until the stream ends.
 - The heavy list comes from traced call sites, not from measurement.

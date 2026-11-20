@@ -31,6 +31,10 @@
 //! through `rest::router`, so a bridged call is classified by its REST route
 //! and charged once, by the REST capture middleware.
 //!
+//! The console is outside the capture middleware's admission. Its one action
+//! that runs heavy work inline, the run-step approval confirmation, admits
+//! itself as heavy on the REST plane through [`admit_console`].
+//!
 //! The settings are read once at startup. There is no live reconfiguration,
 //! so no limit can be lowered under in-flight work; a restart applies a new
 //! value to new work only.
@@ -122,6 +126,42 @@ pub const REST_HEAVY: &[(&str, &str)] = &[
     ("POST", "/v1/ingest/bulk/{bulk_id}/chunk"),
     ("PUT", "/v1/evidence/{evidence_id}/bytes"),
 ];
+
+/// Console (`/admin`) routes that run heavy work inline (the R7 console
+/// finding). The capture middleware never admits `/admin`, so these handlers
+/// admit themselves on the REST plane as [`WorkClass::Heavy`], after their own
+/// cheap checks (role, view-only, CSRF, typed confirmation, rw credential) and
+/// before any store access. The console run-step approval resumes the run
+/// inline exactly like `POST /v1/runs/{run_id}/steps/{ordinal}/approve`, which
+/// is on [`REST_HEAVY`]. Kept apart from that list because the console routes
+/// are not OpenAPI operations.
+pub const CONSOLE_HEAVY: &[(&str, &str)] = &[(
+    "POST",
+    "/admin/runs/{run_id}/steps/{ordinal}/approve/confirm",
+)];
+
+/// Admit one console action listed in [`CONSOLE_HEAVY`] on the REST plane:
+/// an ordinary slot plus, when `MUNARIUM_HEAVY_CONCURRENCY` is on, a heavy
+/// token. Never the control reserve. `None` is a shed, counted in the same
+/// metrics as a shed `/v1` request; the caller answers 503 with
+/// `Retry-After: 1`. A route that is not listed is refused (shed) rather than
+/// silently admitted.
+pub fn admit_console(
+    state: &crate::state::AppState,
+    method: &str,
+    route: &str,
+) -> Option<AdmissionPermit> {
+    if !CONSOLE_HEAVY
+        .iter()
+        .any(|(m, r)| *m == method && *r == route)
+    {
+        return None;
+    }
+    state
+        .admission
+        .rest
+        .admit(&state.metrics, WorkClass::Heavy, |_| false)
+}
 
 /// Typed gRPC control methods (full method path).
 pub const GRPC_CONTROL: &[(&str, ControlAuth)] =

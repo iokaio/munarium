@@ -24,7 +24,9 @@
 //!   events when the run names a lineage — takes the rw credential IN THE
 //!   FORM, per submission, never stored: the same token `mmctl` or curl
 //!   would present. Under MUNARIUM_AUTH_MODE=disabled the pseudo-principal
-//!   is already rw and the field may stay empty.
+//!   is already rw and the field may stay empty. Like token revocation it is
+//!   reviewed first and confirmed by typing the target (ClearView U4), and
+//!   the confirmation takes a heavy REST admission slot (R7, admission.rs).
 //!
 //! Every state-changing form carries the stateless CSRF synchronizer token
 //! (`csrf_token`), and a trusted view-only proxy sends
@@ -825,9 +827,16 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/admin/shapes/{shape_ref}", get(runbooks::shape))
         .route("/admin/chronology-rules/{name}", get(runbooks::chronology))
         .route("/admin/runs/{run_id}", get(runbooks::run))
+        // GET reviews; the v1.4 POST also reviews now (ClearView U4) and
+        // only the typed confirmation below approves, under a heavy
+        // admission slot (R7).
         .route(
             "/admin/runs/{run_id}/steps/{ordinal}/approve",
-            post(runbooks::approve),
+            get(runbooks::approve_review_page).post(runbooks::approve),
+        )
+        .route(
+            runbooks::APPROVE_CONFIRM_ROUTE,
+            post(runbooks::approve_confirm),
         )
         // control plane: inventory
         .route("/admin/providers", get(inventory::providers))
@@ -1179,6 +1188,10 @@ mod tests {
         assert!(body.contains(r#"class="secret""#), "{body}");
     }
 
+    const APPROVE_CONFIRM: &str = "/admin/runs/run-x/steps/0/approve/confirm";
+
+    /// The confirmation is where the rw credential is checked, per
+    /// submission, before any store access (the mgmt/rw split).
     #[tokio::test]
     async fn approving_a_gate_takes_the_rw_credential_not_the_mgmt_cookie() {
         let state = state(static_auth()).await;
@@ -1187,9 +1200,9 @@ mod tests {
         let body = body_string(
             post_form(
                 &state,
-                "/admin/runs/run-x/steps/0/approve",
+                APPROVE_CONFIRM,
                 "m",
-                &format!("_csrf={csrf}&rw_token="),
+                &format!("_csrf={csrf}&confirm=run-x&rw_token="),
             )
             .await,
         )
@@ -1199,9 +1212,9 @@ mod tests {
         let body = body_string(
             post_form(
                 &state,
-                "/admin/runs/run-x/steps/0/approve",
+                APPROVE_CONFIRM,
                 "m",
-                &format!("_csrf={csrf}&rw_token=m"),
+                &format!("_csrf={csrf}&confirm=run-x&rw_token=m"),
             )
             .await,
         )
@@ -1211,9 +1224,9 @@ mod tests {
         let body = body_string(
             post_form(
                 &state,
-                "/admin/runs/run-x/steps/0/approve",
+                APPROVE_CONFIRM,
                 "m",
-                &format!("_csrf={csrf}&rw_token=w2"),
+                &format!("_csrf={csrf}&confirm=run-x&rw_token=w2"),
             )
             .await,
         )
@@ -1224,27 +1237,207 @@ mod tests {
         let body = body_string(
             post_form(
                 &state,
-                "/admin/runs/run-x/steps/0/approve",
+                APPROVE_CONFIRM,
                 "m",
-                &format!("_csrf={csrf}&rw_token=w"),
+                &format!("_csrf={csrf}&confirm=run-x&rw_token=w"),
             )
             .await,
         )
         .await;
         assert!(body.contains("postgres"), "{body}");
-        // And behind the view-only proxy the action is refused outright.
-        let resp = crate::rest::router(state.clone())
-            .oneshot(
-                axum::http::Request::post("/admin/runs/run-x/steps/0/approve")
-                    .header("authorization", "Bearer m")
-                    .header(VIEW_ONLY_HEADER, "1")
-                    .header("content-type", "application/x-www-form-urlencoded")
-                    .body(axum::body::Body::from(format!("_csrf={csrf}&rw_token=w")))
-                    .unwrap(),
+        // And behind the view-only proxy the action is refused outright, on
+        // the confirmation and on the v1.4 URL alike.
+        for path in [APPROVE_CONFIRM, "/admin/runs/run-x/steps/0/approve"] {
+            let body = body_string(
+                post_form_view_only(
+                    &state,
+                    path,
+                    "m",
+                    &format!("_csrf={csrf}&confirm=run-x&rw_token=w"),
+                )
+                .await,
             )
+            .await;
+            assert!(body.contains("view-only"), "{path}: {body}");
+        }
+    }
+
+    /// U4 for run-step approval, without a store: the review is a read and
+    /// offers nothing it cannot back; the v1.4 POST is a review that still
+    /// demands CSRF and ignores the rw token it carries; the confirmation
+    /// refuses a wrong typed id, a missing CSRF token and a non-mgmt role
+    /// before anything else.
+    #[tokio::test]
+    async fn approval_review_and_refusals_on_the_memory_store() {
+        let state = state(static_auth()).await;
+        let csrf = csrf_for(&state, "m");
+        let review = "/admin/runs/run-x/steps/0/approve";
+        let resp = get(&state, review, Some("m"), false).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_string(resp).await;
+        assert!(body.contains("postgres"), "{body}");
+        assert!(plan_in(&body).is_none(), "{body}");
+        // The v1.4 POST: CSRF still required, and with it the review — the
+        // rw token in a v1.4 form approves nothing and is never echoed.
+        let body =
+            body_string(post_form(&state, review, "m", "_csrf=deadbeef&rw_token=w").await).await;
+        assert!(body.contains("stale form"), "{body}");
+        let body =
+            body_string(post_form(&state, review, "m", &format!("_csrf={csrf}&rw_token=w")).await)
+                .await;
+        assert!(body.contains("postgres"), "{body}");
+        assert!(!body.contains("rw required") && !body.contains("value=\"w\""));
+        // The confirmation: missing CSRF, wrong typed id, wrong role.
+        let body =
+            body_string(post_form(&state, APPROVE_CONFIRM, "m", "confirm=run-x&rw_token=w").await)
+                .await;
+        assert!(body.contains("stale form"), "{body}");
+        let resp = post_form(
+            &state,
+            APPROVE_CONFIRM,
+            "m",
+            &format!("_csrf={csrf}&confirm=run-y&rw_token=w"),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK, "no run to re-review");
+        let body = body_string(resp).await;
+        assert!(body.contains("postgres"), "{body}");
+        let resp = post_form(
+            &state,
+            APPROVE_CONFIRM,
+            "w",
+            &format!("_csrf={}&confirm=run-x&rw_token=w", csrf_for(&state, "w")),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+        assert_eq!(resp.headers()["location"], "/admin/login");
+    }
+
+    /// R7: the console approval obtains a heavy admission slot on the REST
+    /// plane, like `POST /v1/runs/{run_id}/steps/{ordinal}/approve`, and is
+    /// shed with the overloaded notice (503, `Retry-After: 1`) when there is
+    /// none — whether the heavy bound or the ordinary pool is full. The
+    /// control reserve is never used. Every refusal that precedes admission
+    /// (CSRF, typed id, rw credential) costs no slot.
+    #[tokio::test]
+    async fn console_approval_is_admitted_as_heavy_work() {
+        let admission = crate::admission::AdmissionConfig::new(4, 1, 1).unwrap();
+        let state = AppState::new_with_admission(test_config(static_auth()), admission)
             .await
+            .expect("state");
+        let csrf = csrf_for(&state, "m");
+        let good = format!("_csrf={csrf}&confirm=run-x&rw_token=w");
+        let shed_metric = r#"munarium_admission_shed_total{plane="rest",class="heavy"}"#;
+        let admitted_metric =
+            r#"munarium_admission_total{plane="rest",class="heavy",slot="ordinary"}"#;
+        let metric = |series: &str| -> u64 {
+            crate::metrics::render(&state)
+                .lines()
+                .find_map(|l| l.strip_prefix(series)?.strip_prefix(' ')?.parse().ok())
+                .unwrap_or(0)
+        };
+
+        // The heavy bound is full: shed, nothing read, nothing approved.
+        let heavy = state.admission.rest.heavy.as_ref().unwrap().clone();
+        let held = heavy.clone().try_acquire_owned().unwrap();
+        let resp = post_form(&state, APPROVE_CONFIRM, "m", &good).await;
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(resp.headers()["retry-after"], "1");
+        let body = body_string(resp).await;
+        assert!(body.contains("overloaded"), "{body}");
+        assert!(body.contains("Nothing was approved"), "{body}");
+        assert!(!body.contains("postgres"), "shed before the store: {body}");
+        assert_eq!(metric(shed_metric), 1);
+        // A refusal before admission takes no slot and sheds nothing.
+        let body = body_string(
+            post_form(
+                &state,
+                APPROVE_CONFIRM,
+                "m",
+                &format!("_csrf={csrf}&confirm=run-x&rw_token=w2"),
+            )
+            .await,
+        )
+        .await;
+        assert!(body.contains("different tenant"), "{body}");
+        assert_eq!(metric(shed_metric), 1);
+        drop(held);
+
+        // The ordinary pool is full while the reserve is free: still shed —
+        // heavy work never takes the control reserve.
+        let n = state.admission.rest.ordinary.available_permits() as u32;
+        let ordinary = state
+            .admission
+            .rest
+            .ordinary
+            .clone()
+            .try_acquire_many_owned(n)
             .unwrap();
-        assert!(body_string(resp).await.contains("view-only"));
+        let resp = post_form(&state, APPROVE_CONFIRM, "m", &good).await;
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(state.admission.rest.reserve.available_permits(), 1);
+        assert_eq!(heavy.available_permits(), 1, "the shed released its token");
+        assert_eq!(metric(shed_metric), 2);
+        drop(ordinary);
+
+        // Room everywhere: admitted as heavy (the memory store then refuses
+        // the run read), and every permit is returned afterwards.
+        let body = body_string(post_form(&state, APPROVE_CONFIRM, "m", &good).await).await;
+        assert!(body.contains("postgres"), "{body}");
+        assert_eq!(metric(admitted_metric), 1);
+        assert_eq!(heavy.available_permits(), 1);
+        assert_eq!(state.admission.rest.ordinary.available_permits(), 3);
+        // The review pages are reads and are never admitted or shed.
+        let held = heavy.clone().try_acquire_owned().unwrap();
+        let resp = get(
+            &state,
+            "/admin/runs/run-x/steps/0/approve",
+            Some("m"),
+            false,
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        drop(held);
+        assert_eq!(metric(shed_metric), 2);
+    }
+
+    /// Only the listed console route is admitted; anything else is refused
+    /// rather than silently admitted, and every listed route is served.
+    #[tokio::test]
+    async fn console_heavy_routes_are_served_and_unlisted_routes_are_refused() {
+        let state = state(static_auth()).await;
+        assert!(crate::admission::admit_console(&state, "POST", "/admin/tokens/issue").is_none());
+        assert!(
+            crate::admission::admit_console(&state, "GET", runbooks::APPROVE_CONFIRM_ROUTE)
+                .is_none()
+        );
+        assert!(
+            crate::admission::admit_console(&state, "POST", runbooks::APPROVE_CONFIRM_ROUTE)
+                .is_some()
+        );
+        for (method, template) in crate::admission::CONSOLE_HEAVY {
+            let path = template
+                .replace("{run_id}", "run-x")
+                .replace("{ordinal}", "0");
+            let resp = crate::rest::router(state.clone())
+                .oneshot(
+                    axum::http::Request::builder()
+                        .method(*method)
+                        .uri(&path)
+                        .header("authorization", "Bearer m")
+                        .header("content-type", "application/x-www-form-urlencoded")
+                        .body(axum::body::Body::from("_csrf=x"))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                resp.status(),
+                StatusCode::OK,
+                "{method} {path} is not served"
+            );
+            assert!(body_string(resp).await.contains("stale form"));
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -1551,6 +1744,255 @@ mod tests {
         .await;
         assert_eq!(resp.status(), StatusCode::CONFLICT);
         assert_eq!(revoked_at(&state, &tenant, &changed).await, Some(v1_time));
+    }
+
+    const APPROVAL_SHAPE: &str = "apiVersion: munarium.ioka.io/v1\nkind: Shape\nmetadata: {name: approval, version: 1}\nspec:\n  fact:\n    schema: {type: object}\n";
+    const APPROVAL_BOOK: &str = "apiVersion: munarium.ioka.io/v1\nkind: Runbook\nmetadata: {name: approval, version: 1}\nspec:\n  shape: approval@1\n  steps:\n    - resolveSources: {}\n    - buildIndex: {}\n    - verify: {}\n    - cutover: {approval: required}\n    - retireOld: {keep_versions: 2}\n";
+
+    /// A fresh run of the fictional approval runbook, stopped at step 3.
+    async fn awaiting_run(state: &AppState, tenant: &str) -> String {
+        let store = state.store_for(tenant).await.expect("store");
+        let version = store.create_version(None, None).await.expect("version");
+        let (run, status) =
+            crate::runbooks_api::op_run_runbook(state, tenant, "approval@1", Some(&version))
+                .await
+                .expect("run");
+        assert_eq!(status, "awaiting_approval");
+        run
+    }
+
+    async fn step_state(state: &AppState, tenant: &str, run: &str, ordinal: usize) -> String {
+        crate::runbooks_api::op_get_run(state, tenant, run)
+            .await
+            .expect("run")
+            .steps[ordinal]
+            .state
+            .clone()
+    }
+
+    /// U4 and R7 for run-step approval against PostgreSQL: the review and the
+    /// v1.4 POST never approve; a wrong typed id, a missing or foreign rw
+    /// credential, another operator's or a forged plan, another tenant, a
+    /// step changed after review, and a full heavy bound never approve; the
+    /// correct confirmation approves exactly once; a duplicate, or one
+    /// arriving after `/v1` approved the step, changes nothing.
+    #[tokio::test]
+    async fn run_step_approval_is_reviewed_admitted_then_confirmed_on_postgres() {
+        let Ok(url) = std::env::var("MUNARIUM_TEST_DATABASE_URL") else {
+            eprintln!("console approval PostgreSQL test NOT RUN: MUNARIUM_TEST_DATABASE_URL unset");
+            return;
+        };
+        let tenant = format!("console-approve-{}", uuid::Uuid::new_v4().simple());
+        let other = format!("{tenant}-other");
+        let mut cfg = test_config(AuthMode::Static(vec![
+            ("m".into(), tenant.clone(), "mgmt".into()),
+            ("m2".into(), tenant.clone(), "mgmt".into()),
+            ("w".into(), tenant.clone(), "rw".into()),
+            ("mo".into(), other.clone(), "mgmt".into()),
+            ("wo".into(), other.clone(), "rw".into()),
+        ]));
+        cfg.store = StoreKind::Postgres;
+        cfg.database_url = Some(url);
+        let admission = crate::admission::AdmissionConfig::new(4, 0, 1).unwrap();
+        let state = AppState::new_with_admission(cfg, admission)
+            .await
+            .expect("state");
+        crate::runbooks_api::op_apply_shape(&state, &tenant, APPROVAL_SHAPE, None, None)
+            .await
+            .expect("shape");
+        state
+            .retrieval_for(&tenant)
+            .expect("retrieval")
+            .put_source(
+                "",
+                "text/plain",
+                "approval/notice.txt",
+                Some("approval@1"),
+                b"A fictional approval notice.",
+            )
+            .await
+            .expect("source");
+        crate::runbooks_api::op_apply_runbook(&state, &tenant, APPROVAL_BOOK)
+            .await
+            .expect("runbook");
+        let run = awaiting_run(&state, &tenant).await;
+        let csrf = csrf_for(&state, "m");
+        let review = format!("/admin/runs/{run}/steps/3/approve");
+        let confirm = format!("{review}/confirm");
+
+        // The run page links to the review; the review states the step, what
+        // runs next and the consequence, and carries a plan. Refreshing it
+        // approves nothing.
+        let body =
+            body_string(get(&state, &format!("/admin/runs/{run}"), Some("m"), false).await).await;
+        assert!(body.contains(&format!(r#"action="{review}""#)), "{body}");
+        let body = body_string(get(&state, &review, Some("m"), false).await).await;
+        assert!(
+            body.contains("cutover") && body.contains("retireOld"),
+            "{body}"
+        );
+        assert!(body.contains("rw</strong> operation"), "{body}");
+        let plan = plan_in(&body).expect("confirmation offered");
+        let again = body_string(get(&state, &review, Some("m"), false).await).await;
+        assert_eq!(plan_in(&again).as_deref(), Some(plan.as_str()));
+        // The v1.4 POST, even carrying a valid rw token, is a review.
+        let body =
+            body_string(post_form(&state, &review, "m", &format!("_csrf={csrf}&rw_token=w")).await)
+                .await;
+        assert!(plan_in(&body).is_some(), "{body}");
+        assert_eq!(
+            step_state(&state, &tenant, &run, 3).await,
+            "awaiting_approval"
+        );
+
+        let good = format!("_csrf={csrf}&plan={plan}&confirm={run}&rw_token=w");
+        // Wrong typed id.
+        let resp = post_form(
+            &state,
+            &confirm,
+            "m",
+            &format!("_csrf={csrf}&plan={plan}&confirm=run-wrong&rw_token=w"),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(body_string(resp).await.contains("does not match"));
+        // No rw credential, the mgmt token as rw, another tenant's rw token.
+        for (rw, why) in [
+            ("", "rw credential"),
+            ("m", "rw required"),
+            ("wo", "different tenant"),
+        ] {
+            let body = body_string(
+                post_form(
+                    &state,
+                    &confirm,
+                    "m",
+                    &format!("_csrf={csrf}&plan={plan}&confirm={run}&rw_token={rw}"),
+                )
+                .await,
+            )
+            .await;
+            assert!(body.contains(why), "{rw}: {body}");
+        }
+        // Wrong role and view-only.
+        let resp = post_form(&state, &confirm, "w", &good).await;
+        assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+        let body = body_string(post_form_view_only(&state, &confirm, "m", &good).await).await;
+        assert!(body.contains("view-only passthrough"), "{body}");
+        // Another operator presenting this operator's plan, and a forged one.
+        let resp = post_form(
+            &state,
+            &confirm,
+            "m2",
+            &format!(
+                "_csrf={}&plan={plan}&confirm={run}&rw_token=w",
+                csrf_for(&state, "m2")
+            ),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        let resp = post_form(
+            &state,
+            &confirm,
+            "m",
+            &format!(
+                "_csrf={csrf}&plan={}&confirm={run}&rw_token=w",
+                "0".repeat(64)
+            ),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        // Another tenant's operator cannot see the run or act on it.
+        let resp = get(&state, &review, Some("mo"), false).await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        let resp = post_form(
+            &state,
+            &confirm,
+            "mo",
+            &format!(
+                "_csrf={}&plan={plan}&confirm={run}&rw_token=wo",
+                csrf_for(&state, "mo")
+            ),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        // R7: no heavy slot, no approval.
+        let heavy = state.admission.rest.heavy.as_ref().unwrap().clone();
+        let held = heavy.clone().try_acquire_owned().unwrap();
+        let resp = post_form(&state, &confirm, "m", &good).await;
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(resp.headers()["retry-after"], "1");
+        drop(held);
+        assert_eq!(
+            step_state(&state, &tenant, &run, 3).await,
+            "awaiting_approval"
+        );
+
+        // The correct confirmation approves, once, and the run resumes.
+        let resp = post_form(&state, &confirm, "m", &good).await;
+        assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+        assert_eq!(resp.headers()["location"], format!("/admin/runs/{run}"));
+        assert_eq!(step_state(&state, &tenant, &run, 3).await, "done");
+        let resp = post_form(&state, &confirm, "m", &good).await;
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        assert!(body_string(resp).await.contains("not awaiting approval"));
+        let body = body_string(get(&state, &review, Some("m"), false).await).await;
+        assert!(
+            body.contains("nothing to confirm") && plan_in(&body).is_none(),
+            "{body}"
+        );
+
+        // A step changed between review and confirmation.
+        let changed = awaiting_run(&state, &tenant).await;
+        let review = format!("/admin/runs/{changed}/steps/3/approve");
+        let plan = plan_in(&body_string(get(&state, &review, Some("m"), false).await).await)
+            .expect("plan");
+        sqlx::query(
+            "UPDATE runbook_steps SET detail = '{\"note\":\"changed\"}'::jsonb
+              WHERE tenant_id = $1 AND run_id = $2 AND ordinal = 3",
+        )
+        .bind(&tenant)
+        .bind(&changed)
+        .execute(state.pg_pool().expect("pool"))
+        .await
+        .expect("update");
+        let resp = post_form(
+            &state,
+            &format!("{review}/confirm"),
+            "m",
+            &format!("_csrf={csrf}&plan={plan}&confirm={changed}&rw_token=w"),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        assert!(body_string(resp).await.contains("no longer matches"));
+        assert_eq!(
+            step_state(&state, &tenant, &changed, 3).await,
+            "awaiting_approval"
+        );
+
+        // Approved through /v1 after review: the confirmation does not act.
+        let plan = plan_in(&body_string(get(&state, &review, Some("m"), false).await).await)
+            .expect("plan");
+        let resp = crate::rest::router(state.clone())
+            .oneshot(
+                axum::http::Request::post(format!("/v1/runs/{changed}/steps/3/approve"))
+                    .header("authorization", "Bearer w")
+                    .header("x-munarium-uid", "console-test")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let resp = post_form(
+            &state,
+            &format!("{review}/confirm"),
+            "m",
+            &format!("_csrf={csrf}&plan={plan}&confirm={changed}&rw_token=w"),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        assert_eq!(step_state(&state, &tenant, &changed, 3).await, "done");
     }
 
     // -----------------------------------------------------------------------
@@ -2342,6 +2784,7 @@ mod tests {
             "/admin/tokens/issue",
             review.as_str(),
             "/admin/runs/run-u14",
+            "/admin/runs/run-u14/steps/0/approve",
             "/admin/sessions",
             "/admin/sessions/ses-u14",
             "/admin/collections",
@@ -2399,10 +2842,33 @@ mod tests {
             after.contains(r#"<a href="/admin/tokens">← back to tokens (nothing changes)</a>"#),
             "{after}"
         );
-        // The approve form names its credential field.
+        // The run page links each awaiting step to its review (U4), and the
+        // review's confirmation names its credential field and the typed id.
         let body = body_string(get(&state, "/admin/runs/run-u14", Some("m"), false).await).await;
         assert!(
+            body.contains(r#"aria-label="review approving step 0 of run run-u14""#),
+            "{body}"
+        );
+        let body = body_string(
+            get(
+                &state,
+                "/admin/runs/run-u14/steps/0/approve",
+                Some("m"),
+                false,
+            )
+            .await,
+        )
+        .await;
+        assert!(
             body.contains(r#"<label>rw token <input type="password" name="rw_token""#),
+            "{body}"
+        );
+        assert!(body.contains(r#"name="confirm" autocomplete="off" spellcheck="false" required"#));
+        assert!(plan_in(&body).is_some(), "{body}");
+        assert!(
+            body.contains(
+                r#"<a href="/admin/runs/run-u14">← back to the run (nothing changes)</a>"#
+            ),
             "{body}"
         );
     }
@@ -2423,6 +2889,7 @@ mod tests {
             [
                 "/admin/tokens/issue",
                 "/admin/tokens/tok-x/revoke",
+                "/admin/runs/run-x/steps/0/approve",
                 "/admin/shapes/nope@9",
                 "/admin/login",
             ]

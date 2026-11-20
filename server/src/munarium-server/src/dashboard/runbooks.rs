@@ -9,14 +9,14 @@
 use super::{
     action, admin_auth, complete_result, csrf_field, csrf_ok, error_panel, html_table, json_block,
     kv, link, notice, opt, path_segment, pill, pre, render, rw_credential, shell_word, short,
-    stale_form, state_badge, store_note, window_picker, Tone, WindowParam,
+    stale_form, state_badge, store_note, window_picker, CsrfOnlyForm, Tone, WindowParam,
 };
 use crate::charts::{self, esc};
 use crate::reports_api;
 use crate::runbooks_api;
 use crate::state::AppState;
 use axum::extract::{Form, Path, Query, State};
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use munarium_runbooks::{parse_runbook, StepSpec};
 use std::sync::Arc;
@@ -713,14 +713,16 @@ pub(super) async fn run(
                         )
                     })
                     .unwrap_or_else(|| "—".into());
+                // ClearView U4: the step links to a read-only review; only the
+                // typed confirmation there approves.
                 let act = if s.state == "awaiting_approval" {
                     action(
                         &admin,
                         format!(
-                            r#"<form class="action" method="post" action="/admin/runs/{}/steps/{}/approve">{}<label>rw token <input type="password" name="rw_token" autocomplete="off" placeholder="rw credential"></label><button type="submit">approve gate</button></form>"#,
-                            esc(&run.run_id),
+                            r#"<form class="action" method="get" action="{}"><button type="submit" aria-label="review approving step {} of run {}">approve…</button></form>"#,
+                            esc(&approve_path(&run.run_id, s.ordinal as usize)),
                             s.ordinal,
-                            csrf_field(&admin)
+                            esc(&run.run_id),
                         ),
                     )
                 } else {
@@ -739,7 +741,7 @@ pub(super) async fn run(
     let body = format!(
         r#"<div class="card">{}</div>
 <h2>steps</h2><div class="card">{steps}</div>
-<div class="notice">Approving a gate is an <strong>rw</strong> operation (it can append ledger events when the run names a lineage), so the form asks for the rw credential each time and never stores it — the mgmt session alone cannot approve. It is the same call as <code>POST /v1/runs/{}/steps/&lt;ordinal&gt;/approve</code>.</div>
+<div class="notice">Approving a gate is an <strong>rw</strong> operation (it can append ledger events when the run names a lineage), so the confirmation asks for the rw credential each time and never stores it — the mgmt session alone cannot approve. Each approval is reviewed first and confirmed by typing the run id. It is the same call as <code>POST /v1/runs/{}/steps/&lt;ordinal&gt;/approve</code>.</div>
 {}"#,
         kv(&[
             ("run", format!("<code>{}</code>", esc(&run.run_id))),
@@ -767,19 +769,190 @@ pub(super) async fn run(
     render(&admin, "runbooks", &format!("Run {}", run.run_id), &body)
 }
 
-#[derive(Debug, serde::Deserialize)]
-pub struct ApproveForm {
-    #[serde(default)]
-    _csrf: String,
-    #[serde(default)]
-    rw_token: String,
+// ---------------------------------------------------------------------------
+// run-step approval: review, then typed confirmation (ClearView U4)
+// ---------------------------------------------------------------------------
+
+/// The action name the approval plan is bound to.
+const APPROVE_ACTION: &str = "run.step.approve";
+
+/// The route template the confirmation admits itself under (R7): it must be
+/// on `admission::CONSOLE_HEAVY`.
+pub(super) const APPROVE_CONFIRM_ROUTE: &str =
+    "/admin/runs/{run_id}/steps/{ordinal}/approve/confirm";
+
+/// The review URL of one step (the v1.4 action URL).
+pub(super) fn approve_path(run_id: &str, ordinal: usize) -> String {
+    format!(
+        "/admin/runs/{}/steps/{ordinal}/approve",
+        path_segment(run_id)
+    )
 }
 
+/// The plan's target: the run and the step. The ordinal is numeric and
+/// last, so the split is unambiguous whatever the run id contains.
+fn approve_target(run_id: &str, ordinal: usize) -> String {
+    format!("{run_id}#{ordinal}")
+}
+
+/// A digest of the run and step the review showed — the "current revision"
+/// a confirmation is bound to. Any change to the run's state or lineage, or
+/// to the step's name, state or detail, reads as stale.
+fn step_revision(run: &munarium_api_types::RunStatusResponse, ordinal: usize) -> String {
+    use sha2::Digest as _;
+    let step = run.steps.iter().find(|s| s.ordinal as usize == ordinal);
+    let v = serde_json::json!([
+        run.run_id,
+        run.runbook_ref,
+        run.state,
+        run.version_id,
+        step.map(|s| (s.ordinal, &s.name, &s.state, &s.detail)),
+    ]);
+    hex::encode(sha2::Sha256::digest(v.to_string().as_bytes()))
+}
+
+fn approve_title(run_id: &str, ordinal: usize) -> String {
+    format!("Approve step {ordinal} of run {}", short(run_id, 24))
+}
+
+/// The review page: the run, the step, what approval does, and — only when
+/// the step is awaiting approval — the typed confirmation carrying the plan
+/// and the rw credential field. `problem` is a refusal from a previous
+/// confirmation attempt.
+fn approve_review(
+    state: &AppState,
+    admin: &super::AdminCtx,
+    run: &munarium_api_types::RunStatusResponse,
+    ordinal: usize,
+    problem: Option<&str>,
+) -> String {
+    let problem = problem
+        .map(|p| format!(r#"<div class="notice">{}</div>"#, esc(p)))
+        .unwrap_or_default();
+    let step = run.steps.iter().find(|s| s.ordinal as usize == ordinal);
+    let remaining: Vec<String> = run
+        .steps
+        .iter()
+        .filter(|s| s.ordinal as usize > ordinal)
+        .map(|s| esc(&s.name))
+        .collect();
+    let details = kv(&[
+        ("run", format!("<code>{}</code>", esc(&run.run_id))),
+        ("runbook", runbook_link(&run.runbook_ref)),
+        ("run state", state_badge(&run.state)),
+        (
+            "lineage",
+            run.version_id
+                .as_deref()
+                .map(|v| format!("<code>{}</code>", esc(v)))
+                .unwrap_or_else(|| "none".into()),
+        ),
+        ("step", ordinal.to_string()),
+        (
+            "step name",
+            step.map(|s| esc(&s.name)).unwrap_or_else(|| "—".into()),
+        ),
+        (
+            "step state",
+            step.map(|s| state_badge(&s.state))
+                .unwrap_or_else(|| "no such step".into()),
+        ),
+        (
+            "then runs",
+            if remaining.is_empty() {
+                "nothing further".into()
+            } else {
+                remaining.join(", ")
+            },
+        ),
+    ]);
+    let confirm = match step {
+        Some(s) if s.state == "awaiting_approval" => action(
+            admin,
+            format!(
+                r#"<form class="action confirm" method="post" action="{}/confirm">{}<input type="hidden" name="plan" value="{}">
+<label>rw token <input type="password" name="rw_token" autocomplete="off" placeholder="rw credential"></label>
+<label>type the run id to confirm <input type="text" name="confirm" autocomplete="off" spellcheck="false" required></label>
+<button type="submit" class="danger">approve this step</button></form>"#,
+                esc(&approve_path(&run.run_id, ordinal)),
+                csrf_field(admin),
+                esc(&super::action_plan(
+                    state,
+                    admin,
+                    APPROVE_ACTION,
+                    &approve_target(&run.run_id, ordinal),
+                    &step_revision(run, ordinal),
+                )),
+            ),
+        ),
+        // An empty plan: nothing would change, so nothing is offered.
+        Some(s) => format!(
+            r#"<div class="notice">This step is {}, not awaiting approval. There is nothing to confirm.</div>"#,
+            esc(&s.state)
+        ),
+        None => {
+            r#"<div class="notice">This run has no such step. There is nothing to confirm.</div>"#
+                .into()
+        }
+    };
+    format!(
+        r#"{problem}<div class="card">{details}</div>
+<div class="notice">Approving resumes the run inline on this replica: the remaining steps run now, and when the run names a lineage every transition is appended to the ledger. It is an <strong>rw</strong> operation, so the confirmation takes the rw credential each time and never stores it. It is the same call as <code>POST /v1/runs/{}/steps/{ordinal}/approve</code> and is admitted as heavy work on the REST plane.</div>
+{confirm}
+<p><a href="/admin/runs/{}">← back to the run (nothing changes)</a></p>"#,
+        path_segment(&run.run_id),
+        path_segment(&run.run_id),
+    )
+}
+
+async fn render_approve_review(
+    state: &AppState,
+    admin: &super::AdminCtx,
+    run_id: &str,
+    ordinal: usize,
+    status: StatusCode,
+    problem: Option<&str>,
+) -> Response {
+    let title = approve_title(run_id, ordinal);
+    match runbooks_api::op_get_run(state, &admin.tenant.tenant_id, run_id).await {
+        Ok(run) => (
+            status,
+            render(
+                admin,
+                "runbooks",
+                &title,
+                &approve_review(state, admin, &run, ordinal, problem),
+            ),
+        )
+            .into_response(),
+        Err(e) => error_panel(admin, "runbooks", &title, &e),
+    }
+}
+
+/// `GET /admin/runs/{run_id}/steps/{ordinal}/approve` — the review. Reads
+/// only.
+pub(super) async fn approve_review_page(
+    State(state): State<Arc<AppState>>,
+    Path((run_id, ordinal)): Path<(String, usize)>,
+    headers: HeaderMap,
+) -> Response {
+    let admin = match admin_auth(&state, &headers) {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    render_approve_review(&state, &admin, &run_id, ordinal, StatusCode::OK, None).await
+}
+
+/// `POST /admin/runs/{run_id}/steps/{ordinal}/approve` — the v1.4 action
+/// URL. It now returns the review instead of approving, so a bookmarked or
+/// replayed v1.4 form cannot approve without the typed confirmation. It keeps
+/// the v1.4 checks: view-only refusal and the CSRF token. An `rw_token` the
+/// v1.4 form sends is ignored and never echoed; the review asks for it again.
 pub(super) async fn approve(
     State(state): State<Arc<AppState>>,
     Path((run_id, ordinal)): Path<(String, usize)>,
     headers: HeaderMap,
-    Form(form): Form<ApproveForm>,
+    Form(form): Form<CsrfOnlyForm>,
 ) -> Response {
     let admin = match admin_auth(&state, &headers) {
         Ok(c) => c,
@@ -796,12 +969,150 @@ pub(super) async fn approve(
     if !csrf_ok(&admin, &form._csrf) {
         return stale_form(&admin, "runbooks", "Run");
     }
+    render_approve_review(&state, &admin, &run_id, ordinal, StatusCode::OK, None).await
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+pub struct ApproveConfirmForm {
+    #[serde(default)]
+    _csrf: String,
+    #[serde(default)]
+    plan: String,
+    /// The run id the operator typed.
+    #[serde(default)]
+    confirm: String,
+    /// The rw credential, per submission, never stored.
+    #[serde(default)]
+    rw_token: String,
+}
+
+/// The overloaded notice for a console approval that found no heavy slot.
+fn overloaded(admin: &super::AdminCtx, title: &str, run_id: &str, ordinal: usize) -> Response {
+    let mut resp = (
+        StatusCode::SERVICE_UNAVAILABLE,
+        render(
+            admin,
+            "runbooks",
+            title,
+            &format!(
+                r#"<div class="notice">overloaded: this replica has no free slot for heavy work on the REST plane (MUNARIUM_MAX_CONCURRENCY, MUNARIUM_HEAVY_CONCURRENCY). Nothing was approved; retry shortly.</div><p><a href="{}">review the step again</a> · <a href="/admin/runs/{}">back to the run</a></p>"#,
+                esc(&approve_path(run_id, ordinal)),
+                path_segment(run_id),
+            ),
+        ),
+    )
+        .into_response();
+    resp.headers_mut().insert(
+        axum::http::header::RETRY_AFTER,
+        axum::http::HeaderValue::from_static("1"),
+    );
+    resp
+}
+
+/// `POST /admin/runs/{run_id}/steps/{ordinal}/approve/confirm` — the only
+/// console route that approves. In order: the mgmt role (`admin_auth`),
+/// view-only refusal, the CSRF token, the typed run id, the rw credential
+/// (rw role, same tenant), then a heavy admission slot on the REST plane
+/// (R7; shed with 503 and `Retry-After: 1` when there is none), then the
+/// run and step (tenant-scoped), the step's state and the plan's binding to
+/// this operator, tenant, action, target and revision. The approval itself
+/// rechecks the step's state under the run lock, so a duplicate or racing
+/// confirmation approves at most once.
+pub(super) async fn approve_confirm(
+    State(state): State<Arc<AppState>>,
+    Path((run_id, ordinal)): Path<(String, usize)>,
+    headers: HeaderMap,
+    Form(form): Form<ApproveConfirmForm>,
+) -> Response {
+    let admin = match admin_auth(&state, &headers) {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    if admin.view_only {
+        return notice(
+            &admin,
+            "runbooks",
+            "Run",
+            "view-only passthrough — approve on the server's own /admin",
+        );
+    }
+    if !csrf_ok(&admin, &form._csrf) {
+        return stale_form(&admin, "runbooks", "Run");
+    }
+    let title = approve_title(&run_id, ordinal);
+    if form.confirm.trim() != run_id {
+        return render_approve_review(
+            &state,
+            &admin,
+            &run_id,
+            ordinal,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("The identifier you typed does not match this run's id. Nothing was approved."),
+        )
+        .await;
+    }
     let rw = match rw_credential(&state, &admin, &form.rw_token) {
         Ok(ctx) => ctx,
-        Err(msg) => return notice(&admin, "runbooks", "Run", &msg),
+        Err(msg) => return notice(&admin, "runbooks", &title, &msg),
     };
+    // R7: the same heavy admission the REST approval gets, held until the
+    // inline resume finishes.
+    let Some(_permit) = crate::admission::admit_console(&state, "POST", APPROVE_CONFIRM_ROUTE)
+    else {
+        return overloaded(&admin, &title, &run_id, ordinal);
+    };
+    let run = match runbooks_api::op_get_run(&state, &admin.tenant.tenant_id, &run_id).await {
+        Ok(r) => r,
+        Err(e) => return error_panel(&admin, "runbooks", &title, &e),
+    };
+    let conflict = |msg: &str| {
+        (
+            StatusCode::CONFLICT,
+            render(
+                &admin,
+                "runbooks",
+                &title,
+                &format!(
+                    r#"<div class="notice">{}</div><p><a href="{}">review the step again</a> · <a href="/admin/runs/{}">back to the run</a></p>"#,
+                    esc(msg),
+                    esc(&approve_path(&run_id, ordinal)),
+                    path_segment(&run_id),
+                ),
+            ),
+        )
+            .into_response()
+    };
+    match run.steps.iter().find(|s| s.ordinal as usize == ordinal) {
+        Some(s) if s.state == "awaiting_approval" => {}
+        Some(s) => {
+            return conflict(&format!(
+                "This step is {}, not awaiting approval. Nothing changed.",
+                s.state
+            ))
+        }
+        None => return conflict("This run has no such step. Nothing changed."),
+    }
+    if !super::plan_ok(
+        &state,
+        &admin,
+        APPROVE_ACTION,
+        &approve_target(&run_id, ordinal),
+        &step_revision(&run, ordinal),
+        &form.plan,
+    ) {
+        return conflict(
+            "This confirmation no longer matches the run, operator or server it was reviewed against (the run changed, another credential is submitting it, or the server restarted). Nothing was approved; review it again.",
+        );
+    }
     match runbooks_api::op_approve_step(&state, &rw.tenant_id, &run_id, ordinal).await {
-        Ok(_) => Redirect::to(&format!("/admin/runs/{run_id}")).into_response(),
-        Err(e) => notice(&admin, "runbooks", "Run", &e.to_string()),
+        Ok(_) => Redirect::to(&format!("/admin/runs/{}", path_segment(&run_id))).into_response(),
+        // The locked recheck found the step no longer awaiting approval:
+        // another confirmation (or `/v1`) approved it first.
+        Err(munarium_core::KernelError::InvalidInput(msg))
+            if msg.contains("not awaiting_approval") =>
+        {
+            conflict("This step was approved by another request first. Nothing changed.")
+        }
+        Err(e) => notice(&admin, "runbooks", &title, &e.to_string()),
     }
 }
