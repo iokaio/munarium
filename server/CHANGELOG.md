@@ -16,6 +16,15 @@ for registry availability, digests and public signing instructions. The detailed
   against a database that carries them: take a backup before upgrading and
   roll back by restoring it. Data written after the upgrade is lost on
   rollback. See the [1.5 upgrade and rollback guide](docs/guides/server-1.5.md).
+- Add replica heartbeats and a fleet-wide console login mode (additive
+  migration 0090). `GET /v1/reports/scale` and the console Health page show
+  live replicas against `MUNARIUM_REPLICA_COUNT` and warn when more are live.
+  `munarium-server console-fleet enable` switches console sessions on for the
+  whole fleet, refused while a live replica cannot serve them or the live
+  count differs from the expected one; `disable` returns to the v1.4 login
+  and increments an epoch that ends every earlier session handle.
+  `MUNARIUM_CONSOLE_SESSIONS=enabled` alone no longer starts sessions. See
+  [console sessions](docs/design/console-sessions.md#cutover).
 - Remove the Windows Job Object binding from isolated PDF extraction, so
   `munarium-extract` forbids `unsafe` code. Production runs on Linux, where
   the child's memory and CPU limits come from `setrlimit` (`os=rlimit`).

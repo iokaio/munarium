@@ -179,7 +179,20 @@ async fn admin_auth_as(
     };
     let bearer = crate::rest::bearer(headers);
     let settings = &state.console.settings;
-    if bearer.is_some() || !settings.sessions() {
+    // Sessions apply only when this replica's setting allows them AND the
+    // console fleet mode is enabled (LOGIN1). Under the default `legacy`
+    // setting nothing is read. A fleet mode that cannot be read authorizes
+    // nothing: the console fails closed rather than guess a login.
+    let sessions = bearer.is_none()
+        && settings.sessions()
+        && match crate::replica_fleet::session_epoch(state).await {
+            Ok(epoch) => epoch.is_some(),
+            Err(e) => {
+                tracing::warn!(error = %e, "console fleet mode unreadable; refusing");
+                return Err(to_login(state, false));
+            }
+        };
+    if !sessions {
         let token = bearer.map(String::from).or_else(|| cookie_token(headers));
         return match state.authenticate(token.as_deref()) {
             Ok(ctx) if ctx.role == "mgmt" || ctx.disabled_mode => Ok(AdminCtx {
@@ -1019,8 +1032,9 @@ pub struct LoginForm {
 }
 
 /// `POST /admin/login`. Under the default `legacy` login this is v1.4: the
-/// cookie holds the token. Under `MUNARIUM_CONSOLE_SESSIONS=enabled` it
-/// starts a revocable session, sets the cookie to its opaque handle and
+/// cookie holds the token. Under `MUNARIUM_CONSOLE_SESSIONS=enabled`, while
+/// the console fleet mode is also `enabled` (LOGIN1), it starts a revocable
+/// session, sets the cookie to its opaque handle and
 /// removes any v1.4 cookie, so the static token no longer sits in the
 /// browser. A session handle the browser already carried is signed out
 /// first, so the session the new cookie replaces does not stay live,
@@ -1031,10 +1045,32 @@ async fn login_submit(
     axum::extract::Form(form): axum::extract::Form<LoginForm>,
 ) -> Response {
     let token = form.token.trim();
-    match state.authenticate(Some(token)) {
+    let authenticated = state.authenticate(Some(token));
+    // The login this replica serves now (LOGIN1): sessions only when its
+    // setting allows them and the fleet mode is enabled. Read only for a
+    // credential that may sign in, and never under the default setting.
+    let sessions = match &authenticated {
         Ok(ctx)
             if (ctx.role == "mgmt" || ctx.disabled_mode) && state.console.settings.sessions() =>
         {
+            match crate::replica_fleet::session_epoch(&state).await {
+                Ok(epoch) => epoch.is_some(),
+                Err(e) => {
+                    tracing::warn!(error = %e, "console fleet mode unreadable; no sign-in");
+                    return (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        login_page(Some(
+                            "the console login mode could not be read (database unavailable); try again",
+                        )),
+                    )
+                        .into_response();
+                }
+            }
+        }
+        _ => false,
+    };
+    match authenticated {
+        Ok(ctx) if (ctx.role == "mgmt" || ctx.disabled_mode) && sessions => {
             if let Some(old) = cookie_value(&headers, state.console.settings.cookie_name()) {
                 // Only a handle this browser holds can be named here, and
                 // signing it out only ends a session: it grants nothing.
@@ -1050,7 +1086,14 @@ async fn login_submit(
                 }
             }
             match crate::console_sessions::create(&state, &ctx, token).await {
-                Ok(handle) => {
+                Ok(None) => (
+                    StatusCode::CONFLICT,
+                    login_page(Some(
+                        "the console login mode changed while signing in; sign in again",
+                    )),
+                )
+                    .into_response(),
+                Ok(Some(handle)) => {
                     let mut resp = Redirect::to("/admin").into_response();
                     append_cookie(&mut resp, &state.console.settings.set_cookie(&handle));
                     append_cookie(&mut resp, &crate::console_sessions::clear_legacy_cookie());
@@ -4144,17 +4187,50 @@ mod tests {
 
     // -- PostgreSQL: two replicas over one database -------------------------
 
-    async fn pg_replica(
+    /// A fresh deployment environment, so a test's fleet mode and
+    /// heartbeats are its own in the shared test database.
+    fn test_fleet() -> String {
+        format!("test-fleet-{}", uuid::Uuid::new_v4().simple())
+    }
+
+    /// A replica in deployment environment `fleet`, whose console fleet mode
+    /// is left as it is (no row: legacy).
+    async fn pg_replica_in(
         url: &str,
+        fleet: &str,
         tokens: Vec<(String, String, String)>,
         settings: ConsoleSessionSettings,
     ) -> Arc<AppState> {
         let mut cfg = test_config(AuthMode::Static(tokens));
         cfg.store = StoreKind::Postgres;
         cfg.database_url = Some(url.to_string());
-        AppState::new_with_console(cfg, settings)
+        let state = AppState::new_with_console(cfg, settings)
             .await
-            .expect("state")
+            .expect("state");
+        state.fleet.set_environment(fleet);
+        state
+    }
+
+    /// A replica in deployment environment `fleet`, whose console fleet mode
+    /// is set to `enabled` (at its current epoch) if it is not already:
+    /// the state after a completed cutover.
+    async fn pg_replica(
+        url: &str,
+        fleet: &str,
+        tokens: Vec<(String, String, String)>,
+        settings: ConsoleSessionSettings,
+    ) -> Arc<AppState> {
+        let state = pg_replica_in(url, fleet, tokens, settings).await;
+        sqlx::query(
+            "INSERT INTO console_fleet_mode (environment_id, mode, epoch, changed_by)
+             VALUES ($1, 'enabled', 0, 'test')
+             ON CONFLICT (environment_id) DO UPDATE SET mode = 'enabled'",
+        )
+        .bind(fleet)
+        .execute(state.pg_pool().unwrap())
+        .await
+        .unwrap();
+        state
     }
 
     async fn session_id_of(state: &AppState, tenant: &str, before: &[String]) -> String {
@@ -4189,6 +4265,7 @@ mod tests {
             eprintln!("console sessions PostgreSQL test NOT RUN: MUNARIUM_TEST_DATABASE_URL unset");
             return;
         };
+        let fleet = test_fleet();
         let tenant = format!("console-u10-{}", uuid::Uuid::new_v4().simple());
         let other = format!("{tenant}-other");
         let tok = |t: &str, ten: &str, r: &str| (t.to_string(), ten.to_string(), r.to_string());
@@ -4201,8 +4278,8 @@ mod tests {
             tok(&mo, &other, "mgmt"),
         ];
         let enabled = ConsoleSessionSettings::enabled();
-        let a = pg_replica(&url, tokens.clone(), enabled).await;
-        let b = pg_replica(&url, tokens.clone(), enabled).await;
+        let a = pg_replica(&url, &fleet, tokens.clone(), enabled).await;
+        let b = pg_replica(&url, &fleet, tokens.clone(), enabled).await;
         assert_ne!(a.boot_secret, b.boot_secret, "two independent replicas");
 
         // Signed in on A, used on B.
@@ -4322,6 +4399,7 @@ mod tests {
         // bound and 900 s lifetime refuses what the default replicas accept.
         let strict = pg_replica(
             &url,
+            &fleet,
             tokens.clone(),
             ConsoleSessionSettings {
                 idle_secs: 600,
@@ -4342,11 +4420,11 @@ mod tests {
         // Bound to the credential: a replica whose configuration no longer
         // has the token refuses its sessions; one that moved it to another
         // tenant or role does too.
-        let rotated = pg_replica(&url, vec![tok(&m2, &tenant, "mgmt")], enabled).await;
+        let rotated = pg_replica(&url, &fleet, vec![tok(&m2, &tenant, "mgmt")], enabled).await;
         assert!(!admitted(&rotated, &s1).await);
-        let moved = pg_replica(&url, vec![tok(&m, &other, "mgmt")], enabled).await;
+        let moved = pg_replica(&url, &fleet, vec![tok(&m, &other, "mgmt")], enabled).await;
         assert!(!admitted(&moved, &s1).await);
-        let demoted = pg_replica(&url, vec![tok(&m, &tenant, "rw")], enabled).await;
+        let demoted = pg_replica(&url, &fleet, vec![tok(&m, &tenant, "rw")], enabled).await;
         assert!(!admitted(&demoted, &s1).await);
         assert!(admitted(&a, &s1).await);
 
@@ -4383,11 +4461,24 @@ mod tests {
             eprintln!("console rollback PostgreSQL test NOT RUN: MUNARIUM_TEST_DATABASE_URL unset");
             return;
         };
+        let fleet = test_fleet();
         let tenant = format!("console-login1-{}", uuid::Uuid::new_v4().simple());
         let m = format!("m-{tenant}");
         let tokens = vec![(m.clone(), tenant.clone(), "mgmt".to_string())];
-        let enabled = pg_replica(&url, tokens.clone(), ConsoleSessionSettings::enabled()).await;
-        let legacy = pg_replica(&url, tokens.clone(), ConsoleSessionSettings::default()).await;
+        let enabled = pg_replica(
+            &url,
+            &fleet,
+            tokens.clone(),
+            ConsoleSessionSettings::enabled(),
+        )
+        .await;
+        let legacy = pg_replica(
+            &url,
+            &fleet,
+            tokens.clone(),
+            ConsoleSessionSettings::default(),
+        )
+        .await;
 
         // Off: the v1.4 login, cookie and all.
         let resp = login(&legacy, &m).await;
@@ -4453,7 +4544,13 @@ mod tests {
         // Switched on again: the revoked handle stays dead; an unrevoked one
         // would be honoured again, which is why rollback ends with the
         // fleet-wide revocation (docs/design/console-sessions.md#rollback).
-        let again = pg_replica(&url, tokens.clone(), ConsoleSessionSettings::enabled()).await;
+        let again = pg_replica(
+            &url,
+            &fleet,
+            tokens.clone(),
+            ConsoleSessionSettings::enabled(),
+        )
+        .await;
         assert!(!admitted(&again, &first).await);
         assert!(admitted(&again, &second).await);
         sqlx::query(
@@ -4496,6 +4593,7 @@ mod tests {
             );
             return;
         };
+        let fleet = test_fleet();
         let tenant = format!("console-legacy-live-{}", uuid::Uuid::new_v4().simple());
         let m = format!("m-{tenant}");
         let tokens = vec![(m.clone(), tenant.clone(), "mgmt".to_string())];
@@ -4504,8 +4602,14 @@ mod tests {
             max_secs: 86_400,
             ..ConsoleSessionSettings::enabled()
         };
-        let enabled = pg_replica(&url, tokens.clone(), long).await;
-        let legacy = pg_replica(&url, tokens.clone(), ConsoleSessionSettings::default()).await;
+        let enabled = pg_replica(&url, &fleet, tokens.clone(), long).await;
+        let legacy = pg_replica(
+            &url,
+            &fleet,
+            tokens.clone(),
+            ConsoleSessionSettings::default(),
+        )
+        .await;
         let handle = sign_in(&enabled, &m).await;
         let age = |interval: &'static str| {
             let pool = enabled.pg_pool().unwrap().clone();
@@ -4543,6 +4647,182 @@ mod tests {
             .unwrap();
         assert!(!rows[0].live, "{rows:?}");
         assert!(!admitted(&enabled, &handle).await);
+    }
+
+    /// A replica configured with `count` replicas in deployment environment
+    /// `fleet`, with no fleet mode written (the default).
+    async fn fleet_replica(
+        url: &str,
+        fleet: &str,
+        tokens: Vec<(String, String, String)>,
+        settings: ConsoleSessionSettings,
+        count: u32,
+    ) -> Arc<AppState> {
+        let mut cfg = test_config(AuthMode::Static(tokens));
+        cfg.store = StoreKind::Postgres;
+        cfg.database_url = Some(url.to_string());
+        cfg.source_store = SourceStoreConfig::Pg;
+        cfg.replica_count = count;
+        let state = AppState::new_with_console(cfg, settings)
+            .await
+            .expect("state");
+        state.fleet.set_environment(fleet);
+        state
+    }
+
+    /// LOGIN1 automated cutover and rollback, through the console: with no
+    /// action the v1.4 login is served even where the setting allows
+    /// sessions; `console-fleet enable` is refused while a live replica
+    /// cannot serve sessions and succeeds once all can; a replica whose
+    /// setting is legacy keeps the v1.4 login under an enabled fleet (the
+    /// per-replica upper bound); switching back to legacy restores the v1.4
+    /// login everywhere at once; and after re-enabling, every handle from the
+    /// earlier epoch is refused on every replica while new sign-ins work.
+    #[tokio::test]
+    async fn the_fleet_mode_gates_sessions_and_a_new_epoch_refuses_old_handles_on_postgres() {
+        let Ok(url) = std::env::var("MUNARIUM_TEST_DATABASE_URL") else {
+            eprintln!("console fleet PostgreSQL test NOT RUN: MUNARIUM_TEST_DATABASE_URL unset");
+            return;
+        };
+        let fleet = test_fleet();
+        let tenant = format!("console-fleet-{}", uuid::Uuid::new_v4().simple());
+        let m = format!("m-{tenant}");
+        let tokens = vec![(m.clone(), tenant.clone(), "mgmt".to_string())];
+        let enabled = ConsoleSessionSettings::enabled();
+        let a = fleet_replica(&url, &fleet, tokens.clone(), enabled, 2).await;
+        let b = fleet_replica(&url, &fleet, tokens.clone(), enabled, 2).await;
+        let legacy = fleet_replica(
+            &url,
+            &fleet,
+            tokens.clone(),
+            ConsoleSessionSettings::default(),
+            2,
+        )
+        .await;
+        let pool = a.pg_pool().unwrap().clone();
+        let v14_cookie = vec![format!(
+            "__munarium_admin={m}; HttpOnly; SameSite=Strict; Path=/admin"
+        )];
+        let v14 = format!("__munarium_admin={m}");
+
+        // No action: the v1.4 login, exactly, although the setting allows
+        // sessions. No session row is written.
+        assert_eq!(set_cookies(&login(&a, &m).await), v14_cookie);
+        assert_eq!(
+            get_with_cookie(&a, "/admin", &v14).await.status(),
+            StatusCode::OK
+        );
+        assert!(session_ids(&a, &tenant).await.is_empty());
+
+        // The preflight: the legacy-configured replica is live and lacks the
+        // capability, so enabling is refused and nothing changes.
+        for r in [&a, &b, &legacy] {
+            crate::replica_fleet::beat(r).await.unwrap();
+        }
+        let refused = crate::replica_fleet::enable(&pool, &fleet, 2, "op")
+            .await
+            .unwrap();
+        assert!(
+            matches!(
+                refused,
+                crate::replica_fleet::Change::Refused {
+                    refusal: crate::replica_fleet::Refusal::ReplicaLacksConsoleSessions,
+                    ..
+                }
+            ),
+            "{refused:?}"
+        );
+        assert_eq!(set_cookies(&login(&a, &m).await), v14_cookie);
+        // The legacy replica leaves (its heartbeat expires): all capable,
+        // two live as expected.
+        sqlx::query(
+            "UPDATE server_replica_heartbeats SET expires_at = now() - interval '1 second'
+              WHERE environment_id = $1 AND replica_id = $2",
+        )
+        .bind(&fleet)
+        .bind(&legacy.fleet.replica_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert!(matches!(
+            crate::replica_fleet::enable(&pool, &fleet, 2, "op")
+                .await
+                .unwrap(),
+            crate::replica_fleet::Change::Changed(_)
+        ));
+
+        // Enabled: sessions across replicas, the v1.4 cookie ignored.
+        let first = sign_in(&a, &m).await;
+        assert!(admitted(&b, &first).await);
+        assert_eq!(
+            get_with_cookie(&a, "/admin", &v14).await.status(),
+            StatusCode::SEE_OTHER
+        );
+        // The upper bound: a replica whose setting is legacy keeps the v1.4
+        // login and ignores handles, whatever the fleet mode.
+        assert_eq!(set_cookies(&login(&legacy, &m).await), v14_cookie);
+        assert!(!admitted(&legacy, &first).await);
+
+        // Rolled back in one action: every replica serves the v1.4 login
+        // from its next request, without a restart.
+        assert!(matches!(
+            crate::replica_fleet::disable(&pool, &fleet, "op")
+                .await
+                .unwrap(),
+            crate::replica_fleet::Change::Changed(_)
+        ));
+        assert!(!admitted(&a, &first).await);
+        assert!(!admitted(&b, &first).await);
+        assert_eq!(set_cookies(&login(&b, &m).await), v14_cookie);
+        assert_eq!(
+            get_with_cookie(&b, "/admin", &v14).await.status(),
+            StatusCode::OK
+        );
+        // The row is still unrevoked, but it is shown as ended by the
+        // rollback, not live.
+        let rows = crate::console_sessions::list(&a, &tenant).await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].revoked_at.is_none());
+        assert!(!rows[0].live && rows[0].superseded, "{rows:?}");
+        let body = body_string(get(&a, "/admin/console-sessions", Some(&m), false).await).await;
+        assert!(body.contains("ended by fleet rollback"), "{body}");
+        assert!(body.contains("fleet mode is legacy at epoch 1"), "{body}");
+
+        // Enabled again: the old handle is refused everywhere; a new sign-in
+        // works on both replicas.
+        crate::replica_fleet::beat(&a).await.unwrap();
+        crate::replica_fleet::beat(&b).await.unwrap();
+        match crate::replica_fleet::enable(&pool, &fleet, 2, "op")
+            .await
+            .unwrap()
+        {
+            crate::replica_fleet::Change::Changed(f) => assert_eq!(f.epoch, 1),
+            other => panic!("{other:?}"),
+        }
+        assert!(!admitted(&a, &first).await);
+        assert!(!admitted(&b, &first).await);
+        let second = sign_in(&b, &m).await;
+        assert!(admitted(&a, &second).await);
+        let epoch: Option<i64> =
+            sqlx::query_scalar("SELECT fleet_epoch FROM console_sessions WHERE handle_digest = $1")
+                .bind(crate::console_sessions::handle_digest(&second))
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(epoch, Some(1));
+        let rows = crate::console_sessions::list(&a, &tenant).await.unwrap();
+        assert_eq!(rows.iter().filter(|r| r.live).count(), 1);
+        assert_eq!(rows.iter().filter(|r| r.superseded).count(), 1);
+        // A row from before migration 0090 (no epoch) is never honoured.
+        sqlx::query(
+            "UPDATE console_sessions SET fleet_epoch = NULL, fleet_environment = NULL
+              WHERE handle_digest = $1",
+        )
+        .bind(crate::console_sessions::handle_digest(&second))
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert!(!admitted(&a, &second).await);
     }
 
     // -----------------------------------------------------------------------

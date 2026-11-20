@@ -686,6 +686,8 @@ pub(super) async fn health(State(state): State<Arc<AppState>>, headers: HeaderMa
         }
     };
     let yes_no = |b: bool| if b { "yes" } else { "no" }.to_string();
+    // This replica's setting, the fleet mode and what it serves now (LOGIN1).
+    let console_login = crate::replica_fleet::describe_console_login(&state).await;
     let config = kv(&[
         ("instance id", charts::esc(&cfg.instance_id)),
         (
@@ -703,10 +705,7 @@ pub(super) async fn health(State(state): State<Arc<AppState>>, headers: HeaderMa
         ),
         ("token ttl (default)", format!("{} s", cfg.token_ttl_secs)),
         ("token revocation check", yes_no(cfg.token_revocation_check)),
-        (
-            "console login",
-            charts::esc(&state.console.settings.describe()),
-        ),
+        ("console login", charts::esc(&console_login)),
         ("require uid", yes_no(cfg.require_uid)),
         ("store", store.into()),
         ("source bytes store", state.source_backend_id().into()),

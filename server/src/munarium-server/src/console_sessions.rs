@@ -28,6 +28,13 @@
 //!   the U4 review plans are derived. They therefore validate on every
 //!   replica and die with the session.
 //!
+//! - **Fleet mode and epoch.** On PostgreSQL a replica serves sessions only
+//!   while its environment's console fleet mode is `enabled`
+//!   (`replica_fleet.rs`, migration 0090), and honours a handle only at the
+//!   fleet epoch it was issued under. Switching the fleet back to `legacy`
+//!   increments the epoch, so a fleet enabled again refuses every older
+//!   handle. `MUNARIUM_CONSOLE_SESSIONS=enabled` is a per-replica upper bound.
+//!
 //! Legacy mode never reads the session cookie, so a rolled-back replica
 //! honours no handle; rows remain until their expiry and pruning.
 
@@ -246,8 +253,13 @@ pub struct SessionRecord {
     pub expires_at: chrono::DateTime<chrono::Utc>,
     pub revoked_at: Option<chrono::DateTime<chrono::Utc>>,
     pub revoked_reason: Option<String>,
-    /// Whether the session would be honoured now, by this replica's settings.
+    /// Whether the session would be honoured now, by this replica's settings
+    /// and the fleet epoch.
     pub live: bool,
+    /// Issued under an earlier console fleet epoch (or another environment),
+    /// so it is never honoured again: the fleet was switched back to
+    /// `legacy` since (PostgreSQL only).
+    pub superseded: bool,
 }
 
 /// A resolved, live session.
@@ -373,11 +385,29 @@ const PG_RECORD_COLUMNS: &str = "session_id, tenant_id, role, created_by, create
      last_seen_at, idle_secs, expires_at, revoked_at, revoked_reason";
 
 /// The PostgreSQL liveness predicate (`$2` idle seconds, `$3` absolute
-/// seconds of this replica). Kept identical to [`live_at`].
+/// seconds of this replica). Kept identical to [`live_at`]; the fleet epoch
+/// is checked separately ([`pg_current_epoch`]).
 const PG_LIVE: &str = "revoked_at IS NULL \
      AND now() < expires_at \
      AND now() < created_at + make_interval(secs => $3::double precision) \
      AND now() < last_seen_at + make_interval(secs => LEAST(idle_secs, $2)::double precision)";
+
+/// Whether a row was issued under its environment's current fleet epoch
+/// (`$n` is this replica's environment). With `enabled_only`, the fleet must
+/// also be `enabled` now: the rule for honouring a handle. Rows written
+/// before migration 0090 have NULLs and never match.
+fn pg_current_epoch(n: usize, enabled_only: bool) -> String {
+    format!(
+        "COALESCE(fleet_environment = ${n} AND fleet_epoch = (
+             SELECT f.epoch FROM console_fleet_mode f
+              WHERE f.environment_id = ${n}{}), false)",
+        if enabled_only {
+            " AND f.mode = 'enabled'"
+        } else {
+            ""
+        }
+    )
+}
 
 type PgRecord = (
     String,
@@ -390,6 +420,7 @@ type PgRecord = (
     chrono::DateTime<chrono::Utc>,
     Option<chrono::DateTime<chrono::Utc>>,
     Option<String>,
+    bool,
     bool,
 );
 
@@ -406,6 +437,7 @@ fn from_pg(r: PgRecord) -> SessionRecord {
         revoked_at: r.8,
         revoked_reason: r.9,
         live: r.10,
+        superseded: !r.11,
     }
 }
 
@@ -451,8 +483,11 @@ impl ConsoleSessions {
 
 /// Starts a session for a credential that has just authenticated as `ctx`
 /// (mgmt, or the disabled-auth pseudo-principal). Returns the handle for the
-/// cookie. Also prunes rows a week past their absolute expiry.
-pub async fn create(state: &AppState, ctx: &TenantCtx, credential: &str) -> Result<String> {
+/// cookie, or `None` when the console fleet mode is not `enabled` at the
+/// moment of the insert (it was switched back meanwhile). The row records the
+/// environment and fleet epoch it is issued under. Also prunes rows a week
+/// past their absolute expiry.
+pub async fn create(state: &AppState, ctx: &TenantCtx, credential: &str) -> Result<Option<String>> {
     let sessions = &state.console;
     let handle = new_handle();
     let session_id = format!("cs-{}", uuid::Uuid::new_v4().simple());
@@ -474,12 +509,16 @@ pub async fn create(state: &AppState, ctx: &TenantCtx, credential: &str) -> Resu
             .execute(pool)
             .await
             .map_err(storage)?;
-            sqlx::query(
+            let inserted = sqlx::query(
                 "INSERT INTO console_sessions
                    (handle_digest, session_id, tenant_id, role, credential_digest,
-                    binding_secret, created_by, idle_secs, expires_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
-                         now() + make_interval(secs => $9::double precision))",
+                    binding_secret, created_by, idle_secs, expires_at,
+                    fleet_environment, fleet_epoch)
+                 SELECT $1, $2, $3, $4, $5, $6, $7, $8::bigint,
+                        now() + make_interval(secs => $9::double precision),
+                        f.environment_id, f.epoch
+                   FROM console_fleet_mode f
+                  WHERE f.environment_id = $10 AND f.mode = 'enabled'",
             )
             .bind(handle_digest(&handle))
             .bind(&session_id)
@@ -490,9 +529,13 @@ pub async fn create(state: &AppState, ctx: &TenantCtx, credential: &str) -> Resu
             .bind(&created_by)
             .bind(sessions.idle())
             .bind(sessions.max())
+            .bind(state.fleet.environment())
             .execute(pool)
             .await
             .map_err(storage)?;
+            if inserted.rows_affected() != 1 {
+                return Ok(None);
+            }
         }
         None => {
             let now = sessions.now();
@@ -515,6 +558,7 @@ pub async fn create(state: &AppState, ctx: &TenantCtx, credential: &str) -> Resu
                         revoked_at: None,
                         revoked_reason: None,
                         live: true,
+                        superseded: false,
                     },
                     credential_digest,
                     binding_secret,
@@ -522,7 +566,7 @@ pub async fn create(state: &AppState, ctx: &TenantCtx, credential: &str) -> Resu
             );
         }
     }
-    Ok(handle)
+    Ok(Some(handle))
 }
 
 /// The authority a session's credential has on this replica NOW: the static
@@ -570,18 +614,21 @@ pub async fn resolve(state: &AppState, handle: &str, using: Use) -> Result<Optio
         Some(pool) => sqlx::query_as(&if touch {
             format!(
                 "UPDATE console_sessions SET last_seen_at = now()
-                  WHERE handle_digest = $1 AND {PG_LIVE}
-              RETURNING session_id, tenant_id, role, credential_digest, binding_secret"
+                  WHERE handle_digest = $1 AND {PG_LIVE} AND {}
+              RETURNING session_id, tenant_id, role, credential_digest, binding_secret",
+                pg_current_epoch(4, true)
             )
         } else {
             format!(
                 "SELECT session_id, tenant_id, role, credential_digest, binding_secret
-                   FROM console_sessions WHERE handle_digest = $1 AND {PG_LIVE}"
+                   FROM console_sessions WHERE handle_digest = $1 AND {PG_LIVE} AND {}",
+                pg_current_epoch(4, true)
             )
         })
         .bind(&digest)
         .bind(sessions.idle())
         .bind(sessions.max())
+        .bind(state.fleet.environment())
         .fetch_optional(pool)
         .await
         .map_err(storage)?,
@@ -659,8 +706,9 @@ pub async fn list(state: &AppState, tenant: &str) -> Result<Vec<SessionRecord>> 
     let sessions = &state.console;
     match state.pg_pool() {
         Some(pool) => {
+            let current = pg_current_epoch(5, false);
             let rows: Vec<PgRecord> = sqlx::query_as(&format!(
-                "SELECT {PG_RECORD_COLUMNS}, ({PG_LIVE}) AS live
+                "SELECT {PG_RECORD_COLUMNS}, ({PG_LIVE} AND {current}) AS live, {current} AS current
                    FROM console_sessions WHERE tenant_id = $1
                   ORDER BY created_at DESC, session_id DESC LIMIT $4"
             ))
@@ -668,6 +716,7 @@ pub async fn list(state: &AppState, tenant: &str) -> Result<Vec<SessionRecord>> 
             .bind(sessions.bounds().0)
             .bind(sessions.bounds().1)
             .bind(LIST_LIMIT)
+            .bind(state.fleet.environment())
             .fetch_all(pool)
             .await
             .map_err(storage)?;
@@ -700,14 +749,16 @@ pub async fn get(state: &AppState, tenant: &str, session_id: &str) -> Result<Ses
     };
     match state.pg_pool() {
         Some(pool) => {
+            let current = pg_current_epoch(5, false);
             let row: Option<PgRecord> = sqlx::query_as(&format!(
-                "SELECT {PG_RECORD_COLUMNS}, ({PG_LIVE}) AS live
+                "SELECT {PG_RECORD_COLUMNS}, ({PG_LIVE} AND {current}) AS live, {current} AS current
                    FROM console_sessions WHERE tenant_id = $1 AND session_id = $4"
             ))
             .bind(tenant)
             .bind(sessions.bounds().0)
             .bind(sessions.bounds().1)
             .bind(session_id)
+            .bind(state.fleet.environment())
             .fetch_optional(pool)
             .await
             .map_err(storage)?;
@@ -907,6 +958,7 @@ mod tests {
             revoked_at: None,
             revoked_reason: None,
             live: true,
+            superseded: false,
         }
     }
 

@@ -405,6 +405,8 @@ impl Modify for SecurityAddon {
         crate::scale_diagnostics::AdmissionPoolUsage,
         crate::scale_diagnostics::BuildQueueReport,
         crate::scale_diagnostics::BuildQueueBacklog,
+        crate::scale_diagnostics::ReplicaMembership,
+        crate::replica_fleet::LiveReplica,
         munarium_api_types::MatrixDataViewDto,
         munarium_api_types::EvidenceHierarchyDecisionDto,
         munarium_api_types::LayerOutcomeDto,

@@ -89,6 +89,7 @@ mod platform_records;
 mod platform_tls;
 mod providers_api;
 mod query_api;
+mod replica_fleet;
 mod reports_api;
 mod rest;
 mod runbooks_api;
@@ -213,6 +214,11 @@ async fn serve() {
         std::process::exit(artifact_damage::run(&config, &args).await);
     }
 
+    if std::env::args().nth(1).as_deref() == Some("console-fleet") {
+        let args: Vec<String> = std::env::args().skip(2).collect();
+        std::process::exit(replica_fleet::run(&config, &args).await);
+    }
+
     if std::env::args().nth(1).as_deref() == Some("platform-enroll") {
         let settings = config.platform.as_ref().unwrap_or_else(|| {
             startup_failure("platform-enroll requires platform-v1 configuration")
@@ -297,6 +303,10 @@ async fn serve() {
     }
     let mut tasks = tokio::task::JoinSet::new();
     tokio::spawn(vocabulary_api::worker(state.clone()));
+    // The replica heartbeat (ClearView SCALE-3 and LOGIN1): written now and
+    // every 15 s, so the scale report and the console cutover see this
+    // process. Never fatal.
+    replica_fleet::spawn_heartbeat(&state);
 
     // Drain visibility: the moment a shutdown signal fires, both planes'
     // /readyz flip to 503 "draining" so load balancers stop routing here

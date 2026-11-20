@@ -200,6 +200,28 @@ which for a storage failure was the database driver's message. From v1.5 it is o
 the messages above. Scripts that matched `error` text must move to `error_code` where
 one exists; a failure without a code has no stable machine-readable cause.
 
+## Console fleet cutover refusals
+
+`munarium-server console-fleet enable` (Server v1.5, ClearView LOGIN1; migration 0090)
+runs the cutover preflight before it switches a deployment environment's console fleet
+mode to `enabled`. A refusal writes nothing, exits with status 3 and prints
+`{"result": "refused", "reason": <code>, "live_replicas": <count or null>}`. The codes
+name the failed rule only; they carry no replica identity or configuration. This is an
+operator command, not an HTTP problem type. See
+[console sessions](../design/console-sessions.md#cutover).
+
+| Code | Refused when |
+|---|---|
+| `membership_unavailable` | the replica heartbeats could not be read |
+| `replica_lacks_console_sessions` | a live replica does not report the `console-sessions` capability (its `MUNARIUM_CONSOLE_SESSIONS` is not `enabled`) |
+| `replica_count_mismatch` | a live replica's `MUNARIUM_REPLICA_COUNT` differs from `--expected-replicas` |
+| `replica_shortfall` | fewer replicas are live than expected: a v1.4 replica, one of unknown version or one whose heartbeat fails may be serving |
+| `replica_excess` | more replicas are live than expected |
+
+`console-fleet disable` is never refused. A usage error exits with status 2 and a
+database that cannot be reached with status 1 (status 2 when the failure occurs after
+connecting).
+
 ## Platform action records
 
 Experimental [Stage 2 records](../platform-stage2.md) use existing error families:

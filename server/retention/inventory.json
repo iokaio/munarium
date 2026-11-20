@@ -788,10 +788,10 @@
         "coverage": "Gap: no universal exclusion fixture across all surfaces."
       },
       "access_revocation": {
-        "read": "Sign-out and console revocation set revoked_at; every replica sharing the database refuses the handle from its next request. Each request re-resolves the bound static credential, so a removed or re-roled token ends its sessions.",
+        "read": "Sign-out and console revocation set revoked_at; every replica sharing the database refuses the handle from its next request. Each request re-resolves the bound static credential, so a removed or re-roled token ends its sessions. A session is honoured only while its environment's console fleet mode is enabled at the epoch it was issued under; console-fleet disable increments the epoch, so a re-enabled fleet refuses every earlier handle.",
         "cleanup": "Revocation and expiry do not delete the row before pruning.",
         "holds": "Retention/hold grants no authority.",
-        "restore": "An older backup can predate a revocation; revoke all console sessions after restore (docs/design/console-sessions.md#rollback).",
+        "restore": "An older backup can predate a revocation; run munarium-server console-fleet disable after restore (or revoke all console sessions) before serving (docs/design/console-sessions.md#rollback).",
         "coverage": "Router tests and PostgreSQL two-replica tests cover sign-out, revocation, idle/absolute expiry, forged handles and credential rotation."
       },
       "logical_removal": {
@@ -850,6 +850,43 @@
         "cleanup": "Operation keys are kept at least through their expiry, across restarts; audit and accounting have no server deadline.",
         "holds": "Evidence holds are separate; no legal-hold API here.",
         "restore": "Preserve reservations against their original UTC day; never restore an unknown outcome as completed.",
+        "coverage": "History fixtures prove their stated invariants, not general retention deadlines."
+      }
+    },
+    "replica_fleet": {
+      "retrieval_exclusion": {
+        "read": "Holds no corpus content; collection exclusion does not apply.",
+        "cleanup": "No physical deletion implied.",
+        "holds": "No hold API; a hold grants no console or fleet authority.",
+        "restore": "A restored heartbeat is ignored once its expires_at passes; a restored fleet mode must be checked with console-fleet status before serving.",
+        "coverage": "Gap: no universal exclusion fixture across all surfaces."
+      },
+      "access_revocation": {
+        "read": "Heartbeats grant nothing. The fleet mode only narrows console logins: a replica serves sessions only when its own setting allows them and the mode is enabled; console-fleet disable increments the epoch so earlier session handles are refused.",
+        "cleanup": "Changing the mode does not delete session rows.",
+        "holds": "Retention/hold grants no authority.",
+        "restore": "An older backup can restore an enabled mode at an earlier epoch; run console-fleet disable after restore to end every restored session handle (docs/design/console-sessions.md#rollback).",
+        "coverage": "PostgreSQL multi-replica tests cover heartbeat expiry and pruning, the cutover preflight refusals, the epoch bump and refusal of earlier-epoch handles."
+      },
+      "logical_removal": {
+        "read": "Expired heartbeats are ignored by every reader; the fleet mode row is overwritten in place on each change.",
+        "cleanup": "Lifecycle state changes do not imply deletion.",
+        "holds": "No new hold mechanism.",
+        "restore": "Older backups can resurrect a fleet mode; check it before serving.",
+        "coverage": "Gap: no general logical-removal/restore conformance suite."
+      },
+      "physical_erasure": {
+        "read": "No erasure API.",
+        "cleanup": "Each heartbeat deletes its environment's expired heartbeat rows; a stopped fleet's last rows remain until another replica in that environment beats, and an operator may delete them directly. The fleet mode row (one per environment) is never deleted by the Server.",
+        "holds": "No per-row hold.",
+        "restore": "No durable erasure journal/replay contract; restored state cannot claim general erasure compliance.",
+        "coverage": "Gap: no all-copy erasure, partial-failure or backup-restore closure fixture."
+      },
+      "protected_retention": {
+        "read": "Retained for fleet operations (which replicas are live, which console login the fleet serves, who changed it) under the mgmt scale report, the console Health page and the database credential.",
+        "cleanup": "Heartbeats are retained only until expiry plus the next heartbeat; the fleet mode only while the environment exists.",
+        "holds": "Evidence holds are separate; no legal-hold API here.",
+        "restore": "Preserve the epoch; never restore a lower epoch over a higher one.",
         "coverage": "History fixtures prove their stated invariants, not general retention deadlines."
       }
     }
@@ -2566,14 +2603,17 @@
         "idle_secs": "bigint",
         "expires_at": "timestamptz",
         "revoked_at": "timestamptz",
-        "revoked_reason": "text"
+        "revoked_reason": "text",
+        "fleet_environment": "text",
+        "fleet_epoch": "bigint"
       },
-      "content": "Console sign-in records: digest of the opaque handle (never the handle), public session id, tenant and role, a session-salted digest of the static credential (never the token), a server-side CSRF/plan binding secret, the signing-in replica, times, recorded idle/absolute expiry and revocation reason.",
+      "content": "Console sign-in records: digest of the opaque handle (never the handle), public session id, tenant and role, a session-salted digest of the static credential (never the token), a server-side CSRF/plan binding secret, the signing-in replica, times, recorded idle/absolute expiry and revocation reason, and the deployment environment and console fleet epoch the session was issued under.",
       "json_content": {},
       "owner": "Tenant console operators (mgmt role) and the database operator, who controls retained copies and the fleet-wide rollback revocation.",
       "policy": "console_sessions",
       "origins": [
         "src/munarium-store-pg/migrations/0050_console_sessions.sql",
+        "src/munarium-store-pg/migrations/0090_replica_heartbeats_console_fleet.sql",
         "src/munarium-server/src/console_sessions.rs"
       ]
     },
@@ -2892,6 +2932,45 @@
       "origins": [
         "src/munarium-store-pg/migrations/0070_mcp_endpoint.sql",
         "src/munarium-server/src/mcp_generation.rs"
+      ]
+    },
+    "server_replica_heartbeats": {
+      "columns": {
+        "environment_id": "text",
+        "replica_id": "text",
+        "instance_id": "text",
+        "version": "text",
+        "plane": "text",
+        "replica_count": "int",
+        "capabilities": "text[]",
+        "started_at": "timestamptz",
+        "last_seen_at": "timestamptz",
+        "expires_at": "timestamptz"
+      },
+      "content": "Process metadata only: deployment environment, a random per-process replica id, the instance id (MUNARIUM_INSTANCE_ID or host name), build version, deployment plane, configured replica count, capability names and heartbeat times. No tenant, credential or corpus content.",
+      "json_content": {},
+      "owner": "Deployment/environment operator.",
+      "policy": "replica_fleet",
+      "origins": [
+        "src/munarium-store-pg/migrations/0090_replica_heartbeats_console_fleet.sql",
+        "src/munarium-server/src/replica_fleet.rs"
+      ]
+    },
+    "console_fleet_mode": {
+      "columns": {
+        "environment_id": "text",
+        "mode": "text",
+        "epoch": "bigint",
+        "changed_at": "timestamptz",
+        "changed_by": "text"
+      },
+      "content": "One row per deployment environment: the console login mode (legacy or enabled), the fleet epoch, and when and by which operator-supplied actor label it was last changed. No credential.",
+      "json_content": {},
+      "owner": "Database operator, who changes it with munarium-server console-fleet.",
+      "policy": "replica_fleet",
+      "origins": [
+        "src/munarium-store-pg/migrations/0090_replica_heartbeats_console_fleet.sql",
+        "src/munarium-server/src/replica_fleet.rs"
       ]
     }
   },

@@ -37,26 +37,49 @@ fn state_pill(r: &SessionRecord) -> String {
         (Some(_), Some(reason)) if reason == "sign-out" => pill("signed out", Tone::Neutral),
         (Some(_), _) => pill("revoked", Tone::Bad),
         (None, _) if r.live => pill("live", Tone::Good),
+        (None, _) if r.superseded => pill("ended by fleet rollback", Tone::Neutral),
         (None, _) => pill("expired", Tone::Warn),
     }
 }
 
 /// What this replica does with console sessions, stated on every page of
-/// this group.
-fn mode_note(state: &AppState) -> String {
+/// this group: its own setting, and on PostgreSQL the fleet mode that
+/// decides whether that setting is in effect (LOGIN1).
+async fn mode_note(state: &AppState) -> String {
     let s = &state.console.settings;
-    let shared = if state.pg_pool().is_some() {
+    let fleet = crate::replica_fleet::console_fleet(state).await;
+    let shared = if fleet.is_some() {
         "on every replica sharing this database"
     } else {
         "in this process (memory store: a single replica)"
     };
-    let text = if s.sessions() {
+    let fleet_line = match &fleet {
+        None => String::new(),
+        Some(Ok(f)) => format!(
+            " The console fleet mode is {} at epoch {}; it is changed only with munarium-server console-fleet. Sessions issued before the fleet was last switched back to legacy are never honoured again.",
+            f.mode.as_str(),
+            f.epoch
+        ),
+        Some(Err(_)) => " The console fleet mode could not be read (unavailable).".into(),
+    };
+    let fleet_enabled = match &fleet {
+        None => true,
+        Some(Ok(f)) => f.mode == crate::replica_fleet::FleetMode::Enabled,
+        Some(Err(_)) => false,
+    };
+    let text = if s.sessions() && fleet_enabled {
         format!(
-            "This replica signs operators in with revocable sessions (MUNARIUM_CONSOLE_SESSIONS=enabled): the browser cookie carries only an opaque handle. A session ends after {} s without a request or {} s after sign-in, whichever comes first. Signing out or revoking a session ends it {shared} from its next request. Requests with an Authorization header are unaffected.",
+            "This replica signs operators in with revocable sessions (MUNARIUM_CONSOLE_SESSIONS=enabled and the fleet mode enabled): the browser cookie carries only an opaque handle. A session ends after {} s without a request or {} s after sign-in, whichever comes first. Signing out or revoking a session ends it {shared} from its next request. Requests with an Authorization header are unaffected.{fleet_line}",
             s.idle_secs, s.max_secs
         )
+    } else if s.sessions() {
+        format!(
+            "This replica allows revocable sessions (MUNARIUM_CONSOLE_SESSIONS=enabled) but serves the v1.4 console login until the fleet mode is enabled: the browser cookie holds the mgmt token.{fleet_line}"
+        )
     } else {
-        "This replica uses the v1.4 console login (MUNARIUM_CONSOLE_SESSIONS=legacy): the browser cookie holds the mgmt token, and no session is created or honoured here. Sessions left from an earlier switch to enabled are listed so they can be revoked before switching again; each is shown as live while its own recorded idle and absolute expiry would still let an enabled replica honour it.".to_string()
+        format!(
+            "This replica uses the v1.4 console login (MUNARIUM_CONSOLE_SESSIONS=legacy): the browser cookie holds the mgmt token, and no session is created or honoured here. Sessions left from an earlier switch to enabled are listed so they can be revoked; each is shown as live while its own recorded idle and absolute expiry would still let an enabled replica at the current fleet epoch honour it.{fleet_line}"
+        )
     };
     format!(r#"<div class="notice">{}</div>"#, esc(&text))
 }
@@ -130,7 +153,7 @@ pub(super) async fn list(State(state): State<Arc<AppState>>, headers: HeaderMap)
     let body = format!(
         r#"{}<div class="card">{table}</div>{limit}
 <p class="muted">Rows are deleted seven days after their absolute expiry. Revoked and signed-out sessions stay listed until then.</p>"#,
-        mode_note(&state)
+        mode_note(&state).await
     );
     render(&admin, ACTIVE, "Console sessions", &body)
 }

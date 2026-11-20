@@ -11534,6 +11534,55 @@
           }
         }
       },
+      "LiveReplica": {
+        "type": "object",
+        "description": "One live replica, as its heartbeat reports it.",
+        "required": [
+          "replica_id",
+          "instance_id",
+          "version",
+          "plane",
+          "replica_count",
+          "capabilities",
+          "seconds_since_heartbeat"
+        ],
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "`console-sessions` when the replica will serve revocable console\nsessions under an enabled fleet mode."
+          },
+          "instance_id": {
+            "type": "string",
+            "description": "`MUNARIUM_INSTANCE_ID`, else the host name."
+          },
+          "plane": {
+            "type": "string",
+            "description": "`MUNARIUM_DEPLOYMENT_PLANE` (`rest` by default, `builder` for a\nseparate builder group)."
+          },
+          "replica_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The `MUNARIUM_REPLICA_COUNT` this replica runs with.",
+            "minimum": 0
+          },
+          "replica_id": {
+            "type": "string",
+            "description": "Random per-process identity."
+          },
+          "seconds_since_heartbeat": {
+            "type": "number",
+            "format": "double",
+            "description": "Seconds since its last heartbeat, by the database clock."
+          },
+          "version": {
+            "type": "string",
+            "description": "Server build version."
+          }
+        }
+      },
       "LockAnchorRequest": {
         "type": "object",
         "required": [
@@ -13095,6 +13144,46 @@
           }
         }
       },
+      "ReplicaMembership": {
+        "type": "object",
+        "description": "Live Server processes sharing this replica's database and deployment\nenvironment, from their heartbeats.",
+        "required": [
+          "status",
+          "environment_id",
+          "replicas"
+        ],
+        "properties": {
+          "environment_id": {
+            "type": "string",
+            "description": "`MUNARIUM_DEPLOYMENT_ENVIRONMENT_ID`: the scope of the heartbeats."
+          },
+          "exceeds_configured": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "True when more replicas are live than `replica_count` allows: the\nprovider limits are then divided too few ways. Null when unavailable."
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A short reason when `status` is `unavailable`."
+          },
+          "replicas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LiveReplica"
+            },
+            "description": "The live replicas, ordered by instance id. Empty when unavailable."
+          },
+          "status": {
+            "type": "string",
+            "description": "`observed`, or `unavailable` when the heartbeat read failed or timed\nout (the count is then null, never 0)."
+          }
+        }
+      },
       "RetrievalRolloutDto": {
         "type": "object",
         "description": "One scope's rollout selector row: which engine serves it.",
@@ -13537,7 +13626,8 @@
           "replica_count",
           "builder_enabled",
           "admission",
-          "build_queue"
+          "build_queue",
+          "replica_membership"
         ],
         "properties": {
           "admission": {
@@ -13576,7 +13666,7 @@
               "null"
             ],
             "format": "int32",
-            "description": "Live Server processes observed sharing the database. Always null in\nthis release: membership is not recorded, so it is unknown here.\nCompare `replica_count` with ready pods or scrape targets.",
+            "description": "Live Server processes (unexpired heartbeats) sharing the database and\ndeployment environment. Null when the heartbeat read failed: unknown,\nnever 0. v1.4 processes write no heartbeat and are not counted.",
             "minimum": 0
           },
           "replica_count": {
@@ -13584,6 +13674,10 @@
             "format": "int32",
             "description": "`MUNARIUM_REPLICA_COUNT` this process runs with: the divisor of each\nprovider RPM/TPM limit. 1 is also the default when it is unset.",
             "minimum": 0
+          },
+          "replica_membership": {
+            "$ref": "#/components/schemas/ReplicaMembership",
+            "description": "The live replicas and the warning when they exceed `replica_count`."
           },
           "version": {
             "type": "string",

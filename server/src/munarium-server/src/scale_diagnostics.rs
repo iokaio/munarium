@@ -15,10 +15,14 @@
 //! `index_build_jobs (state, created_at)`. A failed or timed-out read is
 //! reported as unavailable, never as an empty queue (the U5 rule).
 //!
-//! Live fleet membership is not observed in-process: the report carries the
-//! configured `MUNARIUM_REPLICA_COUNT` beside `observed_replicas: null`.
-//! Compare it with the number of ready pods or `count(munarium_build_info)`
-//! across scrape targets (`docs/ops/clustering.md`).
+//! Live fleet membership comes from the replica heartbeats
+//! (`replica_fleet.rs`, migration 0090): the report sets `observed_replicas`
+//! to the live heartbeats of this replica's deployment environment beside the
+//! configured `MUNARIUM_REPLICA_COUNT`, and warns when more are live than
+//! configured. A failed heartbeat read is `unavailable` with a null count,
+//! never 0. A v1.4 process writes no heartbeat, so it is not counted; fewer
+//! live than configured is therefore shown but not a warning. The memory
+//! store is single-replica by validation and reports itself.
 
 use crate::state::AppState;
 use axum::extract::State;
@@ -114,6 +118,24 @@ pub struct BuildQueueReport {
     pub reason: Option<String>,
 }
 
+/// Live Server processes sharing this replica's database and deployment
+/// environment, from their heartbeats.
+#[derive(Debug, Clone, PartialEq, Serialize, ToSchema)]
+pub struct ReplicaMembership {
+    /// `observed`, or `unavailable` when the heartbeat read failed or timed
+    /// out (the count is then null, never 0).
+    pub status: String,
+    /// `MUNARIUM_DEPLOYMENT_ENVIRONMENT_ID`: the scope of the heartbeats.
+    pub environment_id: String,
+    /// True when more replicas are live than `replica_count` allows: the
+    /// provider limits are then divided too few ways. Null when unavailable.
+    pub exceeds_configured: Option<bool>,
+    /// The live replicas, ordered by instance id. Empty when unavailable.
+    pub replicas: Vec<crate::replica_fleet::LiveReplica>,
+    /// A short reason when `status` is `unavailable`.
+    pub reason: Option<String>,
+}
+
 /// GET /v1/reports/scale.
 #[derive(Debug, Clone, PartialEq, Serialize, ToSchema)]
 pub struct ScaleReport {
@@ -124,9 +146,9 @@ pub struct ScaleReport {
     /// `MUNARIUM_REPLICA_COUNT` this process runs with: the divisor of each
     /// provider RPM/TPM limit. 1 is also the default when it is unset.
     pub replica_count: u32,
-    /// Live Server processes observed sharing the database. Always null in
-    /// this release: membership is not recorded, so it is unknown here.
-    /// Compare `replica_count` with ready pods or scrape targets.
+    /// Live Server processes (unexpired heartbeats) sharing the database and
+    /// deployment environment. Null when the heartbeat read failed: unknown,
+    /// never 0. v1.4 processes write no heartbeat and are not counted.
     pub observed_replicas: Option<u32>,
     /// Whether this process runs the durable build-job loop
     /// (`MUNARIUM_DATASTORE_BUILDER=enabled`).
@@ -138,6 +160,38 @@ pub struct ScaleReport {
     pub admission: Vec<AdmissionPoolUsage>,
     /// The caller's tenant only. `/metrics` carries the all-tenant backlog.
     pub build_queue: BuildQueueReport,
+    /// The live replicas and the warning when they exceed `replica_count`.
+    pub replica_membership: ReplicaMembership,
+}
+
+/// Classify a heartbeat read against the configured count.
+pub fn membership_report(
+    environment_id: String,
+    configured: u32,
+    read: Result<Vec<crate::replica_fleet::LiveReplica>>,
+) -> ReplicaMembership {
+    match read {
+        Ok(replicas) => ReplicaMembership {
+            status: "observed".into(),
+            environment_id,
+            exceeds_configured: Some(replicas.len() as u64 > u64::from(configured)),
+            replicas,
+            reason: None,
+        },
+        Err(e) => {
+            tracing::warn!(error = %e, "replica heartbeat read failed");
+            ReplicaMembership {
+                status: "unavailable".into(),
+                environment_id,
+                exceeds_configured: None,
+                replicas: Vec::new(),
+                reason: Some(match e {
+                    KernelError::Storage(m) if m == "replica heartbeat read timed out" => m,
+                    _ => "replica heartbeat read failed".into(),
+                }),
+            }
+        }
+    }
 }
 
 fn builder_enabled() -> bool {
@@ -211,15 +265,22 @@ pub async fn op_scale_report(state: &AppState, tenant: &str) -> ScaleReport {
         Some(pool) => Some(read_build_queue(pool, Some(tenant)).await),
         None => None,
     };
+    let membership = membership_report(
+        state.fleet.environment(),
+        state.config.replica_count,
+        crate::replica_fleet::live_replicas(state).await,
+    );
     ScaleReport {
         instance_id: state.config.instance_id.clone(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         replica_count: state.config.replica_count,
-        observed_replicas: None,
+        observed_replicas: (membership.status == "observed")
+            .then(|| u32::try_from(membership.replicas.len()).unwrap_or(u32::MAX)),
         builder_enabled: builder_enabled(),
         db_pool: db_pool_usage(state),
         admission: admission_usage(state),
         build_queue: queue_report(queue),
+        replica_membership: membership,
     }
 }
 
@@ -306,6 +367,62 @@ pub fn health_section(report: &ScaleReport) -> String {
                 (u.clone(), u.clone(), u)
             }
         };
+    let m = &report.replica_membership;
+    let (live_value, live_sub) = match report.observed_replicas {
+        Some(n) => (
+            format!("{n} / {}", report.replica_count),
+            "live / configured".to_string(),
+        ),
+        None => (
+            "unavailable".to_string(),
+            format!("configured {}", report.replica_count),
+        ),
+    };
+    if m.status != "observed" {
+        note.push_str(&format!(
+            r#"<div class="notice">replica membership unavailable: {}</div>"#,
+            esc(m.reason.as_deref().unwrap_or("read failed"))
+        ));
+    } else if m.exceeds_configured == Some(true) {
+        note.push_str(&format!(
+            r#"<div class="notice" role="alert">warning: {} replicas are live but MUNARIUM_REPLICA_COUNT is {}. Each replica divides the provider limits by {}, so the fleet together can exceed them. Set the count to the number of Server processes.</div>"#,
+            m.replicas.len(),
+            report.replica_count,
+            report.replica_count
+        ));
+    }
+    let members = if m.status == "observed" {
+        let rows: Vec<Vec<String>> = m
+            .replicas
+            .iter()
+            .map(|r| {
+                vec![
+                    esc(&r.instance_id),
+                    esc(&r.version),
+                    esc(&r.plane),
+                    r.replica_count.to_string(),
+                    esc(&r.capabilities.join(", ")),
+                    format!("{:.0} s", r.seconds_since_heartbeat),
+                ]
+            })
+            .collect();
+        format!(
+            r#"<div class="card">{}</div>"#,
+            crate::dashboard::html_table(
+                &[
+                    "live replica",
+                    "version",
+                    "plane",
+                    "configured count",
+                    "capabilities",
+                    "last heartbeat"
+                ],
+                &rows
+            )
+        )
+    } else {
+        String::new()
+    };
     let rows: Vec<Vec<String>> = report
         .admission
         .iter()
@@ -320,13 +437,9 @@ pub fn health_section(report: &ScaleReport) -> String {
         .collect();
     format!(
         r#"<h2>replicas, pools and queue</h2><div class="tiles">{}{}{}{}{}{}</div>{note}
-<div class="card">{}</div>
-<div class="notice">Configured count is this process's <code>MUNARIUM_REPLICA_COUNT</code>, the provider-limit divisor. Live membership is not observed here: compare it with ready pods or scrape targets. The build queue counts this tenant's jobs; <code>/metrics</code> carries every tenant's. Read the same data from <code>GET /v1/reports/scale</code>.</div>"#,
-        tile(
-            "replica count",
-            &report.replica_count.to_string(),
-            "configured; live membership unknown"
-        ),
+{members}<div class="card">{}</div>
+<div class="notice">Configured count is this process's <code>MUNARIUM_REPLICA_COUNT</code>, the provider-limit divisor. Live replicas are the unexpired heartbeats in deployment environment <code>{}</code>; a v1.4 process writes none and is not counted, so fewer live than configured is expected while v1.4 processes still run. The build queue counts this tenant's jobs; <code>/metrics</code> carries every tenant's. Read the same data from <code>GET /v1/reports/scale</code>.</div>"#,
+        tile("replicas", &live_value, &live_sub),
         tile(
             "builder",
             if report.builder_enabled {
@@ -341,6 +454,7 @@ pub fn health_section(report: &ScaleReport) -> String {
         tile("jobs running", &running, "this tenant"),
         tile("oldest pending", &age, "this tenant"),
         crate::dashboard::html_table(&["plane", "admission pool", "in use", "capacity"], &rows),
+        esc(&m.environment_id),
     )
 }
 
@@ -349,11 +463,12 @@ mod tests {
     use super::*;
 
     fn report(queue: Option<Result<BuildQueueBacklog>>) -> ScaleReport {
+        let membership = membership_report("env".into(), 2, Ok(Vec::new()));
         ScaleReport {
             instance_id: "pod-<a>".into(),
             version: "x".into(),
             replica_count: 2,
-            observed_replicas: None,
+            observed_replicas: Some(0),
             builder_enabled: false,
             db_pool: Some(DbPoolUsage {
                 max_connections: 10,
@@ -368,7 +483,76 @@ mod tests {
                 in_use: 5,
             }],
             build_queue: queue_report(queue),
+            replica_membership: membership,
         }
+    }
+
+    fn live(instance: &str) -> crate::replica_fleet::LiveReplica {
+        crate::replica_fleet::LiveReplica {
+            replica_id: format!("r-{instance}"),
+            instance_id: instance.into(),
+            version: "1.5.0".into(),
+            plane: "rest".into(),
+            replica_count: 2,
+            capabilities: vec!["console-sessions".into()],
+            seconds_since_heartbeat: 3.2,
+        }
+    }
+
+    /// The membership rule (SCALE-3): live against configured, a warning
+    /// only when more are live, and a failed read unavailable, never 0.
+    #[test]
+    fn membership_warns_on_excess_and_a_failed_read_is_unavailable() {
+        let two = membership_report("env".into(), 2, Ok(vec![live("a"), live("b")]));
+        assert_eq!(two.exceeds_configured, Some(false));
+        let one = membership_report("env".into(), 2, Ok(vec![live("a")]));
+        assert_eq!(
+            one.exceeds_configured,
+            Some(false),
+            "a shortfall is no warning"
+        );
+        let three = membership_report("env".into(), 2, Ok(vec![live("a"), live("b"), live("<c>")]));
+        assert_eq!(three.exceeds_configured, Some(true));
+        let mut r = report(None);
+        r.observed_replicas = Some(3);
+        r.replica_membership = three;
+        let html = health_section(&r);
+        assert!(html.contains("3 / 2"), "{html}");
+        assert!(html.contains("warning: 3 replicas are live"), "{html}");
+        assert!(html.contains("&lt;c&gt;"), "{html}");
+        r.observed_replicas = Some(2);
+        r.replica_membership = two;
+        let html = health_section(&r);
+        assert!(
+            html.contains("2 / 2") && !html.contains("warning:"),
+            "{html}"
+        );
+
+        let failed = membership_report(
+            "env".into(),
+            2,
+            Err(KernelError::Storage("connection refused <db>".into())),
+        );
+        assert_eq!(failed.status, "unavailable");
+        assert_eq!(failed.exceeds_configured, None);
+        assert!(failed.replicas.is_empty());
+        assert_eq!(
+            failed.reason.as_deref(),
+            Some("replica heartbeat read failed")
+        );
+        let mut r = report(None);
+        r.observed_replicas = None;
+        r.replica_membership = failed;
+        let json = serde_json::to_value(&r).unwrap();
+        assert!(json["observed_replicas"].is_null(), "{json}");
+        assert!(json["replica_membership"]["exceeds_configured"].is_null());
+        let html = health_section(&r);
+        assert!(html.contains("replica membership unavailable"), "{html}");
+        assert!(
+            !html.contains("0 / 2") && !html.contains("&lt;db&gt;"),
+            "{html}"
+        );
+        assert!(!html.contains("live replica"), "{html}");
     }
 
     #[test]
@@ -597,7 +781,10 @@ mod pg_tests {
         let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(body["instance_id"], "usage-test");
         assert_eq!(body["replica_count"], 1);
-        assert!(body["observed_replicas"].is_null());
+        // Observed from the heartbeats (none written here), never null on a
+        // successful read; the membership tests are in replica_fleet.rs.
+        assert!(body["observed_replicas"].is_u64(), "{body}");
+        assert_eq!(body["replica_membership"]["status"], "observed");
         assert_eq!(body["db_pool"]["max_connections"], 4);
         assert_eq!(body["build_queue"]["status"], "observed");
         assert_eq!(body["build_queue"]["backlog"]["pending"], 0);

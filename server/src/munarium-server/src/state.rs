@@ -229,6 +229,10 @@ pub struct AppState {
     /// `MUNARIUM_CONSOLE_SESSIONS=enabled`, revocable sessions in the shared
     /// `console_sessions` table (in process on the memory store).
     pub console: crate::console_sessions::ConsoleSessions,
+    /// This process's replica identity and deployment environment: the scope
+    /// of its heartbeat and of the console fleet mode (ClearView SCALE-3 and
+    /// LOGIN1, `replica_fleet.rs`).
+    pub fleet: crate::replica_fleet::FleetIdentity,
     /// The opt-in MCP endpoint (ClearView A1-A9): settings, the per-replica
     /// concurrency bound and, in tests, admission fault injection. With
     /// `MUNARIUM_MCP` unset nothing reads it beyond the router's switch.
@@ -744,6 +748,7 @@ impl AppState {
             draining: std::sync::atomic::AtomicBool::new(false),
             builder_task: std::sync::Mutex::new(None),
             console: crate::console_sessions::ConsoleSessions::new(console),
+            fleet: crate::replica_fleet::FleetIdentity::from_env(),
             mcp,
             chrono_rules_mem: Mutex::new(HashMap::new()),
             // Two v4 UUIDs = 256 bits of CSPRNG-backed entropy.

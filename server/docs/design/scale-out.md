@@ -42,6 +42,12 @@ Use successful, authorized operations as the throughput measure. A shed request,
 
 The new profile builds on control admission, durable jobs, shared console sessions and artifact protection. Keep v1.4 behavior during the mixed-version rollout until every relevant process can enforce the new guarantee. Hash-only installations can adopt these changes with Lens disabled. [Control reserve](airk-analysis.md#b3) · [Fair claiming](airk-analysis.md#b1) · [Console cutover](airk-analysis.md#login1) · [Artifact blocking](airk-analysis.md#art1)
 
+### <a id="scale-3-replica-membership"></a>SCALE-3 replica membership
+
+Implemented 20 November 2026 (migration 0090). Every Server process on the PostgreSQL store writes an expiring heartbeat at startup and every 15 seconds: a random per-process replica id, the instance id, build version, `MUNARIUM_DEPLOYMENT_PLANE`, its configured `MUNARIUM_REPLICA_COUNT` and its capabilities. A row expires 45 seconds after its last write by the database clock; expired rows are ignored and pruned. Heartbeats are scoped by `MUNARIUM_DEPLOYMENT_ENVIRONMENT_ID`. The memory store is single-replica by validation and reports itself. [Replica heartbeats](console-sessions.md#replica-heartbeats)
+
+`GET /v1/reports/scale` sets `observed_replicas` to the live heartbeats beside the answering replica's `replica_count`, and `replica_membership` lists them with `exceeds_configured`. The console Health page shows the same as "live / configured" and warns when more replicas are live than configured, because each process then divides the provider limits too few ways. A failed or timed-out heartbeat read is `unavailable` with a null count, never 0 (the U5 rule). A v1.4 process writes no heartbeat and is not counted, so fewer live than configured is shown but is not a warning during a mixed-version rollout. The same heartbeats feed the [console cutover preflight](console-sessions.md#cutover). [REST reference](../api/rest.md)
+
 ### Helm installation, upgrade and rollback
 
 The proposed v1.5 chart uses a persisted `providerReplicaCount` value. With `auto`, render the same `MUNARIUM_REPLICA_COUNT` on every Server group from the desired serving and separate builder counts. Count a process that both serves and builds once. A positive integer renders that fixed divisor. Omission leaves the environment entry absent on every render, so existing values and post-render overrides keep their effect. Use the same values file for installation, upgrade and declarative rendering. [Configuration compatibility](README.md#compat-t2)

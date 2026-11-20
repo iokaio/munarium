@@ -156,18 +156,25 @@ ClearView SCALE-3. Three views read the same snapshot:
 | Where | What it shows | Scope |
 |---|---|---|
 | `/metrics` (ops plane) | `munarium_replica_count`, `munarium_db_pool_connections` / `_idle` / `_max_connections`, `munarium_admission_slots` / `_in_use`, and the build queue: `munarium_index_build_jobs{state="pending"\|"running"}`, `munarium_index_build_oldest_pending_seconds`, `munarium_index_build_queue_up` | Process gauges per pod; the queue across all tenants, counts only |
-| `GET /v1/reports/scale` (mgmt) | The answering replica's `instance_id`, version, configured count, builder flag, SQL pool and admission pools; the caller's tenant's backlog | One replica per call; one tenant's queue |
-| Console Health page | The same report as tiles and an admission table | As the report |
+| `GET /v1/reports/scale` (mgmt) | The answering replica's `instance_id`, version, configured count, builder flag, SQL pool and admission pools; the live replicas from their heartbeats; the caller's tenant's backlog | One replica per call for pools; the environment's heartbeats; one tenant's queue |
+| Console Health page | The same report as tiles, a live-replica table and an admission table, with a warning when more replicas are live than configured | As the report |
 
-**Counting replicas.** Each process knows only its configured
-`MUNARIUM_REPLICA_COUNT`. Live membership is not recorded, so the report's
-`observed_replicas` is null and the console says membership is unknown.
-Compare the configured count with ready pods
-(`kubectl get deploy munarium-server`, or kube-state-metrics
-`kube_deployment_status_replicas_ready` beside `kube_deployment_spec_replicas`)
-and with `count(munarium_build_info)` across scrape targets. More live
-processes than the count means the cluster admits more than each provider
-limit, as during a rollout surge.
+**Counting replicas.** Each process writes an expiring heartbeat (migration
+0090) at startup and every 15 seconds; a row expires 45 seconds after its last
+write by the database clock and is then ignored and pruned. The report's
+`observed_replicas` is the number of live heartbeats in the answering
+replica's `MUNARIUM_DEPLOYMENT_ENVIRONMENT_ID`, shown beside its configured
+`MUNARIUM_REPLICA_COUNT`. More live processes than the count means the
+cluster admits more than each provider limit, as during a rollout surge: the
+Health page warns, and `replica_membership.exceeds_configured` is true. A
+failed heartbeat read is `unavailable`, never 0. A v1.4 process writes no
+heartbeat, so during a mixed-version rollout fewer live than configured is
+expected; compare with ready pods (`kubectl get deploy munarium-server`, or
+kube-state-metrics `kube_deployment_status_replicas_ready` beside
+`kube_deployment_spec_replicas`) and with `count(munarium_build_info)` across
+scrape targets. A terminated process stays counted until its heartbeat
+expires, up to 45 seconds. The same heartbeats gate the
+[console cutover](../design/console-sessions.md#cutover).
 
 **Pools.** Busy connections are `open - idle`. Sum `max_connections` across
 every pod, including surge pods, against PostgreSQL `max_connections` (see
