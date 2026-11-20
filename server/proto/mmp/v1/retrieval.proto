@@ -13,6 +13,26 @@ message HybridSearchRequest {
   uint32 top_k = 3;            // default 10
   string filter_json = 4;      // shape-defined metadata filters
   string index_version = 5;    // empty = active index
+  // Experimental (ClearView R1): true adds `execution` to the response.
+  // False (the proto3 default, and every older client) = the v1.4 response.
+  bool disclose_execution = 6;
+}
+
+// One retrieval leg's observations. An unset optional field was not measured
+// by the serving engine: unknown, never zero or false.
+message SearchLegExecution {
+  string leg = 1;                       // lexical | vector
+  optional uint64 candidate_limit = 2;  // per-leg pool requested
+  optional uint64 fetched = 3;          // candidates returned before fusion
+  optional bool exhausted = 4;          // eligible set exhausted
+}
+
+// How one search actually executed (ClearView R1, experimental).
+message SearchExecution {
+  uint32 version = 1;                   // disclosure format; currently 1
+  string engine = 2;                    // postgresql | datastore
+  string lexical_domain = 3;            // scores across domains are not comparable
+  repeated SearchLegExecution legs = 4; // legs that ran, lexical first
 }
 
 message SearchHit {
@@ -30,6 +50,8 @@ message SearchHit {
 message HybridSearchResponse {
   repeated SearchHit hits = 1;
   ProvenanceEnvelope envelope = 2;
+  // Present only when the request set disclose_execution.
+  SearchExecution execution = 3;
 }
 
 message GetIndexVersionRequest {

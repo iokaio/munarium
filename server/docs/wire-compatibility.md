@@ -27,6 +27,7 @@ UTF-8 JSON bytes, not `google.protobuf.Struct` floating-point numbers.
 | Access/minimum access levels; interaction status/latency; artifact format version/file count/attempts | REST `i32`; relevant typed fields `int32` | Signed 32-bit carrier, with endpoint-specific valid values. These are not general unsigned counters. |
 | Artifact bytes, evidence row windows, generation and expected/staged/serving generations | REST `i64`; native bridge | Signed 64-bit database fields, with domain checks for valid generations/window bounds. |
 | Build-job history (ClearView R6/R9): per-version `attempts`, progress `units_done` / `units_total`, event `seq`; `generation`, `selected_ordinal`, `committed_generation`, `attempt_generation` | REST `i64` / `i32`; native bridge only | Nonnegative `BIGINT` / `INTEGER` columns. New members on new read-only routes; absent `units_total` means unknown, never zero. No typed protobuf message or field is added. |
+| ClearView R1 (experimental): search `execution.version`, leg `candidate_limit` and `fetched` | REST `u32`/`u64`; typed `uint32`/`optional uint64` with presence | Computed per request, never persisted. `null`/unset means not measured, never zero. |
 | Evidence `from`, optional total; recorded/skipped duplicate/rule counts | REST `usize` | Architecture-sized local carrier, exact integer JSON. Evidence `from` is also bounded by signed-64 audit storage; window defaults and caps remain operation-specific. |
 | Context estimated/budget tokens, health latency/failure counts, turn elapsed milliseconds, authoring finding totals, datastore chunk count, build `max_chars`, token `ttl_secs` | REST `u64` / `usize`; relevant typed fields `uint64` | In-memory/computed quantities are not all persisted `BIGINT`s. Token TTL retains its 24-hour clamp. Existing admission and resource caps remain in effect. |
 
@@ -115,3 +116,33 @@ automatic; no re-vendoring is needed for tests or conversion implementation fixe
 
 Validation results and exact regression commands are recorded with
 [P11 in the implementation plan](lessons-from-vcp-impl.md#11-wire-compatibility).
+
+## ClearView phase 2: explain a retrieval result
+
+Experimental additions for the Server v1.5 candidate. Each is opt-in or an
+optional member; nothing new is persisted, and no existing DTO type, member,
+protobuf tag or default changes.
+
+### R1: search execution disclosure
+
+- `SearchRequest.disclose_execution` (REST) and
+  `HybridSearchRequest.disclose_execution = 6` (typed gRPC) request an
+  `execution` object. Omitted or `false` returns the v1.4 response.
+- The REST response is `DisclosedSearchResponse`, which flattens the unchanged
+  `SearchResponse` and adds `execution` only when requested, so the bytes of a
+  response without it are exactly v1.4's. Server tests compare those bytes.
+- Typed gRPC adds `HybridSearchResponse.execution = 3` (a message, so it has
+  presence) and `SearchLegExecution` proto3 `optional` fields: an unmeasured
+  count or exhaustion state is unset, never zero. REST serializes it as `null`.
+
+### SDK status
+
+The generated full-API operation catalog is unchanged (no operation is added),
+and the native bridge carries the new JSON members without regeneration. The
+hand-written typed facades do not expose the new members yet; REST callers can
+read them from raw JSON.
+
+- R1: Python's committed `retrieval_pb2` stubs are regenerated. The new
+  request field breaks exhaustive `prost` literals of `HybridSearchRequest`
+  without `..Default::default()`, including the official Rust client's gRPC
+  transport. That client change is pending maintainer direction.

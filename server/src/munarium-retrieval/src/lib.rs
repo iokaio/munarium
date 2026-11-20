@@ -139,6 +139,104 @@ impl RetrievalMode {
     }
 }
 
+/// What actually executed for one search (R1, opt-in disclosure).
+///
+/// The provenance envelope says what the index was; this says how the query
+/// ran. `None` is "not measured", never zero: PostgreSQL does not report what
+/// each leg fetched or whether it exhausted the eligible set, so those stay
+/// unknown even on an empty result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchExecution {
+    /// `postgresql` or `datastore`: the engine that served the hits.
+    pub engine: &'static str,
+    /// The lexical score domain of that engine. Scores from different
+    /// domains are not comparable.
+    pub lexical_domain: &'static str,
+    /// The legs the engine ran, lexical first.
+    pub legs: Vec<LegExecution>,
+}
+
+/// One retrieval leg's observations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LegExecution {
+    /// `lexical` or `vector`.
+    pub leg: &'static str,
+    /// The candidate pool requested from the engine for this leg.
+    pub candidate_limit: Option<u64>,
+    /// Candidates the engine returned before fusion; `None` = not measured.
+    pub fetched: Option<u64>,
+    /// Whether the engine exhausted the eligible set; `None` = unknown.
+    pub exhausted: Option<bool>,
+}
+
+impl SearchExecution {
+    /// PostgreSQL collection search: the legs the prepared query asked for,
+    /// at its per-leg pool sizes. Fetch counts and exhaustion are unmeasured.
+    pub fn postgres(prepared: &PreparedSearchQuery) -> Self {
+        let leg = |leg, limit: i64| LegExecution {
+            leg,
+            candidate_limit: Some(u64::try_from(limit).unwrap_or(0)),
+            fetched: None,
+            exhausted: None,
+        };
+        let mut legs = Vec::new();
+        if prepared.lexical.is_some() {
+            legs.push(leg("lexical", prepared.lexical_candidates));
+        }
+        if prepared.embedding.is_some() {
+            legs.push(leg("vector", prepared.vector_candidates));
+        }
+        Self {
+            engine: "postgresql",
+            lexical_domain: merge::PG_LEXICAL_DOMAIN,
+            legs,
+        }
+    }
+
+    /// The PostgreSQL legacy shape-scoped search: always both legs at the
+    /// fixed legacy pool size.
+    pub fn postgres_legacy() -> Self {
+        let leg = |leg| LegExecution {
+            leg,
+            candidate_limit: Some(munarium_retrieval_pg::LEGACY_CANDIDATE_N.unsigned_abs()),
+            fetched: None,
+            exhausted: None,
+        };
+        Self {
+            engine: "postgresql",
+            lexical_domain: merge::PG_LEXICAL_DOMAIN,
+            legs: vec![leg("lexical"), leg("vector")],
+        }
+    }
+
+    /// A datastore artifact execution: exactly the legs the engine recorded
+    /// work for, with its own observations. A leg it did not run is absent.
+    pub fn datastore(work: &shadow::PhaseLatency) -> Self {
+        let leg = |leg, d: &munarium_datastore::diagnostics::CandidateDiagnostics| LegExecution {
+            leg,
+            candidate_limit: Some(d.candidate_limit as u64),
+            fetched: Some(d.fetched as u64),
+            exhausted: d.exhausted,
+        };
+        let mut legs = Vec::new();
+        if let Some(d) = &work.lexical_work {
+            legs.push(leg("lexical", d));
+        }
+        if let Some(d) = &work.vector_work {
+            legs.push(leg("vector", d));
+        }
+        Self {
+            engine: "datastore",
+            lexical_domain: DATASTORE_LEXICAL_DOMAIN,
+            legs,
+        }
+    }
+}
+
+/// The datastore's lexical score domain, as reported by
+/// [`Retrieval::search_collection_measured`].
+pub const DATASTORE_LEXICAL_DOMAIN: &str = "datastore/bm25/munarium-en@1";
+
 /// A cloneable, tenant-scoped retrieval handle.
 ///
 /// Cheap to clone, like the `PgRetrieval` it currently wraps — the session
@@ -313,6 +411,24 @@ impl Retrieval {
         prepared: &PreparedSearchQuery,
         index_version: Option<&str>,
     ) -> Result<(SearchResult, &'static str)> {
+        self.search_collection_disclosed(collection_id, prepared, index_version)
+            .await
+            .map(|(result, execution)| (result, execution.lexical_domain))
+    }
+
+    /// Search one collection and report what actually executed (R1).
+    ///
+    /// The same dispatch as [`Self::search_collection_prepared`]: the hits are
+    /// identical, and the [`SearchExecution`] records the engine that served
+    /// them, the legs it ran and what each leg observed. A count or an
+    /// exhaustion state the engine did not measure is `None` (unknown), never
+    /// a guessed zero or `false`.
+    pub async fn search_collection_disclosed(
+        &self,
+        collection_id: &str,
+        prepared: &PreparedSearchQuery,
+        index_version: Option<&str>,
+    ) -> Result<(SearchResult, SearchExecution)> {
         self.pg
             .assert_scope_readable("collection", collection_id)
             .await?;
@@ -342,7 +458,7 @@ impl Retrieval {
                         .await?;
                     let prepared = std::sync::Arc::new(prepared.clone());
                     return plane
-                        .search(
+                        .search_observed(
                             &self.pg,
                             ("collection", collection_id),
                             &version_id,
@@ -350,14 +466,14 @@ impl Retrieval {
                             &prepared,
                         )
                         .await
-                        .map(|result| (result, "datastore/bm25/munarium-en@1"));
+                        .map(|(result, work)| (result, SearchExecution::datastore(&work)));
                 }
             }
         }
         self.pg
             .search_collection_prepared(collection_id, prepared, index_version)
             .await
-            .map(|result| (result, merge::PG_LEXICAL_DOMAIN))
+            .map(|result| (result, SearchExecution::postgres(prepared)))
     }
 
     /// Search one collection, preparing inline.
@@ -391,6 +507,19 @@ impl Retrieval {
     /// resolution stays PostgreSQL's (`resolve_index` — the active LEGACY
     /// version, `collection_id IS NULL`, never a collection's).
     pub async fn hybrid_search(&self, q: HybridQuery) -> Result<SearchResult> {
+        self.hybrid_search_disclosed(q)
+            .await
+            .map(|(result, _)| result)
+    }
+
+    /// [`Self::hybrid_search`] with its [`SearchExecution`] (R1). The
+    /// PostgreSQL legacy path runs both legs at
+    /// [`munarium_retrieval_pg::LEGACY_CANDIDATE_N`] candidates and does not
+    /// measure what each fetched.
+    pub async fn hybrid_search_disclosed(
+        &self,
+        q: HybridQuery,
+    ) -> Result<(SearchResult, SearchExecution)> {
         self.pg.assert_scope_readable("shape", &q.shape_ref).await?;
         if self.mode == RetrievalMode::Datastore {
             let Some(plane) = &self.serving else {
@@ -413,17 +542,21 @@ impl Retrieval {
                 };
                 let prepared = std::sync::Arc::new(self.prepare_query(&q.query, &params));
                 return plane
-                    .search(
+                    .search_observed(
                         &self.pg,
                         ("shape", &q.shape_ref),
                         &version_id,
                         watermark,
                         &prepared,
                     )
-                    .await;
+                    .await
+                    .map(|(result, work)| (result, SearchExecution::datastore(&work)));
             }
         }
-        self.pg.hybrid_search(q).await
+        self.pg
+            .hybrid_search(q)
+            .await
+            .map(|result| (result, SearchExecution::postgres_legacy()))
     }
 
     /// The active index version for a shape.

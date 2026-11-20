@@ -8,18 +8,44 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class HybridSearchRequest(_message.Message):
-    __slots__ = ("query", "shape_ref", "top_k", "filter_json", "index_version")
+    __slots__ = ("query", "shape_ref", "top_k", "filter_json", "index_version", "disclose_execution")
     QUERY_FIELD_NUMBER: _ClassVar[int]
     SHAPE_REF_FIELD_NUMBER: _ClassVar[int]
     TOP_K_FIELD_NUMBER: _ClassVar[int]
     FILTER_JSON_FIELD_NUMBER: _ClassVar[int]
     INDEX_VERSION_FIELD_NUMBER: _ClassVar[int]
+    DISCLOSE_EXECUTION_FIELD_NUMBER: _ClassVar[int]
     query: str
     shape_ref: str
     top_k: int
     filter_json: str
     index_version: str
-    def __init__(self, query: _Optional[str] = ..., shape_ref: _Optional[str] = ..., top_k: _Optional[int] = ..., filter_json: _Optional[str] = ..., index_version: _Optional[str] = ...) -> None: ...
+    disclose_execution: bool
+    def __init__(self, query: _Optional[str] = ..., shape_ref: _Optional[str] = ..., top_k: _Optional[int] = ..., filter_json: _Optional[str] = ..., index_version: _Optional[str] = ..., disclose_execution: _Optional[bool] = ...) -> None: ...
+
+class SearchLegExecution(_message.Message):
+    __slots__ = ("leg", "candidate_limit", "fetched", "exhausted")
+    LEG_FIELD_NUMBER: _ClassVar[int]
+    CANDIDATE_LIMIT_FIELD_NUMBER: _ClassVar[int]
+    FETCHED_FIELD_NUMBER: _ClassVar[int]
+    EXHAUSTED_FIELD_NUMBER: _ClassVar[int]
+    leg: str
+    candidate_limit: int
+    fetched: int
+    exhausted: bool
+    def __init__(self, leg: _Optional[str] = ..., candidate_limit: _Optional[int] = ..., fetched: _Optional[int] = ..., exhausted: _Optional[bool] = ...) -> None: ...
+
+class SearchExecution(_message.Message):
+    __slots__ = ("version", "engine", "lexical_domain", "legs")
+    VERSION_FIELD_NUMBER: _ClassVar[int]
+    ENGINE_FIELD_NUMBER: _ClassVar[int]
+    LEXICAL_DOMAIN_FIELD_NUMBER: _ClassVar[int]
+    LEGS_FIELD_NUMBER: _ClassVar[int]
+    version: int
+    engine: str
+    lexical_domain: str
+    legs: _containers.RepeatedCompositeFieldContainer[SearchLegExecution]
+    def __init__(self, version: _Optional[int] = ..., engine: _Optional[str] = ..., lexical_domain: _Optional[str] = ..., legs: _Optional[_Iterable[_Union[SearchLegExecution, _Mapping]]] = ...) -> None: ...
 
 class SearchHit(_message.Message):
     __slots__ = ("chunk_id", "source_content_hash", "text", "score", "lexical_rank", "vector_rank", "metadata_json", "source_id", "source_path")
@@ -44,12 +70,14 @@ class SearchHit(_message.Message):
     def __init__(self, chunk_id: _Optional[str] = ..., source_content_hash: _Optional[str] = ..., text: _Optional[str] = ..., score: _Optional[float] = ..., lexical_rank: _Optional[float] = ..., vector_rank: _Optional[float] = ..., metadata_json: _Optional[str] = ..., source_id: _Optional[str] = ..., source_path: _Optional[str] = ...) -> None: ...
 
 class HybridSearchResponse(_message.Message):
-    __slots__ = ("hits", "envelope")
+    __slots__ = ("hits", "envelope", "execution")
     HITS_FIELD_NUMBER: _ClassVar[int]
     ENVELOPE_FIELD_NUMBER: _ClassVar[int]
+    EXECUTION_FIELD_NUMBER: _ClassVar[int]
     hits: _containers.RepeatedCompositeFieldContainer[SearchHit]
     envelope: _common_pb2.ProvenanceEnvelope
-    def __init__(self, hits: _Optional[_Iterable[_Union[SearchHit, _Mapping]]] = ..., envelope: _Optional[_Union[_common_pb2.ProvenanceEnvelope, _Mapping]] = ...) -> None: ...
+    execution: SearchExecution
+    def __init__(self, hits: _Optional[_Iterable[_Union[SearchHit, _Mapping]]] = ..., envelope: _Optional[_Union[_common_pb2.ProvenanceEnvelope, _Mapping]] = ..., execution: _Optional[_Union[SearchExecution, _Mapping]] = ...) -> None: ...
 
 class GetIndexVersionRequest(_message.Message):
     __slots__ = ("shape_ref",)

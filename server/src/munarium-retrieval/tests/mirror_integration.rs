@@ -1440,6 +1440,139 @@ async fn a_selected_scope_serves_from_the_datastore_and_rolls_back_by_selector()
     assert_eq!(back.hits.len(), reference.hits.len());
 }
 
+/// ClearView R1-T1 at the coordinator: the same authorized search, served by
+/// each engine in turn, discloses the engine that actually answered, the legs
+/// it ran and what each leg observed. PostgreSQL's unmeasured fetch counts and
+/// exhaustion stay unknown; disclosure never changes the hits.
+#[tokio::test]
+async fn search_execution_disclosure_names_the_engine_that_served() {
+    guard!();
+    let h = harness(&unique("tenant-r1"), 3).await;
+    let artifact_id = match h.mirror().await.unwrap() {
+        MirrorOutcome::Published { artifact_id, .. } => artifact_id,
+        other => panic!("expected a publication, got {other:?}"),
+    };
+    h.promote_to_serving(&artifact_id).await;
+    let selector = RolloutSelector::new(h.store.pool().clone(), &h.tenant);
+    selector
+        .create(
+            "collection",
+            &h.collection_id,
+            RolloutChange {
+                serving: "datastore",
+                prewarm_staged: false,
+                changed_by: "test",
+                reason: Some("R1 disclosure"),
+            },
+        )
+        .await
+        .unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let retrieval = h.serving_retrieval(cache.path());
+    let params = munarium_core::retrieval::SearchParams::default();
+    let prepared = PgRetrieval::prepare_query(
+        "the destruction of the tea in boston harbour",
+        &params,
+        &munarium_retrieval_pg::LocalHashEmbedder,
+    );
+    let ids = |r: &munarium_core::retrieval::SearchResult| {
+        r.hits
+            .iter()
+            .map(|h| h.chunk_id.clone())
+            .collect::<Vec<_>>()
+    };
+
+    let (served, execution) = retrieval
+        .search_collection_disclosed(&h.collection_id, &prepared, None)
+        .await
+        .unwrap();
+    assert_eq!(execution.engine, "datastore");
+    assert_eq!(
+        execution.lexical_domain,
+        munarium_retrieval::DATASTORE_LEXICAL_DOMAIN
+    );
+    assert_eq!(
+        execution.legs.iter().map(|l| l.leg).collect::<Vec<_>>(),
+        vec!["lexical", "vector"]
+    );
+    for leg in &execution.legs {
+        let fetched = leg
+            .fetched
+            .expect("the datastore measures each leg's fetch");
+        assert!(leg.candidate_limit.unwrap() >= fetched, "{leg:?}");
+    }
+    let plain = retrieval
+        .search_collection_prepared(&h.collection_id, &prepared, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        ids(&served),
+        ids(&plain),
+        "disclosure never changes the hits"
+    );
+
+    // A query with no embedding runs one leg, and says so.
+    let mut lexical_only = prepared.clone();
+    lexical_only.embedding = None;
+    let (_, execution) = retrieval
+        .search_collection_disclosed(&h.collection_id, &lexical_only, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        execution.legs.iter().map(|l| l.leg).collect::<Vec<_>>(),
+        vec!["lexical"]
+    );
+
+    // Roll the scope back: PostgreSQL answers and reports what it cannot see.
+    let entry = selector
+        .get("collection", &h.collection_id)
+        .await
+        .unwrap()
+        .unwrap();
+    selector
+        .update(
+            "collection",
+            &h.collection_id,
+            RolloutChange {
+                serving: "postgres",
+                prewarm_staged: false,
+                changed_by: "test",
+                reason: Some("R1 rollback"),
+            },
+            entry.generation,
+        )
+        .await
+        .unwrap()
+        .expect("the generation was fresh");
+    let (back, execution) = retrieval
+        .search_collection_disclosed(&h.collection_id, &prepared, None)
+        .await
+        .unwrap();
+    assert_eq!(execution.engine, "postgresql");
+    assert_eq!(
+        execution.lexical_domain,
+        munarium_retrieval::merge::PG_LEXICAL_DOMAIN
+    );
+    let expected_limit = Some(params.candidate_n as u64);
+    assert_eq!(
+        execution
+            .legs
+            .iter()
+            .map(|l| (l.leg, l.candidate_limit, l.fetched, l.exhausted))
+            .collect::<Vec<_>>(),
+        vec![
+            ("lexical", expected_limit, None, None),
+            ("vector", expected_limit, None, None)
+        ],
+        "unknown, never zero or false"
+    );
+    let reference =
+        h.pg.search_collection_prepared(&h.collection_id, &prepared, None)
+            .await
+            .unwrap();
+    assert_eq!(ids(&back), ids(&reference));
+}
+
 /// No fallback, stated as a test: a scope the selector routes to the
 /// datastore whose serving binding is MISSING fails with the specific error
 /// class -- it must never quietly answer from PostgreSQL.

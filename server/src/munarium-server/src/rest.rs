@@ -1175,15 +1175,48 @@ async fn get_index(
     Ok(Json(iv.convert()))
 }
 
+/// Attach the R1 execution disclosure only when the caller asked for it, so an
+/// omitted or `false` request serializes exactly the v1.4 response.
+pub(crate) fn disclose(
+    result: munarium_core::retrieval::SearchResult,
+    execution: munarium_retrieval::SearchExecution,
+    requested: Option<bool>,
+) -> dto::DisclosedSearchResponse {
+    dto::DisclosedSearchResponse {
+        result: result.convert(),
+        execution: requested
+            .unwrap_or(false)
+            .then(|| execution_dto(&execution)),
+    }
+}
+
+pub(crate) fn execution_dto(e: &munarium_retrieval::SearchExecution) -> dto::SearchExecutionDto {
+    dto::SearchExecutionDto {
+        version: 1,
+        engine: e.engine.to_string(),
+        lexical_domain: e.lexical_domain.to_string(),
+        legs: e
+            .legs
+            .iter()
+            .map(|l| dto::SearchLegDto {
+                leg: l.leg.to_string(),
+                candidate_limit: l.candidate_limit,
+                fetched: l.fetched,
+                exhausted: l.exhausted,
+            })
+            .collect(),
+    }
+}
+
 #[utoipa::path(post, path = "/v1/search",
     request_body = dto::SearchRequest,
-    responses((status = 200, body = dto::SearchResponse)), tag = "retrieval")]
+    responses((status = 200, body = dto::DisclosedSearchResponse)), tag = "retrieval")]
 async fn hybrid_search(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     uid: Option<axum::Extension<crate::middleware::Uid>>,
     ProblemJson(req): ProblemJson<dto::SearchRequest>,
-) -> ApiResult<Json<dto::SearchResponse>> {
+) -> ApiResult<Json<dto::DisclosedSearchResponse>> {
     // the one implemented filter is {"collections": ["<name-or-id>"]} —
     // route the search to that collection's partitioned index. One collection
     // per search so the single ProvenanceEnvelope stays truthful; merged
@@ -1239,20 +1272,18 @@ async fn hybrid_search(
                 .await?,
             ..Default::default()
         };
-        let result = retrieval
-            .search_collection(
-                &info.id,
-                req.query.as_deref().unwrap_or_default(),
-                params,
-                req.index_version.as_deref(),
-            )
+        // The same prepared query and dispatch `search_collection` uses; the
+        // disclosed variant only keeps the observations.
+        let prepared = retrieval.prepare_query(req.query.as_deref().unwrap_or_default(), &params);
+        let (result, execution) = retrieval
+            .search_collection_disclosed(&info.id, &prepared, req.index_version.as_deref())
             .await?;
-        return Ok(Json(result.convert()));
+        return Ok(Json(disclose(result, execution, req.disclose_execution)));
     }
     let ctx = auth_ctx(&state, &headers)?;
     let retrieval = state.retrieval_for(&ctx.tenant_id)?;
-    let result = retrieval
-        .hybrid_search(munarium_core::retrieval::HybridQuery {
+    let (result, execution) = retrieval
+        .hybrid_search_disclosed(munarium_core::retrieval::HybridQuery {
             query: req.query.unwrap_or_default(),
             shape_ref: req.shape_ref.unwrap_or_default(),
             top_k: req.top_k.map(|k| k as usize).unwrap_or(10),
@@ -1260,7 +1291,7 @@ async fn hybrid_search(
             index_version: req.index_version,
         })
         .await?;
-    Ok(Json(result.convert()))
+    Ok(Json(disclose(result, execution, req.disclose_execution)))
 }
 
 // ---------------------------------------------------------------------------
@@ -1783,3 +1814,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         ))
         .with_state(state)
 }
+
+#[cfg(test)]
+#[path = "clearview_r1_tests.rs"]
+mod clearview_r1_tests;

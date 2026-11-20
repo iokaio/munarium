@@ -80,6 +80,22 @@ impl ServingPlane {
         watermark: u64,
         prepared: &Arc<PreparedSearchQuery>,
     ) -> Result<SearchResult> {
+        self.search_observed(pg, scope, index_version_id, watermark, prepared)
+            .await
+            .map(|(result, _)| result)
+    }
+
+    /// [`Self::search`], also returning the engine's own per-leg work record
+    /// (R1 search-execution disclosure). The hits are identical; only the
+    /// observations that `search` discards are kept.
+    pub async fn search_observed(
+        &self,
+        pg: &PgRetrieval,
+        scope: (&str, &str),
+        index_version_id: &str,
+        watermark: u64,
+        prepared: &Arc<PreparedSearchQuery>,
+    ) -> Result<(SearchResult, crate::shadow::PhaseLatency)> {
         let unavailable = |reason: &str| {
             KernelError::DatastoreUnavailable(format!(
                 "{} {} (version {index_version_id}): {reason}",
@@ -170,23 +186,26 @@ impl ServingPlane {
             }
         }
 
-        Ok(SearchResult {
-            envelope: ProvenanceEnvelope {
-                chunk_ids: hits.iter().map(|h| h.chunk_id.clone()).collect(),
-                source_ids,
-                source_paths,
-                source_content_hashes: hashes,
-                index_version: index_version_id.to_string(),
-                event_watermark: watermark,
-                // The embedder that produced the artifact's vectors — the
-                // same one the prepared query's vector came from.
-                provider_fingerprint: Some(format!(
-                    "local/{}/{}",
-                    munarium_retrieval_pg::LOCAL_EMBEDDER,
-                    munarium_retrieval_pg::EMBED_DIMS
-                )),
+        Ok((
+            SearchResult {
+                envelope: ProvenanceEnvelope {
+                    chunk_ids: hits.iter().map(|h| h.chunk_id.clone()).collect(),
+                    source_ids,
+                    source_paths,
+                    source_content_hashes: hashes,
+                    index_version: index_version_id.to_string(),
+                    event_watermark: watermark,
+                    // The embedder that produced the artifact's vectors — the
+                    // same one the prepared query's vector came from.
+                    provider_fingerprint: Some(format!(
+                        "local/{}/{}",
+                        munarium_retrieval_pg::LOCAL_EMBEDDER,
+                        munarium_retrieval_pg::EMBED_DIMS
+                    )),
+                },
+                hits,
             },
-            hits,
-        })
+            execution.latency,
+        ))
     }
 }

@@ -545,6 +545,30 @@ _(no fields)_
 | 3 | top_k | uint32 | default 10 |
 | 4 | filter_json | string | shape-defined metadata filters |
 | 5 | index_version | string | empty = active index |
+| 6 | disclose_execution | bool | Experimental (ClearView R1): true adds `execution` to the response. False (the proto3 default, and every older client) = the v1.4 response. |
+
+### message SearchLegExecution
+
+One retrieval leg's observations. An unset optional field was not measured
+by the serving engine: unknown, never zero or false.
+
+| # | Field | Type | Notes |
+|---|---|---|---|
+| 1 | leg | string | lexical \| vector |
+| 2 | candidate_limit | optional uint64 | per-leg pool requested |
+| 3 | fetched | optional uint64 | candidates returned before fusion |
+| 4 | exhausted | optional bool | eligible set exhausted |
+
+### message SearchExecution
+
+How one search actually executed (ClearView R1, experimental).
+
+| # | Field | Type | Notes |
+|---|---|---|---|
+| 1 | version | uint32 | disclosure format; currently 1 |
+| 2 | engine | string | postgresql \| datastore |
+| 3 | lexical_domain | string | scores across domains are not comparable |
+| 4 | legs | repeated SearchLegExecution | legs that ran, lexical first |
 
 ### message SearchHit
 
@@ -566,6 +590,7 @@ _(no fields)_
 |---|---|---|---|
 | 1 | hits | repeated SearchHit |  |
 | 2 | envelope | ProvenanceEnvelope |  |
+| 3 | execution | SearchExecution | Present only when the request set disclose_execution. |
 
 ### message GetIndexVersionRequest
 
@@ -1267,6 +1292,9 @@ no evidence rows appear here.
 | EnqueueJob | ServerApiRequest | ServerApiResponse | POST /v1/index-build-jobs |
 | GetJob | ServerApiRequest | ServerApiResponse | GET /v1/index-build-jobs/{job_id} |
 | CancelJob | ServerApiRequest | ServerApiResponse | POST /v1/index-build-jobs/{job_id}/cancel |
+| ListJobEvents | ServerApiRequest | ServerApiResponse | GET /v1/index-build-jobs/{job_id}/events |
+| GetJobProgress | ServerApiRequest | ServerApiResponse | GET /v1/index-build-jobs/{job_id}/progress |
+| ListJobVersions | ServerApiRequest | ServerApiResponse | GET /v1/index-build-jobs/{job_id}/versions |
 | GetIndex | ServerApiRequest | ServerApiResponse | GET /v1/indexes/{shape_ref} |
 | BuildIndex | ServerApiRequest | ServerApiResponse | POST /v1/indexes/{shape_ref}/build |
 | IngestFile | ServerApiRequest | ServerApiResponse | POST /v1/ingest |
@@ -1299,6 +1327,7 @@ no evidence rows appear here.
 | MatrixReport | ServerApiRequest | ServerApiResponse | GET /v1/reports/matrix |
 | MonetaryReport | ServerApiRequest | ServerApiResponse | GET /v1/reports/money |
 | RunbookReport | ServerApiRequest | ServerApiResponse | GET /v1/reports/runbooks |
+| ScaleReport | ServerApiRequest | ServerApiResponse | GET /v1/reports/scale |
 | SessionsReport | ServerApiRequest | ServerApiResponse | GET /v1/reports/sessions |
 | Timeseries | ServerApiRequest | ServerApiResponse | GET /v1/reports/timeseries |
 | Usage | ServerApiRequest | ServerApiResponse | GET /v1/reports/usage |

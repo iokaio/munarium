@@ -79,6 +79,10 @@ fn pg_watermark(value: u64) -> Result<i64> {
         .map_err(|_| KernelError::Storage("watermark_seq exceeds PostgreSQL BIGINT".into()))
 }
 
+/// Per-leg candidate pool of the legacy shape-scoped hybrid search. Named so
+/// the coordinator's execution disclosure (R1) reports the pool that ran.
+pub const LEGACY_CANDIDATE_N: i64 = 50;
+
 fn read_watermark(value: i64) -> Result<u64> {
     u64::try_from(value)
         .map_err(|_| KernelError::Storage("negative PostgreSQL watermark_seq".into()))
@@ -1022,7 +1026,7 @@ impl RetrievalBackend for PgRetrieval {
         let (index_id, watermark) = self
             .resolve_index(&q.shape_ref, q.index_version.as_deref())
             .await?;
-        let candidate_n = 50i64;
+        let candidate_n = LEGACY_CANDIDATE_N;
 
         // lexical candidates
         // OR-semantics lexical leg — same rewrite as the collection path

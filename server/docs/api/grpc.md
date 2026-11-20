@@ -28,6 +28,15 @@ JSON bodies and handlers as REST. See the
 
 Server reflection is enabled (tonic-reflection), so `grpcurl` needs no local protos.
 
+**Experimental ClearView fields (Server v1.5 candidate).** Fresh tags only; no
+existing tag, type or default changes, and an older client's request selects
+the v1.4 behavior:
+
+- `RetrievalService/HybridSearch`: `HybridSearchRequest.disclose_execution = 6`
+  (`false` = v1.4) and `HybridSearchResponse.execution = 3`, a
+  `SearchExecution` whose legs use proto3 `optional` fields so an unmeasured
+  count or exhaustion state is unset, not zero (R1).
+
 ## The two gRPC planes
 
 Both serve the identical services — the conformance suite diffs their answers.

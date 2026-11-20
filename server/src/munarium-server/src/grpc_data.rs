@@ -207,8 +207,9 @@ impl pb::retrieval_service_server::RetrievalService for RetrievalSvc {
             .state
             .retrieval_for(&ctx.tenant_id)
             .map_err(|e| to_status(&e))?;
-        let result = retrieval
-            .hybrid_search(munarium_core::retrieval::HybridQuery {
+        let disclose = inner.disclose_execution;
+        let (result, execution) = retrieval
+            .hybrid_search_disclosed(munarium_core::retrieval::HybridQuery {
                 query: inner.query,
                 shape_ref: inner.shape_ref,
                 top_k: if inner.top_k == 0 {
@@ -227,6 +228,26 @@ impl pb::retrieval_service_server::RetrievalService for RetrievalSvc {
             .map_err(|e| to_status(&e))?;
         let out: munarium_api_types::SearchResponse = result.convert();
         Ok(Response::new(pb::HybridSearchResponse {
+            // Present only when requested (fresh tag 3): an older client, or
+            // one that leaves `disclose_execution` false, sees no new field.
+            execution: disclose.then(|| {
+                let e = crate::rest::execution_dto(&execution);
+                pb::SearchExecution {
+                    version: e.version,
+                    engine: e.engine,
+                    lexical_domain: e.lexical_domain,
+                    legs: e
+                        .legs
+                        .into_iter()
+                        .map(|l| pb::SearchLegExecution {
+                            leg: l.leg,
+                            candidate_limit: l.candidate_limit,
+                            fetched: l.fetched,
+                            exhausted: l.exhausted,
+                        })
+                        .collect(),
+                }
+            }),
             hits: out
                 .hits
                 .into_iter()

@@ -5171,7 +5171,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SearchResponse"
+                  "$ref": "#/components/schemas/DisclosedSearchResponse"
                 }
               }
             }
@@ -8788,6 +8788,29 @@
             }
           }
         }
+      },
+      "DisclosedSearchResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SearchResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "execution": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SearchExecutionDto"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "description": "`POST /v1/search` response: the v1.4 [`SearchResponse`] members, plus\n`execution` only when it was requested. Without it the bytes are exactly\nthe v1.4 response's.\n\nDeserialization reads JSON text (as every exact-number member here does)\nand is implemented by hand: `#[serde(flatten)]` buffers members, which the\nexact-JSON readers of the base response cannot consume."
       },
       "DocumentFindingsDto": {
         "type": "object",
@@ -12757,6 +12780,39 @@
           }
         }
       },
+      "SearchExecutionDto": {
+        "type": "object",
+        "description": "How one search actually executed (ClearView R1, experimental). Returned\nonly when the request sets `disclose_execution: true`.\n\nThe envelope says what the index was; this says how the query ran. A\nmember that is `null` was not measured by the serving engine: unknown,\nnever zero or `false`, even on an empty result.",
+        "required": [
+          "version",
+          "engine",
+          "lexical_domain",
+          "legs"
+        ],
+        "properties": {
+          "engine": {
+            "type": "string",
+            "description": "The engine that served the hits: `postgresql` | `datastore`."
+          },
+          "legs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchLegDto"
+            },
+            "description": "The legs the engine ran, lexical first. A leg that did not run is absent."
+          },
+          "lexical_domain": {
+            "type": "string",
+            "description": "That engine's lexical score domain. Scores from different domains are\nnot comparable."
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Disclosure format version; currently 1.",
+            "minimum": 0
+          }
+        }
+      },
       "SearchHitDto": {
         "type": "object",
         "required": [
@@ -12830,9 +12886,54 @@
           }
         }
       },
+      "SearchLegDto": {
+        "type": "object",
+        "description": "One retrieval leg's observations (ClearView R1, experimental).",
+        "required": [
+          "leg"
+        ],
+        "properties": {
+          "candidate_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The per-leg candidate pool requested from the engine.",
+            "minimum": 0
+          },
+          "exhausted": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether the engine exhausted the eligible set; `null` = unknown."
+          },
+          "fetched": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Candidates the engine returned before fusion; `null` = not measured.",
+            "minimum": 0
+          },
+          "leg": {
+            "type": "string",
+            "description": "`lexical` | `vector`."
+          }
+        }
+      },
       "SearchRequest": {
         "type": "object",
         "properties": {
+          "disclose_execution": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Experimental (ClearView R1): `true` adds an `execution` object to the\nresponse. Omitted or `false` returns exactly the v1.4 response."
+          },
           "filter": {
             "type": [
               "object",

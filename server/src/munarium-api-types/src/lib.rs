@@ -817,6 +817,10 @@ pub struct SearchRequest {
     #[schema(value_type = Option<Object>)]
     #[serde(deserialize_with = "json::optional")]
     pub filter: Option<serde_json::Value>,
+    /// Experimental (ClearView R1): `true` adds an `execution` object to the
+    /// response. Omitted or `false` returns exactly the v1.4 response.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disclose_execution: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -869,6 +873,56 @@ pub struct ProvenanceEnvelopeDto {
 pub struct SearchResponse {
     pub hits: Vec<SearchHitDto>,
     pub envelope: ProvenanceEnvelopeDto,
+}
+
+/// How one search actually executed (ClearView R1, experimental). Returned
+/// only when the request sets `disclose_execution: true`.
+///
+/// The envelope says what the index was; this says how the query ran. A
+/// member that is `null` was not measured by the serving engine: unknown,
+/// never zero or `false`, even on an empty result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct SearchExecutionDto {
+    /// Disclosure format version; currently 1.
+    pub version: u32,
+    /// The engine that served the hits: `postgresql` | `datastore`.
+    pub engine: String,
+    /// That engine's lexical score domain. Scores from different domains are
+    /// not comparable.
+    pub lexical_domain: String,
+    /// The legs the engine ran, lexical first. A leg that did not run is absent.
+    pub legs: Vec<SearchLegDto>,
+}
+
+/// One retrieval leg's observations (ClearView R1, experimental).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct SearchLegDto {
+    /// `lexical` | `vector`.
+    pub leg: String,
+    /// The per-leg candidate pool requested from the engine.
+    #[serde(default)]
+    pub candidate_limit: Option<u64>,
+    /// Candidates the engine returned before fusion; `null` = not measured.
+    #[serde(default)]
+    pub fetched: Option<u64>,
+    /// Whether the engine exhausted the eligible set; `null` = unknown.
+    #[serde(default)]
+    pub exhausted: Option<bool>,
+}
+
+/// `POST /v1/search` response: the v1.4 [`SearchResponse`] members, plus
+/// `execution` only when it was requested. Without it the bytes are exactly
+/// the v1.4 response's.
+///
+/// Deserialization reads JSON text (as every exact-number member here does)
+/// and is implemented by hand: `#[serde(flatten)]` buffers members, which the
+/// exact-JSON readers of the base response cannot consume.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct DisclosedSearchResponse {
+    #[serde(flatten)]
+    pub result: SearchResponse,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution: Option<SearchExecutionDto>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1825,6 +1879,37 @@ pub struct TurnResponse {
     /// is load-bearing — a legacy turn's JSON must not grow a key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hierarchy: Option<EvidenceHierarchyDecisionDto>,
+}
+
+/// Split one optional extension member off a v1.4 response object, decoding
+/// the remainder with the base type's own (exact) readers. Requires a JSON
+/// text deserializer, as `json::LiteralValue` does.
+fn split_extension<'de, D, T, E>(deserializer: D, key: &str) -> Result<(T, Option<E>), D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
+    E: serde::de::DeserializeOwned,
+{
+    use serde::de::Error as _;
+    let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+    let mut members: std::collections::BTreeMap<String, &serde_json::value::RawValue> =
+        serde_json::from_str(raw.get()).map_err(D::Error::custom)?;
+    let extension = members
+        .remove(key)
+        .map(|value| serde_json::from_str::<Option<E>>(value.get()))
+        .transpose()
+        .map_err(D::Error::custom)?
+        .flatten();
+    let base = serde_json::to_string(&members).map_err(D::Error::custom)?;
+    let base = serde_json::from_str(&base).map_err(D::Error::custom)?;
+    Ok((base, extension))
+}
+
+impl<'de> Deserialize<'de> for DisclosedSearchResponse {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let (result, execution) = split_extension(deserializer, "execution")?;
+        Ok(Self { result, execution })
+    }
 }
 
 /// One progress event on the streaming turn plane
@@ -2986,4 +3071,32 @@ pub struct MaxTokensResponse {
     /// `environment`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
+}
+
+#[cfg(test)]
+mod clearview_wrapper_tests {
+    use super::*;
+
+    /// The R1 wrapper decodes with the base types' exact readers, accept an
+    /// absent or `null` extension, and re-serialize an absent one as nothing.
+    #[test]
+    fn extension_wrappers_round_trip_exact_members() {
+        let legacy = r#"{"hits":[{"chunk_id":"c","source_id":"s","source_path":"p","source_content_hash":"h","text":"t","score":1.0,"lexical_rank":1,"vector_rank":null,"metadata":{"n":18446744073709551615}}],"envelope":{"chunk_ids":["c"],"source_ids":["s"],"source_paths":["p"],"source_content_hashes":["h"],"index_version":"i","event_watermark":9007199254740993,"provider_fingerprint":null}}"#;
+        let decoded: DisclosedSearchResponse = serde_json::from_str(legacy).unwrap();
+        assert!(decoded.execution.is_none());
+        assert_eq!(serde_json::to_string(&decoded).unwrap(), legacy);
+        let with_null = legacy.replacen('{', r#"{"execution":null,"#, 1);
+        let decoded: DisclosedSearchResponse = serde_json::from_str(&with_null).unwrap();
+        assert!(decoded.execution.is_none());
+        let disclosed = legacy.replacen(
+            '{',
+            r#"{"execution":{"version":1,"engine":"postgresql","lexical_domain":"d","legs":[{"leg":"lexical","candidate_limit":50,"fetched":null,"exhausted":null}]},"#,
+            1,
+        );
+        let decoded: DisclosedSearchResponse = serde_json::from_str(&disclosed).unwrap();
+        let execution = decoded.execution.unwrap();
+        assert_eq!(execution.legs[0].candidate_limit, Some(50));
+        assert_eq!(execution.legs[0].fetched, None);
+        assert_eq!(decoded.result.envelope.event_watermark, 9007199254740993);
+    }
 }

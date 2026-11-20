@@ -13,6 +13,16 @@ command recovery at `GET/POST /v1/command-recovery`, and inspect claim metadata
 at `GET /v1/command-recovery/receipt?key=...`. See the
 [activation, retry and rollback contract](../ops/command-recovery.md).
 
+**Experimental ClearView additions (Server v1.5 candidate).** Each is opt-in or
+an optional member; an omitted option returns the v1.4 response byte for byte.
+See [wire compatibility](../wire-compatibility.md#clearview-phase-2-explain-a-retrieval-result).
+
+- `POST /v1/search` accepts `disclose_execution: true` (R1) and then adds an
+  `execution` object: `version` (1), `engine` (`postgresql` or `datastore`),
+  `lexical_domain`, and `legs[]` with `leg`, `candidate_limit`, `fetched` and
+  `exhausted`. A `null` member was not measured by that engine; it is unknown,
+  never zero. PostgreSQL reports neither fetch counts nor exhaustion.
+
 Token accounting evidence uses management-only `GET /v1/budgets/{id}/evidence`,
 `GET /v1/budgets/{id}/adjustments`, `POST /v1/budgets/{id}/adjustments`, and
 `GET /v1/reports/budget-usage?day=YYYY-MM-DD`. See
