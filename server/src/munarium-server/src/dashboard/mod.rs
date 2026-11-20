@@ -48,6 +48,7 @@ mod console_sessions;
 mod html_checks;
 mod inventory;
 mod jobs;
+mod mcp;
 mod monitoring;
 mod runbooks;
 mod storage;
@@ -325,6 +326,10 @@ pub(crate) const NAV: &[NavGroup] = &[
                 "/admin/findings",
                 "findings",
                 "Gate findings recorded at write time and by Matrix reconciliation, newest first.", &["observability.md", "api/rest.md"]),
+            nav_page(
+                "/admin/mcp",
+                "mcp",
+                "MCP agent activity by tool, durable-admission refusals, unknown outcomes, and the tokens that can enter MCP.", &["ops/mcp.md", "security-posture.md"]),
             nav_page(
                 "/admin/console-sessions",
                 "console sessions",
@@ -1046,6 +1051,9 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/admin/findings", get(inventory::findings))
         .route("/admin/matrix", get(inventory::matrix))
         .route("/admin/console-sessions", get(console_sessions::list))
+        // ClearView §9.3: MCP activity, read-only; revocation is the token
+        // review above.
+        .route("/admin/mcp", get(mcp::page))
         .route(
             "/admin/console-sessions/{session_id}/revoke",
             get(console_sessions::revoke_review_page),
@@ -1245,7 +1253,7 @@ mod tests {
     ];
 
     /// Navigation pages added after v1.4 (ClearView U10 and U12).
-    const NEW_PAGES: &[&str] = &["/admin/console-sessions", "/admin/build-jobs"];
+    const NEW_PAGES: &[&str] = &["/admin/console-sessions", "/admin/build-jobs", "/admin/mcp"];
 
     /// U2: every page has one `h1`, its purpose line, and the read context
     /// (tenant, instance, store mode, read time).
