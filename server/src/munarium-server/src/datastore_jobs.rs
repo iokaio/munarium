@@ -369,7 +369,7 @@ impl Drop for AbortOnDrop {
 /// ([`client_failure`]): a stored code returns its message and code; stored
 /// text without a code (historical or a v1.4 builder's) returns the generic
 /// message and no code. The text is never parsed.
-fn job_dto(j: BuildJob) -> dto::IndexBuildJobDto {
+pub(crate) fn job_dto(j: BuildJob) -> dto::IndexBuildJobDto {
     let (error, error_code) = client_failure(j.error.as_deref(), j.error_code.as_deref());
     dto::IndexBuildJobDto {
         job_id: j.job_id,
@@ -548,7 +548,7 @@ pub async fn cancel_job(
 }
 
 /// The `manifest` member of a version outcome, from its intent state.
-fn manifest_label(intent_state: Option<&str>) -> &'static str {
+pub(crate) fn manifest_label(intent_state: Option<&str>) -> &'static str {
     match intent_state {
         None => "none",
         Some("pending") => "unknown",

@@ -47,6 +47,7 @@ mod console_sessions;
 #[cfg(test)]
 mod html_checks;
 mod inventory;
+mod jobs;
 mod monitoring;
 mod runbooks;
 mod storage;
@@ -293,6 +294,10 @@ pub(crate) const NAV: &[NavGroup] = &[
                 "storage",
                 "Where collection data lives across the storage tiers and nodes.", &["guides/datastore.md"]),
             nav_page(
+                "/admin/build-jobs",
+                "build jobs",
+                "Queued index build jobs: their state, recorded progress, transition history and per-version outcomes.", &["guides/datastore.md"]),
+            nav_page(
                 "/admin/sessions",
                 "sessions",
                 "Conversation sessions: activity over time and each session turn by turn.", &["guides/getting-started.md", "observability.md"]),
@@ -459,8 +464,21 @@ fn docs_line(docs: &[&str]) -> String {
 }
 
 fn page(admin: &AdminCtx, active: &str, title: &str, actions: &str, body: &str) -> Html<String> {
+    page_with_head(admin, active, title, actions, "", body)
+}
+
+/// [`page`] with extra trusted `<head>` content, such as the refresh a
+/// running job's page carries (ClearView U12).
+fn page_with_head(
+    admin: &AdminCtx,
+    active: &str,
+    title: &str,
+    actions: &str,
+    head: &str,
+    body: &str,
+) -> Html<String> {
     Html(format!(
-        r##"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{} — munarium admin</title>{}</head><body><a class="skip" href="#main">skip to content</a>{}<main id="main">{}{body}</main></body></html>"##,
+        r##"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">{head}<title>{} — munarium admin</title>{}</head><body><a class="skip" href="#main">skip to content</a>{}<main id="main">{}{body}</main></body></html>"##,
         charts::esc(title),
         charts::STYLE,
         nav(active, admin),
@@ -471,6 +489,22 @@ fn page(admin: &AdminCtx, active: &str, title: &str, actions: &str, body: &str) 
 /// A full page for an authenticated admin request.
 pub(crate) fn render(admin: &AdminCtx, active: &str, title: &str, body: &str) -> Response {
     page(admin, active, title, "", body).into_response()
+}
+
+/// A full page that reloads itself every `refresh_secs` seconds, or a plain
+/// page when `None`. No script: a `<meta http-equiv="refresh">`, emitted only
+/// while there is something to watch (ClearView U12).
+pub(crate) fn render_refreshing(
+    admin: &AdminCtx,
+    active: &str,
+    title: &str,
+    refresh_secs: Option<u32>,
+    body: &str,
+) -> Response {
+    let head = refresh_secs
+        .map(|s| format!(r#"<meta http-equiv="refresh" content="{s}">"#))
+        .unwrap_or_default();
+    page_with_head(admin, active, title, "", &head, body).into_response()
 }
 
 /// A full page whose header carries actions (trusted HTML — build them with
@@ -985,6 +1019,10 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/admin/providers", get(inventory::providers))
         .route("/admin/collections", get(inventory::collections))
         .route("/admin/storage", get(storage::storage))
+        // ClearView U12: build jobs, read-only, from the R9 progress and
+        // event records and the R6 per-version outcomes.
+        .route("/admin/build-jobs", get(jobs::list))
+        .route("/admin/build-jobs/{job_id}", get(jobs::detail))
         .route("/admin/collections/{id}", get(inventory::collection))
         .route("/admin/sessions", get(inventory::sessions))
         .route("/admin/sessions/{id}", get(inventory::session))
@@ -1206,8 +1244,8 @@ mod tests {
         "/admin/health",
     ];
 
-    /// Navigation pages added after v1.4 (ClearView U10).
-    const NEW_PAGES: &[&str] = &["/admin/console-sessions"];
+    /// Navigation pages added after v1.4 (ClearView U10 and U12).
+    const NEW_PAGES: &[&str] = &["/admin/console-sessions", "/admin/build-jobs"];
 
     /// U2: every page has one `h1`, its purpose line, and the read context
     /// (tenant, instance, store mode, read time).
@@ -2544,7 +2582,7 @@ mod tests {
             ),
             (
                 1,
-                "/admin/storage",
+                "/admin/build-jobs",
                 "index build jobs failed in the last 24 hours",
             ),
             (
@@ -3992,5 +4030,147 @@ mod tests {
         let ids = session_ids(&again, &tenant).await;
         assert!(!ids.contains(&first_id), "pruned");
         assert_eq!(ids.len(), 2);
+    }
+
+    // -----------------------------------------------------------------------
+    // U12: build-job progress from recorded events
+    // -----------------------------------------------------------------------
+
+    /// Against PostgreSQL: the job list and two job pages read the recorded
+    /// rows. A running direct build shows its labelled progress with the
+    /// total unknown and refreshes; a v1.4-claimed job whose oldest event was
+    /// pruned says "older history pruned" and "history unavailable" and does
+    /// not refresh. Another tenant's job is not found, and a malformed id
+    /// reads nothing. Every page passes the U13/U14 checks. The seeded rows
+    /// are never claimable: terminal, or running under an infinite lease.
+    #[tokio::test]
+    async fn build_job_pages_show_recorded_progress_and_history_on_postgres() {
+        let Ok(url) = std::env::var("MUNARIUM_TEST_DATABASE_URL") else {
+            eprintln!("console U12 PostgreSQL test NOT RUN: MUNARIUM_TEST_DATABASE_URL unset");
+            return;
+        };
+        let tenant = format!("console-u12-{}", uuid::Uuid::new_v4().simple());
+        let other = format!("{tenant}-other");
+        let mut cfg = test_config(AuthMode::Static(vec![
+            ("m".into(), tenant.clone(), "mgmt".into()),
+            ("mo".into(), other.clone(), "mgmt".into()),
+        ]));
+        cfg.store = StoreKind::Postgres;
+        cfg.database_url = Some(url);
+        let state = AppState::new(cfg).await.expect("state");
+        let pool = state.pg_pool().expect("pool").clone();
+        for sql in [
+            // A running direct build under a fenced claim, 2 sources done,
+            // total not yet known.
+            "INSERT INTO index_build_jobs
+               (tenant_id, job_id, kind, scope_kind, scope_id, state, claimed_by,
+                claimed_at, attempts, requested_by)
+             VALUES ($1, 'bjob-u12-run', 'direct', 'collection', 'col-u12', 'running',
+                     'builder-a', 'infinity', 1, 'api:rw')",
+            "INSERT INTO index_build_job_runs (tenant_id, job_id, job_generation, node_id)
+             VALUES ($1, 'bjob-u12-run', 1, 'builder-a')",
+            "UPDATE index_build_jobs
+                SET progress_phase = 'extracting', progress_units_done = 2,
+                    progress_advanced_at = now()
+              WHERE tenant_id = $1 AND job_id = 'bjob-u12-run'",
+            // A job a v1.4 builder claimed and finished: no run record.
+            "INSERT INTO index_build_jobs
+               (tenant_id, job_id, kind, scope_kind, scope_id, state, requested_by)
+             VALUES ($1, 'bjob-u12-v14', 'backfill', 'collection', 'col-u12', 'pending',
+                     'api:rw')",
+            "UPDATE index_build_jobs
+                SET state = 'running', claimed_by = 'builder-v14', claimed_at = 'infinity',
+                    attempts = 1
+              WHERE tenant_id = $1 AND job_id = 'bjob-u12-v14'",
+            "UPDATE index_build_jobs SET state = 'succeeded'
+              WHERE tenant_id = $1 AND job_id = 'bjob-u12-v14'",
+            // Retention pruned its oldest event.
+            "DELETE FROM index_build_job_events
+              WHERE tenant_id = $1 AND job_id = 'bjob-u12-v14' AND job_event_seq = 1",
+        ] {
+            sqlx::query(sql)
+                .bind(&tenant)
+                .execute(&pool)
+                .await
+                .unwrap_or_else(|e| panic!("{sql}: {e}"));
+        }
+
+        let list = body_string(get(&state, "/admin/build-jobs", Some("m"), false).await).await;
+        assert!(
+            list.contains(r#"href="/admin/build-jobs/bjob-u12-run""#),
+            "{list}"
+        );
+        assert!(
+            list.contains(r#"href="/admin/build-jobs/bjob-u12-v14""#),
+            "{list}"
+        );
+        assert!(list.contains("mmctl datastore jobs list"), "{list}");
+
+        let run =
+            body_string(get(&state, "/admin/build-jobs/bjob-u12-run", Some("m"), false).await)
+                .await;
+        assert!(
+            run.contains(r#"<meta http-equiv="refresh" content="5">"#),
+            "{run}"
+        );
+        assert!(run.contains("2 sources done"), "{run}");
+        assert!(run.contains("total unknown"), "{run}");
+        assert!(run.contains(">extracting</span>"), "{run}");
+        assert!(!run.contains("history unavailable"), "{run}");
+        assert!(!run.contains("older history pruned"), "{run}");
+        assert!(
+            run.contains("none: this job touched no index version"),
+            "{run}"
+        );
+        assert!(
+            run.contains("mmctl datastore jobs get bjob-u12-run"),
+            "{run}"
+        );
+
+        let v14 =
+            body_string(get(&state, "/admin/build-jobs/bjob-u12-v14", Some("m"), false).await)
+                .await;
+        assert!(!v14.contains("http-equiv"), "{v14}");
+        assert!(v14.contains("older history pruned"), "{v14}");
+        assert!(v14.contains("Events before #2 are no longer kept"), "{v14}");
+        assert!(v14.contains("history unavailable"), "{v14}");
+        assert!(!v14.contains("touched no index version"), "{v14}");
+        assert!(v14.contains("no count recorded"), "{v14}");
+
+        for path in [
+            "/admin/build-jobs",
+            "/admin/build-jobs/bjob-u12-run",
+            "/admin/build-jobs/bjob-u12-v14",
+        ] {
+            for view_only in [false, true] {
+                let body = body_string(get(&state, path, Some("m"), view_only).await).await;
+                html_checks::assert_operable(path, &body);
+                assert_classes_styled(path, &body);
+                assert_status_cues_have_text(path, &body);
+            }
+        }
+
+        // Tenant isolation: the other tenant neither lists nor reads it.
+        let list = body_string(get(&state, "/admin/build-jobs", Some("mo"), false).await).await;
+        assert!(!list.contains("bjob-u12"), "{list}");
+        let resp = get(&state, "/admin/build-jobs/bjob-u12-run", Some("mo"), false).await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        let body = body_string(resp).await;
+        assert!(!body.contains("builder-a"), "{body}");
+
+        // A malformed id is refused before any read.
+        let resp = get(&state, "/admin/build-jobs/a%20b", Some("m"), false).await;
+        let body = body_string(resp).await;
+        assert!(body.contains(r#"class="notice""#), "{body}");
+        assert!(!body.contains("<h2>progress</h2>"), "{body}");
+
+        sqlx::query(
+            "UPDATE index_build_jobs SET state = 'cancelled'
+              WHERE tenant_id = $1 AND state = 'running'",
+        )
+        .bind(&tenant)
+        .execute(&pool)
+        .await
+        .unwrap();
     }
 }

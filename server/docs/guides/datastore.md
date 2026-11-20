@@ -753,6 +753,17 @@ rates, storage, read and prune cost and the history window operators need have
 not been measured yet, so treat it as a placeholder and review it before relying
 on long histories.
 
+The operator console shows the same reads for the caller's tenant (ClearView
+U12, `mgmt` role). `/admin/build-jobs` lists the newest 50 jobs, as
+`GET /v1/index-build-jobs` does, and `/admin/build-jobs/{job_id}` shows one
+job's state, its labelled progress (for example "3 of 10 sources", or "3
+sources done, total unknown"), the last advance, its event history oldest
+first and its per-version outcomes. The page says "older history pruned" when
+the events read reports a gap, and "history unavailable" for a job only a v1.4
+builder claimed. A read that fails is shown as unavailable rather than as an
+empty list. The page reloads every five seconds while the job is pending or
+running. It is read-only; cancel a job through the API or `mmctl`.
+
 #### Fair claiming across tenants
 
 By default a builder claims the oldest eligible job across all tenants, so a

@@ -174,7 +174,7 @@ async fn attention_checks(
         ),
         Check::new(
             "index build jobs failed in the last 24 hours",
-            "/admin/storage",
+            "/admin/build-jobs",
             Tone::Bad,
             table(|a| a.build_jobs_failed_24h),
         ),
