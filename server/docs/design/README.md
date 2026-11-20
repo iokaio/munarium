@@ -1,6 +1,13 @@
 # Munarium Server v1.5 “ClearView” implementation plan
 
-**Ready to start the v1.4 baseline, Matrix inventory and Lens scaffold (19 November 2026).** Prepare the job and console fixtures for Phase 1 and inventory routes, permits and extractors for Phase 3. The [delivery phases](#delivery-phases) give the entry conditions for implementation. Shared wire changes also require a recorded hub decision and an exported contract.
+## Implementation status
+
+The [implementation ledger](implementation-ledger.md) tracks each planned task by ID, links its governing design and records progress and outstanding evidence.
+
+- **Matrix handoff.** Matrix [PR #4](https://github.com/iokaio/munarium-matrix/pull/4) adds the compatibility profile, transfer inventory and interoperability checks. Local parity passed for all ten legacy CLI verbs, and 11 live worker tests passed against the published v1.4.0 Server image. Server cutover and source removal still require the [M1 receipts](implementation-ledger.md#phase-m-matrix-isolation).
+- **Lens scaffold.** The [Lens repository](https://github.com/iokaio/munarium-lens/tree/8cf7f040c06bd215cb536b9e06ec3e8f3415bdfb) has a verified CPU-only stub. The loopback service reports liveness and returns typed HTTP 503 responses for readiness, embeddings and reranking. The [Lens milestones](implementation-ledger.md#phase-l-lens-delivery) track serving, model qualification and the workspace exercise.
+
+Phase 1 starts with the v1.4 job and console fixtures. Phase 3 starts with inventories of routes, permits and extractors. The [delivery phases](#delivery-phases) give the entry conditions for implementation. Shared wire changes also require a recorded hub decision and an exported contract.
 
 ClearView preserves existing clients, indexes, runbooks and operator defaults on upgrade. It delivers the Matrix handoff, Lens, governed MCP tools, operator-controlled scale-out, revocable console sessions and fleet-wide artifact protection. All must qualify on the v1.5 candidate. Operators choose when to enroll collections in Lens, enable MCP or switch console login. [Release evidence](#release-evidence)
 
@@ -24,7 +31,7 @@ The [decision register](#decision-register) links each rule to its normative hom
 | Munarium Server, CLI and four SDKs | Published `v1.4.0` and `clients-v1.4.0` at `25012c22087fbaa8ce29ddd68d2880d6e9499b1c`. Use the released artifacts for upgrade, downgrade and wire fixtures. [Release record](../guides/server-1.4.md) · [SDK policy](../../../clients/compatibility.json) |
 | Munarium implementation | `bb18085f3d407e9b77d551fbf7ac68a6572fce27` underlies the AIRK and MCP comparisons. Preserve later retained-action custody recovery when testing against the release. |
 | Munarium and Matrix reconciliation | Munarium main baseline `bb18085f3d407e9b77d551fbf7ac68a6572fce27` and Matrix `643863fcb4433c8236f3ab22ca812f17c354f34c`, compared with the published v1.4 tree. The inspected design branch had the same Matrix inputs as this main revision. Refresh both heads and record the actual transfer revisions at implementation. [Reconciliation procedure](repository-handoffs.md#reconcile-the-existing-matrix-repository) |
-| Lens foundation | `528dc3e41970e70fca77f2a9d2b8f0f0088c1f68` is the inspected starter repository. Freeze the eventual tested image and source revision for release. |
+| Lens foundation | `528dc3e41970e70fca77f2a9d2b8f0f0088c1f68` is the inspected starter. The CPU stub is verified at `8cf7f040c06bd215cb536b9e06ec3e8f3415bdfb`. Freeze the eventual tested image and source revision for release. |
 | AIRK comparison source | `55eebc96` (1.8.207) for the runtime comparison and `f200897c` for inference and console observations. Paths and symbols refer to those snapshots. [Method and access limits](airk-analysis.md#2-method-and-limits) |
 
 <a id="2-what-backwards-compatibility-means"></a>
