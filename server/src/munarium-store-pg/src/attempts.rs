@@ -28,6 +28,7 @@ use sqlx::{PgPool, Row};
 
 use munarium_core::{KernelError, Result};
 
+use crate::jobs::{lock_generation, JobFence};
 use crate::storage_err;
 
 /// Why a build is running.
@@ -441,6 +442,283 @@ impl BuildAttempts {
         .await
         .map_err(storage_err)?;
         row.map(Self::to_row).transpose()
+    }
+}
+
+// --- ClearView R4: job-fenced attempts and publication intents --------------
+
+/// The job claim an artifact attempt was acquired under.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttemptJobLink {
+    pub attempt_id: String,
+    pub index_version_id: String,
+    pub job_id: String,
+    pub job_generation: i32,
+}
+
+/// Where a publication intent stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntentState {
+    /// Decided while the generation was current; not yet resolved.
+    Pending,
+    /// The manifest at the recorded key verified against the recorded digest.
+    Published,
+    /// An identical verified artifact was already catalogued.
+    Converged,
+    /// Publication did not complete, or the key held conflicting bytes.
+    Failed,
+}
+
+impl IntentState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Published => "published",
+            Self::Converged => "converged",
+            Self::Failed => "failed",
+        }
+    }
+
+    pub fn parse(s: &str) -> Result<Self> {
+        Ok(match s {
+            "pending" => Self::Pending,
+            "published" => Self::Published,
+            "converged" => Self::Converged,
+            "failed" => Self::Failed,
+            other => {
+                return Err(KernelError::InvalidInput(format!(
+                    "unknown publication intent state {other:?}"
+                )))
+            }
+        })
+    }
+}
+
+/// One generation's decision to publish one immutable manifest.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PublicationIntent {
+    pub attempt_id: String,
+    pub index_version_id: String,
+    pub job_id: String,
+    pub job_generation: i32,
+    pub artifact_id: String,
+    /// The canonical manifest's full object key.
+    pub manifest_key: String,
+    /// The sha256 of the manifest bytes, hex.
+    pub manifest_sha256: String,
+    pub state: IntentState,
+    pub outcome_detail: Option<String>,
+}
+
+impl PublicationIntent {
+    /// The fence this intent was committed under, held by `node_id`. Used to
+    /// ask whether the generation is still current; it never re-authorizes.
+    pub fn fence(&self, tenant_id: &str, node_id: &str) -> JobFence {
+        JobFence {
+            tenant_id: tenant_id.to_string(),
+            job_id: self.job_id.clone(),
+            node_id: node_id.to_string(),
+            generation: self.job_generation,
+        }
+    }
+}
+
+impl BuildAttempts {
+    /// Durably link a freshly claimed attempt to the job claim it runs under,
+    /// before anything is published. `Ok(false)` when the claim's generation
+    /// has been retired: nothing is written and the attempt must not publish.
+    pub async fn link_job(
+        &self,
+        fence: &JobFence,
+        attempt_id: &str,
+        index_version_id: &str,
+    ) -> Result<bool> {
+        fence.require_tenant(&self.tenant_id)?;
+        let mut tx = self.pool.begin().await.map_err(storage_err)?;
+        if !lock_generation(&mut tx, fence).await? {
+            return Ok(false);
+        }
+        sqlx::query(
+            "INSERT INTO index_build_attempt_jobs
+                 (tenant_id, attempt_id, index_version_id, job_id, job_generation)
+             VALUES ($1,$2,$3,$4,$5)",
+        )
+        .bind(&self.tenant_id)
+        .bind(attempt_id)
+        .bind(index_version_id)
+        .bind(&fence.job_id)
+        .bind(fence.generation)
+        .execute(&mut *tx)
+        .await
+        .map_err(storage_err)?;
+        tx.commit().await.map_err(storage_err)?;
+        Ok(true)
+    }
+
+    /// The job claim an attempt was acquired under. `None` is an unfenced
+    /// attempt: a synchronous build, or one started by a v1.4 builder.
+    pub async fn job_link(&self, attempt_id: &str) -> Result<Option<AttemptJobLink>> {
+        let row = sqlx::query(
+            "SELECT attempt_id, index_version_id, job_id, job_generation
+               FROM index_build_attempt_jobs
+              WHERE tenant_id = $1 AND attempt_id = $2",
+        )
+        .bind(&self.tenant_id)
+        .bind(attempt_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(storage_err)?;
+        Ok(row.map(|r| AttemptJobLink {
+            attempt_id: r.get("attempt_id"),
+            index_version_id: r.get("index_version_id"),
+            job_id: r.get("job_id"),
+            job_generation: r.get("job_generation"),
+        }))
+    }
+
+    /// Commit the decision to publish one immutable manifest, while the
+    /// fence's generation is current.
+    ///
+    /// Taken under the job row's lock, so it serializes with every
+    /// retirement of the generation. `Ok(false)` when the generation has been
+    /// retired: no intent exists and the caller must not catalog or upload
+    /// anything. Idempotent for the same attempt, key and digest; a different
+    /// key or digest for an attempt that already has an intent is refused.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn commit_publication_intent(
+        &self,
+        fence: &JobFence,
+        attempt_id: &str,
+        index_version_id: &str,
+        artifact_id: &str,
+        manifest_key: &str,
+        manifest_sha256: &str,
+    ) -> Result<bool> {
+        fence.require_tenant(&self.tenant_id)?;
+        let mut tx = self.pool.begin().await.map_err(storage_err)?;
+        if !lock_generation(&mut tx, fence).await? {
+            return Ok(false);
+        }
+        let linked: Option<String> = sqlx::query_scalar(
+            "SELECT index_version_id FROM index_build_attempt_jobs
+              WHERE tenant_id = $1 AND attempt_id = $2
+                AND job_id = $3 AND job_generation = $4",
+        )
+        .bind(&self.tenant_id)
+        .bind(attempt_id)
+        .bind(&fence.job_id)
+        .bind(fence.generation)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(storage_err)?;
+        if linked.as_deref() != Some(index_version_id) {
+            return Err(KernelError::InvalidInput(format!(
+                "attempt {attempt_id} is not linked to this job claim and version; it cannot \
+                 record a publication intent"
+            )));
+        }
+        let inserted = sqlx::query(
+            "INSERT INTO index_build_publication_intents
+                 (tenant_id, attempt_id, index_version_id, job_id, job_generation,
+                  artifact_id, manifest_key, manifest_sha256)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+             ON CONFLICT (tenant_id, attempt_id) DO NOTHING
+             RETURNING attempt_id",
+        )
+        .bind(&self.tenant_id)
+        .bind(attempt_id)
+        .bind(index_version_id)
+        .bind(&fence.job_id)
+        .bind(fence.generation)
+        .bind(artifact_id)
+        .bind(manifest_key)
+        .bind(manifest_sha256)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(storage_err)?;
+        if inserted.is_none() {
+            let same: Option<bool> = sqlx::query_scalar(
+                "SELECT artifact_id = $3 AND manifest_key = $4 AND manifest_sha256 = $5
+                   FROM index_build_publication_intents
+                  WHERE tenant_id = $1 AND attempt_id = $2",
+            )
+            .bind(&self.tenant_id)
+            .bind(attempt_id)
+            .bind(artifact_id)
+            .bind(manifest_key)
+            .bind(manifest_sha256)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(storage_err)?;
+            if same != Some(true) {
+                return Err(KernelError::InvalidInput(format!(
+                    "attempt {attempt_id} already recorded a different publication intent; an \
+                     intent is immutable"
+                )));
+            }
+        }
+        tx.commit().await.map_err(storage_err)?;
+        Ok(true)
+    }
+
+    pub async fn publication_intent(&self, attempt_id: &str) -> Result<Option<PublicationIntent>> {
+        let row = sqlx::query(
+            "SELECT attempt_id, index_version_id, job_id, job_generation, artifact_id,
+                    manifest_key, manifest_sha256, state, outcome_detail
+               FROM index_build_publication_intents
+              WHERE tenant_id = $1 AND attempt_id = $2",
+        )
+        .bind(&self.tenant_id)
+        .bind(attempt_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(storage_err)?;
+        row.map(|r| {
+            Ok(PublicationIntent {
+                attempt_id: r.get("attempt_id"),
+                index_version_id: r.get("index_version_id"),
+                job_id: r.get("job_id"),
+                job_generation: r.get("job_generation"),
+                artifact_id: r.get("artifact_id"),
+                manifest_key: r.get("manifest_key"),
+                manifest_sha256: r.get("manifest_sha256"),
+                state: IntentState::parse(r.get::<String, _>("state").as_str())?,
+                outcome_detail: r.get("outcome_detail"),
+            })
+        })
+        .transpose()
+    }
+
+    /// Record what finishing an intent observed. Only a `pending` intent
+    /// moves, and needs no job lock: recording the outcome of the exact
+    /// publication already authorized grants nothing new. `Ok(false)` when
+    /// there is no pending intent for the attempt.
+    pub async fn resolve_publication_intent(
+        &self,
+        attempt_id: &str,
+        to: IntentState,
+        detail: Option<&str>,
+    ) -> Result<bool> {
+        if to == IntentState::Pending {
+            return Err(KernelError::InvalidInput(
+                "a publication intent cannot be resolved back to pending".into(),
+            ));
+        }
+        // Bounded, like an attempt's failure detail.
+        let detail: Option<String> = detail.map(|d| d.chars().take(500).collect());
+        let done = sqlx::query(
+            "UPDATE index_build_publication_intents
+                SET state = $3, outcome_detail = $4, resolved_at = now()
+              WHERE tenant_id = $1 AND attempt_id = $2 AND state = 'pending'",
+        )
+        .bind(&self.tenant_id)
+        .bind(attempt_id)
+        .bind(to.as_str())
+        .bind(detail)
+        .execute(&self.pool)
+        .await
+        .map_err(storage_err)?;
+        Ok(done.rows_affected() == 1)
     }
 }
 

@@ -19,6 +19,11 @@
 //! - **Completion is idempotent.** Completing a job that is no longer yours —
 //!   the lease lapsed and someone else reclaimed it — is a no-op reported as
 //!   such, never a clobber.
+//!
+//! ClearView R4 adds a fencing generation (the job's `attempts` after a
+//! claim). Lease renewal and completion require it, and a queued build's
+//! writes outside this table require it too, through [`JobFence`] and
+//! [`lock_generation`].
 
 use sqlx::{PgPool, Row};
 
@@ -86,6 +91,84 @@ pub struct BuildJob {
     pub error: Option<String>,
     pub requested_by: String,
     pub created_at: String,
+}
+
+/// The safe message a superseded build reports when a fenced write is refused.
+/// The job's own completion is refused by the same fence, so this never
+/// overwrites the current holder's result; it reaches logs and the attempt's
+/// failure detail.
+pub const STALE_GENERATION_MESSAGE: &str =
+    "build job claim was superseded; this execution may not commit or publish";
+
+/// The authority one job claim carries (ClearView R4).
+///
+/// Built from the row [`BuildJobs::claim_any`] returned and the node that
+/// claimed it. A queued build passes it to every write outside the job row:
+/// the logical-version commit, the artifact-attempt link, the publication
+/// intent and the staged binding. Each takes the job row's lock with
+/// [`lock_generation`] and writes only while this claim is still current.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JobFence {
+    pub tenant_id: String,
+    pub job_id: String,
+    pub node_id: String,
+    /// The job's `attempts` after this claim.
+    pub generation: i32,
+}
+
+impl JobFence {
+    /// The fence of a claim this node just made.
+    pub fn of_claim(job: &BuildJob, node_id: &str) -> Self {
+        Self {
+            tenant_id: job.tenant_id.clone(),
+            job_id: job.job_id.clone(),
+            node_id: node_id.to_string(),
+            generation: job.attempts,
+        }
+    }
+
+    /// Refuse a fence for another tenant. Every fenced write goes through a
+    /// tenant-bound handle, and a fence is never permission to cross it.
+    pub fn require_tenant(&self, tenant_id: &str) -> Result<()> {
+        if self.tenant_id != tenant_id {
+            return Err(KernelError::InvalidInput(
+                "a build-job fence was presented to another tenant's handle".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// The error a fenced write returns once its generation is retired.
+    pub fn stale(&self) -> KernelError {
+        KernelError::Storage(STALE_GENERATION_MESSAGE.into())
+    }
+}
+
+/// Lock the fence's job row for the rest of `conn`'s transaction and report
+/// whether the fence is still current: `running`, `attempts = generation` and
+/// `claimed_by = node`.
+///
+/// `FOR UPDATE` on the row every retirement writes. Cancel, completion,
+/// reclaim and expired-claim cleanup are all UPDATEs of this row, so a
+/// retirement that commits first is seen here, and one that comes later waits
+/// until the caller's write has committed. Call it inside a transaction; on
+/// `false`, write nothing and roll back.
+pub async fn lock_generation(conn: &mut sqlx::PgConnection, fence: &JobFence) -> Result<bool> {
+    let row = sqlx::query(
+        "SELECT state, attempts, claimed_by FROM index_build_jobs
+          WHERE tenant_id = $1 AND job_id = $2
+          FOR UPDATE",
+    )
+    .bind(&fence.tenant_id)
+    .bind(&fence.job_id)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(storage_err)?;
+    Ok(row.is_some_and(|r| {
+        r.get::<String, _>("state") == "running"
+            && r.get::<i32, _>("attempts") == fence.generation
+            && r.get::<Option<String>, _>("claimed_by").as_deref() == Some(fence.node_id.as_str())
+    }))
 }
 
 /// What an enqueue did.

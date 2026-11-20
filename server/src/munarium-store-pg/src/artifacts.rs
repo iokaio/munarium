@@ -16,6 +16,7 @@ use sqlx::{PgPool, Row};
 
 use munarium_core::{KernelError, Result};
 
+use crate::jobs::{lock_generation, JobFence};
 use crate::storage_err;
 
 /// Catalog state for a physical artifact.
@@ -150,6 +151,17 @@ pub struct BindingRow {
     pub slot: BindingSlot,
     pub artifact_id: String,
     pub generation: i64,
+}
+
+/// What a fenced "bind if empty" did.
+#[derive(Debug, Clone)]
+pub enum FencedBind {
+    /// This call filled the slot.
+    Bound(BindingRow),
+    /// The slot already had an occupant; nothing changed.
+    Occupied,
+    /// The job claim was retired; nothing changed.
+    Superseded,
 }
 
 /// Tenant-scoped access to the artifact catalog.
@@ -466,6 +478,75 @@ impl ArtifactCatalog {
             artifact_id: artifact_id.to_string(),
             generation,
         })
+    }
+
+    /// Fill an empty slot for a queued build, only while its job claim is
+    /// current (ClearView R4).
+    ///
+    /// The job row is locked first and rechecked; then, in the same
+    /// transaction, the slot is checked and filled as [`bind_new`] does. A
+    /// retired generation gets [`FencedBind::Superseded`] and writes nothing,
+    /// so a stale worker or reconciler can never bind over, or ahead of, the
+    /// current claim. An occupied slot is [`FencedBind::Occupied`], not an
+    /// error, matching the builder's "bind only if empty" step.
+    ///
+    /// [`bind_new`]: Self::bind_new
+    pub async fn bind_new_if_empty_fenced(
+        &self,
+        index_version_id: &str,
+        slot: BindingSlot,
+        artifact_id: &str,
+        selected_by: &str,
+        reason: Option<&str>,
+        fence: &JobFence,
+    ) -> Result<FencedBind> {
+        fence.require_tenant(&self.tenant_id)?;
+        let mut tx = self.pool.begin().await.map_err(storage_err)?;
+        if !lock_generation(&mut tx, fence).await? {
+            return Ok(FencedBind::Superseded);
+        }
+        self.require_verified_locked(&mut tx, index_version_id, artifact_id)
+            .await?;
+        let inserted = sqlx::query(
+            "INSERT INTO index_artifact_bindings
+                 (tenant_id, index_version_id, slot, artifact_id, generation, selected_by, reason)
+             VALUES ($1,$2,$3,$4,1,$5,$6)
+             ON CONFLICT (tenant_id, index_version_id, slot) DO NOTHING
+             RETURNING generation",
+        )
+        .bind(&self.tenant_id)
+        .bind(index_version_id)
+        .bind(slot.as_str())
+        .bind(artifact_id)
+        .bind(selected_by)
+        .bind(reason)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(storage_err)?;
+        let Some(row) = inserted else {
+            return Ok(FencedBind::Occupied);
+        };
+        let generation: i64 = row.get("generation");
+        self.append_event(
+            &mut tx,
+            index_version_id,
+            slot,
+            None,
+            Some(artifact_id),
+            None,
+            Some(generation),
+            "bind",
+            selected_by,
+            reason,
+        )
+        .await?;
+        tx.commit().await.map_err(storage_err)?;
+        Ok(FencedBind::Bound(BindingRow {
+            index_version_id: index_version_id.to_string(),
+            slot,
+            artifact_id: artifact_id.to_string(),
+            generation,
+        }))
     }
 
     /// Replace a slot's occupant, compare-and-swap on its generation.

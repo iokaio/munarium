@@ -1858,6 +1858,62 @@
         "src/munarium-store-pg/migrations/0027_index_build_jobs.sql"
       ]
     },
+    "index_version_job_commits": {
+      "columns": {
+        "tenant_id": "text",
+        "index_version_id": "text",
+        "job_id": "text",
+        "job_generation": "int",
+        "committed_at": "timestamptz"
+      },
+      "content": "Job and claim generation that committed a queued direct build's logical version; identifiers only.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0043_build_publication_fencing.sql"
+      ]
+    },
+    "index_build_attempt_jobs": {
+      "columns": {
+        "tenant_id": "text",
+        "attempt_id": "text",
+        "index_version_id": "text",
+        "job_id": "text",
+        "job_generation": "int",
+        "linked_at": "timestamptz"
+      },
+      "content": "Link from a queued build's artifact attempt to its job claim generation; identifiers only.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0043_build_publication_fencing.sql"
+      ]
+    },
+    "index_build_publication_intents": {
+      "columns": {
+        "tenant_id": "text",
+        "attempt_id": "text",
+        "index_version_id": "text",
+        "job_id": "text",
+        "job_generation": "int",
+        "artifact_id": "text",
+        "manifest_key": "text",
+        "manifest_sha256": "text",
+        "state": "text",
+        "outcome_detail": "text",
+        "created_at": "timestamptz",
+        "resolved_at": "timestamptz"
+      },
+      "content": "One generation's authorized manifest key and digest, its state and bounded outcome diagnostics; the key embeds the tenant path hash and artifact identities, never source text.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0043_build_publication_fencing.sql"
+      ]
+    },
     "token_budget_reservations": {
       "columns": {
         "id": "text",
