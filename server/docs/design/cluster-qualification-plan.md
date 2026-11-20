@@ -2,42 +2,41 @@
 
 Prepared **19 November 2026** on branch `feat/clearview` at `adc94cd`. This page prepares the cluster-dependent ClearView receipts so they can be scheduled efficiently later. It provisions nothing and authorizes nothing.
 
-**Status: deferred.** By maintainer decision of 19 November 2026, paid Azure or other cluster runs wait until the entire ClearView plan is code complete, reviewed and tuned. No environment is booked, no owner, budget or reservation has been supplied, and no price on this page has been verified. Every cost line is a blank to be filled from a dated, verified quote. [Ledger row "Prepare qualification environments"](implementation-ledger.md#phase-0--v14-baseline-and-shared-decisions) · [Qualification environments](README.md#qualification-environments) · [Release evidence](README.md#release-evidence)
+**Status: deferred.** By maintainer decisions of 20 November 2026, cluster qualification runs **only on the maintainer's workstation (Windows, 128 GB RAM, Docker Desktop Kubernetes)**, profile [L3](#the-qualification-environment-the-maintainer-workstation), and waits until implementation moves to that machine. **No Azure or other cloud environment is used**: there are no paid windows, cost caps or cloud topologies in this plan. A receipt condition that needs hardware the workstation lacks (for example GPU Lens capacity, several physical nodes, or managed cloud storage and identity) is recorded as a stated limitation in that receipt's `coverage_gaps`; it is not run elsewhere. Cosign signature verification and a real-browser accessibility pass are not required release evidence (decision 16). [Ledger: maintainer decisions](implementation-ledger.md#maintainer-decisions-20-november-2026) · [Qualification environments](README.md#qualification-environments) · [Release evidence](README.md#release-evidence)
 
 The design pages own the acceptance criteria. This plan only arranges them into runs. Where the two disagree, the linked acceptance ID wins and this page must be corrected.
 
 ## Contents
 
 - [Rules that apply to every run](#rules-that-apply-to-every-run)
-- [First choice: a local workstation cluster](#first-choice-a-local-workstation-cluster)
-- [Pre-flight checklist before any spend](#pre-flight-checklist-before-any-spend)
+- [The qualification environment: the maintainer workstation](#the-qualification-environment-the-maintainer-workstation)
+- [Pre-flight checklist](#pre-flight-checklist)
 - [Environment profiles](#environment-profiles)
 - [Receipt format](#receipt-format)
-- [Cost-estimate template](#cost-estimate-template)
 - Receipts: [SCALE-1-T1](#plan-scale-1-t1) · [SCALE-3-T1](#plan-scale-3-t1) · [SCALE-2-T1](#plan-scale-2-t1) · [SC1-T1](#plan-sc1-t1) · [SC1-T2 and SC1-T3](#plan-sc1-t2-t3) · [SC2](#plan-sc2) · [COMPAT-T2](#plan-compat-t2) · [COMPAT-T3](#plan-compat-t3) · [LOGIN1](#plan-login1) · [ART1 and ART2](#plan-art) · [LENS-D1 hardware, I3 and LENS-D2](#plan-lens) · [Multi-replica MCP cases](#plan-mcp)
-- [Minimum-spend ordering](#minimum-spend-ordering)
+- [Run order](#run-order)
 - [Tooling inventory](#tooling-inventory)
 - [Decisions that block scheduling](#decisions-that-block-scheduling)
 
 ## Rules that apply to every run
 
 - **Exact candidate.** Every receipt is collected on the frozen v1.5 release candidate (image digest, chart revision, Lens image digest where applicable). A receipt from an earlier build is rehearsal evidence only. A candidate change re-opens every receipt it could affect; [REL1](README.md#rel1) additionally needs LOGIN1 and ART1/ART2 on the *same* candidate.
-- **One receipt per acceptance ID and environment.** Runs that share a window still produce separate receipts. A shared failure is recorded in each affected receipt.
-- **Public repository.** No real subscription IDs, tenant IDs, hostnames, resource names, IP addresses, tokens or corpus text appear in this page, in receipts committed here, or in PR text. Use the placeholders below. Private values live in ignored local files (`*.tfvars`, `server/*.local.toml`) or in the release-owned record. Receipts that contain restricted material stay inside the authorized environment and are referenced opaquely.
-- **Disposable and isolated.** Each window uses its own resource group, namespace, database and storage container, created for that window and destroyed at its end. Test credentials only. Never point a run at an existing environment.
-- **Cost cap is binding.** When the running total reaches the recorded cap, including retries, stop, collect what exists, tear down, and record the remaining receipts as `not_run` with reason `cost_cap`.
+- **One receipt per acceptance ID and environment.** Receipts collected in the same run are still separate. A shared failure is recorded in each affected receipt.
+- **Public repository.** No real hostnames, IP addresses, tokens, local paths or corpus text appear in this page, in receipts committed here, or in PR text. Use the placeholders below. Private values live in ignored local files (`server/*.local.toml`, `server/scratch/`) or in the release-owned record. Receipts that contain restricted material stay inside the authorized boundary and are referenced opaquely.
+- **Disposable and isolated.** Each run uses its own namespaces, database and storage buckets, created for that run and deleted at its end. Test credentials only. Never point a run at an existing environment or at anything else hosted on the workstation.
+- **Workstation only.** No cloud resource is created for a receipt. A condition the workstation cannot exercise is recorded in `coverage_gaps` with reason `workstation_limitation`; it does not move the receipt to another environment.
 
-Placeholders used below: `<qual-prefix>` (resource name prefix), `<region>`, `<registry>`, `<candidate-digest>`, `<baseline-digest>` (published v1.4.0 image), `<lens-digest>`, `<gpu-vm-size>`, `<ns>` (namespace, default `munarium`).
+Placeholders used below: `<registry>`, `<candidate-digest>`, `<baseline-digest>` (published v1.4.0 image), `<lens-digest>`, `<ns>` (namespace, default `munarium`).
 
-## First choice: a local workstation cluster
+## The qualification environment: the maintainer workstation
 
-Before any paid Azure run, attempt every scaling and compatibility receipt on **a maintainer workstation (Windows, 128 GB RAM, Docker Desktop Kubernetes)**: the single-node Kubernetes cluster built into Docker Desktop, on the WSL2 backend. This is profile **L3** below. Azure windows are then scheduled only for what L3 cannot prove, as listed in the [minimum-spend ordering](#minimum-spend-ordering). L3 costs no cloud spend, so it needs no cost cap, but it still uses the candidate artifacts, disposable namespaces and test credentials, and it is torn down after each run.
+Every scaling and compatibility receipt runs on **the maintainer's workstation (Windows, 128 GB RAM, Docker Desktop Kubernetes)**: the single-node Kubernetes cluster built into Docker Desktop, on the WSL2 backend. This is profile **L3** below and the single qualification path (maintainer decision of 20 November 2026). The runs are deferred until implementation moves to that machine. L3 uses the candidate artifacts, disposable namespaces and test credentials, and it is torn down after each run.
 
 ### What one Docker Desktop node can prove
 
-**Full** means every pass condition can be exercised on L3; the receipt is complete local-cluster evidence. **Partial** means the logic can be exercised but some condition needs more than one node, managed storage, Azure identity or GPU hardware. **Azure** means L3 can only rehearse the procedure.
+**Full** means every pass condition can be exercised on L3; the receipt is complete evidence. **Partial** means the logic can be exercised but some condition needs more than one node, managed cloud storage or identity, or GPU hardware. **Limited** means L3 can run the procedure but not the hardware-dependent pass conditions. In every case, what the workstation cannot exercise is recorded as a limitation in the receipt, not run elsewhere.
 
-| Receipt | On L3 | What one node cannot prove |
+| Receipt | On L3 | Recorded as a limitation |
 |---|---|---|
 | [SCALE-1-T1](#plan-scale-1-t1) | **Full** for renders, effective counts, startup guards, admissions per window, surge with `maxSurge` 0 and default, `platform-v1` non-overlap, two upgrades and rollback | Workload identity with Azure Blob (`az` store with managed identity). Azurite exercises the `az` code path with SAS, not the identity exchange |
 | [SCALE-2-T1](#plan-scale-2-t1) | **Full** for builder group, endpoint exclusion, drain with work in flight, fencing, reclaim and staging space on the local disk | Staging and object transfer on managed disks and Blob under realistic latency |
@@ -46,10 +45,10 @@ Before any paid Azure run, attempt every scaling and compatibility receipt on **
 | [SC1-T2 and SC1-T3](#plan-sc1-t2-t3) | **Partial**: per-stage resize, worker replacement, incompatible profile, last-member removal, I1 and I2 outcomes with Lens CPU replicas or the Lens protocol stub | The qualified GPU profile, its latency and capacity |
 | [SC2](#plan-sc2) | **Partial**: shared versus dedicated routing, refusals, budget and cache isolation with two labelled Lens deployments | Dedicated node pools and placement on separate hardware, location rules tied to real infrastructure, loss of a dedicated node |
 | [COMPAT-T2](#plan-compat-t2) | **Full** for v1.4 chart upgrade with original values, client and CLI replay in both directions, Matrix-enabled values, replica-count migration and rollback | Workload identity and the managed `az` store |
-| [COMPAT-T3](#plan-compat-t3) | **Full** for the selected rollback route, including mixed replicas, `VersionMissing` negative control, and a CNPG backup to MinIO for route B | Managed storage durability and restore timing on cloud storage |
+| [COMPAT-T3](#plan-compat-t3) | **Full** for the backup-restore route (route B): mixed replicas while already-running v1.4.0 processes last, the `VersionMissing` negative control, and a CNPG backup to MinIO restored into v1.4.0 | Managed storage durability and restore timing on cloud storage |
 | [LOGIN1](#plan-login1) | **Full** with a local TLS termination (self-signed certificate on a local gateway or port-forward) | The production gateway and load balancer TLS path |
 | [ART1 and ART2](#plan-art) | **Full** with MinIO or Azurite as the authoritative store and two verifiers holding separate test credentials | Verifier identities issued by Azure workload identity |
-| [I3, LENS-D1 hardware and LENS-D2](#plan-lens) | **Azure** (rehearsal only): manifest freeze, accounting, query generation, citation resolution and rollback on a small public subset | GPU hardware, quality and latency thresholds, the full 16-root run |
+| [I3, LENS-D1 hardware and LENS-D2](#plan-lens) | **Limited**: manifest freeze, accounting, query generation, citation resolution and rollback with the Lens image on the workstation's CPU (or its own device, if it has one) | GPU capacity and latency; any threshold or root the workstation cannot complete in the run |
 | [Multi-replica MCP cases](#plan-mcp) | **Full** | — |
 
 ### Sizing within 128 GB
@@ -95,79 +94,43 @@ Set CPU requests and limits so the sum of limits stays below the WSL2 processor 
      -f deploy/helm/munarium/values-production.yaml -f <local values file>
    ```
 
-   Source-store, builder and admission settings the chart does not expose go through the same post-render overlay as on AKS (see [what the chart provides](#what-the-example-module-and-chart-provide-today)).
+   Source-store, builder and admission settings the chart does not expose go through a post-render overlay (see [what the chart provides](#what-the-chart-provides-today)).
 8. Reach the planes with `kubectl port-forward` per pod for per-replica checks, and through the Service for load.
 9. After the run: `helm uninstall`, delete the namespaces created for it, and remove their volumes. Do not reset the Docker Desktop cluster if it hosts anything else.
 
 ### Labelling local evidence
 
-A receipt recorded on L3 uses `environment: L3-docker-desktop` and `evidence_class: local-cluster`, and records the Docker Desktop and Kubernetes versions, provisioner, WSL2 memory and processor limits, and component limits from the sizing table. It is distinct from `evidence_class: release-candidate-cluster`, which is collected on the recorded qualification environment. An L3 receipt run on the exact candidate can satisfy an acceptance ID only where the release owner has recorded that L3 is an accepted environment of record for that ID; otherwise it is rehearsal evidence that fills the hour estimates and de-risks the Azure window. Performance numbers from L3 are always labelled local and never support a capacity claim.
+A receipt recorded on L3 uses `environment: L3-docker-desktop` and records the Docker Desktop and Kubernetes versions, provisioner, WSL2 memory and processor limits, and component limits from the sizing table. L3 is the environment of record for every cluster receipt: a receipt run on the exact frozen candidate uses `evidence_class: release-candidate-cluster`, and a run on an earlier build uses `evidence_class: local-cluster` and is rehearsal evidence only. Performance numbers from L3 are always labelled as workstation measurements and never support a production capacity claim.
 
-## Pre-flight checklist before any spend
+## Pre-flight checklist
 
-Complete and record every item in the release-owned record (not in this repository) before creating any paid resource. This implements the scheduling requirement in [Qualification environments](README.md#qualification-environments) and the [1.4 release checklist](../guides/server-1.4.md#build-and-release-checklist).
+Complete and record every item in the release-owned record (not in this repository) before the qualification run on the workstation. This implements the scheduling requirement in [Qualification environments](README.md#qualification-environments) and the [1.4 release checklist](../guides/server-1.4.md#build-and-release-checklist).
 
 | # | Item | Done when |
 |---|---|---|
-| 1 | **Code complete.** Every prerequisite ledger row named by the receipts in this window is implemented, reviewed and merged to the qualification branch. | The window's receipt list has no "prerequisite open" entry. |
+| 1 | **Code complete.** Every prerequisite ledger row named by the receipts in the run is implemented, reviewed and merged to the qualification branch. | The run's receipt list has no "prerequisite open" entry. |
 | 2 | **Candidate frozen.** Server image digest, chart version, Lens image digest and model artifact digests, Matrix peer revision, client package versions and fixture revisions. | All digests recorded; `/version` of a test pull matches. |
-| 3 | **Local cluster run passed.** Each receipt ran on L3 (the [workstation cluster](#first-choice-a-local-workstation-cluster)) or its local rehearsal ran to completion on a pre-candidate or candidate build, with its timings recorded. | Rehearsal receipts exist; hour estimates below are filled from them. |
-| 4 | **Named owner** for the window and for each receipt, plus a second person who can stop and tear down. | Names recorded privately. |
-| 5 | **Cost authority and cap.** Approver, maximum spend for the window **including retries**, and the contingency multiplier used (for example one full retry of the longest receipt). | Signed approval; cap entered in the cost template. |
-| 6 | **Availability probe.** Dated check that the region offers every VM size in the topology (including `<gpu-vm-size>`) with sufficient quota, that the images pull, and that the Matrix peer and real MCP clients (if used) start. | Probe date and result recorded; quota increase requests closed. |
-| 7 | **Reservation and access expiry.** Start, end and hard deadline for the window, credential and reservation expiry, and the cleanup deadline. | All dates recorded; calendar holds for owner and teardown person. |
-| 8 | **Data authority.** For Lens workspace runs, the per-root access scope and processing location authorization, including the separate authorization for the restricted root. | [LENS-D2-T1](repository-handoffs.md#lens-d2-t1) freeze approved. |
-| 9 | **Teardown proven.** `terraform destroy` (or resource-group deletion) and namespace deletion have been rehearsed on the local equivalent, and a cost alert or budget on the resource group is configured. | Teardown command and alert threshold recorded. |
-| 10 | **Evidence destination.** Where receipts, metric exports and logs go, who can read them, and how restricted material is separated. | Location recorded; redaction reviewer named. |
+| 3 | **Rehearsal passed.** Each receipt's procedure ran to completion on a pre-candidate build (L1, L2 or L3), with its timings recorded. | Rehearsal receipts exist. |
+| 4 | **Named owner** for the run and for each receipt. | Names recorded privately. |
+| 5 | **Workstation probe.** Dated check of the Docker Desktop, Kubernetes and WSL2 versions and limits and of free disk, that the images pull or load, and that the Matrix peer and real MCP clients (if used) start. | Probe date and result recorded. |
+| 6 | **Data authority.** For Lens workspace runs, the per-root access scope and authorization to process each root on the workstation, including the separate authorization for the restricted root. | [LENS-D2-T1](repository-handoffs.md#lens-d2-t1) freeze approved. |
+| 7 | **Teardown proven.** Namespace, volume and bucket deletion rehearsed without touching anything else hosted on the workstation. | Teardown commands recorded. |
+| 8 | **Evidence destination.** Where receipts, metric exports and logs go, who can read them, and how restricted material is separated. | Location recorded; redaction reviewer named. |
 
-A missing item means the window is not scheduled. An item that changes after approval (for example a new candidate digest) requires re-approval of items 2, 3 and 5.
+A missing item means the run does not start. An item that changes after approval (for example a new candidate digest) requires re-approval of items 2 and 3.
 
 ## Environment profiles
 
-Every receipt names one of these profiles. Local profiles cost nothing beyond a workstation and are used for rehearsal.
+Every receipt names one of these profiles. All of them run on the workstation; L1 and L2 are for rehearsal and L3 is the environment of record.
 
 | Profile | Purpose | Topology |
 |---|---|---|
 | **L1 · compose cluster** | Two-replica Server rehearsals without Kubernetes | `docker compose --profile cluster up` from `server/`: one pgvector PostgreSQL, `munarium-server` and `munarium-server-b`, round-robin Envoy on `:8443`. Add `--profile s3` for MinIO as an authoritative object store. [Cluster guide](../ops/clustering.md#how-to-run-it) |
 | **L2 · kind or k3d** | Chart, rollout, drain, mixed-image and Helm upgrade/rollback rehearsals | One control-plane and three workers (k3d agents), CNPG operator, the chart with `gateway.enabled=false` and `directGrpc.enabled=false` as in the chart's [validated kind install](../../deploy/helm/munarium/README.md). Images loaded locally (`kind load docker-image` or `k3d image import`). MinIO in-cluster for the S3 source and artifact store. |
-| **L3 · workstation Docker Desktop Kubernetes** | First choice for every Kubernetes receipt; see [first choice](#first-choice-a-local-workstation-cluster) | A maintainer workstation (Windows, 128 GB RAM, Docker Desktop Kubernetes on WSL2), sized as in that section. Every "Local rehearsal" below that names L2 runs on L3 as well. |
-| **C1 · Server-only AKS** | Hash-only Server fleet: load, resize, drain, upgrade, rollback, login, artifact block | Derived from the [example AKS module](../../deploy/terraform/example-aks/README.md). See below. |
-| **C2 · Server + Lens AKS** | Combined fleet with enrolled collections, placement, workspace | C1 plus a GPU node pool for Lens. See below. |
-| **C2R · restricted** | The restricted workspace root only | A separate, authorized environment with a dedicated Lens pool, chosen by the corpus owner. Its details stay inside that boundary. |
+| **L3 · workstation Docker Desktop Kubernetes** | Every cluster receipt; see [the qualification environment](#the-qualification-environment-the-maintainer-workstation) | The maintainer's workstation (Windows, 128 GB RAM, Docker Desktop Kubernetes on WSL2), sized as in that section. Every rehearsal below that names L2 runs on L3 as well. |
+| **L3R · restricted root on L3** | The restricted workspace root only | L3 with its own namespace and Lens deployment, under the corpus owner's separate authorization. Its details stay inside that boundary. Without that authorization the root is recorded as a limitation. |
 
-### C1 · Server-only topology (smallest that proves the C1 receipts)
-
-| Component | Count and size | Notes |
-|---|---|---|
-| AKS control plane | 1, `Free` tier as in the example module | Confirm the tier is acceptable for a qualification record; an SLA tier is not needed for test evidence. |
-| System pool | 1 × the module default system size | Unchanged from the module. |
-| Server pool (`role=server`) | 3 × the module default user size | Two serving replicas on separate nodes plus room for a surge pod, a third replica, or a separate builder group (SCALE-2). Pin with node labels; one Server pod per node during capacity comparisons. |
-| Database | CNPG cell, `cell.instances: 2`, on the Server pool or a dedicated `role=db` node if contention distorts SCALE-3-T1 | `max_connections` must exceed the pool math for the peak fleet including surge. Default CNPG value is 100. [Pool math](../ops/clustering.md#pool-math) |
-| Object storage | 1 storage account, `sources` container (from the module), plus an artifact container for Datastore L2 | Workload identity, no keys, as in the module. Datastore artifact storage is not wired by the chart or module: to be written. |
-| Load generator pool (`role=loadgen`) | 1 node, size chosen so the generator never exceeds about half its CPU at peak | Keeps generator CPU out of the measured nodes, per [measuring performance](../guides/measuring-performance.md#increase-load-without-hiding-overload). |
-| Monitoring | Prometheus (or Azure Managed Prometheus) scraping `:9090` via the chart's annotations, plus kube-state-metrics | Needed for `kube_deployment_status_replicas_ready` comparisons. Not in the module: to be written. |
-| Provider target | In-cluster counting provider stub | Counts physical provider arrivals per minute window for SCALE-1-T1. To be written. No paid model calls. |
-
-### C2 · Server + Lens topology (smallest that proves the C2 receipts)
-
-| Component | Count and size | Notes |
-|---|---|---|
-| Everything in C1 | as above | The Server pool can shrink to 2 nodes if SCALE-2 is not rerun in this window. |
-| GPU pool (`role=lens`, tainted) | 2 nodes baseline, 3 at peak, `<gpu-vm-size>` from the qualified [Lens hardware profile](repository-handoffs.md#lens-d1-t3) | SC1-T2 needs one→two→one per stage with the other stage held at one, so the peak is 3 Lens workers (2 + 1). If the profile allows embedding and reranking workers to co-locate on one device, record that and use fewer nodes. Scale the pool manually; autoscaling stays off. |
-| Dedicated pool for SC2 | 1 of the GPU nodes relabelled `pool=dedicated` for the SC2 run | Reuses C2 hardware; no extra node unless a separate location is part of the policy under test. |
-| Model artifact storage | 1 container for verified Lens model assets | Imported and digest-checked, never fetched at serve time. |
-
-The workspace run (LENS-D2) uses C2 with the GPU pool sized from the I3 pilot. Its node count is a forecast, not a fixed number; see [Lens capacity and workspace](#plan-lens).
-
-### What the example module and chart provide today
-
-The [example AKS module](../../deploy/terraform/example-aks/README.md) is authored and syntax-checked but has never been applied end to end; expect a shakedown on first apply and budget an hour for it. It provides a resource group, AKS with a system and one user pool, workload identity, a key-less storage account with a `sources` container, CNPG and Envoy Gateway. For these runs it lacks, and these are **to be written** as an overlay or qualification module (not changes to the example's defaults):
-
-- extra node pools with labels and taints (`server`, `loadgen`, `lens` GPU, optional `db`);
-- a Datastore artifact container and its role assignment;
-- a CNPG backup target (WAL archive to object storage), needed for any COMPAT-T3 route that restores a backup;
-- Prometheus and kube-state-metrics;
-- a budget alert on the resource group.
+### What the chart provides today
 
 The chart lacks: `nodeSelector`/`affinity`/`tolerations`, `terminationGracePeriodSeconds` and a `preStop` sleep (the [cluster guide](../ops/clustering.md#how-to-run-it) recommends both), an `extraEnv` hook (so `MUNARIUM_TOKEN_SECRET`, the serving group's `MUNARIUM_DATASTORE_BUILDER` and the admission settings need a post-render patch), a second Deployment for held mixed-version replicas, and Lens. Until those land, use a post-renderer overlay kept with the qualification tooling.
 
@@ -178,11 +141,11 @@ Each receipt follows the [release evidence format](README.md#release-evidence) a
 ```yaml
 receipt_format: clearview-cluster-1
 acceptance_id: SCALE-1-T1            # exactly as in the owning design
-environment: C1                      # profile from this page, plus window ID
-window: W1-<date>
-evidence_class: release-candidate-cluster   # or local-cluster (L1, L2, L3)
+environment: L3-docker-desktop       # profile from this page
+run: <date>
+evidence_class: release-candidate-cluster   # or local-cluster for a rehearsal (L1, L2, L3)
 outcome: passed | failed | not_run
-not_run_reason: null                 # missing_environment | prerequisite_open | cost_cap | ...
+not_run_reason: null                 # prerequisite_open | workstation_limitation | ...
 candidate:
   server_image: <candidate-digest>
   chart_version: 0.5.x
@@ -197,34 +160,13 @@ topology: {nodes: ..., replicas: ..., lens_workers: ..., db: ..., object_store: 
 fixture_revision: <git sha of fixtures, corpus manifest or inventory>
 expected: [...]                      # copied from the acceptance criteria
 observed: [...]                      # one entry per expected item, with evidence path
-coverage_gaps: [...]                 # anything not exercised, with reason
+coverage_gaps: [...]                 # anything not exercised, with reason (workstation_limitation, ...)
 owner: <role>                         # named privately
 evidence_location: <opaque reference>
 started_at / finished_at: <UTC>
-cost_actual: <from the cost template>
 ```
 
 Attach raw metric exports, `kubectl` snapshots and logs to the evidence location, not to the repository. Redact before sharing ([validation guide](../guides/validation.md#outcomes-and-receipts)).
-
-## Cost-estimate template
-
-Every receipt below carries a cost table in this form. **No unit price has been verified.** Fill each blank from a dated quote or the provider's price list for `<region>` on the probe date, and record that date.
-
-| Resource | Quantity | Hours | Unit price (per hour or per unit) | Subtotal |
-|---|---|---|---|---|
-| Example: Server node `<vm-size>` | 3 | ___ | ___ | qty × hours × price |
-
-Window total = sum of receipts' subtotals for resources that are *not* shared + one copy of each shared resource for the window's wall-clock hours. Then:
-
-| Line | Value |
-|---|---|
-| Sum of resource subtotals | ___ |
-| Storage, transactions and egress (per GB or per 10k operations) | ___ |
-| Retry contingency (multiplier × longest receipt, agreed in pre-flight item 5) | ___ |
-| **Cap requested** | ___ |
-| Price source and date | ___ |
-
-Hours come from the local rehearsal timings plus the provisioning and teardown times observed in rehearsal; never from this page.
 
 <a id="plan-scale-1-t1"></a>
 
@@ -234,7 +176,7 @@ Hours come from the local rehearsal timings plus the provisioning and teardown t
 
 **Prerequisites.** Ledger row SCALE-1 (code ready at `4d4d653`). The release candidate image. The counting provider stub (to be written). The `platform-v1` case needs the platform profile settings used by the existing `-Platform` tier.
 
-**Topology.** C1 with 2 serving replicas; a third Server node for the surge and builder-divisor cases. No Lens. PostgreSQL ledger and source store (`pg`), then `az` for the shared-storage case.
+**Topology.** L3 with 2 serving replicas and room for a surge pod and a builder. No Lens. PostgreSQL ledger and source store (`pg`), then S3 on MinIO (or `az` on Azurite) for the shared-storage case.
 
 **Procedure.**
 
@@ -255,17 +197,10 @@ Hours come from the local rehearsal timings plus the provisioning and teardown t
 
 **Pass/fail.** Every row of the [operator action table](scale-out.md#helm-installation-upgrade-and-rollback) matches its expected result. Any admission total above the documented bound outside the surge case, any startup that should have been refused, or any overlap in `platform-v1` fails.
 
-**Teardown.** `helm uninstall`, delete namespace. Shared C1 window teardown at the end.
+**Teardown.** `helm uninstall`, delete namespace.
 
-**Local rehearsal.** All steps except Azure storage on L2 (kind/k3d) with the stub; steps 1–9 and 11–12 are fully meaningful there. Cloud adds only the `az` store and real-node rollout timing. On L3 this receipt is Full except the identity path; see [decisions](#decisions-that-block-scheduling).
+**Rehearsal and limitations.** All steps on L2 (kind/k3d) with the stub; steps 1–9 and 11–12 are fully meaningful there. On L3 the receipt is Full. Managed-identity access to Azure Blob and multi-node rollout timing are recorded as limitations.
 
-| Resource | Quantity | Hours | Unit price | Subtotal |
-|---|---|---|---|---|
-| Server node | 3 | ___ | ___ | ___ |
-| System node | 1 | ___ | ___ | ___ |
-| Load generator node | 1 | ___ | ___ | ___ |
-| CNPG volumes (`cell.storage` × instances) | 2 | ___ | ___ | ___ |
-| Blob storage and transactions | — | — | ___ | ___ |
 
 <a id="plan-scale-3-t1"></a>
 
@@ -273,9 +208,9 @@ Hours come from the local rehearsal timings plus the provisioning and teardown t
 
 **Purpose.** Drive a known build-queue and DB-pool bottleneck, resize, and compare operator-visible counts with actual fleet and database observations. [SCALE-3-T1](scale-out.md#scale-3-t1) · [Replica, pool and queue diagnostics](../ops/clustering.md#replica-pool-and-queue-diagnostics)
 
-**Prerequisites.** Ledger row SCALE-3 (code ready at `273ac32`). For a realistic queue, ledger rows R4 (implemented), R6, R8 and R9 (planned) should be complete so the run measures the final claim path. Prometheus and kube-state-metrics in C1.
+**Prerequisites.** Ledger row SCALE-3 (code ready at `273ac32`). For a realistic queue, ledger rows R4 (implemented), R6, R8 and R9 (planned) should be complete so the run measures the final claim path. Prometheus and kube-state-metrics on L3.
 
-**Topology.** C1: 2 serving replicas, `MUNARIUM_DB_MAX_CONNS` lowered (for example to the floor of 2) for the pool case, one builder enabled. Synthetic corpus from the repository's existing generators (for example the 400-document benchmark loader in [measuring performance](../guides/measuring-performance.md#11-use-the-repository-benchmark-for-the-question-it-answers)) scaled up as needed.
+**Topology.** L3: 2 serving replicas, `MUNARIUM_DB_MAX_CONNS` lowered (for example to the floor of 2) for the pool case, one builder enabled. Synthetic corpus from the repository's existing generators (for example the 400-document benchmark loader in [measuring performance](../guides/measuring-performance.md#11-use-the-repository-benchmark-for-the-question-it-answers)) scaled up as needed.
 
 **Procedure.**
 
@@ -290,15 +225,10 @@ Hours come from the local rehearsal timings plus the provisioning and teardown t
 
 **Pass/fail.** Each operator-visible count matches the ground truth within one scrape interval at steady state; the failed read is never shown as 0; labels contain no tenant, path or query content. Any mismatch beyond the interval fails.
 
-**Teardown.** Restore pool and role settings; namespace deletion at window end.
+**Teardown.** Restore pool and role settings; namespace deletion at run end.
 
-**Local rehearsal.** Steps 1–6 on L2 (or L1 for steps 1–4 and 6). Cloud is needed only for representative capacity numbers and real-node resize timing.
+**Rehearsal and limitations.** Steps 1–6 on L2 (or L1 for steps 1–4 and 6). Production-representative capacity numbers and multi-node resize timing are recorded as limitations.
 
-| Resource | Quantity | Hours | Unit price | Subtotal |
-|---|---|---|---|---|
-| Server node | 3 | ___ | ___ | ___ |
-| Load generator node | 1 | ___ | ___ | ___ |
-| Monitoring (managed or in-cluster storage) | 1 | ___ | ___ | ___ |
 
 <a id="plan-scale-2-t1"></a>
 
@@ -308,7 +238,7 @@ Hours come from the local rehearsal timings plus the provisioning and teardown t
 
 **Prerequisites.** The chart's optional builder group (`builder.enabled`, outside every Service and route, counted by `auto`; [chart](../../deploy/helm/munarium/README.md#builder-group)) and the drain release on SIGTERM, both implemented with local render and PostgreSQL tests; R4, R6 cooperative cancellation and R9 fenced progress.
 
-**Topology.** C1: 2 serving replicas, builder group 0 → 1 → 2 → 1 on the third Server node (one builder pod per node where the staging disk is measured). Object store for artifacts.
+**Topology.** L3: 2 serving replicas, builder group 0 → 1 → 2 → 1, each builder pod with a size-limited staging volume. MinIO for artifacts.
 
 **Procedure.**
 
@@ -323,15 +253,10 @@ Hours come from the local rehearsal timings plus the provisioning and teardown t
 
 **Pass/fail.** No write by a retired generation; every job completes exactly once or fails with a classified error; foreground SLO and refusals stay within the pre-declared bound; staging never exhausts the disk.
 
-**Teardown.** Scale builder group to 0, cancel outstanding jobs, namespace deletion at window end.
+**Teardown.** Scale builder group to 0, cancel outstanding jobs, namespace deletion at run end.
 
-**Local rehearsal.** Fully on L2 (kind) once the chart group exists; fencing behavior is already covered by PostgreSQL tests. Cloud adds real staging disk and object-store transfer under load.
+**Rehearsal and limitations.** Fully on L2 (kind); fencing behavior is already covered by PostgreSQL tests. Managed-disk staging and cloud object-store transfer under load are recorded as limitations.
 
-| Resource | Quantity | Hours | Unit price | Subtotal |
-|---|---|---|---|---|
-| Server node | 3 | ___ | ___ | ___ |
-| Load generator node | 1 | ___ | ___ | ___ |
-| Artifact storage, transactions | — | — | ___ | ___ |
 
 <a id="plan-sc1-t1"></a>
 
@@ -341,7 +266,7 @@ Hours come from the local rehearsal timings plus the provisioning and teardown t
 
 **Prerequisites.** Ledger rows SCALE-1 and SCALE-3 (code ready), R7 (implemented, opt-in), SC1. A load profile and v1.4 client replay driver (to be written). The chart `preStop` and termination grace (to be written, or post-render).
 
-**Topology.** C1, Lens disabled, production profile, 1 → 2 → 1 serving replicas. Released v1.4 clients (Rust, Python, .NET, Java and `mmctl`) run from the load generator node.
+**Topology.** L3, Lens disabled, production profile, 1 → 2 → 1 serving replicas. Released v1.4 clients (Rust, Python, .NET, Java and `mmctl`) run from the load generator pod.
 
 **Procedure.**
 
@@ -355,14 +280,10 @@ Hours come from the local rehearsal timings plus the provisioning and teardown t
 
 **Pass/fail.** Both replicas serve after scale-up; the retiring replica stops admitting, drains, and the survivor serves correct results; v1.4 client results unchanged; no unaccounted errors.
 
-**Teardown.** Return to the window's baseline replica count.
+**Teardown.** Return to the run's baseline replica count.
 
-**Local rehearsal.** L2 for the full sequence; L1 for the client replay. Cloud supplies the sustained-load numbers on representative nodes.
+**Rehearsal and limitations.** L2 for the full sequence; L1 for the client replay. Node drain, node failure and sustained-load numbers on representative nodes are recorded as limitations.
 
-| Resource | Quantity | Hours | Unit price | Subtotal |
-|---|---|---|---|---|
-| Server node | 2 | ___ | ___ | ___ |
-| Load generator node | 1 | ___ | ___ | ___ |
 
 <a id="plan-sc1-t2-t3"></a>
 
@@ -372,7 +293,7 @@ Hours come from the local rehearsal timings plus the provisioning and teardown t
 
 **Prerequisites.** Ledger rows IR-0 to IR-4, I1, I2 (planned), LENS-1 and LENS-2 (planned: working image and qualified profile), SC1. Enrolled collections with approved semantic indexes (reuse the LENS-D2-T2 builds of public roots when run in the same window). The Lens chart or manifests (to be written in Lens).
 
-**Topology.** C2: 2 serving Server replicas; Lens embedding and reranking pools at 1 each, then one→two→one per stage (peak 3 workers). Tenant budgets configured with known allowances.
+**Topology.** L3: 2 serving Server replicas; Lens embedding and reranking deployments at 1 each on the workstation's CPU, then one→two→one per stage (peak 3 workers). Tenant budgets configured with known allowances.
 
 **Procedure.**
 
@@ -388,16 +309,10 @@ Hours come from the local rehearsal timings plus the provisioning and teardown t
 
 **Pass/fail.** As in the SC1-T2 and SC1-T3 rows: every transition shows the listed observations; serving pins and citations survive drains; I1, I2 and SC2 hold through failure and recovery; baseline replay matches after restore.
 
-**Teardown.** Scale GPU pool to 0 immediately after the last C2 receipt; it is the dominant cost.
+**Teardown.** Scale the Lens deployments to 0 after the last Lens receipt.
 
-**Local rehearsal.** The control flow (routing, readiness, drain, refusal, accounting) can be rehearsed on L1 or L2 with a Lens protocol stub that returns deterministic embeddings and permutations (to be written; the Lens CPU scaffold currently returns typed 503 only). Capacity numbers require the GPU profile.
+**Rehearsal and limitations.** The control flow (routing, readiness, drain, refusal, accounting) can be rehearsed on L1 or L2 with a Lens protocol stub that returns deterministic embeddings and permutations (to be written; the Lens CPU scaffold currently returns typed 503 only). GPU capacity numbers are recorded as limitations.
 
-| Resource | Quantity | Hours | Unit price | Subtotal |
-|---|---|---|---|---|
-| Server node | 2–3 | ___ | ___ | ___ |
-| GPU node `<gpu-vm-size>` | 2 baseline, 3 peak | ___ | ___ | ___ |
-| Load generator node | 1 | ___ | ___ | ___ |
-| Model and artifact storage | — | — | ___ | ___ |
 
 <a id="plan-sc2"></a>
 
@@ -405,9 +320,9 @@ Hours come from the local rehearsal timings plus the provisioning and teardown t
 
 **Purpose.** Route approved tenants through a shared worker, refuse forbidden placement, and handle loss of a dedicated pool. [SC2](repository-handoffs.md#sc2) · [SC2-T1](repository-handoffs.md#sc2-t1) · [SC2-T2](repository-handoffs.md#sc2-t2) · [SC2-T3](repository-handoffs.md#sc2-t3)
 
-**Prerequisites.** Server-side placement enforcement (configuration `inference.placement` and the binding's `placement` requirement, checked before any send; [inference guide](../guides/inference-endpoints.md#shared-and-dedicated-placement)), implemented with local stub tests against Proposed hub ADR 0024; I1, I2, LENS-1. Three synthetic tenants: two approved for sharing, one dedicated-only. A per-worker request recorder (Lens access log without content, or a sidecar counter).
+**Prerequisites.** Server-side placement enforcement (configuration `inference.placement` and the binding's `placement` requirement, checked before any send; [inference guide](../guides/inference-endpoints.md#shared-and-dedicated-placement)), implemented with local stub tests against hub ADR 0024 (accepted 20 November 2026); I1, I2, LENS-1. Three synthetic tenants: two approved for sharing, one dedicated-only. A per-worker request recorder (Lens access log without content, or a sidecar counter).
 
-**Topology.** C2 GPU pool split: 1 worker `pool=shared`, 1 worker `pool=dedicated`. Server 2 replicas. Runs in the same window as SC1-T2/T3, after them.
+**Topology.** L3: two labelled Lens deployments, 1 worker `pool=shared` and 1 worker `pool=dedicated`. Server 2 replicas. Runs in the same run as SC1-T2/T3, after them.
 
 **Procedure.**
 
@@ -419,14 +334,10 @@ Hours come from the local rehearsal timings plus the provisioning and teardown t
 
 **Pass/fail.** Zero content reaches a forbidden worker on every path; each tenant's budget and cache isolation holds; the unaffected tenant continues.
 
-**Teardown.** Remove tenants and policies; GPU pool scaled to 0 at window end.
+**Teardown.** Remove tenants and policies; Lens deployments scaled to 0 at run end.
 
-**Local rehearsal.** All of SC2's decision logic can run on L1/L2 against two instances of the Lens protocol stub labelled shared and dedicated (to be written). The cloud receipt then confirms it on the qualified image.
+**Rehearsal and limitations.** All of SC2's decision logic can run on L1/L2 against two instances of the Lens protocol stub labelled shared and dedicated (to be written). The L3 receipt then confirms it on the qualified Lens image. Dedicated node pools on separate hardware and the loss of a dedicated node are recorded as limitations.
 
-| Resource | Quantity | Hours | Unit price | Subtotal |
-|---|---|---|---|---|
-| GPU node `<gpu-vm-size>` | 2 | ___ | ___ | ___ |
-| Server node | 2 | ___ | ___ | ___ |
 
 <a id="plan-compat-t2"></a>
 
@@ -436,7 +347,7 @@ Hours come from the local rehearsal timings plus the provisioning and teardown t
 
 **Prerequisites.** Ledger rows SCALE-1 (code ready), COMPAT-T2, M1 step 3 (pending: switched Server consumer) for the Matrix-enabled case. A pinned real Matrix peer image. Released 1.4 client packages and `mmctl`.
 
-**Topology.** C1 (or L2, see decisions), 2 replicas, Matrix peer installed as its own release in the same cluster with `matrix.baseUrl` and `matrix.adminUrl` set for the second pass.
+**Topology.** L3, 2 replicas, Matrix peer installed as its own release in the same cluster with `matrix.baseUrl` and `matrix.adminUrl` set for the second pass.
 
 **Procedure.**
 
@@ -453,12 +364,8 @@ Hours come from the local rehearsal timings plus the provisioning and teardown t
 
 **Teardown.** Uninstall both releases and Matrix.
 
-**Local rehearsal.** Fully on L2; client suites already run locally per the [clients README](../../../clients/README.md). Cloud adds the `az` source store and workload identity path only.
+**Rehearsal and limitations.** Fully on L2; client suites already run locally per the [clients README](../../../clients/README.md). The managed `az` source store with workload identity is recorded as a limitation.
 
-| Resource | Quantity | Hours | Unit price | Subtotal |
-|---|---|---|---|---|
-| Server node | 2 | ___ | ___ | ___ |
-| Load generator node (clients) | 1 | ___ | ___ | ___ |
 
 <a id="plan-compat-t3"></a>
 
@@ -493,11 +400,6 @@ Hours come from the local rehearsal timings plus the provisioning and teardown t
 
 **Rehearsal.** Fully on L1 (compose, with MinIO) or L2; the `VersionMissing` negative control has already been rehearsed locally ([local receipt](compat-local-receipts.md#compat-t3)).
 
-| Resource | Quantity | Hours | Unit price | Subtotal |
-|---|---|---|---|---|
-| Server node | 2 | ___ | ___ | ___ |
-| CNPG volumes | 2 | ___ | ___ | ___ |
-| Backup storage (route B) | — | — | ___ | ___ |
 
 <a id="plan-login1"></a>
 
@@ -520,14 +422,10 @@ Hours come from the local rehearsal timings plus the provisioning and teardown t
 
 **Pass/fail.** Exactly the LOGIN1-T1/T2 outcomes; any acceptance of a revoked or rolled-back handle fails.
 
-**Teardown.** Clear the session store; namespace deletion at window end.
+**Teardown.** Clear the session store; namespace deletion at run end.
 
-**Local rehearsal.** Fully on L1 (two compose instances with different images) or L2. Cloud adds the real gateway TLS path. Run in the same window and on the same candidate as ART1/ART2 for REL1.
+**Rehearsal and limitations.** Fully on L1 (two compose instances with different images) or L2. On L3, TLS terminates at a local gateway with a self-signed certificate; the production gateway and load-balancer TLS path is recorded as a limitation. Run in the same run and on the same candidate as ART1/ART2 for REL1.
 
-| Resource | Quantity | Hours | Unit price | Subtotal |
-|---|---|---|---|---|
-| Server node | 2–3 | ___ | ___ | ___ |
-| Public IP and load balancer for gateway TLS | 1 | ___ | ___ | ___ |
 
 <a id="plan-art"></a>
 
@@ -537,7 +435,7 @@ Hours come from the local rehearsal timings plus the provisioning and teardown t
 
 **Prerequisites.** Ledger rows R10, ART1, ART2 (planned) and the ART1 hub decision on verifier identities and independence. Two verifier identities with separate credentials. A fault-injection tool that replaces an object's bytes in the authoritative store and can pause a reader between admission and release (to be written; likely a test-only build hook).
 
-**Topology.** 3 serving replicas (cold, warm, restart roles), Datastore serving from the object store, two verifier processes on separate nodes with separate workload identities.
+**Topology.** 3 serving replicas (cold, warm, restart roles), Datastore serving from the object store, two verifier processes with separate test credentials.
 
 **Procedure.**
 
@@ -551,14 +449,10 @@ Hours come from the local rehearsal timings plus the provisioning and teardown t
 
 **Pass/fail.** Exactly the ART1/ART2 outcomes; any serving of a blocked pin, or a clearance without two fresh independent matches, fails.
 
-**Teardown.** Delete the corrupted objects and the test tenant; namespace deletion at window end.
+**Teardown.** Delete the corrupted objects and the test tenant; namespace deletion at run end.
 
-**Local rehearsal.** Fully on L1 with MinIO, or L2. Cloud adds the Azure Blob path with workload-identity verifiers.
+**Rehearsal and limitations.** Fully on L1 with MinIO, or L2. Azure Blob with workload-identity verifiers is recorded as a limitation.
 
-| Resource | Quantity | Hours | Unit price | Subtotal |
-|---|---|---|---|---|
-| Server node | 3 | ___ | ___ | ___ |
-| Blob storage and transactions | — | — | ___ | ___ |
 
 <a id="plan-lens"></a>
 
@@ -570,72 +464,58 @@ Hours come from the local rehearsal timings plus the provisioning and teardown t
 
 **Topology.**
 
-| Stage | GPU nodes | Server | Notes |
+| Stage | Lens | Server | Notes |
 |---|---|---|---|
-| Hardware probe and pilot (LENS-D1-T2/T3, I3 pilot) | 1 × `<gpu-vm-size>` | 1 replica | Measures throughput, memory and token volume on a representative sample to forecast GPU-hours for the full run. |
-| I3 evaluation | 1–2 | 2 | Fixed profile; both families; four arms (hash, embedder, reranker, combined). |
-| LENS-D2 full | forecast from pilot | 2 + 1 builder | Public roots in C2; restricted root in C2R. |
+| Hardware probe and pilot (LENS-D1-T2/T3, I3 pilot) | 1 worker on the workstation | 1 replica | Measures throughput, memory and token volume on a representative sample to forecast the full run's duration on the workstation. |
+| I3 evaluation | 1–2 workers | 2 | Fixed profile; both families; four arms (hash, embedder, reranker, combined). |
+| LENS-D2 full | as the pilot forecast allows | 2 + 1 builder | Public roots on L3; restricted root on L3R. |
 
 **Procedure.**
 
 1. Pilot: start the Lens image with verified assets, run the candidate Server's embedding and rerank probes, record image digest, model and tokenizer revisions, dimensions, precision, driver. Ingest a representative sample from each family and measure tokens per second, peak device memory, end-to-end build time. Exercise oversize input, failed model load and timeout.
-2. Compute the forecast (`F` files, source bytes, chunks, tokens, measured throughput) as in [Qualification environments](README.md#qualification-environments). Re-approve cost before step 3.
+2. Compute the forecast (`F` files, source bytes, chunks, tokens, measured throughput) as in [Qualification environments](README.md#qualification-environments). Confirm that the forecast fits the workstation before step 3; a root that cannot is recorded as a limitation.
 3. I3: run the frozen query sets per family against the four arms; record recall@k, nDCG@k, p95, failures, authorization outcomes. Use `scripts/frozen_eval.py` (exists) for the record format.
 4. LENS-D2-T2: build each public root's baseline and Lens-backed index side by side; verify; record per-root results.
 5. LENS-D2-T3: enroll; fresh sessions; content-derived queries covering every content-bearing file; resolve citations.
 6. LENS-D2-T4: switch back to prior indexes and policies; with Lens unavailable, replay baselines and resolve citations.
-7. Restricted root in C2R under its owner's authorization; only an opaque receipt reference leaves that environment.
+7. Restricted root on L3R under its owner's authorization; only an opaque receipt reference leaves that boundary.
 
 **Observations.** Per root and per file as in the [release manifest record](repository-handoffs.md#workspace-inventory); I3 family receipts; device memory and throughput.
 
 **Pass/fail.** I3: both family receipts pass their predeclared thresholds for the same profile. LENS-D2: every stage passes for every one of the 16 roots; a missing or partial root keeps the gate open.
 
-**Teardown.** Delete indexes, collections and corpus copies; scale GPU pool to 0; destroy C2 if no later receipt needs it. C2R teardown follows its owner's retention rules.
+**Teardown.** Delete indexes, collections and corpus copies; scale Lens to 0. L3R teardown follows its owner's retention rules.
 
-**Local rehearsal.** The manifest freeze, ingestion accounting, query generation, citation resolution and rollback logic can run on L1 against the hash baseline and the Lens protocol stub over a small public subset (for example two roots). Only quality, latency and capacity need the GPU.
+**Rehearsal and limitations.** The manifest freeze, ingestion accounting, query generation, citation resolution and rollback logic can run on L1 against the hash baseline and the Lens protocol stub over a small public subset (for example two roots). The workstation has no GPU Lens capacity: GPU throughput and latency are recorded as limitations with the measured workstation values, and are not run on other hardware. A threshold or root that the workstation cannot complete stays recorded as unproven for the release owner.
 
-| Resource | Quantity | Hours | Unit price | Subtotal |
-|---|---|---|---|---|
-| GPU node (pilot) | 1 | ___ | ___ | ___ |
-| GPU node (I3 and LENS-D2) | forecast | ___ | ___ | ___ |
-| Server and builder nodes | 3 | ___ | ___ | ___ |
-| Corpus, index and artifact storage | ___ GB | ___ | ___ | ___ |
-| Restricted environment (C2R), separately approved | ___ | ___ | ___ | ___ |
 
 <a id="plan-mcp"></a>
 
 ## Multi-replica MCP cases
 
-[A5-T3](mcp-analysis.md#a5-t3), [A5-T5](mcp-analysis.md#a5-t5), [A6-T2](mcp-analysis.md#a6-t1) and the two-replica races in [A8-T1](mcp-analysis.md#a8-t1) and [A9-T2](mcp-analysis.md#a9-t2) need two replicas and a durable store, not cloud hardware. Run them on L1 or L2 with a recording provider. Real-client transcripts ([A3](mcp-analysis.md#a3)) need the clients, not a cluster. If the release owner wants them on the same candidate deployment as the cluster receipts, add them to window W1 at the cost of its Server nodes' hours only. Prerequisites: ledger Phase 5 rows (planned).
+[A5-T3](mcp-analysis.md#a5-t3), [A5-T5](mcp-analysis.md#a5-t5), [A6-T2](mcp-analysis.md#a6-t1) and the two-replica races in [A8-T1](mcp-analysis.md#a8-t1) and [A9-T2](mcp-analysis.md#a9-t2) need two replicas and a durable store, not cloud hardware. Run them on L1 or L2 with a recording provider. Real-client transcripts ([A3](mcp-analysis.md#a3)) need the clients, not a cluster. If the release owner wants them on the same candidate deployment as the cluster receipts, run them on L3 in the same run. Prerequisites: ledger Phase 5 rows (planned).
 
-## Minimum-spend ordering
+## Run order
 
 ### Principles
 
-1. **Local workstation cluster first.** Run every Kubernetes receipt on L3, the [workstation cluster](#first-choice-a-local-workstation-cluster), on the candidate (or a pre-candidate build for rehearsal). Use L1 for compose-only rehearsals. Record wall-clock timings; they fill the "Hours" blanks.
-2. **Azure covers only the residual.** A paid window includes a receipt, or a part of one, only when the [L3 table](#what-one-docker-desktop-node-can-prove) marks it Partial or Azure, or when the release owner has not accepted L3 as an environment of record for it.
-3. **Group by hardware, not by phase.** Server-only residuals share one CPU window. GPU receipts share one GPU window. Never hold a GPU node while running CPU-only receipts.
-4. **Order within a window from least to most destructive.** Seed once, upgrade once, run non-destructive receipts, roll back last.
-5. **Reuse state.** One v1.4 seed feeds COMPAT-T2, COMPAT-T3, SC1-T1 and the LOGIN1 legacy baseline. The LENS-D2 public-root builds become the enrolled collections for SC1-T2/T3 and SC2.
-6. **Tear down between windows** unless the next window starts within the hour it would take to re-provision.
+1. **One environment.** Run every Kubernetes receipt on L3, the [workstation cluster](#the-qualification-environment-the-maintainer-workstation), on the frozen candidate. Use L1 and L2 for rehearsals on earlier builds.
+2. **Limitations, not other environments.** A condition L3 cannot exercise (marked Partial or Limited in the [L3 table](#what-one-docker-desktop-node-can-prove)) is recorded in the receipt's `coverage_gaps` as `workstation_limitation`. No Azure or other cloud run is planned for it.
+3. **Order from least to most destructive.** Seed once, upgrade once, run non-destructive receipts, roll back last.
+4. **Reuse state.** One v1.4 seed feeds COMPAT-T2, COMPAT-T3, SC1-T1 and the LOGIN1 legacy baseline. The LENS-D2 public-root builds become the enrolled collections for SC1-T2/T3 and SC2.
+5. **Tear down after the run**, without touching anything else hosted on the workstation.
 
-### Recommended windows
+### The workstation qualification run
 
-| Window | Profile | Receipts, in run order | Smallest topology | Spend |
-|---|---|---|---|---|
-| **W0 · workstation cluster** | L3 (and L1) | 1. Install v1.4 and seed. 2. COMPAT-T2 client baseline. 3. Upgrade: COMPAT-T2 compare, SCALE-1-T1 steps 2–10. 4. SC1-T1 (pod-level). 5. SCALE-2-T1. 6. SCALE-3-T1. 7. LOGIN1-T1/T2. 8. ART1/ART2. 9. COMPAT-T3 mixed and rollback (with the `VersionMissing` negative control), SCALE-1-T1 rollback, COMPAT-T2 rollback, LOGIN1 rollback, ART rollback with outstanding block. 10. `platform-v1` case (fresh namespace). 11. Multi-replica MCP cases. 12. SC1-T2/T3 and SC2 logic with Lens CPU replicas or stub. 13. LENS-D2 pipeline on a small public subset. | One workstation, sized as in [sizing](#sizing-within-128-gb) | None |
-| **W1 · Azure Server-only residual** | C1 | Only what W0 could not prove: SC1-T1 node drain and node failure; `az` store with workload identity smoke for SCALE-1-T1, COMPAT-T2, COMPAT-T3 and ART verifiers; gateway TLS for LOGIN1; SCALE-2-T1 staging on managed disks; SCALE-3-T1 and SC1-T1 capacity numbers only if a capacity claim is to be published. Same destructive-last order as W0. | 1 system, 2–3 Server, 1 load generator node; CNPG 2 instances | Capped |
-| **W2 · GPU pilot** | C2 (1 GPU node) | LENS-D1-T2, LENS-D1-T3, I3 pilot sizing | 1 GPU, 1 Server node, system node | Capped |
-| **W3 · Combined fleet and workspace** | C2 | 1. I3 evaluation. 2. LENS-D2-T2 public roots. 3. LENS-D2-T3. 4. SC1-T2. 5. SC1-T3. 6. SC2-T1/T2/T3 with dedicated nodes. 7. LENS-D2-T4 rollback (last, it removes the enrolled state the others use). | GPU pool from W2 forecast (minimum 2, peak 3 for SC1-T2); 2 Server + builder; 1 load generator | Capped |
-| **W3R · restricted** | C2R | LENS-D2 for the restricted root only | Owner-approved | Separately approved |
+| Run | Profile | Receipts, in run order | Topology |
+|---|---|---|---|
+| **W0 · workstation cluster** | L3 (and L1, L3R) | 1. Install v1.4 and seed. 2. COMPAT-T2 client baseline. 3. Upgrade: COMPAT-T2 compare, SCALE-1-T1 steps 2–10. 4. SC1-T1 (pod-level). 5. SCALE-2-T1. 6. SCALE-3-T1. 7. LOGIN1-T1/T2. 8. ART1/ART2. 9. Lens pilot, I3 and LENS-D2 public roots, then SC1-T2/T3 and SC2 on the enrolled collections. 10. LENS-D2 restricted root on L3R, if authorized. 11. Multi-replica MCP cases. 12. `platform-v1` case (fresh namespace). 13. Rollbacks last: SCALE-1-T1 rollback, COMPAT-T2 rollback, LOGIN1 rollback, ART rollback with outstanding block, LENS-D2-T4, then COMPAT-T3 backup restore into v1.4.0 (with the `VersionMissing` negative control). | One workstation, sized as in [sizing](#sizing-within-128-gb) |
 
-W1 can be dropped entirely if the release owner accepts L3 receipts for the Server-only IDs and records the Azure identity and managed-storage paths as covered elsewhere (for example by the example module's first end-to-end apply) or as a stated coverage gap. That is the largest single saving available. W1 and W3 can also share one provisioning if they are scheduled back to back: run the W1 residual on the C2 Server nodes before scaling up the GPU pool.
+The run may be split across several sessions on the same candidate; record each session's dates in its receipts.
 
-W2 is deliberately small and separate: its forecast sets the W3 budget. If the pilot can run on hardware the Lens maintainers already have access to without cost, W2 has no cloud spend.
+### Rehearsal before the qualification run
 
-### Rehearsal before W0
-
-Where the code for a receipt is not yet complete, the parts that exist can still be exercised on L1 or L2 (kind or k3d) in CI-like disposable runs. These are rehearsals, not receipts, and they need no workstation time.
+Where the code for a receipt is not yet complete, the parts that exist can still be exercised on L1 or L2 (kind or k3d) in CI-like disposable runs. These are rehearsals, not receipts, and they do not need the qualification run.
 
 ### Local rehearsal tooling
 
@@ -655,21 +535,22 @@ Where the code for a receipt is not yet complete, the parts that exist can still
 | Artifact fault injection | — | Object corruption helper and a test-only pause hook between admission and release |
 | Console session driver | — | HTTP driver that follows CSRF tokens and pins requests to a chosen replica |
 | Evidence collection | `tools/check_validation_receipt.py` for local runner receipts; `scripts/frozen_eval.py` for I3 records | A collector that snapshots `kubectl`, `/metrics`, `/v1/reports/scale` and SQL ground truth into the receipt format above |
-| Cloud environment | [example AKS module](../../deploy/terraform/example-aks/README.md) (never applied end to end) | Qualification overlay: extra pools, artifact container, CNPG backup target, monitoring, budget alert |
+| CNPG backup target | — | WAL archive and base backup to MinIO for the COMPAT-T3 backup restore |
 | Workspace manifest | Freeze procedure specified in [workspace inventory](repository-handoffs.md#workspace-inventory) | Manifest generator and reconciler |
 
 ## Tooling inventory
 
-Existing repository tooling named in the procedures: `scripts/test_helm_chart.py`, `server/test.ps1` (`-Cluster`, `-Postgres`, `-Platform`), `server/gates.ps1`, `server/localdeploy.ps1`, `server/docker-compose.yml` profiles `cluster`, `gateway` and `s3`, `mmp-conformance`, the four client conformance suites, `server/tools/check_validation_receipt.py`, `scripts/frozen_eval.py`, the PostgreSQL-versus-Datastore benchmark, the [Phase 1 fixtures](../../tests/fixtures/clearview-phase1/README.md), the [example AKS module](../../deploy/terraform/example-aks/README.md) and the [deployment runbook](../ops/deployment-runbook.md). Everything marked "to be written" above is new work; none of it exists yet, and none of it is authorized for cloud use by this page.
+Existing repository tooling named in the procedures: `scripts/test_helm_chart.py`, `server/test.ps1` (`-Cluster`, `-Postgres`, `-Platform`), `server/gates.ps1`, `server/localdeploy.ps1`, `server/docker-compose.yml` profiles `cluster`, `gateway` and `s3`, `mmp-conformance`, the four client conformance suites, `server/tools/check_validation_receipt.py`, `scripts/frozen_eval.py`, the PostgreSQL-versus-Datastore benchmark, the [Phase 1 fixtures](../../tests/fixtures/clearview-phase1/README.md) and the [deployment runbook](../ops/deployment-runbook.md). Everything marked "to be written" above is new work; none of it exists yet. No cloud environment is used.
 
 ## Decisions that block scheduling
 
+The environment (workstation only, no Azure), the rollback route (backup restore) and the release-evidence scope (no cosign verification or real-browser accessibility pass) were decided on 20 November 2026. The items below remain.
+
 | Decision | Blocks | Owner |
 |---|---|---|
-| Whether L3 (workstation Docker Desktop Kubernetes) receipts on the exact candidate are accepted environments of record for the IDs marked Full in the [L3 table](#what-one-docker-desktop-node-can-prove) | Whether W1 is needed and its size | Release owner |
 | U10 shared session store | LOGIN1 | Server console and deployment maintainers ([open items](README.md#open-items)) |
-| ART1 verifier identity and independence (hub record) | ART1/ART2 | Hub contract owners |
-| SC2 placement contract (hub record) | SC2 | Hub contract owners |
-| Lens runtime, model pair, precision and hardware; I3 thresholds | W2, W3 | Lens maintainers ([open items](README.md#open-items)) |
-| Restricted-root authorization | W3R | Corpus owner |
-| Qualification assignments, access and spending authority | Every window | Release engineering ([open items](README.md#open-items)) |
+| ART1 verifier identity and independence (hub ADR 0028, accepted; export pending) | ART1/ART2 | Hub contract owners |
+| SC2 placement contract (hub ADR 0024, accepted; export pending) | SC2 | Hub contract owners |
+| Lens runtime, precision and workstation profile; I3 thresholds | LENS-D1, I3, LENS-D2, SC1-T2/T3, SC2 | Lens maintainers ([open items](README.md#open-items)) |
+| Restricted-root authorization | LENS-D2 restricted root (L3R) | Corpus owner |
+| Qualification assignments and access | The workstation run | Release engineering ([open items](README.md#open-items)) |

@@ -375,4 +375,6 @@ None of these is a compatibility regression. Each is recorded for a reviewer.
   control.
 - **COMPAT-T5:** mixed-replica console sessions and the LOGIN1 cutover.
 - **A5-T3** and the other multi-replica MCP cases.
-- Cosign verification of the baseline on the qualification host.
+
+Cosign verification of the baseline is not required (maintainer decision of
+20 November 2026).
