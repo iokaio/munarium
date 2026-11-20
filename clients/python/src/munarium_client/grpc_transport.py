@@ -217,6 +217,7 @@ def _parse_search(resp: Any) -> m.SearchResult:
     return m.SearchResult(
         hits=[gc.parse_search_hit(h) for h in resp.hits],
         envelope=gc.parse_envelope(resp.envelope),
+        execution=gc.parse_search_execution(resp.execution) if resp.HasField("execution") else None,
     )
 
 
@@ -680,6 +681,7 @@ class SyncGrpcRetrieval:
         top_k: int | None = None,
         index_version: str | None = None,
         filter: Any | None = None,
+        disclose_execution: bool | None = None,
     ) -> m.SearchResult:
         gc.reject_zero("top_k", top_k)
         msg = retrieval_pb2.HybridSearchRequest(
@@ -688,6 +690,8 @@ class SyncGrpcRetrieval:
             top_k=top_k or 0,
             filter_json=json.dumps(filter) if filter is not None else "",
             index_version=index_version or "",
+            # ClearView R1: False (the proto3 default) is the v1.4 request.
+            disclose_execution=bool(disclose_execution),
         )
         return _parse_search(self._c.call(self._c.retrieval.HybridSearch, msg, retry_class="read"))
 
@@ -994,6 +998,7 @@ class SyncGrpcSessions:
         complete: bool | None = None,
         model_override: m.ModelOverride | dict[str, Any] | None = None,
         research_profile: str | None = None,
+        collection_availability: m.CollectionAvailability | None = None,
     ) -> m.TurnResult:
         gc.reject_zero("top_k", top_k)
         override = None
@@ -1012,6 +1017,8 @@ class SyncGrpcSessions:
             # it is not an ambiguous sentinel (no profile can be named ""),
             # so None needs no reject_zero guard, just the default.
             research_profile=research_profile or "",
+            # ClearView C1: "" is the v1.4 behavior (no policy selected).
+            collection_availability=collection_availability or "",
         )
         # A turn spends provider tokens — send once, never auto-retried,
         # and DEADLINE-EXEMPT like the REST twin: aborting client-side does
@@ -1028,6 +1035,7 @@ class SyncGrpcSessions:
         complete: bool | None = None,
         model_override: m.ModelOverride | dict[str, Any] | None = None,
         research_profile: str | None = None,
+        collection_availability: m.CollectionAvailability | None = None,
     ) -> Iterator[m.TurnStreamEvent]:
         raise UnsupportedError(
             "streaming turns have no gRPC RPC today — use the REST client "

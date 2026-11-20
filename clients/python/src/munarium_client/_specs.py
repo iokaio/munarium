@@ -320,6 +320,7 @@ def search(
     top_k: int | None,
     index_version: str | None,
     filter: Any | None,
+    disclose_execution: bool | None = None,
 ) -> Spec[m.SearchResult]:
     return Spec(
         "POST",
@@ -332,6 +333,9 @@ def search(
                 "top_k": top_k,
                 "index_version": index_version,
                 "filter": filter,
+                # ClearView R1: omitted unless set, so a default search sends
+                # the v1.4 bytes.
+                "disclose_execution": disclose_execution,
             }
         ),
         retry="read",  # a read that happens to be a POST
@@ -772,6 +776,7 @@ def turn_body(
     complete: bool | None,
     model_override: m.ModelOverride | dict[str, Any] | None,
     research_profile: str | None = None,
+    collection_availability: m.CollectionAvailability | None = None,
 ) -> dict[str, Any]:
     override = (
         m.coerce(m.ModelOverride, model_override).model_dump(exclude_none=True)
@@ -788,6 +793,8 @@ def turn_body(
             "complete": complete,
             "model_override": override,
             "research_profile": research_profile,
+            # ClearView C1: omitted unless selected (v1.4 behavior).
+            "collection_availability": collection_availability,
         }
     )
 
@@ -799,6 +806,7 @@ def turn(
     complete: bool | None,
     model_override: m.ModelOverride | dict[str, Any] | None,
     research_profile: str | None = None,
+    collection_availability: m.CollectionAvailability | None = None,
 ) -> Spec[m.TurnResult]:
     # A turn spends provider tokens — send-once, never auto-retried, and
     # DEADLINE-EXEMPT: a client-side abort does not stop the server's paid
@@ -809,7 +817,9 @@ def turn(
         "POST",
         f"/v1/sessions/{seg(session_id)}/turns",
         parse=m.TurnResult.model_validate,
-        json=turn_body(query, top_k, complete, model_override, research_profile),
+        json=turn_body(
+            query, top_k, complete, model_override, research_profile, collection_availability
+        ),
         retry="write",
         timeout="exempt",
     )

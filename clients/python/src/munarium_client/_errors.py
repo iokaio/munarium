@@ -18,6 +18,16 @@ class MunariumError(Exception):
     #: Retrying the SAME request (same idempotency key) is safe and may
     #: succeed. Head conflicts are retryable too but need a REBUILT request.
     transient: bool = False
+    #: ClearView R11 server guidance, decoded from the REST problem member or
+    #: the gRPC ``ErrorInfo`` metadata of the same name. ``True`` only when
+    #: the server has evidence it rejected the request before execution.
+    #: ``None``: no guidance (every v1.4 server). Informational: this client's
+    #: own retry policy is unchanged, and session turns stay send-once.
+    retryable: bool | None = None
+    #: ClearView R11: ``repeat`` | ``retry_later`` | ``reread`` |
+    #: ``inspect_outcome``. ``None`` or an unrecognized value authorizes no
+    #: automated replay.
+    retry_action: str | None = None
 
 
 class HeadConflictError(MunariumError):
@@ -157,6 +167,21 @@ def _parse_findings(raw: Any) -> list[GateFinding]:
     return out
 
 
+def _retry_guidance(ext: dict[str, Any]) -> tuple[bool | None, str | None]:
+    """The R11 members: a JSON boolean on REST, ``"true"``/``"false"`` text in
+    gRPC metadata. Anything else reads as no guidance."""
+    raw = ext.get("retryable")
+    retryable: bool | None
+    if isinstance(raw, bool):
+        retryable = raw
+    elif raw in ("true", "false"):
+        retryable = raw == "true"
+    else:
+        retryable = None
+    action = ext.get("retry_action")
+    return retryable, action if isinstance(action, str) and action else None
+
+
 def error_from_parts(
     slug: str,
     detail: str,
@@ -166,6 +191,18 @@ def error_from_parts(
 ) -> MunariumError:
     """Build the typed error for a problem slug + extension members. The
     member NAMES are identical on both transports (errors.md)."""
+    err = _error_for_slug(slug, detail, ext, status, retry_after)
+    err.retryable, err.retry_action = _retry_guidance(ext)
+    return err
+
+
+def _error_for_slug(
+    slug: str,
+    detail: str,
+    ext: dict[str, Any],
+    status: int | None,
+    retry_after: float | None,
+) -> MunariumError:
     if slug == "head-conflict":
         return HeadConflictError(int(ext.get("expected") or 0), int(ext.get("actual") or 0), detail)
     if slug == "policy-rejection":

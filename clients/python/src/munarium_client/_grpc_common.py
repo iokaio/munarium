@@ -444,6 +444,26 @@ def parse_validate_result(r: Any) -> m.ValidateResult:
     )
 
 
+def parse_search_execution(e: Any) -> m.SearchExecution:
+    """ClearView R1 off the wire. The leg members are proto3 ``optional``,
+    so HasField keeps "not measured" (None) apart from a measured zero. The
+    typed gRPC message carries no inference stages; ``stages`` stays empty."""
+    return m.SearchExecution(
+        version=e.version,
+        engine=e.engine,
+        lexical_domain=e.lexical_domain,
+        legs=[
+            m.SearchLeg(
+                leg=leg.leg,
+                candidate_limit=leg.candidate_limit if leg.HasField("candidate_limit") else None,
+                fetched=leg.fetched if leg.HasField("fetched") else None,
+                exhausted=leg.exhausted if leg.HasField("exhausted") else None,
+            )
+            for leg in e.legs
+        ],
+    )
+
+
 # -- sessions + turns --------------------------------------------------
 
 
@@ -472,6 +492,28 @@ def parse_hierarchy(h: Any) -> m.EvidenceHierarchyDecision:
         completeness_available=h.completeness_available,
         disclosed_conflicts=h.disclosed_conflicts,
         conflicts_policy=h.conflicts_policy,
+    )
+
+
+def parse_coverage(c: Any) -> m.TurnCoverage:
+    """ClearView C1 off the wire. Empty ``layer``/``reason`` strings are the
+    proto3 spelling of absent; ``hits`` is proto3 ``optional`` (unset when the
+    member was unavailable). Both restore the None the REST twin parses."""
+    return m.TurnCoverage(
+        policy=c.policy,
+        complete=c.complete,
+        members=[
+            m.CollectionOutcome(
+                collection=o.collection,
+                layer=_opt(o.layer),
+                stage=o.stage,
+                outcome=o.outcome,
+                hits=o.hits if o.HasField("hits") else None,
+                reason=_opt(o.reason),
+            )
+            for o in c.members
+        ],
+        withheld_claims=list(c.withheld_claims),
     )
 
 
@@ -511,6 +553,8 @@ def parse_turn_response(resp: Any) -> m.TurnResult:
         # A message field, so HasField distinguishes "no profile ran" from
         # a decision whose every field happens to be a proto3 default.
         hierarchy=parse_hierarchy(resp.hierarchy) if resp.HasField("hierarchy") else None,
+        # Present only when the request selected collection_availability.
+        coverage=parse_coverage(resp.coverage) if resp.HasField("coverage") else None,
     )
 
 

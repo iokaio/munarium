@@ -377,6 +377,7 @@ class _ThreadedSessions(_Threaded):
         complete: bool | None = None,
         model_override: models.ModelOverride | dict[str, Any] | None = None,
         research_profile: str | None = None,
+        collection_availability: models.CollectionAvailability | None = None,
     ) -> AsyncIterator[models.TurnStreamEvent]:
         # The sync plane raises UnsupportedError; nothing is ever yielded.
         for item in self._inner.turn_stream(
@@ -386,5 +387,6 @@ class _ThreadedSessions(_Threaded):
             complete=complete,
             model_override=model_override,
             research_profile=research_profile,
+            collection_availability=collection_availability,
         ):
             yield item

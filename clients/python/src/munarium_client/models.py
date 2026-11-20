@@ -235,9 +235,66 @@ class ProvenanceEnvelope(_Model):
     provider_fingerprint: str | None = None
 
 
+class SearchLeg(_Model):
+    """One retrieval leg's observations (ClearView R1). ``None`` = not
+    measured by the serving engine: unknown, never zero or ``False``."""
+
+    #: ``lexical`` | ``vector``.
+    leg: str
+    #: The per-leg candidate pool requested from the engine.
+    candidate_limit: UInt64 | None = None
+    #: Candidates the engine returned before fusion.
+    fetched: UInt64 | None = None
+    #: Whether the engine exhausted the eligible set.
+    exhausted: bool | None = None
+
+
+class SearchStage(_Model):
+    """One inference stage's receipt on an enrolled read (ClearView IR-0/I1).
+    Content-free. REST only: the typed gRPC ``SearchExecution`` carries no
+    stages."""
+
+    #: ``embedding`` | ``reranking``.
+    stage: str
+    #: The effective policy: ``require`` | ``prefer``.
+    policy: str
+    #: The collection binding revision that set the policy.
+    policy_revision: UInt64
+    #: True only when the stage's output shaped the served result.
+    applied: bool
+    #: ``ready`` when it ran; otherwise ``not_applicable``, ``disabled``,
+    #: ``unconfigured``, ``probe_failed``, ``unavailable`` or ``budget_exhausted``.
+    state: str
+    reason: str | None = None
+    #: ``lexical_only`` | ``fused_order`` under ``prefer`` only.
+    fallback: str | None = None
+    identity: str | None = None
+    scored: UInt64 | None = None
+
+
+class SearchExecution(_Model):
+    """How one search actually executed (ClearView R1). Returned when the
+    request set ``disclose_execution=True``, and on every read of a
+    collection enrolled for inference."""
+
+    #: Disclosure format version; currently 1.
+    version: int
+    #: ``postgresql`` | ``datastore``.
+    engine: str
+    #: The engine's lexical score domain; scores across domains are not comparable.
+    lexical_domain: str
+    #: The legs that ran, lexical first.
+    legs: list[SearchLeg]
+    stages: list[SearchStage] = []
+
+
 class SearchResult(_Model):
     hits: list[SearchHit]
     envelope: ProvenanceEnvelope
+    #: ClearView R1: present only when the server disclosed execution
+    #: (``disclose_execution=True``, or an inference-enrolled collection).
+    #: A v1.4 server never sends it.
+    execution: SearchExecution | None = None
 
 
 class ApplyShapeResult(_Model):
@@ -422,6 +479,42 @@ class EvidenceHierarchyDecision(_Model):
     conflicts_policy: str
 
 
+#: ClearView C1 availability policy for a multi-collection turn.
+CollectionAvailability = Literal["report", "require"]
+
+
+class CollectionOutcome(_Model):
+    """One visible member of a multi-collection read (ClearView C1). A
+    collection the session cannot see never appears."""
+
+    collection: str
+    #: The research-profile layer that read this member, when a profile ran.
+    layer: str | None = None
+    #: ``search`` | ``probe``.
+    stage: str
+    #: ``complete`` | ``empty`` | ``unavailable``.
+    outcome: str
+    #: Hits before the merge; ``None`` when unavailable.
+    hits: int | None = None
+    #: ``no_active_index`` | ``engine_unavailable`` | ``search_failed``
+    #: when unavailable.
+    reason: str | None = None
+
+
+class TurnCoverage(_Model):
+    """What a multi-collection read covered, and which claims it cannot
+    support (ClearView C1)."""
+
+    #: ``report`` | ``require`` (a newer server's value is kept as-is).
+    policy: str
+    #: True when every visible member completed (with or without hits).
+    complete: bool
+    #: Visible members in read order.
+    members: list[CollectionOutcome]
+    #: ``absence`` | ``exhaustive_coverage``; empty when ``complete``.
+    withheld_claims: list[str]
+
+
 class TurnResult(_Model):
     session_id: str
     ordinal: int
@@ -437,6 +530,9 @@ class TurnResult(_Model):
     #: without one carries no such key, so a legacy caller's parse is
     #: byte-for-byte what it always was.
     hierarchy: EvidenceHierarchyDecision | None = None
+    #: ClearView C1: present ONLY when the turn selected a
+    #: ``collection_availability`` policy. Absent from every v1.4 response.
+    coverage: TurnCoverage | None = None
 
 
 class TurnProgress(_Model):
@@ -452,7 +548,9 @@ class TurnProgress(_Model):
     ``layer_complete``, ``coverage``, ``compose`` — the last six emitted
     only when a research profile runs, appended after the legacy stages so
     an existing turn's event sequence is unchanged. ``verify`` gained an
-    optional ``layer`` extra for the same reason.
+    optional ``layer`` extra for the same reason, and ``probe`` /
+    ``retrieval`` carry ``outcome`` and ``reason`` extras when the turn
+    selected a ``collection_availability`` policy (ClearView C1).
     """
 
     stage: str
@@ -601,7 +699,7 @@ class TimeseriesReport(_Model):
     #: 1h | 24h | 7d | 30d
     window: str
     bucket_seconds: int
-    #: rest | grpc when the query filtered by plane.
+    #: rest | grpc | mcp when the query filtered by plane.
     plane: str | None = None
     buckets: list[TimeseriesBucket]
 

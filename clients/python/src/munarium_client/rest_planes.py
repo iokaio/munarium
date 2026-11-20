@@ -257,8 +257,14 @@ class RestRetrieval:
         top_k: int | None = None,
         index_version: str | None = None,
         filter: Any | None = None,
+        disclose_execution: bool | None = None,
     ) -> m.SearchResult:
-        return self._t.run(s.search(query, shape_ref, top_k, index_version, filter))
+        """Hybrid search. ``disclose_execution=True`` (ClearView R1) asks the
+        server to fill :attr:`models.SearchResult.execution`; omitted, the
+        request is the v1.4 request."""
+        return self._t.run(
+            s.search(query, shape_ref, top_k, index_version, filter, disclose_execution)
+        )
 
     def index_status(self, shape_ref: str) -> m.IndexStatus:
         return self._t.run(s.index_status(shape_ref))
@@ -459,6 +465,7 @@ class RestSessions:
         complete: bool | None = None,
         model_override: m.ModelOverride | dict[str, Any] | None = None,
         research_profile: str | None = None,
+        collection_availability: m.CollectionAvailability | None = None,
     ) -> m.TurnResult:
         """One retrieval turn (+ optional completion when the runbook
         declares one). ``model_override`` is honored only under the
@@ -469,9 +476,23 @@ class RestSessions:
         ``research_profile`` runs the turn through a named evidence
         hierarchy and fills :attr:`models.TurnResult.hierarchy` with the
         decision. Omit it and the turn executes and serializes exactly as
-        it always has — same request bytes, same response keys."""
+        it always has — same request bytes, same response keys.
+
+        ``collection_availability`` (ClearView C1, ``"report"`` |
+        ``"require"``) selects how a multi-collection read treats a member
+        that cannot be searched, and fills
+        :attr:`models.TurnResult.coverage`. Omitted, the request carries no
+        such key and the v1.4 behavior applies."""
         return self._t.run(
-            s.turn(session_id, query, top_k, complete, model_override, research_profile)
+            s.turn(
+                session_id,
+                query,
+                top_k,
+                complete,
+                model_override,
+                research_profile,
+                collection_availability,
+            )
         )
 
     def turn_stream(
@@ -483,6 +504,7 @@ class RestSessions:
         complete: bool | None = None,
         model_override: m.ModelOverride | dict[str, Any] | None = None,
         research_profile: str | None = None,
+        collection_availability: m.CollectionAvailability | None = None,
     ) -> Iterator[m.TurnStreamEvent]:
         """The same turn, streamed over SSE: N :class:`models.TurnProgress`
         events at real stage boundaries, then exactly one
@@ -497,7 +519,14 @@ class RestSessions:
         ``layer_complete``, ``coverage``, ``compose``)."""
         return self._t.turn_stream(
             s.turn_stream_path(session_id),
-            s.turn_body(query, top_k, complete, model_override, research_profile),
+            s.turn_body(
+                query,
+                top_k,
+                complete,
+                model_override,
+                research_profile,
+                collection_availability,
+            ),
         )
 
     def get(self, session_id: str) -> m.Session:
@@ -590,7 +619,7 @@ class RestReports:
         self, *, window: str | None = None, plane: str | None = None
     ) -> m.TimeseriesReport:
         """Bucketed request/error/latency series. ``window``: 1h | 24h |
-        7d | 30d (server default 24h); ``plane``: rest | grpc."""
+        7d | 30d (server default 24h); ``plane``: rest | grpc | mcp."""
         return self._t.run(s.timeseries_report(window, plane))
 
     def endpoints(
@@ -933,8 +962,11 @@ class AsyncRestRetrieval:
         top_k: int | None = None,
         index_version: str | None = None,
         filter: Any | None = None,
+        disclose_execution: bool | None = None,
     ) -> m.SearchResult:
-        return await self._t.run(s.search(query, shape_ref, top_k, index_version, filter))
+        return await self._t.run(
+            s.search(query, shape_ref, top_k, index_version, filter, disclose_execution)
+        )
 
     async def index_status(self, shape_ref: str) -> m.IndexStatus:
         return await self._t.run(s.index_status(shape_ref))
@@ -1121,9 +1153,18 @@ class AsyncRestSessions:
         complete: bool | None = None,
         model_override: m.ModelOverride | dict[str, Any] | None = None,
         research_profile: str | None = None,
+        collection_availability: m.CollectionAvailability | None = None,
     ) -> m.TurnResult:
         return await self._t.run(
-            s.turn(session_id, query, top_k, complete, model_override, research_profile)
+            s.turn(
+                session_id,
+                query,
+                top_k,
+                complete,
+                model_override,
+                research_profile,
+                collection_availability,
+            )
         )
 
     def turn_stream(
@@ -1135,13 +1176,21 @@ class AsyncRestSessions:
         complete: bool | None = None,
         model_override: m.ModelOverride | dict[str, Any] | None = None,
         research_profile: str | None = None,
+        collection_availability: m.CollectionAvailability | None = None,
     ) -> AsyncIterator[m.TurnStreamEvent]:
         """The streamed turn as an async iterator: N TurnProgress events,
         then exactly one TurnResult — always the LAST item yielded. Typed
         errors (pre-stream or mid-stream) raise during iteration."""
         return self._t.turn_stream(
             s.turn_stream_path(session_id),
-            s.turn_body(query, top_k, complete, model_override, research_profile),
+            s.turn_body(
+                query,
+                top_k,
+                complete,
+                model_override,
+                research_profile,
+                collection_availability,
+            ),
         )
 
     async def get(self, session_id: str) -> m.Session:
