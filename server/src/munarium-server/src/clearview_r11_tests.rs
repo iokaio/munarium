@@ -30,6 +30,8 @@ const CLASSIFIED: &[(&str, Option<(bool, &str)>)] = &[
     ("provider-error", None),
     ("storage-error", None),
     ("datastore-unavailable", Some((false, "retry_later"))),
+    ("inference-stage-unavailable", Some((false, "retry_later"))),
+    ("inference-not-qualified", Some((false, "reread"))),
     ("uid-required", None),
     ("uid-mismatch", None),
     ("token-expired", None),
