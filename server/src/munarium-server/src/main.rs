@@ -102,8 +102,30 @@ use config::Config;
 use munarium_proto::mmp::v1 as pb;
 use state::AppState;
 
-#[tokio::main]
-async fn main() {
+fn main() {
+    // The isolated PDF extraction child (R3/B4) is this same binary under a
+    // private role argument. It dispatches before anything else runs: no
+    // runtime, no logging, no configuration, and nothing read from the
+    // (deliberately empty) environment.
+    let mut args = std::env::args_os();
+    if args.nth(1).as_deref()
+        == Some(std::ffi::OsStr::new(
+            munarium_extract::isolated::CHILD_ROLE_ARG,
+        ))
+    {
+        let rest: Vec<std::ffi::OsString> = args.collect();
+        std::process::exit(munarium_extract::isolated::run_child(&rest));
+    }
+
+    // What `#[tokio::main]` built, with a startup error instead of a panic.
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap_or_else(|e| startup_failure(format!("tokio runtime: {e}")));
+    runtime.block_on(serve());
+}
+
+async fn serve() {
     if std::env::args().nth(1).as_deref() == Some("openapi") {
         match serde_json::to_string_pretty(&openapi::doc()) {
             Ok(json) => println!("{json}"),
@@ -136,6 +158,12 @@ async fn main() {
             std::process::exit(2);
         }
     };
+    // Validated with the rest of the configuration, before anything binds;
+    // AppState reads it again when it builds the extractor registry.
+    if let Err(e) = config::pdf_extraction_from_env() {
+        eprintln!("config error: {e}");
+        std::process::exit(2);
+    }
     tracing::info!(?config.store, http = %config.http_addr, grpc = ?config.grpc_addr, instance = %config.instance_id, "starting");
 
     if std::env::args().nth(1).as_deref() == Some("platform-enroll") {

@@ -38,6 +38,9 @@ munarium-retrieval = { path = "../munarium-retrieval" }
 # Every other server module talks to munarium-retrieval. The CI boundary check
 # is what keeps that true.
 munarium-retrieval-pg = { path = "../munarium-retrieval-pg" }
+# The isolated PDF extraction child role (R3/B4): the server binary re-executes
+# itself, so the child entry point must be linked into it.
+munarium-extract = { path = "../munarium-extract" }
 munarium-providers = { path = "../munarium-providers" }
 munarium-runbooks = { path = "../munarium-runbooks" }
 munarium-authoring = { path = "../munarium-authoring" }

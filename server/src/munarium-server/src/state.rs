@@ -156,6 +156,10 @@ pub struct AppState {
     /// Optional document-intelligence escalation. None by default; one
     /// instance shared by every tenant.
     doc_intel: Option<Arc<dyn DocumentIntelligence>>,
+    /// Text extractors, shared by every tenant so the isolated PDF profile's
+    /// concurrency cap holds per process. The v1.4 registry unless
+    /// `MUNARIUM_PDF_EXTRACTION=isolated`.
+    extractors: Arc<munarium_extract::ExtractorRegistry>,
     /// Which engine serves retrieval. Resolved once at startup and carried on
     /// every coordinator handle, so a request cannot observe a mode change
     /// halfway through. `Postgres` unless configured otherwise.
@@ -295,6 +299,26 @@ fn build_source_store(config: &Config, stores: &StoreRegistry) -> Result<Arc<dyn
         },
         SourceStoreConfig::Mem => Ok(Arc::new(munarium_store_mem::MemSourceStore::new())),
     }
+}
+
+/// Build the extractor registry. `Inline` is the v1.4 registry, identity
+/// `extract@1[docx@1,pdf-text@1]`. `Isolated` swaps in the child-process PDF
+/// extractor under its own identity; nothing switches an existing index, which
+/// keeps serving until a rebuild under the new identity is verified and
+/// activated.
+fn build_extractors(
+    pdf_extraction: crate::config::PdfExtractionConfig,
+) -> Result<Arc<munarium_extract::ExtractorRegistry>> {
+    let registry = munarium_extract::ExtractorRegistry::new();
+    let registry = match pdf_extraction {
+        crate::config::PdfExtractionConfig::Inline => registry,
+        crate::config::PdfExtractionConfig::Isolated(limits) => {
+            let isolated = munarium_extract::IsolatedPdfExtractor::from_current_exe(limits)
+                .map_err(|e| KernelError::InvalidInput(format!("MUNARIUM_PDF_EXTRACTION: {e}")))?;
+            registry.with_isolated_pdf(isolated)
+        }
+    };
+    Ok(Arc::new(registry))
 }
 
 /// Build the configured document-intelligence provider, if any.
@@ -559,6 +583,20 @@ impl AppState {
                 "document intelligence disabled (MUNARIUM_DOCINTEL=none) — local extraction only"
             ),
         }
+        let pdf_extraction =
+            crate::config::pdf_extraction_from_env().map_err(KernelError::InvalidInput)?;
+        let extractors = build_extractors(pdf_extraction)?;
+        match pdf_extraction {
+            crate::config::PdfExtractionConfig::Inline => {}
+            crate::config::PdfExtractionConfig::Isolated(limits) => tracing::info!(
+                extractors = %extractors.version(),
+                os_limits = munarium_extract::isolated::os_limits(),
+                max_concurrent = limits.max_concurrent,
+                queue_wait_secs = limits.queue_wait.as_secs(),
+                "isolated PDF extraction enabled (MUNARIUM_PDF_EXTRACTION=isolated); \
+                 indexes keep their identity until rebuilt, verified and activated"
+            ),
+        }
         let admission = crate::admission::Admission::new(admission);
         let matrix_http =
             crate::evidence_providers::MatrixProvider::client(std::time::Duration::from_secs(5))?;
@@ -599,6 +637,7 @@ impl AppState {
             evidence,
             budgets,
             doc_intel,
+            extractors,
             retrieval_mode,
             datastore_capabilities,
             shadow: std::sync::OnceLock::new(),
@@ -960,7 +999,8 @@ impl AppState {
             tenant_id,
             self.sources.clone(),
         )
-        .with_doc_intel(self.doc_intel.clone());
+        .with_doc_intel(self.doc_intel.clone())
+        .with_extractors(Arc::clone(&self.extractors));
         let mut retrieval = munarium_retrieval::Retrieval::new(pg, self.retrieval_mode);
         if self.retrieval_mode == munarium_retrieval::RetrievalMode::Datastore {
             if let Some(parts) = self.datastore_parts() {

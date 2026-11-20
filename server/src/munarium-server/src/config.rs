@@ -93,6 +93,22 @@ pub struct Config {
     pub doc_intel: DocIntelConfig,
 }
 
+/// Where PDF text extraction runs (R3/B4). `Inline` is the default and is
+/// exactly v1.4: `pdf-text@1` in process, extractor-set identity
+/// `extract@1[docx@1,pdf-text@1]`. `Isolated` runs the same parser in a
+/// resource-limited child of this binary under the identity
+/// `pdf-text-isolated@1{...}`, so an index built with it is a new index that
+/// must be verified and activated like any other.
+///
+/// Read by [`pdf_extraction_from_env`] beside `Config::from_env` rather than
+/// stored on `Config`, so the many test fixtures that build a `Config`
+/// literal keep compiling unchanged and keep the v1.4 default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PdfExtractionConfig {
+    Inline,
+    Isolated(munarium_extract::IsolatedPdfLimits),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StoreKind {
     Memory,
@@ -565,6 +581,74 @@ fn doc_intel_from_env() -> Result<DocIntelConfig, String> {
     }
 }
 
+/// `MUNARIUM_PDF_EXTRACTION` = inline | isolated. **Default: inline.**
+///
+/// `inline` keeps v1.4 PDF extraction and its index identity. `isolated`
+/// opts into the child-process profile; its bounds come from the
+/// `MUNARIUM_PDF_EXTRACTION_*` settings below, whose defaults are
+/// provisional (server/docs/design/pdf-isolation-measurements.md). The
+/// bounds are read only under `isolated`.
+pub fn pdf_extraction_from_env() -> Result<PdfExtractionConfig, String> {
+    pdf_extraction_from(|key| std::env::var(key).ok())
+}
+
+/// The parser behind [`pdf_extraction_from_env`], over any lookup, so tests
+/// never mutate the process environment other tests read.
+fn pdf_extraction_from(
+    var: impl Fn(&str) -> Option<String>,
+) -> Result<PdfExtractionConfig, String> {
+    const MIB: u64 = 1024 * 1024;
+    let number = |key: &str, default: u64| -> Result<u64, String> {
+        match var(key) {
+            None => Ok(default),
+            Some(v) => v.parse().map_err(|e| format!("{key}: {e}")),
+        }
+    };
+    let mebibytes = |key: &str, default: u64| -> Result<u64, String> {
+        number(key, default / MIB)?
+            .checked_mul(MIB)
+            .ok_or_else(|| format!("{key} is too large"))
+    };
+    match var("MUNARIUM_PDF_EXTRACTION")
+        .as_deref()
+        .unwrap_or("inline")
+    {
+        "inline" | "" => Ok(PdfExtractionConfig::Inline),
+        "isolated" => {
+            let d = munarium_extract::IsolatedPdfLimits::PROVISIONAL;
+            let limits = munarium_extract::IsolatedPdfLimits {
+                memory_bytes: mebibytes("MUNARIUM_PDF_EXTRACTION_MEMORY_MIB", d.memory_bytes)?,
+                cpu_seconds: number("MUNARIUM_PDF_EXTRACTION_CPU_SECS", d.cpu_seconds)?,
+                wall_clock: std::time::Duration::from_secs(number(
+                    "MUNARIUM_PDF_EXTRACTION_TIMEOUT_SECS",
+                    d.wall_clock.as_secs(),
+                )?),
+                max_output_bytes: usize::try_from(mebibytes(
+                    "MUNARIUM_PDF_EXTRACTION_MAX_OUTPUT_MIB",
+                    d.max_output_bytes as u64,
+                )?)
+                .map_err(|_| "MUNARIUM_PDF_EXTRACTION_MAX_OUTPUT_MIB is too large".to_string())?,
+                max_concurrent: usize::try_from(number(
+                    "MUNARIUM_PDF_EXTRACTION_CONCURRENCY",
+                    d.max_concurrent as u64,
+                )?)
+                .map_err(|_| "MUNARIUM_PDF_EXTRACTION_CONCURRENCY is too large".to_string())?,
+                queue_wait: std::time::Duration::from_secs(number(
+                    "MUNARIUM_PDF_EXTRACTION_QUEUE_SECS",
+                    d.queue_wait.as_secs(),
+                )?),
+            };
+            limits
+                .validate()
+                .map_err(|e| format!("MUNARIUM_PDF_EXTRACTION=isolated: {e}"))?;
+            Ok(PdfExtractionConfig::Isolated(limits))
+        }
+        other => Err(format!(
+            "MUNARIUM_PDF_EXTRACTION must be inline|isolated, got '{other}'"
+        )),
+    }
+}
+
 /// The same two-variant credential seam the BYOK provider keys use: an env
 /// var name (Key Vault references surface as env on ACA) or a file path
 /// (Secrets Store CSI mount on AKS). `file:` prefix selects the latter.
@@ -961,6 +1045,86 @@ mod source_store_tests {
             }
         );
         clear();
+    }
+}
+
+#[cfg(test)]
+mod pdf_extraction_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn parse(vars: &[(&str, &str)]) -> Result<PdfExtractionConfig, String> {
+        let vars: HashMap<String, String> = vars
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        pdf_extraction_from(|k| vars.get(k).cloned())
+    }
+
+    #[test]
+    fn the_default_is_v14_inline_extraction() {
+        assert_eq!(parse(&[]).expect("default"), PdfExtractionConfig::Inline);
+        // The bounds are ignored unless the profile is selected.
+        assert_eq!(
+            parse(&[("MUNARIUM_PDF_EXTRACTION_MEMORY_MIB", "not a number")]).expect("inline"),
+            PdfExtractionConfig::Inline
+        );
+        assert_eq!(
+            parse(&[("MUNARIUM_PDF_EXTRACTION", "inline")]).expect("inline"),
+            PdfExtractionConfig::Inline
+        );
+    }
+
+    #[test]
+    fn isolated_uses_the_provisional_defaults_and_reads_overrides() {
+        assert_eq!(
+            parse(&[("MUNARIUM_PDF_EXTRACTION", "isolated")]).expect("isolated"),
+            PdfExtractionConfig::Isolated(munarium_extract::IsolatedPdfLimits::PROVISIONAL)
+        );
+        let PdfExtractionConfig::Isolated(l) = parse(&[
+            ("MUNARIUM_PDF_EXTRACTION", "isolated"),
+            ("MUNARIUM_PDF_EXTRACTION_MEMORY_MIB", "256"),
+            ("MUNARIUM_PDF_EXTRACTION_CPU_SECS", "5"),
+            ("MUNARIUM_PDF_EXTRACTION_TIMEOUT_SECS", "12"),
+            ("MUNARIUM_PDF_EXTRACTION_MAX_OUTPUT_MIB", "8"),
+            ("MUNARIUM_PDF_EXTRACTION_CONCURRENCY", "1"),
+            ("MUNARIUM_PDF_EXTRACTION_QUEUE_SECS", "0"),
+        ])
+        .expect("isolated") else {
+            panic!("isolated expected");
+        };
+        assert_eq!(l.memory_bytes, 256 * 1024 * 1024);
+        assert_eq!(l.cpu_seconds, 5);
+        assert_eq!(l.wall_clock, std::time::Duration::from_secs(12));
+        assert_eq!(l.max_output_bytes, 8 * 1024 * 1024);
+        assert_eq!(l.max_concurrent, 1);
+        assert_eq!(l.queue_wait, std::time::Duration::ZERO);
+    }
+
+    #[test]
+    fn invalid_settings_fail_closed() {
+        assert!(parse(&[("MUNARIUM_PDF_EXTRACTION", "sandbox")]).is_err());
+        let err = parse(&[
+            ("MUNARIUM_PDF_EXTRACTION", "isolated"),
+            ("MUNARIUM_PDF_EXTRACTION_CPU_SECS", "0"),
+        ])
+        .expect_err("zero CPU");
+        assert!(err.contains("CPU"), "{err}");
+        assert!(parse(&[
+            ("MUNARIUM_PDF_EXTRACTION", "isolated"),
+            ("MUNARIUM_PDF_EXTRACTION_CONCURRENCY", "0"),
+        ])
+        .is_err());
+        assert!(parse(&[
+            ("MUNARIUM_PDF_EXTRACTION", "isolated"),
+            ("MUNARIUM_PDF_EXTRACTION_MEMORY_MIB", "lots"),
+        ])
+        .is_err());
+        assert!(parse(&[
+            ("MUNARIUM_PDF_EXTRACTION", "isolated"),
+            ("MUNARIUM_PDF_EXTRACTION_MEMORY_MIB", "18446744073709551615"),
+        ])
+        .is_err());
     }
 }
 
