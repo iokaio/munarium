@@ -76,7 +76,10 @@ boundary of each is in the
    it, `MUNARIUM_PDF_EXTRACTION_ESCALATE_OVER_BUDGET` (default `false`) decides
    whether an over-budget document may escalate to document intelligence, and
    `MUNARIUM_PDF_EXTRACTION_DEFERRED` (default `skip`; or `fail`) decides
-   whether a deferred document is left for a rebuild or fails the build. See
+   whether a deferred document is left for a rebuild or fails the build. The
+   profile's OS memory and CPU limits are applied with `setrlimit` on Linux,
+   the only production platform. Windows builds are for development and
+   testing only and apply no OS limit (identity `os=none`). See
    [isolated PDF extraction](document-intelligence.md#isolated-pdf-extraction).
 5. Verify health, readiness, `/version`, authentication on both transports,
    scoped retrieval and persistence after restart.

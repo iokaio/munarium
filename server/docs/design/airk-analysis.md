@@ -111,7 +111,7 @@ DOCX is in better shape: [`docx.rs`](../../src/munarium-extract/src/docx.rs) bou
 
 **v1.5 plan.** B4 leaves the numerical limits to measurement. Opt in to a bounded extraction profile. The parent re-executes the existing binary with a private extraction role, a minimal environment, bounded input/output, OS-enforced memory and CPU limits, a wall-clock deadline and a small concurrency cap. Kill and reap the child on timeout or cancellation. Distinguish a parser failure, a document over budget and work deferred by admission in the new profile's diagnostics. Paid document intelligence still requires the collection's explicit configuration, eligible input and available budget.
 
-Use the same executable in the distroless image. The Linux prototype can apply OS limits before executing the parser. Qualify the mechanism independently on each supported platform.
+Use the same executable in the distroless image. The Linux prototype can apply OS limits before executing the parser. Qualify the mechanism independently on each supported platform. Linux is the only production platform (maintainer decision, 20 November 2026): the OS limits are `setrlimit` there, and Windows builds are for development and testing only, apply no OS limit (identity `os=none`) and contain no `unsafe` binding.
 
 **Acceptance criteria**
 

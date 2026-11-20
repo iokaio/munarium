@@ -4,9 +4,10 @@
 //! harness. Every PDF here is synthetic and generated in the test; nothing
 //! binary is committed.
 //!
-//! The memory and CPU bounds are OS-enforced and only exist where the
-//! platform mechanism does (a Job Object on Windows, `setrlimit` on 64-bit
-//! Linux), so those tests are gated to those platforms.
+//! The memory and CPU bounds are OS-enforced by `setrlimit` on 64-bit Linux,
+//! the only production platform, so those tests are Linux-only. Other builds,
+//! Windows included, are for development and testing, apply no OS limit, and
+//! are tested to say so and to extract normally.
 //!
 //! Measurement (not a pass/fail test; run in release for representative
 //! numbers):
@@ -267,13 +268,13 @@ fn a_document_larger_than_the_memory_limit_never_reaches_a_child() {
     assert_eq!(run.report.child_pid, None);
 }
 
-#[cfg(any(windows, all(target_os = "linux", target_pointer_width = "64")))]
+#[cfg(all(target_os = "linux", target_pointer_width = "64"))]
 #[test]
 fn the_os_memory_limit_stops_a_parse_that_allocates_past_it() {
     let mut limits = generous();
     // Linux limits address space, which includes the mapped executable and
-    // its libraries, so it needs headroom Windows commit charge does not.
-    limits.memory_bytes = if cfg!(windows) { 96 * MIB } else { 256 * MIB };
+    // its libraries, so the limit needs headroom above the parse itself.
+    limits.memory_bytes = 256 * MIB;
     let bytes = heavy_pdf(4_000_000);
     assert!((bytes.len() as u64) < limits.memory_bytes, "input fits");
     let run = extractor(limits).run(&bytes, &Cancellation::new());
@@ -286,7 +287,7 @@ fn the_os_memory_limit_stops_a_parse_that_allocates_past_it() {
     assert_reaped(run.report.child_pid);
 }
 
-#[cfg(any(windows, all(target_os = "linux", target_pointer_width = "64")))]
+#[cfg(all(target_os = "linux", target_pointer_width = "64"))]
 #[test]
 fn the_os_cpu_limit_stops_a_long_parse() {
     let mut limits = generous();
@@ -297,6 +298,34 @@ fn the_os_cpu_limit_stops_a_long_parse() {
     assert_eq!(budget(&run), Some(Budget::Cpu), "{:?}", run.extracted.note);
     // Stopped by the OS near one CPU second, long before the wall clock.
     assert!(started.elapsed() < Duration::from_secs(30));
+    assert_reaped(run.report.child_pid);
+}
+
+/// Development and test builds (Windows included) apply no OS limit: they
+/// say so in the identity, and a parse that needs more memory than the
+/// configured limit (about 270 MiB for this document, measured) still
+/// completes, bounded only by the wall clock and the output cap.
+#[cfg(not(all(target_os = "linux", target_pointer_width = "64")))]
+#[test]
+fn without_os_limits_the_identity_says_so_and_extraction_still_works() {
+    assert_eq!(munarium_extract::isolated::os_limits(), "none");
+    let mut limits = generous();
+    limits.memory_bytes = 96 * MIB;
+    let x = extractor(limits);
+    assert!(
+        x.identity().starts_with("pdf-text-isolated@1{os=none;"),
+        "{}",
+        x.identity()
+    );
+    let bytes = heavy_pdf(250_000);
+    assert!((bytes.len() as u64) < limits.memory_bytes, "input fits");
+    let inline = PdfTextExtractor.extract(&bytes).expect("inline");
+    let run = x.run(&bytes, &Cancellation::new());
+    assert_eq!(run.extracted.failure, None, "{:?}", run.extracted.note);
+    assert_eq!(run.extracted.status, inline.status);
+    assert_eq!(run.extracted.text, inline.text);
+    assert_eq!(run.report.cpu, None);
+    assert_eq!(run.report.peak_memory_bytes, None);
     assert_reaped(run.report.child_pid);
 }
 

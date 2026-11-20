@@ -6,6 +6,18 @@ are not frozen.** B4-T1 requires review of results from the supported
 platforms, including Linux under the distroless musl image, before that
 happens.
 
+**Mechanism change (20 November 2026).** These rows were recorded on Windows
+under a Job Object (`os=job`). By maintainer decision Munarium runs only on
+Linux in production and the server carries no `unsafe` code, so the Job
+Object binding has been removed. Windows builds are now for development and
+testing only: they apply no OS memory or CPU limit, their identity records
+`os=none`, and the wall-clock deadline, output cap, input-size check and
+admission cap are the only bounds there. The harness on Windows therefore no
+longer reproduces the `over_budget (memory)` rows below and prints `n/a` for
+child CPU and peak memory. The rows remain as the record of what the limits
+were chosen from; the production limits must be measured on Linux
+(`os=rlimit`).
+
 ## What was measured
 
 The harness is the ignored test `measure` in
@@ -33,6 +45,8 @@ Columns:
 - **overhead ms**: the difference between the two.
 - **child CPU ms** and **peak memory MiB**: read from the Job Object after the
   child exits. Peak memory is the child's peak committed private memory.
+  Neither is observed on any platform since the Job Object was removed, and
+  the harness prints `n/a`.
 - **output bytes**: the bytes read from the child's stdout, frame included.
 
 ## Environment
@@ -42,7 +56,7 @@ Columns:
 | CPU | Intel Core i7-10750H, 6 cores, 12 logical processors, 2.60 GHz |
 | Memory | 64 GiB |
 | OS | Windows 11 Pro (10.0.26300), x86_64 MSVC build |
-| Limits mechanism | Job Object (`os=job`) |
+| Limits mechanism | Job Object (`os=job`), removed 20 November 2026 |
 | Build | `--release` (thin LTO, one codegen unit), Rust 1.98.0 |
 | Other load | Other Cargo builds were running on the machine |
 
@@ -99,8 +113,9 @@ Concurrency, with a 2,000-line document and a cap of two:
   clippy for `x86_64-unknown-linux-musl`, and its tests pass in the Alpine
   builder container, but it was not measured on this machine. `RLIMIT_AS`
   counts address space, including the mapped executable, so the same number
-  admits less work than the Windows commit limit. CPU time and peak memory are
-  not reported on Linux yet.
+  admits less work than the former Windows commit limit did. CPU time and peak
+  memory are not reported on Linux yet. Linux is the only production platform,
+  so these are the measurements that decide the limits.
 - **The distroless image.** The child is the same executable with no new
   file, but it has not been exercised in the container.
 - **Real-world PDFs.** Only synthetic documents were used. Representative

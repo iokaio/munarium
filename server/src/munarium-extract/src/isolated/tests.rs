@@ -38,6 +38,24 @@ fn provisional_limits_are_valid_and_bad_ones_are_refused() {
 }
 
 #[test]
+fn only_64_bit_linux_reports_os_limits() {
+    // Production runs on Linux, where the child applies `setrlimit` to
+    // itself. Every other build, Windows included, is for development and
+    // testing only: it applies no OS limit and the identity says so.
+    let expected = if cfg!(all(target_os = "linux", target_pointer_width = "64")) {
+        "rlimit"
+    } else {
+        "none"
+    };
+    assert_eq!(os_limits(), expected);
+    assert!(
+        limits().identity().contains(&format!("{{os={expected};")),
+        "{}",
+        limits().identity()
+    );
+}
+
+#[test]
 fn identity_covers_every_output_changing_setting_but_not_scheduling() {
     let base = limits().identity();
     assert!(base.starts_with("pdf-text-isolated@1{"), "{base}");
@@ -113,14 +131,7 @@ fn a_clean_exit_with_text_is_ok_and_identical() {
         note: None,
         text: "same text".into(),
     });
-    let out = classify(
-        &exited(true, Some(0), None),
-        false,
-        false,
-        &frame,
-        b"",
-        &limits(),
-    );
+    let out = classify(&exited(true, Some(0), None), false, &frame, b"", &limits());
     assert_eq!(out.status, ExtractionStatus::Ok);
     assert_eq!(out.text, "same text");
     assert_eq!(out.failure, None);
@@ -132,14 +143,7 @@ fn a_parser_error_frame_is_a_parser_failure_not_over_budget() {
     let frame = encode(&Frame::Parser(
         "pdf text extraction: invalid file header".into(),
     ));
-    let out = classify(
-        &exited(true, Some(0), None),
-        false,
-        false,
-        &frame,
-        b"",
-        &limits(),
-    );
+    let out = classify(&exited(true, Some(0), None), false, &frame, b"", &limits());
     assert_eq!(out.failure, Some(FailureClass::ParserFailed));
     assert_eq!(out.status_label(), "failed");
 }
@@ -148,7 +152,6 @@ fn a_parser_error_frame_is_a_parser_failure_not_over_budget() {
 fn an_abnormal_exit_without_a_memory_message_is_a_parser_failure() {
     let out = classify(
         &exited(false, Some(-1073741571), None),
-        false,
         false,
         b"",
         b"thread 'main' has overflowed its stack\n",
@@ -162,28 +165,20 @@ fn each_budget_is_classified() {
     let l = limits();
     let cases = [
         (
-            classify(
-                &Observed::Killed(Kill::Deadline),
-                false,
-                false,
-                b"",
-                b"",
-                &l,
-            ),
+            classify(&Observed::Killed(Kill::Deadline), false, b"", b"", &l),
             Budget::WallClock,
         ),
         (
-            classify(&Observed::Killed(Kill::Output), false, false, b"", b"", &l),
+            classify(&Observed::Killed(Kill::Output), false, b"", b"", &l),
             Budget::Output,
         ),
         (
-            classify(&exited(true, Some(0), None), true, false, b"", b"", &l),
+            classify(&exited(true, Some(0), None), true, b"", b"", &l),
             Budget::Output,
         ),
         (
             classify(
                 &exited(false, Some(134), None),
-                false,
                 false,
                 b"",
                 b"memory allocation of 1073741824 bytes failed\n",
@@ -192,24 +187,12 @@ fn each_budget_is_classified() {
             Budget::Memory,
         ),
         (
-            classify(&exited(false, Some(1816), None), false, true, b"", b"", &l),
-            Budget::Cpu,
-        ),
-        (
-            classify(
-                &exited(false, None, Some(SIGXCPU)),
-                false,
-                false,
-                b"",
-                b"",
-                &l,
-            ),
+            classify(&exited(false, None, Some(SIGXCPU)), false, b"", b"", &l),
             Budget::Cpu,
         ),
         (
             classify(
                 &exited(true, Some(0), None),
-                false,
                 false,
                 &encode(&Frame::OverMemory),
                 b"",
@@ -232,25 +215,17 @@ fn each_budget_is_classified() {
 #[test]
 fn cancellation_and_broken_children_are_not_document_failures() {
     let l = limits();
-    let c = classify(
-        &Observed::Killed(Kill::Cancelled),
-        false,
-        false,
-        b"",
-        b"",
-        &l,
-    );
+    let c = classify(&Observed::Killed(Kill::Cancelled), false, b"", b"", &l);
     assert_eq!(c.failure, Some(FailureClass::Cancelled));
     let usage = classify(
         &exited(false, Some(EXIT_USAGE), None),
-        false,
         false,
         b"",
         b"extraction child: --input-bytes is required",
         &l,
     );
     assert_eq!(usage.failure, Some(FailureClass::IsolationFailed));
-    let garbage = classify(&exited(true, Some(0), None), false, false, b"oops", b"", &l);
+    let garbage = classify(&exited(true, Some(0), None), false, b"oops", b"", &l);
     assert_eq!(garbage.failure, Some(FailureClass::IsolationFailed));
 }
 

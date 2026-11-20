@@ -16,6 +16,11 @@ for registry availability, digests and public signing instructions. The detailed
   against a database that carries them: take a backup before upgrading and
   roll back by restoring it. Data written after the upgrade is lost on
   rollback. See the [1.5 upgrade and rollback guide](docs/guides/server-1.5.md).
+- Remove the Windows Job Object binding from isolated PDF extraction, so
+  `munarium-extract` forbids `unsafe` code. Production runs on Linux, where
+  the child's memory and CPU limits come from `setrlimit` (`os=rlimit`).
+  Windows builds are for development and testing only: they apply no OS limit
+  and their extractor identity records `os=none` instead of `os=job`.
 
 ## 1.4.0 — 2026-10-09
 

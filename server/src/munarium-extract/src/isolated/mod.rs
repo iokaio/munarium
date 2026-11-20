@@ -12,8 +12,10 @@
 //! - The input goes over stdin with its exact length on the command line; the
 //!   output comes back over stdout as one framed result, read up to a cap.
 //! - Memory and CPU time are enforced by the operating system: `setrlimit` in
-//!   the child on 64-bit Linux, a Job Object applied by the parent on
-//!   Windows. Other platforms have no OS limit and say so in the identity.
+//!   the child on 64-bit Linux, the only production platform. Every other
+//!   build, Windows included, is for development and testing only, applies
+//!   no OS limit and says so in the identity (`os=none`). This module holds
+//!   no `unsafe` code on any platform.
 //! - The parent enforces a wall-clock deadline and kills and reaps the child
 //!   on timeout, on an output overflow and on cancellation.
 //! - A process-wide FIFO admission caps concurrent children; a document that
@@ -42,8 +44,6 @@ use std::time::{Duration, Instant};
 
 #[cfg(all(target_os = "linux", target_pointer_width = "64"))]
 mod linux;
-#[cfg(windows)]
-mod windows;
 
 /// The private role argument. `munarium-server` dispatches on it before it
 /// starts its runtime, reads nothing else from its environment, and runs
@@ -71,13 +71,14 @@ const EXIT_IO: i32 = 66;
 /// The bounds of the isolated profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IsolatedPdfLimits {
-    /// OS-enforced memory limit for the child. On Linux this is address
-    /// space (`RLIMIT_AS`), which includes the mapped executable; on Windows
-    /// it is committed private memory (Job Object process memory limit).
+    /// OS-enforced memory limit for the child: address space
+    /// (`RLIMIT_AS`) on 64-bit Linux, which includes the mapped executable.
+    /// Other platforms do not enforce it, apart from refusing an input that
+    /// is already larger.
     pub memory_bytes: u64,
-    /// OS-enforced CPU time. Linux `RLIMIT_CPU` counts user and system time;
-    /// the Windows Job Object per-process limit counts user time only, and
-    /// the wall-clock deadline bounds the rest.
+    /// OS-enforced CPU time: `RLIMIT_CPU` (user and system time) on 64-bit
+    /// Linux. Other platforms do not enforce it; the wall-clock deadline
+    /// still bounds the child there.
     pub cpu_seconds: u64,
     /// Parent-enforced deadline from spawn to exit.
     pub wall_clock: Duration,
@@ -122,8 +123,8 @@ impl IsolatedPdfLimits {
 
     /// The identity contribution. It covers every setting that decides
     /// whether a document yields text, and the OS mechanism enforcing them,
-    /// because Linux address space and Windows commit charge accept
-    /// different documents at the same number. Concurrency and queue wait
+    /// because a build with no OS limit accepts documents a Linux build
+    /// refuses at the same number. Concurrency and queue wait
     /// are scheduling: a deferred document is recorded `deferred` on its
     /// source, not silently indexed differently.
     pub fn identity(&self) -> String {
@@ -181,11 +182,11 @@ pub struct IsolatedPdfPolicy {
     pub deferred: DeferredPolicy,
 }
 
-/// How this platform enforces the memory and CPU limits.
+/// How this platform enforces the memory and CPU limits: `rlimit` on 64-bit
+/// Linux, the production platform, and `none` everywhere else. Windows builds
+/// are for development and testing only and apply no OS limit.
 pub fn os_limits() -> &'static str {
-    if cfg!(windows) {
-        "job"
-    } else if cfg!(all(target_os = "linux", target_pointer_width = "64")) {
+    if cfg!(all(target_os = "linux", target_pointer_width = "64")) {
         "rlimit"
     } else {
         "none"
@@ -201,9 +202,9 @@ pub struct RunReport {
     pub queued: Duration,
     /// Spawn to reap, including the parent's pipe handling.
     pub elapsed: Duration,
-    /// Child CPU time (user + kernel). Windows only today.
+    /// Child CPU time (user + kernel). Not observed on any platform today.
     pub cpu: Option<Duration>,
-    /// Child peak committed memory. Windows only today.
+    /// Child peak memory. Not observed on any platform today.
     pub peak_memory_bytes: Option<u64>,
     /// Bytes read from the child's stdout.
     pub output_bytes: usize,
@@ -346,19 +347,6 @@ impl IsolatedPdfExtractor {
         };
         report.child_pid = Some(child.id());
 
-        // The child has not read its input yet; it blocks on stdin until the
-        // job is in place, so the document is never parsed outside it.
-        #[cfg(windows)]
-        let job = match windows::Job::confine(&child, &self.limits) {
-            Ok(job) => job,
-            Err(e) => {
-                kill_and_reap(&mut child);
-                return isolation_failed(format!(
-                    "could not confine the extraction child in a job object: {e}"
-                ));
-            }
-        };
-
         let (Some(stdin), Some(stdout), Some(stderr)) =
             (child.stdin.take(), child.stdout.take(), child.stderr.take())
         else {
@@ -388,20 +376,9 @@ impl IsolatedPdfExtractor {
         report.output_bytes = stdout.len();
         report.exit = ending.status().map(|s| s.to_string());
 
-        #[cfg(windows)]
-        let cpu_exhausted = {
-            let usage = job.usage();
-            report.cpu = usage.cpu;
-            report.peak_memory_bytes = usage.peak_memory_bytes;
-            usage.cpu_user >= Some(Duration::from_secs(self.limits.cpu_seconds))
-        };
-        #[cfg(not(windows))]
-        let cpu_exhausted = false;
-
         classify(
             &ending.observed(),
             overflow.load(Ordering::SeqCst),
-            cpu_exhausted,
             &stdout,
             &stderr,
             &self.limits,
@@ -578,7 +555,6 @@ const SIGXCPU: i32 = 24;
 fn classify(
     observed: &Observed,
     overflow: bool,
-    cpu_exhausted: bool,
     stdout: &[u8],
     stderr: &[u8],
     limits: &IsolatedPdfLimits,
@@ -640,7 +616,7 @@ fn classify(
             ..
         } => {
             // Rust's allocation-failure handler prints this before aborting;
-            // it is how an OS memory limit surfaces on both platforms.
+            // it is how the Linux address-space limit surfaces.
             if stderr.contains("memory allocation of") {
                 return over_budget(
                     Budget::Memory,
@@ -650,7 +626,7 @@ fn classify(
                     ),
                 );
             }
-            if cpu_exhausted || *signal == Some(SIGXCPU) {
+            if *signal == Some(SIGXCPU) {
                 return over_budget(
                     Budget::Cpu,
                     format!(

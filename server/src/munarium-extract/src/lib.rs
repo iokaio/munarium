@@ -15,6 +15,10 @@
 //! pdfium, poppler, mupdf and tesseract are not tradeoffs to weigh — they
 //! cannot link at all.
 
+// No `unsafe` code, on any platform (maintainer decision, 20 November 2026):
+// production runs on Linux, whose limits go through the `rlimit` crate's safe
+// wrapper, and Windows builds are for development and testing only.
+#![forbid(unsafe_code)]
 // Production code returns typed errors instead of panicking; tests are exempt.
 // The policy, its two exemptions and the per-site record are in
 // server/docs/panic-boundaries.md (P15/R32).

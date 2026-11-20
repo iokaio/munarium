@@ -171,11 +171,14 @@ same parser in a child process instead (design
 - The server re-executes its own binary with a private role argument and an
   empty environment. No shell and no extra file is involved, so the distroless
   image needs nothing new.
-- Memory and CPU are enforced by the operating system: `setrlimit` (address
-  space, CPU time, no core dumps; through the pinned `rlimit` crate) on 64-bit
-  Linux, a Job Object (committed
-  memory, user-mode CPU time, one process, kill on close) on Windows. Other
-  platforms get no OS limit; the identity records `os=none`.
+- Memory and CPU are enforced by the operating system on 64-bit Linux, the
+  only production platform: the child applies `setrlimit` to itself (address
+  space, CPU time, no core dumps; through the pinned `rlimit` crate) before
+  it reads the document, and the identity records `os=rlimit`. Windows and
+  other builds are for development and testing only. They apply no OS memory
+  or CPU limit, and the identity records `os=none`; the wall-clock deadline,
+  output cap, input-size check and admission cap below still apply. The
+  extraction crate contains no `unsafe` code on any platform.
 - The parent enforces the wall-clock deadline and the output cap, and kills and
   reaps the child on timeout, on overflow and when the build is cancelled. A
   queued direct build also kills it when its job is cancelled or loses its
@@ -188,8 +191,8 @@ same parser in a child process instead (design
 | Var | Default (provisional) | Notes |
 |---|---|---|
 | `MUNARIUM_PDF_EXTRACTION` | `inline` | `inline` \| `isolated`; anything else is a startup error |
-| `MUNARIUM_PDF_EXTRACTION_MEMORY_MIB` | `512` | child memory limit; on Linux this is address space and includes the mapped binary |
-| `MUNARIUM_PDF_EXTRACTION_CPU_SECS` | `10` | child CPU time; Windows counts user-mode time only |
+| `MUNARIUM_PDF_EXTRACTION_MEMORY_MIB` | `512` | child memory limit: address space on Linux, including the mapped binary; not enforced by development builds on other platforms beyond refusing a larger input |
+| `MUNARIUM_PDF_EXTRACTION_CPU_SECS` | `10` | child CPU time (user and system) on Linux; not enforced on other platforms |
 | `MUNARIUM_PDF_EXTRACTION_TIMEOUT_SECS` | `30` | wall clock from spawn to exit |
 | `MUNARIUM_PDF_EXTRACTION_MAX_OUTPUT_MIB` | `64` | largest extracted text accepted |
 | `MUNARIUM_PDF_EXTRACTION_CONCURRENCY` | `2` | children per process (1–64) |
