@@ -52,6 +52,7 @@ pub mod backfill;
 pub mod build_metrics;
 pub mod capabilities;
 pub mod config;
+pub mod damage;
 pub mod direct;
 pub mod executor;
 pub mod merge;

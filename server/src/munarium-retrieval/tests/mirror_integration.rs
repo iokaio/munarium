@@ -762,6 +762,7 @@ impl Harness {
             reader: ReaderCapabilities::v1(),
             limits: Limits::default(),
             isolation_domain: "t0000".into(),
+            damage: None,
         }
     }
 }
@@ -1661,6 +1662,7 @@ async fn a_selected_legacy_shape_serves_from_the_datastore() {
             reader: ReaderCapabilities::v1(),
             limits: Limits::default(),
             isolation_domain: "t0000".into(),
+            damage: None,
         }),
     });
     let retrieval = Retrieval::new(pg.clone(), RetrievalMode::Datastore).with_serving(plane);

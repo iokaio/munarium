@@ -165,6 +165,7 @@ async fn measure_postgres_versus_datastore_query_latency() {
         reader: ReaderCapabilities::v1(),
         limits: Limits::default(),
         isolation_domain: "t0000".into(),
+        damage: None,
     };
 
     let queries = [

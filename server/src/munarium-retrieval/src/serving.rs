@@ -31,6 +31,7 @@ use munarium_core::retrieval::{PreparedSearchQuery, ProvenanceEnvelope, SearchRe
 use munarium_core::{KernelError, Result};
 use munarium_datastore::hydrate::Residency;
 use munarium_retrieval_pg::PgRetrieval;
+use munarium_store_pg::artifact_damage::ReleaseDecision;
 use munarium_store_pg::artifacts::BindingSlot;
 use munarium_store_pg::rollout::RolloutSelector;
 
@@ -86,7 +87,7 @@ impl ServingPlane {
             ))
         };
 
-        let execution = match self
+        let mut execution = match self
             .executor
             .execute(
                 index_version_id,
@@ -101,6 +102,8 @@ impl ServingPlane {
             ExecutionOutcome::Refused(reason) => return Err(unavailable(&reason)),
             ExecutionOutcome::Failed(reason) => return Err(unavailable(&reason)),
         };
+
+        let admission = execution.admission.take();
 
         // New artifacts carry immutable source hashes. Older artifacts resolve
         // them only from the pinned index's chunk rows, never the latest catalog.
@@ -145,6 +148,27 @@ impl ServingPlane {
         let mut source_paths: Vec<String> = hits.iter().map(|h| h.source_path.clone()).collect();
         source_paths.sort();
         source_paths.dedup();
+
+        // The release fence (ART1): the result leaves only if the pin is
+        // still at the generation it was admitted at and unblocked. A block
+        // that committed first refuses it, even if a clearance followed; an
+        // unavailable check suppresses it. Done last, after every other step
+        // that could still refuse, so nothing is authorized and then dropped.
+        if let (Some(damage), Some(admission)) = (&self.executor.damage, admission) {
+            match damage
+                .ledger
+                .release(std::slice::from_ref(&admission))
+                .await
+            {
+                Ok(ReleaseDecision::Authorized) => {}
+                Ok(ReleaseDecision::Refused(reason)) => return Err(unavailable(&reason)),
+                Err(e) => {
+                    return Err(unavailable(&format!(
+                        "integrity release check unavailable: {e}"
+                    )))
+                }
+            }
+        }
 
         Ok(SearchResult {
             envelope: ProvenanceEnvelope {

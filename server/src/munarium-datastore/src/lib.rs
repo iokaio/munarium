@@ -60,6 +60,7 @@
     )
 )]
 
+pub mod audit;
 mod bytes;
 pub mod canonical;
 pub mod diagnostics;

@@ -140,6 +140,9 @@ pub struct ArtifactExecutor {
     /// Opaque, tenant-derived. Combined into the cache key so two tenants'
     /// identical content stays two residencies.
     pub isolation_domain: String,
+    /// Durable damage handling (ClearView ART1/ART2). `None` keeps the v1.4
+    /// path exactly: no admission read, no release fence, no findings.
+    pub damage: Option<crate::damage::DamageContext>,
 }
 
 impl std::fmt::Debug for ArtifactExecutor {
@@ -192,6 +195,10 @@ pub struct ArtifactExecution {
     /// needs corpus content, so nothing here can leak it.
     pub hits: Vec<SearchHit>,
     pub latency: PhaseLatency,
+    /// The pin generation captured at admission, when damage handling is
+    /// on. The serving plane passes it to the release fence before any of
+    /// these hits leave the process.
+    pub admission: Option<munarium_store_pg::artifact_damage::PinAdmission>,
 }
 
 impl ArtifactExecutor {
@@ -258,6 +265,41 @@ impl ArtifactExecutor {
             row.artifact_id.clone(),
         );
 
+        // ART1 admission: a blocked pin refuses before any local byte is
+        // used, on warm and restarted replicas alike; an unavailable check
+        // refuses too, because serving on hope is the failure being fenced.
+        let admission = match &self.damage {
+            None => None,
+            Some(damage) => match damage
+                .admit(
+                    index_version_id,
+                    &row.artifact_id,
+                    &key,
+                    &self.cache,
+                    &self.l0,
+                )
+                .await
+            {
+                Ok(a) => {
+                    if let Some(incident) = &a.blocked_by {
+                        return ExecutionOutcome::Refused(format!(
+                            "artifact {} is blocked by integrity incident {incident}",
+                            row.artifact_id
+                        ));
+                    }
+                    Some(a)
+                }
+                Err(e) => {
+                    return ExecutionOutcome::Failed(format!(
+                        "integrity admission check unavailable: {e}"
+                    ))
+                }
+            },
+        };
+        let audit_store = Arc::clone(&store);
+        let was_quarantined = self.cache.is_quarantined(&key);
+        let failure_key = key.clone();
+
         let cache = Arc::clone(&self.cache);
         let l0 = Arc::clone(&self.l0);
         let reader = self.reader.clone();
@@ -267,7 +309,8 @@ impl ArtifactExecutor {
         let prepared = Arc::clone(prepared);
 
         let joined = tokio::task::spawn_blocking(move || {
-            run_blocking(
+            let mut site = None;
+            let outcome = run_blocking(
                 &cache,
                 &l0,
                 &key,
@@ -280,14 +323,44 @@ impl ArtifactExecutor {
                 residency,
                 payload,
                 total,
-            )
+                &mut site,
+            );
+            (outcome, site)
         })
         .await;
 
-        match joined {
-            Ok(outcome) => outcome,
-            Err(e) => ExecutionOutcome::Failed(format!("execution task: {e}")),
+        let (mut outcome, site) = match joined {
+            Ok(pair) => pair,
+            Err(e) => return ExecutionOutcome::Failed(format!("execution task: {e}")),
+        };
+        if let (Some(damage), Some(site)) = (&self.damage, site) {
+            // A refusal of a key quarantined before this call is not a new
+            // observation: the replica already isolated it and verified once.
+            if site != crate::damage::FailureSite::Hydrate || !was_quarantined {
+                let detail = match &outcome {
+                    ExecutionOutcome::Refused(r) | ExecutionOutcome::Failed(r) => r.clone(),
+                    ExecutionOutcome::Executed(_) => String::new(),
+                };
+                damage
+                    .on_integrity_failure(
+                        index_version_id,
+                        &row.artifact_id,
+                        &failure_key,
+                        site,
+                        &detail,
+                        &self.cache,
+                        &self.l0,
+                        audit_store,
+                        &self.reader,
+                        &self.limits,
+                    )
+                    .await;
+            }
         }
+        if let ExecutionOutcome::Executed(execution) = &mut outcome {
+            execution.admission = admission;
+        }
+        outcome
     }
 }
 
@@ -305,6 +378,7 @@ fn run_blocking(
     residency: Residency,
     payload: TextPayload,
     total: Instant,
+    integrity_site: &mut Option<crate::damage::FailureSite>,
 ) -> ExecutionOutcome {
     use munarium_datastore::Error as DsError;
 
@@ -321,7 +395,12 @@ fn run_blocking(
     // ServingRequired for the serving path (evicting it withdraws readiness).
     let resident = match cache.hydrate(key, store, reader, limits, residency) {
         Ok(r) => r,
-        Err(e) => return refuse_or_fail(e),
+        Err(e) => {
+            if matches!(e, DsError::Integrity(_)) {
+                *integrity_site = Some(crate::damage::FailureSite::Hydrate);
+            }
+            return refuse_or_fail(e);
+        }
     };
 
     // L0 first: an open shard for this key is immutable and reusable. The
@@ -343,6 +422,7 @@ fn run_blocking(
                     // An integrity failure poisons any cached copy too.
                     if matches!(e, DsError::Integrity(_)) {
                         l0.remove(key);
+                        *integrity_site = Some(crate::damage::FailureSite::Open);
                     }
                     return refuse_or_fail(e);
                 }
@@ -502,6 +582,7 @@ fn run_blocking(
             fusion_ms,
             total_ms: total.elapsed().as_secs_f64() * 1000.0,
         },
+        admission: None,
     })
 }
 

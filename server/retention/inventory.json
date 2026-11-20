@@ -2302,6 +2302,154 @@
       "origins": [
         "src/munarium-store-pg/migrations/0046_build_job_progress_events.sql"
       ]
+    },
+    "artifact_integrity_pins": {
+      "columns": {
+        "tenant_id": "text",
+        "index_version_id": "text",
+        "artifact_id": "text",
+        "generation": "bigint",
+        "state": "text",
+        "active_incident_id": "text",
+        "created_at": "timestamptz",
+        "updated_at": "timestamptz"
+      },
+      "content": "Per-artifact integrity generation, observed/blocked/cleared state and active incident id; no corpus or query text.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0060_artifact_damage.sql"
+      ]
+    },
+    "artifact_integrity_candidates": {
+      "columns": {
+        "tenant_id": "text",
+        "index_version_id": "text",
+        "artifact_id": "text",
+        "object_key": "text",
+        "expected_sha256": "text",
+        "storage_generation": "text",
+        "pin_generation": "bigint",
+        "verifier_id": "text",
+        "verifier_run_id": "text",
+        "fetch_id": "text",
+        "fetched_at": "timestamptz",
+        "observed_sha256": "text",
+        "recorded_at": "timestamptz"
+      },
+      "content": "First unconfirmed authoritative mismatch per pinned object: object key, expected and observed digests, verifier/run/fetch ids and fetch time.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0060_artifact_damage.sql"
+      ]
+    },
+    "artifact_integrity_incidents": {
+      "columns": {
+        "tenant_id": "text",
+        "incident_id": "text",
+        "index_version_id": "text",
+        "artifact_id": "text",
+        "object_key": "text",
+        "expected_sha256": "text",
+        "storage_generation": "text",
+        "state": "text",
+        "blocked_generation": "bigint",
+        "first_verifier_id": "text",
+        "first_run_id": "text",
+        "first_fetch_id": "text",
+        "first_fetched_at": "timestamptz",
+        "first_observed_sha256": "text",
+        "second_verifier_id": "text",
+        "second_run_id": "text",
+        "second_fetch_id": "text",
+        "second_fetched_at": "timestamptz",
+        "second_observed_sha256": "text",
+        "blocked_at": "timestamptz",
+        "cleared_generation": "bigint",
+        "cleared_at": "timestamptz",
+        "clearing_attempt_id": "text",
+        "clearing_workflow_id": "text",
+        "clear_first_verifier_id": "text",
+        "clear_first_run_id": "text",
+        "clear_first_fetch_id": "text",
+        "clear_first_fetched_at": "timestamptz",
+        "clear_first_observed_sha256": "text",
+        "clear_second_verifier_id": "text",
+        "clear_second_run_id": "text",
+        "clear_second_fetch_id": "text",
+        "clear_second_fetched_at": "timestamptz",
+        "clear_second_observed_sha256": "text"
+      },
+      "content": "Fleet artifact blocks with both confirming verifier observations and, once cleared, both repair verifications, attempt id and workflow id.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0060_artifact_damage.sql"
+      ]
+    },
+    "artifact_repair_attempts": {
+      "columns": {
+        "tenant_id": "text",
+        "attempt_id": "text",
+        "incident_id": "text",
+        "index_version_id": "text",
+        "artifact_id": "text",
+        "workflow_id": "text",
+        "authorized_by": "text",
+        "reason": "text",
+        "state": "text",
+        "authorized_at": "timestamptz",
+        "first_match_verifier_id": "text",
+        "first_match_run_id": "text",
+        "first_match_fetch_id": "text",
+        "first_match_fetched_at": "timestamptz",
+        "first_match_observed_sha256": "text",
+        "first_match_storage_generation": "text",
+        "finished_at": "timestamptz",
+        "finish_reason": "text"
+      },
+      "content": "Preauthorized repair workflows scoped to one incident: workflow id, authorizing actor, bounded reason, state and first fresh match.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0060_artifact_damage.sql"
+      ]
+    },
+    "artifact_integrity_observations": {
+      "columns": {
+        "tenant_id": "text",
+        "observation_id": "text",
+        "index_version_id": "text",
+        "artifact_id": "text",
+        "kind": "text",
+        "object_key": "text",
+        "expected_sha256": "text",
+        "storage_generation": "text",
+        "outcome": "text",
+        "observed_sha256": "text",
+        "verifier_id": "text",
+        "verifier_run_id": "text",
+        "fetch_id": "text",
+        "fetched_at": "timestamptz",
+        "pin_generation": "bigint",
+        "incident_id": "text",
+        "repair_attempt_id": "text",
+        "decision": "text",
+        "detail": "text",
+        "recorded_at": "timestamptz"
+      },
+      "content": "Bounded per-tenant history (1,024 rows) of local isolations and authoritative digest observations with the ledger decision and bounded diagnostics; full history refuses new rows rather than evicting.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0060_artifact_damage.sql"
+      ]
     }
   },
   "artifacts": {

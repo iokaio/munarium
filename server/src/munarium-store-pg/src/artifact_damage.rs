@@ -1,0 +1,1334 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Durable artifact damage: bounded findings, fleet blocks, the release fence
+//! and verified repair clearance (ClearView R10, ART1, ART2).
+//!
+//! The rules are specified in `server/docs/design/artifact-damage.md`. This
+//! module is where they are enforced, inside single PostgreSQL transactions:
+//!
+//! - **Independence (ART1).** A fleet block commits only when a second
+//!   authoritative mismatch on the *same pinned object* (artifact, object key,
+//!   expected digest, storage generation) at the pin's *current generation*
+//!   comes from a *different verifier identity* with a *different fetch id*,
+//!   inside the confirmation window. The same verifier running twice, the same
+//!   fetch replayed under another name, a timeout, or a different pin is
+//!   recorded and never counted.
+//! - **Clearance (ART2).** Only a preauthorized repair attempt, scoped to the
+//!   pin's active incident, can clear it, and only after two matching
+//!   observations of the incident's object by different verifiers, each
+//!   fetched after the attempt was authorized. A mismatch during verification
+//!   invalidates the attempt. Clearance, its evidence and the generation
+//!   change are one transaction.
+//! - **Release fence.** A reader records the pin generation at admission and
+//!   releases its result only if, under a share lock, the pin is still at that
+//!   generation and unblocked. A block that commits first invalidates every
+//!   read admitted earlier, even if a clearance follows.
+//! - **Bounds (R10).** The observation history holds at most
+//!   [`DEFAULT_HISTORY_CAP`] rows per tenant. When full it refuses new entries
+//!   rather than evicting old ones, and nothing that blocks or clears a pin
+//!   depends on it: candidates, incidents and attempts carry their own
+//!   evidence.
+//!
+//! Tenant-scoped by construction, like [`crate::artifacts::ArtifactCatalog`].
+//! The one environment-scoped read, [`verifying_attempts`], is a free
+//! function so it cannot be mistaken for a tenant handle's method.
+
+use chrono::{DateTime, Utc};
+use sqlx::{Postgres, Row, Transaction};
+
+/// Re-exported so callers without their own SQL or clock dependency can name
+/// the handle and the fetch time.
+pub use sqlx::PgPool;
+pub type Timestamp = DateTime<Utc>;
+
+use munarium_core::{KernelError, Result};
+
+use crate::storage_err;
+
+/// The object key of an artifact's manifest. Its expected digest is the
+/// artifact id itself.
+pub const MANIFEST_OBJECT: &str = "manifest.json";
+/// Observation history entries kept per tenant before new ones are refused.
+pub const DEFAULT_HISTORY_CAP: i64 = 1024;
+/// How far apart two mismatches' fetch times may be and still confirm.
+pub const DEFAULT_CONFIRM_WINDOW_SECS: i64 = 24 * 60 * 60;
+
+const MAX_ID: usize = 128;
+const MAX_KEY: usize = 512;
+const MAX_DETAIL: usize = 256;
+
+/// Who observed: an authenticated verifier identity and one run of it.
+///
+/// Independence is judged on `verifier_id` alone; `run_id` distinguishes runs
+/// of the same verifier in the history and never makes them independent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerifierIdentity {
+    pub verifier_id: String,
+    pub run_id: String,
+}
+
+/// The pinned object an observation is about.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObjectPin {
+    pub index_version_id: String,
+    pub artifact_id: String,
+    /// `manifest.json` or a component path from the trusted manifest.
+    pub object_key: String,
+    /// The digest the trusted pin expects for that object.
+    pub expected_sha256: String,
+    /// The store's object generation (an ETag or version id) when it reports
+    /// one. `None` compares equal only to `None`.
+    pub storage_generation: Option<String>,
+}
+
+/// What an authoritative fetch showed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outcome {
+    Match,
+    Mismatch,
+    /// The object could not be read in time. Never damage, never a match.
+    Unavailable,
+}
+
+impl Outcome {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Match => "match",
+            Self::Mismatch => "mismatch",
+            Self::Unavailable => "unavailable",
+        }
+    }
+}
+
+/// One verifier's direct fetch from the authoritative store.
+#[derive(Debug, Clone)]
+pub struct AuthoritativeObservation {
+    pub pin: ObjectPin,
+    pub verifier: VerifierIdentity,
+    /// Unique per fetch. A fetch id already recorded never counts again.
+    pub fetch_id: String,
+    /// When the fetch started, from [`ArtifactDamageLedger::db_now`].
+    pub fetched_at: DateTime<Utc>,
+    pub outcome: Outcome,
+    pub observed_sha256: Option<String>,
+    /// Set when the observation verifies a repair attempt.
+    pub repair_attempt_id: Option<String>,
+    /// Bounded diagnostics. Never corpus or query text.
+    pub detail: Option<String>,
+}
+
+/// What this process is allowed to commit. `observe` mode records and honors
+/// blocks but commits neither a block nor a clearance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Authority {
+    pub may_block: bool,
+    pub may_clear: bool,
+}
+
+/// What the ledger decided for one observation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Decision {
+    /// Recorded without a state change.
+    Recorded,
+    /// The first unconfirmed mismatch on this object at this generation.
+    Candidate,
+    /// The verifier already holding the candidate (or first match) observed
+    /// again. Counted once.
+    SameVerifier,
+    /// This fetch id was already recorded.
+    ReplayedFetch,
+    /// Two independent mismatches: the fleet block committed.
+    Blocked {
+        incident_id: String,
+        generation: i64,
+    },
+    /// An independent confirmation exists, but this process may not block.
+    BlockWithheld,
+    /// The first fresh match for a repair attempt.
+    RepairMatch,
+    /// Two independent fresh matches: the block cleared.
+    Cleared {
+        incident_id: String,
+        generation: i64,
+    },
+    /// A clearance would commit, but this process may not clear.
+    ClearWithheld,
+    /// A fresh mismatch invalidated the repair attempt.
+    RepairInvalidated,
+    /// The observation cannot bind to the pin or attempt it names.
+    Rejected(String),
+}
+
+impl Decision {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Recorded => "recorded",
+            Self::Candidate => "candidate",
+            Self::SameVerifier => "same_verifier",
+            Self::ReplayedFetch => "replayed_fetch",
+            Self::Blocked { .. } => "blocked",
+            Self::BlockWithheld => "block_withheld",
+            Self::RepairMatch => "repair_match",
+            Self::Cleared { .. } => "cleared",
+            Self::ClearWithheld => "clear_withheld",
+            Self::RepairInvalidated => "repair_invalidated",
+            Self::Rejected(_) => "rejected",
+        }
+    }
+}
+
+/// A decision plus whether the observation reached the bounded history.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordResult {
+    pub decision: Decision,
+    /// True when the history was full and this observation was not appended.
+    /// The decision above was still made and committed.
+    pub history_full: bool,
+}
+
+/// What a reader captured at admission.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PinAdmission {
+    pub index_version_id: String,
+    pub artifact_id: String,
+    pub generation: i64,
+    /// The active incident when the pin is blocked.
+    pub blocked_by: Option<String>,
+}
+
+/// The release fence's answer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReleaseDecision {
+    Authorized,
+    Refused(String),
+}
+
+/// A pin's current integrity state, for operators.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PinState {
+    pub index_version_id: String,
+    pub artifact_id: String,
+    pub generation: i64,
+    pub state: String,
+    pub active_incident_id: Option<String>,
+}
+
+/// One committed block and, when cleared, its clearance.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Incident {
+    pub incident_id: String,
+    pub index_version_id: String,
+    pub artifact_id: String,
+    pub object_key: String,
+    pub expected_sha256: String,
+    pub state: String,
+    pub blocked_generation: i64,
+    pub confirming_verifiers: [String; 2],
+    pub cleared_generation: Option<i64>,
+    pub clearing_attempt_id: Option<String>,
+    pub clearing_workflow_id: Option<String>,
+    pub clearing_verifiers: Option<[String; 2]>,
+}
+
+/// A preauthorized repair attempt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepairAttempt {
+    pub attempt_id: String,
+    pub incident_id: String,
+    pub index_version_id: String,
+    pub artifact_id: String,
+    /// The incident's object, which the verifications must match.
+    pub object_key: String,
+    pub expected_sha256: String,
+    pub workflow_id: String,
+    pub authorized_by: String,
+    pub state: String,
+    pub first_match_verifier_id: Option<String>,
+}
+
+fn bounded(label: &str, value: &str, max: usize) -> Result<()> {
+    if value.is_empty() || value.len() > max || value.chars().any(char::is_control) {
+        return Err(KernelError::InvalidInput(format!(
+            "{label} must be 1..={max} bytes without control characters"
+        )));
+    }
+    Ok(())
+}
+
+fn clip(detail: Option<&str>) -> Option<String> {
+    detail.map(|d| {
+        let mut out: String = d.chars().filter(|c| !c.is_control()).collect();
+        while out.len() > MAX_DETAIL {
+            out.pop();
+        }
+        out
+    })
+}
+
+fn is_sha256(s: &str) -> bool {
+    s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+fn validate(o: &AuthoritativeObservation) -> Result<()> {
+    bounded("index_version_id", &o.pin.index_version_id, MAX_KEY)?;
+    bounded("artifact_id", &o.pin.artifact_id, MAX_KEY)?;
+    bounded("object_key", &o.pin.object_key, MAX_KEY)?;
+    bounded("verifier_id", &o.verifier.verifier_id, MAX_ID)?;
+    bounded("verifier run_id", &o.verifier.run_id, MAX_ID)?;
+    bounded("fetch_id", &o.fetch_id, MAX_ID)?;
+    if let Some(g) = &o.pin.storage_generation {
+        bounded("storage_generation", g, MAX_ID)?;
+    }
+    if let Some(a) = &o.repair_attempt_id {
+        bounded("repair_attempt_id", a, MAX_ID)?;
+    }
+    if !is_sha256(&o.pin.expected_sha256) {
+        return Err(KernelError::InvalidInput(
+            "expected_sha256 must be a sha256 hex digest".into(),
+        ));
+    }
+    match (o.outcome, o.observed_sha256.as_deref()) {
+        (Outcome::Mismatch, Some(d)) if is_sha256(d) && d != o.pin.expected_sha256 => Ok(()),
+        (Outcome::Match, Some(d)) if d == o.pin.expected_sha256 => Ok(()),
+        (Outcome::Unavailable, None) => Ok(()),
+        _ => Err(KernelError::InvalidInput(
+            "a mismatch needs an observed digest that differs from the pin, a match one that \
+             equals it, and an unavailable fetch none"
+                .into(),
+        )),
+    }
+}
+
+/// Tenant-scoped access to the damage ledger.
+#[derive(Debug, Clone)]
+pub struct ArtifactDamageLedger {
+    pool: PgPool,
+    tenant_id: String,
+    history_cap: i64,
+    confirm_window_secs: i64,
+}
+
+struct PinRow {
+    generation: i64,
+    state: String,
+    active_incident_id: Option<String>,
+}
+
+impl ArtifactDamageLedger {
+    pub fn new(pool: PgPool, tenant_id: impl Into<String>) -> Self {
+        Self {
+            pool,
+            tenant_id: tenant_id.into(),
+            history_cap: DEFAULT_HISTORY_CAP,
+            confirm_window_secs: DEFAULT_CONFIRM_WINDOW_SECS,
+        }
+    }
+
+    /// Override the history bound (tests and operator sizing).
+    pub fn with_history_cap(mut self, cap: i64) -> Self {
+        self.history_cap = cap.max(0);
+        self
+    }
+
+    pub fn tenant_id(&self) -> &str {
+        &self.tenant_id
+    }
+
+    /// The database clock, so fetch times and repair windows share one clock
+    /// across replicas.
+    pub async fn db_now(&self) -> Result<DateTime<Utc>> {
+        sqlx::query_scalar("SELECT now()")
+            .fetch_one(&self.pool)
+            .await
+            .map_err(storage_err)
+    }
+
+    // -- admission and release ----------------------------------------------
+
+    /// Read a pin's generation and block at admission. No row is generation
+    /// 0, unblocked: absence of a finding is unknown integrity, not a pass,
+    /// and admission does not claim otherwise.
+    pub async fn admit(&self, index_version_id: &str, artifact_id: &str) -> Result<PinAdmission> {
+        let row = sqlx::query(
+            "SELECT generation, active_incident_id FROM artifact_integrity_pins
+              WHERE tenant_id = $1 AND index_version_id = $2 AND artifact_id = $3",
+        )
+        .bind(&self.tenant_id)
+        .bind(index_version_id)
+        .bind(artifact_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(storage_err)?;
+        Ok(PinAdmission {
+            index_version_id: index_version_id.to_string(),
+            artifact_id: artifact_id.to_string(),
+            generation: row.as_ref().map(|r| r.get("generation")).unwrap_or(0),
+            blocked_by: row.and_then(|r| r.get("active_incident_id")),
+        })
+    }
+
+    /// The release fence: authorize a completed result only if every
+    /// contributing pin is still at its admitted generation and unblocked.
+    ///
+    /// The pin rows are share-locked in a stable order, so a block in the
+    /// middle of committing is waited for and then seen. A missing row is
+    /// generation 0; it cannot be blocked, because a block needs a candidate
+    /// row first.
+    pub async fn release(&self, admitted: &[PinAdmission]) -> Result<ReleaseDecision> {
+        if admitted.is_empty() {
+            return Ok(ReleaseDecision::Authorized);
+        }
+        let mut pins: Vec<&PinAdmission> = admitted.iter().collect();
+        pins.sort_by(|a, b| {
+            (&a.index_version_id, &a.artifact_id).cmp(&(&b.index_version_id, &b.artifact_id))
+        });
+        let versions: Vec<String> = pins.iter().map(|p| p.index_version_id.clone()).collect();
+        let artifacts: Vec<String> = pins.iter().map(|p| p.artifact_id.clone()).collect();
+        let mut tx = self.pool.begin().await.map_err(storage_err)?;
+        let rows = sqlx::query(
+            "SELECT p.index_version_id, p.artifact_id, p.generation, p.active_incident_id
+               FROM artifact_integrity_pins p
+               JOIN unnest($2::text[], $3::text[]) AS w(v, a)
+                 ON p.index_version_id = w.v AND p.artifact_id = w.a
+              WHERE p.tenant_id = $1
+              ORDER BY p.index_version_id, p.artifact_id
+              FOR SHARE OF p",
+        )
+        .bind(&self.tenant_id)
+        .bind(&versions)
+        .bind(&artifacts)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(storage_err)?;
+        tx.commit().await.map_err(storage_err)?;
+        for pin in pins {
+            let current = rows.iter().find(|r| {
+                r.get::<String, _>("index_version_id") == pin.index_version_id
+                    && r.get::<String, _>("artifact_id") == pin.artifact_id
+            });
+            let (generation, blocked): (i64, Option<String>) = match current {
+                Some(r) => (r.get("generation"), r.get("active_incident_id")),
+                None => (0, None),
+            };
+            if let Some(incident) = blocked {
+                return Ok(ReleaseDecision::Refused(format!(
+                    "artifact {} is blocked by integrity incident {incident}",
+                    pin.artifact_id
+                )));
+            }
+            if generation != pin.generation {
+                return Ok(ReleaseDecision::Refused(format!(
+                    "artifact {} changed integrity generation from {} to {generation} during \
+                     the read",
+                    pin.artifact_id, pin.generation
+                )));
+            }
+        }
+        Ok(ReleaseDecision::Authorized)
+    }
+
+    // -- recording -----------------------------------------------------------
+
+    async fn lock_tenant(&self, tx: &mut Transaction<'_, Postgres>) -> Result<()> {
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 60))")
+            .bind(format!("munarium-artifact-damage:{}", self.tenant_id))
+            .execute(&mut **tx)
+            .await
+            .map_err(storage_err)?;
+        Ok(())
+    }
+
+    /// Ensure the pin row exists and lock it. Errors when the catalog does not
+    /// hold the artifact for this tenant.
+    async fn lock_pin(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        index_version_id: &str,
+        artifact_id: &str,
+    ) -> Result<(PinRow, serde_json::Value)> {
+        let manifest: Option<serde_json::Value> = sqlx::query_scalar(
+            "SELECT artifact_manifest FROM index_artifacts
+              WHERE tenant_id = $1 AND index_version_id = $2 AND artifact_id = $3
+              FOR SHARE",
+        )
+        .bind(&self.tenant_id)
+        .bind(index_version_id)
+        .bind(artifact_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(storage_err)?;
+        let Some(manifest) = manifest else {
+            return Err(KernelError::NotFound {
+                kind: "artifact",
+                id: artifact_id.to_string(),
+            });
+        };
+        sqlx::query(
+            "INSERT INTO artifact_integrity_pins (tenant_id, index_version_id, artifact_id)
+             VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+        )
+        .bind(&self.tenant_id)
+        .bind(index_version_id)
+        .bind(artifact_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(storage_err)?;
+        let row = sqlx::query(
+            "SELECT generation, state, active_incident_id FROM artifact_integrity_pins
+              WHERE tenant_id = $1 AND index_version_id = $2 AND artifact_id = $3
+              FOR UPDATE",
+        )
+        .bind(&self.tenant_id)
+        .bind(index_version_id)
+        .bind(artifact_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(storage_err)?;
+        Ok((
+            PinRow {
+                generation: row.get("generation"),
+                state: row.get("state"),
+                active_incident_id: row.get("active_incident_id"),
+            },
+            manifest,
+        ))
+    }
+
+    /// Append to the bounded history, or report it full. Never evicts.
+    #[allow(clippy::too_many_arguments)]
+    async fn append_history(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        kind: &str,
+        index_version_id: &str,
+        artifact_id: &str,
+        object: Option<(&str, &str, &str)>,
+        outcome: &str,
+        observed_sha256: Option<&str>,
+        verifier: &VerifierIdentity,
+        fetch: Option<(&str, DateTime<Utc>)>,
+        pin_generation: i64,
+        incident_id: Option<&str>,
+        repair_attempt_id: Option<&str>,
+        decision: &str,
+        detail: Option<String>,
+    ) -> Result<bool> {
+        let held: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM artifact_integrity_observations WHERE tenant_id = $1",
+        )
+        .bind(&self.tenant_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(storage_err)?;
+        if held >= self.history_cap {
+            return Ok(true);
+        }
+        sqlx::query(
+            "INSERT INTO artifact_integrity_observations
+                 (tenant_id, observation_id, index_version_id, artifact_id, kind, object_key,
+                  expected_sha256, storage_generation, outcome, observed_sha256, verifier_id,
+                  verifier_run_id, fetch_id, fetched_at, pin_generation, incident_id,
+                  repair_attempt_id, decision, detail)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)",
+        )
+        .bind(&self.tenant_id)
+        .bind(uuid::Uuid::new_v4().to_string())
+        .bind(index_version_id)
+        .bind(artifact_id)
+        .bind(kind)
+        .bind(object.map(|o| o.0))
+        .bind(object.map(|o| o.1))
+        .bind(object.map(|o| o.2).unwrap_or(""))
+        .bind(outcome)
+        .bind(observed_sha256)
+        .bind(&verifier.verifier_id)
+        .bind(&verifier.run_id)
+        .bind(fetch.map(|f| f.0))
+        .bind(fetch.map(|f| f.1))
+        .bind(pin_generation)
+        .bind(incident_id)
+        .bind(repair_attempt_id)
+        .bind(decision)
+        .bind(detail)
+        .execute(&mut **tx)
+        .await
+        .map_err(storage_err)?;
+        Ok(false)
+    }
+
+    /// Record that a replica isolated its own local copy (ART1's first
+    /// step). Local evidence only: it never counts toward a fleet block.
+    pub async fn record_local_isolation(
+        &self,
+        index_version_id: &str,
+        artifact_id: &str,
+        verifier: &VerifierIdentity,
+        detail: Option<&str>,
+    ) -> Result<RecordResult> {
+        bounded("verifier_id", &verifier.verifier_id, MAX_ID)?;
+        bounded("verifier run_id", &verifier.run_id, MAX_ID)?;
+        let mut tx = self.pool.begin().await.map_err(storage_err)?;
+        self.lock_tenant(&mut tx).await?;
+        let (pin, _) = self
+            .lock_pin(&mut tx, index_version_id, artifact_id)
+            .await?;
+        let history_full = self
+            .append_history(
+                &mut tx,
+                "local_isolation",
+                index_version_id,
+                artifact_id,
+                None,
+                "isolated",
+                None,
+                verifier,
+                None,
+                pin.generation,
+                pin.active_incident_id.as_deref(),
+                None,
+                Decision::Recorded.as_str(),
+                clip(detail),
+            )
+            .await?;
+        tx.commit().await.map_err(storage_err)?;
+        Ok(RecordResult {
+            decision: Decision::Recorded,
+            history_full,
+        })
+    }
+
+    /// Record one authoritative observation and apply ART1 or ART2.
+    pub async fn record_authoritative(
+        &self,
+        o: &AuthoritativeObservation,
+        authority: Authority,
+    ) -> Result<RecordResult> {
+        validate(o)?;
+        let mut tx = self.pool.begin().await.map_err(storage_err)?;
+        self.lock_tenant(&mut tx).await?;
+        let (pin, manifest) = self
+            .lock_pin(&mut tx, &o.pin.index_version_id, &o.pin.artifact_id)
+            .await?;
+
+        let replayed: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM artifact_integrity_observations
+                            WHERE tenant_id = $1 AND fetch_id = $2)",
+        )
+        .bind(&self.tenant_id)
+        .bind(&o.fetch_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(storage_err)?;
+
+        let decision = if replayed {
+            Decision::ReplayedFetch
+        } else if let Some(reason) = untrusted_pin(&o.pin, &manifest) {
+            Decision::Rejected(reason)
+        } else if let Some(attempt) = o.repair_attempt_id.as_deref() {
+            self.decide_repair(&mut tx, o, &pin, attempt, authority)
+                .await?
+        } else {
+            self.decide_confirmation(&mut tx, o, &pin, authority)
+                .await?
+        };
+
+        let generation_now = match &decision {
+            Decision::Blocked { generation, .. } | Decision::Cleared { generation, .. } => {
+                *generation
+            }
+            _ => pin.generation,
+        };
+        let incident = match &decision {
+            Decision::Blocked { incident_id, .. } | Decision::Cleared { incident_id, .. } => {
+                Some(incident_id.clone())
+            }
+            _ => pin.active_incident_id.clone(),
+        };
+        let storage_generation = o.pin.storage_generation.clone().unwrap_or_default();
+        // A replayed fetch is not appended: the unique fetch index would
+        // refuse it, and the original row already records that fetch.
+        let history_full = if decision == Decision::ReplayedFetch {
+            false
+        } else {
+            let detail = match &decision {
+                Decision::Rejected(reason) => Some(reason.as_str()),
+                _ => o.detail.as_deref(),
+            };
+            self.append_history(
+                &mut tx,
+                "authoritative",
+                &o.pin.index_version_id,
+                &o.pin.artifact_id,
+                Some((
+                    o.pin.object_key.as_str(),
+                    o.pin.expected_sha256.as_str(),
+                    storage_generation.as_str(),
+                )),
+                o.outcome.as_str(),
+                o.observed_sha256.as_deref(),
+                &o.verifier,
+                Some((o.fetch_id.as_str(), o.fetched_at)),
+                generation_now,
+                incident.as_deref(),
+                o.repair_attempt_id.as_deref(),
+                decision.as_str(),
+                clip(detail),
+            )
+            .await?
+        };
+        tx.commit().await.map_err(storage_err)?;
+        Ok(RecordResult {
+            decision,
+            history_full,
+        })
+    }
+
+    async fn decide_confirmation(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        o: &AuthoritativeObservation,
+        pin: &PinRow,
+        authority: Authority,
+    ) -> Result<Decision> {
+        if pin.state == "blocked" || o.outcome != Outcome::Mismatch {
+            // A further mismatch on a blocked pin, a match, or an unavailable
+            // fetch: evidence for the history, never a state change.
+            return Ok(Decision::Recorded);
+        }
+        let storage_generation = o.pin.storage_generation.clone().unwrap_or_default();
+        let observed = o.observed_sha256.clone().unwrap_or_default();
+        let candidate = sqlx::query(
+            "SELECT pin_generation, verifier_id, verifier_run_id, fetch_id, fetched_at,
+                    observed_sha256,
+                    abs(extract(epoch FROM (fetched_at - $7::timestamptz))) <= $8 AS fresh
+               FROM artifact_integrity_candidates
+              WHERE tenant_id = $1 AND index_version_id = $2 AND artifact_id = $3
+                AND object_key = $4 AND expected_sha256 = $5 AND storage_generation = $6
+              FOR UPDATE",
+        )
+        .bind(&self.tenant_id)
+        .bind(&o.pin.index_version_id)
+        .bind(&o.pin.artifact_id)
+        .bind(&o.pin.object_key)
+        .bind(&o.pin.expected_sha256)
+        .bind(&storage_generation)
+        .bind(o.fetched_at)
+        .bind(self.confirm_window_secs as f64)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(storage_err)?;
+
+        let usable = candidate.filter(|c| {
+            c.get::<i64, _>("pin_generation") == pin.generation && c.get::<bool, _>("fresh")
+        });
+        let Some(first) = usable else {
+            // No candidate, or one from an earlier generation or outside the
+            // confirmation window: this observation becomes the candidate.
+            sqlx::query(
+                "INSERT INTO artifact_integrity_candidates
+                     (tenant_id, index_version_id, artifact_id, object_key, expected_sha256,
+                      storage_generation, pin_generation, verifier_id, verifier_run_id,
+                      fetch_id, fetched_at, observed_sha256)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+                 ON CONFLICT (tenant_id, index_version_id, artifact_id, object_key,
+                              expected_sha256, storage_generation)
+                 DO UPDATE SET pin_generation = EXCLUDED.pin_generation,
+                               verifier_id = EXCLUDED.verifier_id,
+                               verifier_run_id = EXCLUDED.verifier_run_id,
+                               fetch_id = EXCLUDED.fetch_id,
+                               fetched_at = EXCLUDED.fetched_at,
+                               observed_sha256 = EXCLUDED.observed_sha256,
+                               recorded_at = now()",
+            )
+            .bind(&self.tenant_id)
+            .bind(&o.pin.index_version_id)
+            .bind(&o.pin.artifact_id)
+            .bind(&o.pin.object_key)
+            .bind(&o.pin.expected_sha256)
+            .bind(&storage_generation)
+            .bind(pin.generation)
+            .bind(&o.verifier.verifier_id)
+            .bind(&o.verifier.run_id)
+            .bind(&o.fetch_id)
+            .bind(o.fetched_at)
+            .bind(&observed)
+            .execute(&mut **tx)
+            .await
+            .map_err(storage_err)?;
+            return Ok(Decision::Candidate);
+        };
+
+        // The independence rule. Both checks are needed: a different name on
+        // the same fetch is a replay, and a fresh fetch by the same verifier
+        // is a retry.
+        if first.get::<String, _>("fetch_id") == o.fetch_id {
+            return Ok(Decision::ReplayedFetch);
+        }
+        if first.get::<String, _>("verifier_id") == o.verifier.verifier_id {
+            return Ok(Decision::SameVerifier);
+        }
+        if !authority.may_block {
+            return Ok(Decision::BlockWithheld);
+        }
+
+        let incident_id = format!("inc-{}", uuid::Uuid::new_v4().simple());
+        let generation = pin.generation + 1;
+        sqlx::query(
+            "INSERT INTO artifact_integrity_incidents
+                 (tenant_id, incident_id, index_version_id, artifact_id, object_key,
+                  expected_sha256, storage_generation, state, blocked_generation,
+                  first_verifier_id, first_run_id, first_fetch_id, first_fetched_at,
+                  first_observed_sha256, second_verifier_id, second_run_id, second_fetch_id,
+                  second_fetched_at, second_observed_sha256)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,'blocked',$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)",
+        )
+        .bind(&self.tenant_id)
+        .bind(&incident_id)
+        .bind(&o.pin.index_version_id)
+        .bind(&o.pin.artifact_id)
+        .bind(&o.pin.object_key)
+        .bind(&o.pin.expected_sha256)
+        .bind(&storage_generation)
+        .bind(generation)
+        .bind(first.get::<String, _>("verifier_id"))
+        .bind(first.get::<String, _>("verifier_run_id"))
+        .bind(first.get::<String, _>("fetch_id"))
+        .bind(first.get::<DateTime<Utc>, _>("fetched_at"))
+        .bind(first.get::<String, _>("observed_sha256"))
+        .bind(&o.verifier.verifier_id)
+        .bind(&o.verifier.run_id)
+        .bind(&o.fetch_id)
+        .bind(o.fetched_at)
+        .bind(&observed)
+        .execute(&mut **tx)
+        .await
+        .map_err(storage_err)?;
+        self.move_pin(
+            tx,
+            &o.pin.index_version_id,
+            &o.pin.artifact_id,
+            generation,
+            "blocked",
+            Some(&incident_id),
+        )
+        .await?;
+        Ok(Decision::Blocked {
+            incident_id,
+            generation,
+        })
+    }
+
+    async fn decide_repair(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        o: &AuthoritativeObservation,
+        pin: &PinRow,
+        attempt_id: &str,
+        authority: Authority,
+    ) -> Result<Decision> {
+        let attempt = sqlx::query(
+            "SELECT a.incident_id, a.index_version_id, a.artifact_id, a.workflow_id, a.state,
+                    a.first_match_verifier_id, a.first_match_run_id, a.first_match_fetch_id,
+                    a.first_match_fetched_at, a.first_match_observed_sha256,
+                    a.first_match_storage_generation,
+                    $3::timestamptz >= a.authorized_at AS fresh,
+                    i.object_key, i.expected_sha256
+               FROM artifact_repair_attempts a
+               JOIN artifact_integrity_incidents i
+                 ON i.tenant_id = a.tenant_id AND i.incident_id = a.incident_id
+              WHERE a.tenant_id = $1 AND a.attempt_id = $2
+              FOR UPDATE OF a",
+        )
+        .bind(&self.tenant_id)
+        .bind(attempt_id)
+        .bind(o.fetched_at)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(storage_err)?;
+        let Some(a) = attempt else {
+            return Ok(Decision::Rejected(
+                "no preauthorized repair attempt with that id".into(),
+            ));
+        };
+        let state: String = a.get("state");
+        if state != "verifying" {
+            return Ok(Decision::Rejected(format!(
+                "repair attempt is {state}, not verifying"
+            )));
+        }
+        if a.get::<String, _>("index_version_id") != o.pin.index_version_id
+            || a.get::<String, _>("artifact_id") != o.pin.artifact_id
+        {
+            return Ok(Decision::Rejected(
+                "repair attempt is for a different pin".into(),
+            ));
+        }
+        let incident_id: String = a.get("incident_id");
+        if pin.active_incident_id.as_deref() != Some(incident_id.as_str()) {
+            return Ok(Decision::Rejected(
+                "repair attempt's incident is not the pin's active block".into(),
+            ));
+        }
+        if !a.get::<bool, _>("fresh") {
+            return Ok(Decision::Rejected(
+                "fetched before the repair attempt was authorized".into(),
+            ));
+        }
+        match o.outcome {
+            Outcome::Unavailable => return Ok(Decision::Recorded),
+            Outcome::Mismatch => {
+                sqlx::query(
+                    "UPDATE artifact_repair_attempts
+                        SET state = 'invalidated', finished_at = now(),
+                            finish_reason = 'a fresh mismatch during verification'
+                      WHERE tenant_id = $1 AND attempt_id = $2",
+                )
+                .bind(&self.tenant_id)
+                .bind(attempt_id)
+                .execute(&mut **tx)
+                .await
+                .map_err(storage_err)?;
+                return Ok(Decision::RepairInvalidated);
+            }
+            Outcome::Match => {}
+        }
+        if a.get::<String, _>("object_key") != o.pin.object_key
+            || a.get::<String, _>("expected_sha256") != o.pin.expected_sha256
+        {
+            return Ok(Decision::Rejected(
+                "a repair match must be on the incident's object and pin digest".into(),
+            ));
+        }
+        let storage_generation = o.pin.storage_generation.clone().unwrap_or_default();
+        let observed = o.observed_sha256.clone().unwrap_or_default();
+        let first_verifier: Option<String> = a.get("first_match_verifier_id");
+        let Some(first_verifier) = first_verifier else {
+            sqlx::query(
+                "UPDATE artifact_repair_attempts
+                    SET first_match_verifier_id = $3, first_match_run_id = $4,
+                        first_match_fetch_id = $5, first_match_fetched_at = $6,
+                        first_match_observed_sha256 = $7, first_match_storage_generation = $8
+                  WHERE tenant_id = $1 AND attempt_id = $2",
+            )
+            .bind(&self.tenant_id)
+            .bind(attempt_id)
+            .bind(&o.verifier.verifier_id)
+            .bind(&o.verifier.run_id)
+            .bind(&o.fetch_id)
+            .bind(o.fetched_at)
+            .bind(&observed)
+            .bind(&storage_generation)
+            .execute(&mut **tx)
+            .await
+            .map_err(storage_err)?;
+            return Ok(Decision::RepairMatch);
+        };
+        if a.get::<Option<String>, _>("first_match_fetch_id")
+            .as_deref()
+            == Some(&o.fetch_id)
+        {
+            return Ok(Decision::ReplayedFetch);
+        }
+        if first_verifier == o.verifier.verifier_id {
+            return Ok(Decision::SameVerifier);
+        }
+        if a.get::<Option<String>, _>("first_match_storage_generation")
+            .unwrap_or_default()
+            != storage_generation
+        {
+            return Ok(Decision::Rejected(
+                "the two matches observed different stored objects".into(),
+            ));
+        }
+        if !authority.may_clear {
+            return Ok(Decision::ClearWithheld);
+        }
+
+        let generation = pin.generation + 1;
+        let workflow: String = a.get("workflow_id");
+        sqlx::query(
+            "UPDATE artifact_integrity_incidents
+                SET state = 'cleared', cleared_generation = $3, cleared_at = now(),
+                    clearing_attempt_id = $4, clearing_workflow_id = $5,
+                    clear_first_verifier_id = $6, clear_first_run_id = $7,
+                    clear_first_fetch_id = $8, clear_first_fetched_at = $9,
+                    clear_first_observed_sha256 = $10,
+                    clear_second_verifier_id = $11, clear_second_run_id = $12,
+                    clear_second_fetch_id = $13, clear_second_fetched_at = $14,
+                    clear_second_observed_sha256 = $15
+              WHERE tenant_id = $1 AND incident_id = $2 AND state = 'blocked'",
+        )
+        .bind(&self.tenant_id)
+        .bind(&incident_id)
+        .bind(generation)
+        .bind(attempt_id)
+        .bind(&workflow)
+        .bind(&first_verifier)
+        .bind(a.get::<Option<String>, _>("first_match_run_id"))
+        .bind(a.get::<Option<String>, _>("first_match_fetch_id"))
+        .bind(a.get::<Option<DateTime<Utc>>, _>("first_match_fetched_at"))
+        .bind(a.get::<Option<String>, _>("first_match_observed_sha256"))
+        .bind(&o.verifier.verifier_id)
+        .bind(&o.verifier.run_id)
+        .bind(&o.fetch_id)
+        .bind(o.fetched_at)
+        .bind(&observed)
+        .execute(&mut **tx)
+        .await
+        .map_err(storage_err)?;
+        sqlx::query(
+            "UPDATE artifact_repair_attempts
+                SET state = 'cleared', finished_at = now(),
+                    finish_reason = 'two independent fresh matches'
+              WHERE tenant_id = $1 AND attempt_id = $2",
+        )
+        .bind(&self.tenant_id)
+        .bind(attempt_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(storage_err)?;
+        self.move_pin(
+            tx,
+            &o.pin.index_version_id,
+            &o.pin.artifact_id,
+            generation,
+            "cleared",
+            None,
+        )
+        .await?;
+        Ok(Decision::Cleared {
+            incident_id,
+            generation,
+        })
+    }
+
+    /// Advance the pin's generation, set its state and drop every candidate
+    /// recorded at an earlier generation.
+    async fn move_pin(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        index_version_id: &str,
+        artifact_id: &str,
+        generation: i64,
+        state: &str,
+        incident: Option<&str>,
+    ) -> Result<()> {
+        sqlx::query(
+            "UPDATE artifact_integrity_pins
+                SET generation = $4, state = $5, active_incident_id = $6, updated_at = now()
+              WHERE tenant_id = $1 AND index_version_id = $2 AND artifact_id = $3",
+        )
+        .bind(&self.tenant_id)
+        .bind(index_version_id)
+        .bind(artifact_id)
+        .bind(generation)
+        .bind(state)
+        .bind(incident)
+        .execute(&mut **tx)
+        .await
+        .map_err(storage_err)?;
+        sqlx::query(
+            "DELETE FROM artifact_integrity_candidates
+              WHERE tenant_id = $1 AND index_version_id = $2 AND artifact_id = $3",
+        )
+        .bind(&self.tenant_id)
+        .bind(index_version_id)
+        .bind(artifact_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(storage_err)?;
+        Ok(())
+    }
+
+    // -- repair authorization ------------------------------------------------
+
+    /// Preauthorize a repair workflow for one active incident.
+    ///
+    /// Call after the separately authorized byte repair: the verification
+    /// window opens now, and only fetches started from now on can count.
+    /// Repeating the call with the same workflow returns the attempt already
+    /// verifying; a different workflow supersedes it, voiding its matches.
+    pub async fn authorize_repair(
+        &self,
+        incident_id: &str,
+        workflow_id: &str,
+        authorized_by: &str,
+        reason: Option<&str>,
+    ) -> Result<RepairAttempt> {
+        bounded("incident_id", incident_id, MAX_ID)?;
+        bounded("workflow_id", workflow_id, MAX_ID)?;
+        bounded("authorized_by", authorized_by, MAX_ID)?;
+        let mut tx = self.pool.begin().await.map_err(storage_err)?;
+        self.lock_tenant(&mut tx).await?;
+        let incident = sqlx::query(
+            "SELECT index_version_id, artifact_id, state FROM artifact_integrity_incidents
+              WHERE tenant_id = $1 AND incident_id = $2 FOR UPDATE",
+        )
+        .bind(&self.tenant_id)
+        .bind(incident_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(storage_err)?
+        .ok_or_else(|| KernelError::NotFound {
+            kind: "integrity incident",
+            id: incident_id.to_string(),
+        })?;
+        let state: String = incident.get("state");
+        if state != "blocked" {
+            return Err(KernelError::InvalidInput(format!(
+                "incident {incident_id} is {state}; only an active block can be repaired"
+            )));
+        }
+        let version: String = incident.get("index_version_id");
+        let artifact: String = incident.get("artifact_id");
+        let existing = sqlx::query(
+            "SELECT attempt_id, workflow_id FROM artifact_repair_attempts
+              WHERE tenant_id = $1 AND incident_id = $2 AND state = 'verifying'
+              FOR UPDATE",
+        )
+        .bind(&self.tenant_id)
+        .bind(incident_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(storage_err)?;
+        if let Some(row) = existing {
+            let attempt: String = row.get("attempt_id");
+            if row.get::<String, _>("workflow_id") == workflow_id {
+                tx.commit().await.map_err(storage_err)?;
+                return self
+                    .repair_attempt(&attempt)
+                    .await?
+                    .ok_or_else(|| KernelError::Storage("a verifying attempt vanished".into()));
+            }
+            sqlx::query(
+                "UPDATE artifact_repair_attempts
+                    SET state = 'superseded', finished_at = now(),
+                        finish_reason = 'superseded by a newer authorization'
+                  WHERE tenant_id = $1 AND attempt_id = $2",
+            )
+            .bind(&self.tenant_id)
+            .bind(&attempt)
+            .execute(&mut *tx)
+            .await
+            .map_err(storage_err)?;
+        }
+        let attempt_id = format!("rep-{}", uuid::Uuid::new_v4().simple());
+        sqlx::query(
+            "INSERT INTO artifact_repair_attempts
+                 (tenant_id, attempt_id, incident_id, index_version_id, artifact_id,
+                  workflow_id, authorized_by, reason)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+        )
+        .bind(&self.tenant_id)
+        .bind(&attempt_id)
+        .bind(incident_id)
+        .bind(&version)
+        .bind(&artifact)
+        .bind(workflow_id)
+        .bind(authorized_by)
+        .bind(clip(reason))
+        .execute(&mut *tx)
+        .await
+        .map_err(storage_err)?;
+        tx.commit().await.map_err(storage_err)?;
+        self.repair_attempt(&attempt_id)
+            .await?
+            .ok_or_else(|| KernelError::Storage("a new repair attempt vanished".into()))
+    }
+
+    // -- reads ---------------------------------------------------------------
+
+    pub async fn repair_attempt(&self, attempt_id: &str) -> Result<Option<RepairAttempt>> {
+        let row = sqlx::query(
+            "SELECT a.attempt_id, a.incident_id, a.index_version_id, a.artifact_id,
+                    i.object_key, i.expected_sha256, a.workflow_id, a.authorized_by, a.state,
+                    a.first_match_verifier_id
+               FROM artifact_repair_attempts a
+               JOIN artifact_integrity_incidents i
+                 ON i.tenant_id = a.tenant_id AND i.incident_id = a.incident_id
+              WHERE a.tenant_id = $1 AND a.attempt_id = $2",
+        )
+        .bind(&self.tenant_id)
+        .bind(attempt_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(storage_err)?;
+        Ok(row.map(|r| to_attempt(&r)))
+    }
+
+    pub async fn pin_state(
+        &self,
+        index_version_id: &str,
+        artifact_id: &str,
+    ) -> Result<Option<PinState>> {
+        let row = sqlx::query(
+            "SELECT index_version_id, artifact_id, generation, state, active_incident_id
+               FROM artifact_integrity_pins
+              WHERE tenant_id = $1 AND index_version_id = $2 AND artifact_id = $3",
+        )
+        .bind(&self.tenant_id)
+        .bind(index_version_id)
+        .bind(artifact_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(storage_err)?;
+        Ok(row.map(|r| to_pin(&r)))
+    }
+
+    /// Every pin with a finding, blocked first.
+    pub async fn pins(&self) -> Result<Vec<PinState>> {
+        let rows = sqlx::query(
+            "SELECT index_version_id, artifact_id, generation, state, active_incident_id
+               FROM artifact_integrity_pins WHERE tenant_id = $1
+              ORDER BY (state = 'blocked') DESC, updated_at DESC
+              LIMIT 500",
+        )
+        .bind(&self.tenant_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(storage_err)?;
+        Ok(rows.iter().map(to_pin).collect())
+    }
+
+    /// Incidents, newest first.
+    pub async fn incidents(&self) -> Result<Vec<Incident>> {
+        let rows = sqlx::query(
+            "SELECT incident_id, index_version_id, artifact_id, object_key, expected_sha256,
+                    state, blocked_generation, first_verifier_id, second_verifier_id,
+                    cleared_generation, clearing_attempt_id, clearing_workflow_id,
+                    clear_first_verifier_id, clear_second_verifier_id
+               FROM artifact_integrity_incidents WHERE tenant_id = $1
+              ORDER BY blocked_at DESC, incident_id
+              LIMIT 500",
+        )
+        .bind(&self.tenant_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(storage_err)?;
+        Ok(rows
+            .iter()
+            .map(|r| Incident {
+                incident_id: r.get("incident_id"),
+                index_version_id: r.get("index_version_id"),
+                artifact_id: r.get("artifact_id"),
+                object_key: r.get("object_key"),
+                expected_sha256: r.get("expected_sha256"),
+                state: r.get("state"),
+                blocked_generation: r.get("blocked_generation"),
+                confirming_verifiers: [r.get("first_verifier_id"), r.get("second_verifier_id")],
+                cleared_generation: r.get("cleared_generation"),
+                clearing_attempt_id: r.get("clearing_attempt_id"),
+                clearing_workflow_id: r.get("clearing_workflow_id"),
+                clearing_verifiers: match (
+                    r.get::<Option<String>, _>("clear_first_verifier_id"),
+                    r.get::<Option<String>, _>("clear_second_verifier_id"),
+                ) {
+                    (Some(a), Some(b)) => Some([a, b]),
+                    _ => None,
+                },
+            })
+            .collect())
+    }
+
+    /// How many observation history entries this tenant holds.
+    pub async fn history_len(&self) -> Result<i64> {
+        sqlx::query_scalar(
+            "SELECT count(*) FROM artifact_integrity_observations WHERE tenant_id = $1",
+        )
+        .bind(&self.tenant_id)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(storage_err)
+    }
+
+    /// The most recent history entries: (verifier, outcome, decision).
+    pub async fn history(&self, limit: i64) -> Result<Vec<(String, String, String)>> {
+        let rows = sqlx::query(
+            "SELECT verifier_id, outcome, decision FROM artifact_integrity_observations
+              WHERE tenant_id = $1 ORDER BY recorded_at DESC, observation_id LIMIT $2",
+        )
+        .bind(&self.tenant_id)
+        .bind(limit.clamp(1, 1000))
+        .fetch_all(&self.pool)
+        .await
+        .map_err(storage_err)?;
+        Ok(rows
+            .iter()
+            .map(|r| (r.get("verifier_id"), r.get("outcome"), r.get("decision")))
+            .collect())
+    }
+}
+
+/// Every repair attempt currently verifying, across tenants: `(tenant,
+/// attempt)`. Environment-scoped like the serving warmer's selector read,
+/// because a replica verifies for every tenant it serves.
+pub async fn verifying_attempts(pool: &PgPool) -> Result<Vec<(String, RepairAttempt)>> {
+    let rows = sqlx::query(
+        "SELECT a.tenant_id, a.attempt_id, a.incident_id, a.index_version_id, a.artifact_id,
+                i.object_key, i.expected_sha256, a.workflow_id, a.authorized_by, a.state,
+                a.first_match_verifier_id
+           FROM artifact_repair_attempts a
+           JOIN artifact_integrity_incidents i
+             ON i.tenant_id = a.tenant_id AND i.incident_id = a.incident_id
+          WHERE a.state = 'verifying'
+          ORDER BY a.authorized_at, a.attempt_id
+          LIMIT 500",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(storage_err)?;
+    Ok(rows
+        .iter()
+        .map(|r| (r.get("tenant_id"), to_attempt(r)))
+        .collect())
+}
+
+fn to_attempt(r: &sqlx::postgres::PgRow) -> RepairAttempt {
+    RepairAttempt {
+        attempt_id: r.get("attempt_id"),
+        incident_id: r.get("incident_id"),
+        index_version_id: r.get("index_version_id"),
+        artifact_id: r.get("artifact_id"),
+        object_key: r.get("object_key"),
+        expected_sha256: r.get("expected_sha256"),
+        workflow_id: r.get("workflow_id"),
+        authorized_by: r.get("authorized_by"),
+        state: r.get("state"),
+        first_match_verifier_id: r.get("first_match_verifier_id"),
+    }
+}
+
+fn to_pin(r: &sqlx::postgres::PgRow) -> PinState {
+    PinState {
+        index_version_id: r.get("index_version_id"),
+        artifact_id: r.get("artifact_id"),
+        generation: r.get("generation"),
+        state: r.get("state"),
+        active_incident_id: r.get("active_incident_id"),
+    }
+}
+
+/// Why an observation's expected digest is not the trusted pin's, if it is
+/// not. The manifest's digest is the artifact id; a component's is the one
+/// the catalog's manifest projection records, which the verifier re-derives
+/// independently from manifest bytes that hash to the artifact id.
+fn untrusted_pin(pin: &ObjectPin, manifest: &serde_json::Value) -> Option<String> {
+    if pin.object_key == MANIFEST_OBJECT {
+        return (pin.expected_sha256 != pin.artifact_id)
+            .then(|| "the manifest's expected digest must be the artifact id".to_string());
+    }
+    let declared = manifest
+        .get("components")
+        .and_then(|c| c.as_array())
+        .and_then(|components| {
+            components
+                .iter()
+                .find(|c| c.get("path").and_then(|p| p.as_str()) == Some(pin.object_key.as_str()))
+        })
+        .and_then(|c| c.get("sha256"))
+        .and_then(|s| s.as_str());
+    match declared {
+        Some(d) if d == pin.expected_sha256 => None,
+        Some(_) => Some("expected digest is not the pinned component digest".into()),
+        None => Some("object is not a component of the pinned artifact".into()),
+    }
+}

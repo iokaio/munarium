@@ -29,6 +29,9 @@ mod admission;
 #[cfg(test)]
 mod admission_tests;
 mod answers_api;
+mod artifact_damage;
+#[cfg(test)]
+mod artifact_damage_tests;
 mod authoring_api;
 mod budget_api;
 mod charts;
@@ -165,6 +168,11 @@ async fn serve() {
         std::process::exit(2);
     }
     tracing::info!(?config.store, http = %config.http_addr, grpc = ?config.grpc_addr, instance = %config.instance_id, "starting");
+
+    if std::env::args().nth(1).as_deref() == Some("artifact-damage") {
+        let args: Vec<String> = std::env::args().skip(2).collect();
+        std::process::exit(artifact_damage::run(&config, &args).await);
+    }
 
     if std::env::args().nth(1).as_deref() == Some("platform-enroll") {
         let settings = config.platform.as_ref().unwrap_or_else(|| {

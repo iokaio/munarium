@@ -1,0 +1,692 @@
+// SPDX-License-Identifier: Apache-2.0
+//! ART1/ART2 on the serving path, over real artifacts in a corrupted
+//! local-file artifact store and a real PostgreSQL.
+//!
+//! Each "replica" is its own `DatastoreParts` (its own L1 and L0 caches and
+//! verifier identity) over one shared database and one shared L2 store, which
+//! is what a fleet is. A "restarted" replica is a new `AppState` and new parts
+//! with empty caches. These are deterministic, single-process stand-ins: the
+//! multi-replica receipts on a real fleet are deferred cluster work.
+//!
+//! Gated on `MUNARIUM_TEST_DATABASE_URL`; skips loudly when it is unset.
+
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use munarium_core::retrieval::{PreparedSearchQuery, SearchParams};
+use munarium_datastore::hydrate::{CacheBudget, L1Cache, Residency};
+use munarium_datastore::model::*;
+use munarium_datastore::shard::ShardWriter;
+use munarium_datastore::store::LocalFileStore;
+use munarium_datastore::{ArtifactCacheKey, PreparedChunk};
+use munarium_retrieval::damage::{DamageGuard, DamageMode};
+use munarium_retrieval::executor::{ExecutionOutcome, TextPayload};
+use munarium_retrieval::mirror::LocalStoreFactory;
+use munarium_store_pg::artifact_damage::{ArtifactDamageLedger, Decision, ReleaseDecision};
+use munarium_store_pg::artifacts::{ArtifactCatalog, BindingSlot, NewArtifact};
+use sha2::Digest as _;
+
+use crate::datastore_builds::tenant_path_hash;
+use crate::datastore_serving::DatastoreParts;
+use crate::state::AppState;
+
+macro_rules! guard {
+    () => {
+        match std::env::var("MUNARIUM_TEST_DATABASE_URL") {
+            Ok(url) => url,
+            Err(_) => {
+                eprintln!("SKIPPED: MUNARIUM_TEST_DATABASE_URL is unset");
+                return;
+            }
+        }
+    };
+}
+
+async fn app_state(url: &str, tenant: &str) -> Arc<AppState> {
+    crate::providers_api::usage_tests::test_state_with_auth(
+        Some(url.to_string()),
+        crate::config::AuthMode::Static(vec![("admin".into(), tenant.into(), "mgmt".into())]),
+    )
+    .await
+}
+
+fn spec() -> BuildSpec {
+    BuildSpec {
+        spec_version: 1,
+        scope: Scope {
+            kind: ScopeKind::Collection,
+            id: "damage".into(),
+        },
+        sources: vec![],
+        snapshot: Snapshot { watermark_seq: 1 },
+        shape: ShapeRef {
+            shape_ref: "para".into(),
+            version: 1,
+        },
+        chunker: Chunker {
+            name: "para".into(),
+            version: "para@1".into(),
+            params: BTreeMap::new(),
+        },
+        extractor: Extractor {
+            name: "x".into(),
+            version: "1".into(),
+            config: BTreeMap::new(),
+            per_source: vec![],
+        },
+        embedder: None,
+        lexical_analysis: LexicalAnalysis {
+            contract_version: 1,
+            tokenizer: "munarium-pg-compat@1".into(),
+            stemmer: "snowball-english".into(),
+            stop_terms_ref: StopTerms {
+                list_ref: "pg16/english".into(),
+                sha256: "e".repeat(64),
+            },
+            index_options: IndexOptions {
+                positions: true,
+                case_folding: Some("lowercase".into()),
+                accent_folding: Some("none".into()),
+            },
+        },
+        reconstructed: false,
+    }
+}
+
+fn plan() -> ArtifactBuildPlan {
+    ArtifactBuildPlan {
+        plan_version: 1,
+        envelope: Envelope {
+            format_version: 1,
+            feature_bits: vec!["records.v1".into()],
+        },
+        lexical: LexicalEngine {
+            engine_id: "tantivy".into(),
+            engine_revision: "0.22.0".into(),
+            positions: true,
+            segments: None,
+            compression: None,
+        },
+        vector: None,
+        records: RecordsFormat {
+            format: "munarium-records@1".into(),
+            compression: None,
+        },
+        range_map: None,
+        shaper: Shaper {
+            policy_version: 1,
+            decisions: vec![],
+        },
+    }
+}
+
+/// One tenant's artifact, published into a shared local-file L2 store and
+/// bound into the `serving` slot.
+struct Fleet {
+    url: String,
+    tenant: String,
+    version: String,
+    artifact: String,
+    l2_root: tempfile::TempDir,
+    l2_prefix: String,
+    /// The component damaged by [`Fleet::corrupt`] and its original bytes.
+    victim: (String, Vec<u8>),
+    state: Arc<AppState>,
+}
+
+impl Fleet {
+    async fn new(url: String, prefix: &str) -> Self {
+        let tenant = format!("{prefix}-{}", uuid::Uuid::new_v4().simple());
+        let state = app_state(&url, &tenant).await;
+        let pool = state.pg_pool().expect("postgres").clone();
+        let version = format!("idx2-{}", uuid::Uuid::new_v4().simple());
+        let l2_root = tempfile::tempdir().unwrap();
+        let l2_prefix = format!("indexes/{}/{version}", tenant_path_hash(&tenant));
+        let store = LocalFileStore::new(l2_root.path().join(&l2_prefix)).unwrap();
+        let mut w = ShardWriter::new(None);
+        for i in 0..4u32 {
+            let text = format!("harbour tea record {i} from the boston archive");
+            w.add(PreparedChunk {
+                chunk_id: format!("c{i}"),
+                source_id: format!("s{i}"),
+                source_path: format!("corpus/s{i}.md"),
+                node_id: None,
+                ordinal: i,
+                text: text.clone(),
+                text_sha256: sha2::Sha256::digest(text.as_bytes()).into(),
+                embedding: None,
+                metadata: BTreeMap::from([("source_content_hash".to_string(), "f".repeat(64))]),
+            })
+            .unwrap();
+        }
+        let sealed = w.seal(&spec(), &plan(), &store).unwrap();
+        sealed.publish_manifest(&store).unwrap();
+        let victim_path = sealed
+            .manifest
+            .components
+            .iter()
+            .find(|c| c.purpose == ComponentPurpose::Records)
+            .expect("a records component")
+            .path
+            .clone();
+        let victim_bytes =
+            std::fs::read(l2_root.path().join(&l2_prefix).join(&victim_path)).unwrap();
+
+        let catalog = ArtifactCatalog::new(pool.clone(), &tenant);
+        catalog
+            .insert_sealed(&NewArtifact {
+                index_version_id: version.clone(),
+                artifact_id: sealed.artifact_id.clone(),
+                engine_id: "tantivy".into(),
+                format_version: 1,
+                artifact_uri: l2_prefix.clone(),
+                artifact_plan: serde_json::json!({"plan_version": 1}),
+                artifact_plan_sha256: "p".repeat(64),
+                artifact_manifest: serde_json::to_value(&sealed.manifest).unwrap(),
+                bytes_len: 1,
+                file_count: sealed.manifest.components.len() as i32 + 1,
+                built_by: Some("damage-test".into()),
+                attempt_id: None,
+            })
+            .await
+            .unwrap();
+        catalog
+            .mark_verified(&version, &sealed.artifact_id, "damage-test")
+            .await
+            .unwrap();
+        catalog
+            .bind_new(
+                &version,
+                BindingSlot::Serving,
+                &sealed.artifact_id,
+                "damage-test",
+                None,
+            )
+            .await
+            .unwrap();
+        Self {
+            url,
+            tenant,
+            version,
+            artifact: sealed.artifact_id,
+            l2_root,
+            l2_prefix,
+            victim: (victim_path, victim_bytes),
+            state,
+        }
+    }
+
+    fn pool(&self) -> sqlx::PgPool {
+        self.state.pg_pool().expect("postgres").clone()
+    }
+
+    fn ledger(&self) -> ArtifactDamageLedger {
+        ArtifactDamageLedger::new(self.pool(), &self.tenant)
+    }
+
+    fn victim_path(&self) -> PathBuf {
+        self.l2_root
+            .path()
+            .join(&self.l2_prefix)
+            .join(&self.victim.0)
+    }
+
+    /// Damage the authoritative copy.
+    fn corrupt(&self) {
+        let mut bytes = self.victim.1.clone();
+        bytes[0] ^= 0xff;
+        std::fs::write(self.victim_path(), bytes).unwrap();
+    }
+
+    /// The separately authorized byte repair.
+    fn restore(&self) {
+        std::fs::write(self.victim_path(), &self.victim.1).unwrap();
+    }
+
+    fn key(&self) -> ArtifactCacheKey {
+        ArtifactCacheKey::new(
+            tenant_path_hash(&self.tenant),
+            self.version.clone(),
+            self.artifact.clone(),
+        )
+    }
+
+    /// One replica: its own caches and verifier identity over the shared
+    /// database and the shared L2 store.
+    fn replica(&self, verifier: &str, mode: DamageMode) -> Replica {
+        let l1 = tempfile::tempdir().unwrap();
+        let cache = L1Cache::new(
+            l1.path(),
+            CacheBudget::new(512 * 1024 * 1024, 256 * 1024 * 1024).unwrap(),
+        )
+        .unwrap();
+        Replica {
+            parts: DatastoreParts::from_parts(
+                Arc::new(cache),
+                Arc::new(LocalStoreFactory::new(self.l2_root.path())),
+                8,
+                Arc::new(DamageGuard::new(mode, verifier)),
+            ),
+            _l1: l1,
+        }
+    }
+}
+
+struct Replica {
+    parts: Arc<DatastoreParts>,
+    _l1: tempfile::TempDir,
+}
+
+fn prepared() -> Arc<PreparedSearchQuery> {
+    let mut q = munarium_retrieval_pg::PgRetrieval::prepare_query(
+        "harbour tea archive",
+        &SearchParams::default(),
+        &munarium_retrieval_pg::LocalHashEmbedder,
+    );
+    // The fixture artifact is lexical-only.
+    q.embedding = None;
+    Arc::new(q)
+}
+
+impl Replica {
+    async fn execute(&self, f: &Fleet, pool: &sqlx::PgPool) -> ExecutionOutcome {
+        self.parts
+            .executor(pool, &f.tenant)
+            .execute(
+                &f.version,
+                BindingSlot::Serving,
+                Residency::ServingRequired,
+                TextPayload::Served,
+                &prepared(),
+            )
+            .await
+    }
+
+    async fn search(
+        &self,
+        f: &Fleet,
+        state: &AppState,
+    ) -> munarium_core::Result<munarium_core::retrieval::SearchResult> {
+        let pool = state.pg_pool().expect("postgres").clone();
+        let pg = state.retrieval_for(&f.tenant)?.reference().clone();
+        self.parts
+            .serving_plane(&pool, &f.tenant)
+            .search(&pg, ("collection", "damage"), &f.version, 1, &prepared())
+            .await
+    }
+}
+
+fn refusal(outcome: &ExecutionOutcome) -> &str {
+    match outcome {
+        ExecutionOutcome::Refused(r) => r,
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+}
+
+fn executed(outcome: ExecutionOutcome) -> munarium_retrieval::executor::ArtifactExecution {
+    match outcome {
+        ExecutionOutcome::Executed(e) => e,
+        other => panic!("expected an execution, got {other:?}"),
+    }
+}
+
+/// ART1: one verifier isolates only; the same verifier again does not count;
+/// a second independent verifier blocks the fleet; warm and restarted readers
+/// refuse; an in-flight read admitted before the block cannot be released.
+#[tokio::test]
+async fn independent_confirmation_blocks_warm_and_restarted_readers() {
+    let url = guard!();
+    let f = Fleet::new(url, "art1-serving").await;
+    let pool = f.pool();
+    let ledger = f.ledger();
+
+    // A warm replica with good local bytes, and an in-flight read admitted
+    // before any damage.
+    let warm = f.replica("replica-w", DamageMode::Enforce);
+    let first = executed(warm.execute(&f, &pool).await);
+    assert!(!first.hits.is_empty());
+    let in_flight = first.admission.clone().expect("an admission was captured");
+    assert_eq!(in_flight.generation, 0);
+    assert!(
+        warm.search(&f, &f.state).await.is_ok(),
+        "released before damage"
+    );
+
+    f.corrupt();
+
+    // Replica A: its hydration fails, it isolates locally and records one
+    // authoritative mismatch. No fleet block.
+    let a = f.replica("replica-a", DamageMode::Enforce);
+    let refused = a.execute(&f, &pool).await;
+    assert!(refusal(&refused).contains("integrity"), "{refused:?}");
+    assert!(a.parts.cache.is_quarantined(&f.key()));
+    assert!(a.parts.damage.is_isolated(&f.key()));
+    assert_eq!(
+        ledger
+            .admit(&f.version, &f.artifact)
+            .await
+            .unwrap()
+            .blocked_by,
+        None
+    );
+    // The warm replica's good local copy still serves: local isolation is
+    // local.
+    executed(warm.execute(&f, &pool).await);
+
+    // The same verifier running again does not count twice: neither another
+    // refused read nor a deliberate second verifier run.
+    refusal(&a.execute(&f, &pool).await);
+    let again = a
+        .parts
+        .damage_context(&pool, &f.tenant)
+        .unwrap()
+        .verify(
+            a.parts.stores.store_for_prefix(&f.l2_prefix).unwrap(),
+            &f.version,
+            &f.artifact,
+            &a.parts.reader,
+            &a.parts.limits,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(again.decision, Decision::SameVerifier);
+    assert_eq!(
+        ledger
+            .admit(&f.version, &f.artifact)
+            .await
+            .unwrap()
+            .blocked_by,
+        None
+    );
+
+    // Replica B independently confirms: the fleet block commits.
+    let b = f.replica("replica-b", DamageMode::Enforce);
+    refusal(&b.execute(&f, &pool).await);
+    let blocked = ledger.admit(&f.version, &f.artifact).await.unwrap();
+    let incident = blocked.blocked_by.clone().expect("fleet block");
+    assert_eq!(blocked.generation, 1);
+
+    // The read admitted before the block cannot be released after it.
+    assert!(matches!(
+        ledger.release(&[in_flight]).await.unwrap(),
+        ReleaseDecision::Refused(_)
+    ));
+
+    // The warm replica refuses despite good local bytes, on both paths.
+    let warm_refusal = warm.execute(&f, &pool).await;
+    assert!(
+        refusal(&warm_refusal).contains(&incident),
+        "{warm_refusal:?}"
+    );
+    let err = warm.search(&f, &f.state).await.unwrap_err();
+    assert!(
+        matches!(err, munarium_core::KernelError::DatastoreUnavailable(_)),
+        "{err}"
+    );
+
+    // A restarted replica: a new AppState and empty caches. It refuses at
+    // admission without fetching a byte.
+    let restarted_state = app_state(&f.url, &f.tenant).await;
+    let restarted = f.replica("replica-r", DamageMode::Enforce);
+    let restarted_pool = restarted_state.pg_pool().unwrap().clone();
+    let r = restarted.execute(&f, &restarted_pool).await;
+    assert!(refusal(&r).contains(&incident), "{r:?}");
+    assert_eq!(restarted.parts.cache.used_bytes(), 0);
+    assert!(restarted.search(&f, &restarted_state).await.is_err());
+    // An observe-mode reader honors the block too.
+    let observer = f.replica("replica-o", DamageMode::Observe);
+    refusal(&observer.execute(&f, &restarted_pool).await);
+
+    let incidents = ledger.incidents().await.unwrap();
+    assert_eq!(incidents.len(), 1);
+    assert_eq!(
+        incidents[0].confirming_verifiers,
+        ["replica-a".to_string(), "replica-b".to_string()]
+    );
+    assert_eq!(incidents[0].object_key, f.victim.0);
+}
+
+/// ART1-T1: local cache damage with a clean authoritative fetch isolates and
+/// recovers the local copy and issues no fleet block.
+#[tokio::test]
+async fn local_damage_with_a_clean_authoritative_fetch_does_not_block() {
+    let url = guard!();
+    let f = Fleet::new(url, "art1-local").await;
+    let pool = f.pool();
+    let a = f.replica("replica-a", DamageMode::Enforce);
+    let store = a.parts.stores.store_for_prefix(&f.l2_prefix).unwrap();
+    let resident = a
+        .parts
+        .cache
+        .hydrate(
+            &f.key(),
+            store.as_ref(),
+            &a.parts.reader,
+            &a.parts.limits,
+            Residency::ServingRequired,
+        )
+        .unwrap();
+    let local = resident.path.join(&f.victim.0);
+    let mut bytes = std::fs::read(&local).unwrap();
+    bytes[0] ^= 0xff;
+    std::fs::write(&local, bytes).unwrap();
+
+    let refused = a.execute(&f, &pool).await;
+    assert!(refusal(&refused).contains("integrity"), "{refused:?}");
+    assert!(
+        a.parts.cache.resident(&f.key()).is_none(),
+        "the damaged local copy was isolated by eviction"
+    );
+    let ledger = f.ledger();
+    assert_eq!(
+        ledger
+            .admit(&f.version, &f.artifact)
+            .await
+            .unwrap()
+            .blocked_by,
+        None
+    );
+    let history = ledger.history(10).await.unwrap();
+    assert!(
+        history.contains(&("replica-a".into(), "match".into(), "recorded".into())),
+        "{history:?}"
+    );
+    assert!(history.contains(&("replica-a".into(), "isolated".into(), "recorded".into())));
+    // The next read re-fetches and re-verifies from the clean source.
+    executed(a.execute(&f, &pool).await);
+}
+
+/// The v1.4 default: with damage handling off nothing durable happens and
+/// the in-process quarantine behaves as before.
+#[tokio::test]
+async fn the_default_mode_records_nothing_durable() {
+    let url = guard!();
+    let f = Fleet::new(url, "art-off").await;
+    let pool = f.pool();
+    f.corrupt();
+    for verifier in ["replica-a", "replica-b"] {
+        let r = f.replica(verifier, DamageMode::Off);
+        assert!(r.parts.damage_context(&pool, &f.tenant).is_none());
+        refusal(&r.execute(&f, &pool).await);
+        assert!(r.parts.cache.is_quarantined(&f.key()));
+    }
+    let ledger = f.ledger();
+    assert_eq!(
+        ledger.pin_state(&f.version, &f.artifact).await.unwrap(),
+        None
+    );
+    assert_eq!(ledger.history_len().await.unwrap(), 0);
+}
+
+/// ART2: only a preauthorized workflow with two fresh independent matches
+/// clears the block, and the clearance is recorded; isolated copies are then
+/// re-verified before they serve.
+#[tokio::test]
+async fn a_preauthorized_verified_repair_clears_and_readers_recover() {
+    let url = guard!();
+    let f = Fleet::new(url, "art2-serving").await;
+    let pool = f.pool();
+    let ledger = f.ledger();
+    f.corrupt();
+    let a = f.replica("replica-a", DamageMode::Enforce);
+    let b = f.replica("replica-b", DamageMode::Enforce);
+    refusal(&a.execute(&f, &pool).await);
+    refusal(&b.execute(&f, &pool).await);
+    let incident = ledger
+        .admit(&f.version, &f.artifact)
+        .await
+        .unwrap()
+        .blocked_by
+        .expect("blocked");
+    let in_flight_after_block = ledger.admit(&f.version, &f.artifact).await.unwrap();
+
+    // The bytes are repaired, but nobody has authorized clearance: matches
+    // are evidence only and the sweep has nothing to verify.
+    f.restore();
+    for r in [&a, &b] {
+        let m = r
+            .parts
+            .damage_context(&pool, &f.tenant)
+            .unwrap()
+            .verify(
+                r.parts.stores.store_for_prefix(&f.l2_prefix).unwrap(),
+                &f.version,
+                &f.artifact,
+                &r.parts.reader,
+                &r.parts.limits,
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(m.decision, Decision::Recorded);
+    }
+    assert!(ledger
+        .admit(&f.version, &f.artifact)
+        .await
+        .unwrap()
+        .blocked_by
+        .is_some());
+
+    // The operator preauthorizes the repair workflow.
+    let attempt = crate::artifact_damage::execute(
+        &pool,
+        &[
+            "authorize-repair".into(),
+            "--tenant".into(),
+            f.tenant.clone(),
+            "--incident".into(),
+            incident.clone(),
+            "--workflow".into(),
+            "repair-wf".into(),
+            "--actor".into(),
+            "operator".into(),
+        ],
+    )
+    .await
+    .unwrap();
+    let attempt_id = attempt["attempt_id"].as_str().unwrap().to_string();
+
+    // One replica's verification is a single match: still blocked, and its
+    // later sweeps do not count again.
+    crate::datastore_serving::verify_repairs(&a.parts, &pool).await;
+    crate::datastore_serving::verify_repairs(&a.parts, &pool).await;
+    let progress = ledger.repair_attempt(&attempt_id).await.unwrap().unwrap();
+    assert_eq!(progress.state, "verifying");
+    assert_eq!(
+        progress.first_match_verifier_id.as_deref(),
+        Some("replica-a")
+    );
+    assert!(ledger
+        .admit(&f.version, &f.artifact)
+        .await
+        .unwrap()
+        .blocked_by
+        .is_some());
+    refusal(&a.execute(&f, &pool).await);
+
+    // The second independent replica's verification clears it.
+    crate::datastore_serving::verify_repairs(&b.parts, &pool).await;
+    let cleared = ledger.admit(&f.version, &f.artifact).await.unwrap();
+    assert_eq!(cleared.blocked_by, None);
+    assert_eq!(cleared.generation, 2);
+    let listed = crate::artifact_damage::execute(
+        &pool,
+        &["list".into(), "--tenant".into(), f.tenant.clone()],
+    )
+    .await
+    .unwrap();
+    let recorded = &listed["incidents"][0];
+    assert_eq!(recorded["state"], "cleared");
+    assert_eq!(recorded["clearing_workflow_id"], "repair-wf");
+    assert_eq!(recorded["clearing_attempt_id"], attempt_id.as_str());
+    assert_eq!(
+        recorded["clearing_verifiers"],
+        serde_json::json!(["replica-a", "replica-b"])
+    );
+
+    // A read admitted during the block still fails release after clearance.
+    assert!(matches!(
+        ledger.release(&[in_flight_after_block]).await.unwrap(),
+        ReleaseDecision::Refused(_)
+    ));
+
+    // Replica A's quarantined copy is discarded and re-verified, not trusted.
+    assert!(a.parts.cache.is_quarantined(&f.key()));
+    let recovered = executed(a.execute(&f, &pool).await);
+    assert!(!recovered.hits.is_empty());
+    assert!(!a.parts.cache.is_quarantined(&f.key()));
+    assert!(a.search(&f, &f.state).await.is_ok());
+    let fresh = f.replica("replica-r", DamageMode::Enforce);
+    executed(fresh.execute(&f, &pool).await);
+
+    // A fresh mismatch after clearance starts a new incident under ART1.
+    f.corrupt();
+    let c = f.replica("replica-c", DamageMode::Enforce);
+    let d = f.replica("replica-d", DamageMode::Enforce);
+    refusal(&c.execute(&f, &pool).await);
+    refusal(&d.execute(&f, &pool).await);
+    let renewed = ledger.admit(&f.version, &f.artifact).await.unwrap();
+    assert!(renewed.blocked_by.is_some());
+    assert_ne!(renewed.blocked_by.as_deref(), Some(incident.as_str()));
+    assert_eq!(renewed.generation, 3);
+}
+
+/// An unauthorized repair cannot be preauthorized through the command for
+/// a pin that is not blocked, and a bad command line is refused.
+#[tokio::test]
+async fn the_repair_command_refuses_what_it_cannot_scope() {
+    let url = guard!();
+    let f = Fleet::new(url, "art2-cli").await;
+    let pool = f.pool();
+    for args in [
+        vec![
+            "authorize-repair",
+            "--tenant",
+            f.tenant.as_str(),
+            "--incident",
+            "inc-none",
+            "--workflow",
+            "wf",
+            "--actor",
+            "op",
+        ],
+        vec![
+            "authorize-repair",
+            "--tenant",
+            f.tenant.as_str(),
+            "--workflow",
+            "wf",
+        ],
+        vec!["clear", "--tenant", f.tenant.as_str()],
+        vec!["list"],
+        vec![],
+    ] {
+        let args: Vec<String> = args.into_iter().map(String::from).collect();
+        assert!(
+            crate::artifact_damage::execute(&pool, &args).await.is_err(),
+            "{args:?}"
+        );
+    }
+}

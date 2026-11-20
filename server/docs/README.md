@@ -69,6 +69,7 @@ and API references when applying them to a new deployment.
 | [guides/ollama.md](guides/ollama.md) | Local Ollama chat and embeddings, Docker Desktop setup, model routing, credential-free endpoints and integration checks |
 | [tokenbudgets.md](tokenbudgets.md) | **Token budgets (2026-09-02)**: the eight per-call `max_tokens` ceilings, their built-ins, the `MUNARIUM_MAX_TOKENS_*` environment, runbook precedence, and `GET`/`POST /v1/max-tokens` (whole-object replace, no partial update) with the client calls |
 | [guides/document-intelligence.md](guides/document-intelligence.md) | The paid OCR escalation: why it is off by default, and how to turn it on deliberately; also the opt-in isolated PDF extraction profile |
+| [design/artifact-damage.md](design/artifact-damage.md) | Proposed verifier identities, storage pins and durable damage findings; local isolation, fleet blocks, the release fence and verified repair clearance (R10, ART1, ART2) |
 | [design/pdf-isolation-measurements.md](design/pdf-isolation-measurements.md) | Measured cost of isolated PDF extraction under the provisional limits (B4); production limits are not frozen |
 | [guides/evidence-hierarchy.md](guides/evidence-hierarchy.md) | Research profiles, evidence layers and typed assertions (S-3.x, 2026-08-28): how a turn reads documents, a governed Matrix table and pinned ledger facts in declared trust order; what each kind of evidence may be used for; and why a turn naming no profile is byte-identical to the one that ran before |
 | [guides/platform-features.md](guides/platform-features.md) | The platform walkthrough: uid, capability tokens, collections, runbook v2, sessions, reports |
@@ -85,6 +86,7 @@ and API references when applying them to a new deployment.
 | [ops/command-recovery.md](ops/command-recovery.md) | Guarded command activation, unresolved outcomes and compatible rollback |
 | [ops/clustering.md](ops/clustering.md) | Running N instances on one PostgreSQL (2026-08-17): shared-vs-per-instance inventory, pool math, rolling restarts, orphaned-run diagnosis, partition-overflow recovery |
 | [ops/deployment-runbook.md](ops/deployment-runbook.md) | Deploying with what ships: gate → build and push the image → install or upgrade the Helm chart (or the example AKS module) → verify the rollout, not the hostname → roll back → backups |
+| [ops/artifact-damage.md](ops/artifact-damage.md) | Opt-in durable artifact damage: enabling it, reading a fleet block, preauthorizing a repair workflow and rolling back safely |
 | [ops/admission.md](ops/admission.md) | Admission by work class: the per-plane ceiling, the opt-in control reserve and heavy bound, the route allowlist and the admission metrics |
 | [ops/troubleshooting.md](ops/troubleshooting.md) | Symptom → check → fix: startup exit codes, error slugs, deployed-environment classics, and the look-at-this-first order |
 | [ops/backup-restore.md](ops/backup-restore.md) | What a database restore covers and does not, and the point-in-time restore procedure for a managed PostgreSQL or a CNPG cell — drill it in your own environment before you need it |

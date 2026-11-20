@@ -227,6 +227,7 @@ All `MUNARIUM_`-prefixed. The contract is stable; unset-but-required vars fail c
 | `MUNARIUM_DATASTORE_ALLOW_SHORT_PIN_HORIZON` | `false` | `true` accepts a horizon below the TTLs in force; otherwise that configuration is refused |
 | `MUNARIUM_DATASTORE_RETIRED_RETENTION` | 2× the derived pin horizon (seconds) | retention policy validated against the configured pin horizon; a lower value is refused. An explicit longer pin horizon does not increase this default, so set retention explicitly as needed |
 | `MUNARIUM_DATASTORE_ROLLOUT_REFRESH_MS` | `15000` (min 1000) | the readiness warmer's re-read interval for the rollout selector |
+| `MUNARIUM_ARTIFACT_DAMAGE_MODE` | `off` | durable artifact damage handling on Datastore replicas: `off` (v1.4), `observe` (record findings, honor blocks) or `enforce` (also commit fleet blocks and verified clearances). An unknown value keeps the Datastore unarmed. See `docs/ops/artifact-damage.md` |
 | `MUNARIUM_DATASTORE_STARTUP_HYDRATE_TIMEOUT_MS` | `120000` | how long startup hydration may take before `/readyz` reports the unmet scope |
 | `MUNARIUM_DATASTORE_RECONCILE_INTERVAL_SECS` | `60` (min 30) | interval for reconciling interrupted sealed-build attempts/publication; also runs at startup |
 | `MUNARIUM_DATASTORE_BUILDER` | unset (off) | `enabled` runs the durable build-job loop on this process (`POST /v1/index-build-jobs`); any Postgres-connected process with the staging configuration can be a builder |

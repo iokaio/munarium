@@ -55,6 +55,7 @@ mod crash_recovery;
 #[cfg(test)]
 mod integer_boundaries;
 
+pub mod artifact_damage;
 pub mod artifacts;
 pub mod attempts;
 pub mod budget;

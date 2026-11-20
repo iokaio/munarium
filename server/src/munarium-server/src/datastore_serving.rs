@@ -16,10 +16,12 @@ use munarium_core::{KernelError, Result};
 use munarium_datastore::hydrate::{CacheBudget, L1Cache, Residency};
 use munarium_datastore::verify::{Limits, ReaderCapabilities};
 use munarium_datastore::ArtifactCacheKey;
+use munarium_retrieval::damage::{DamageContext, DamageGuard, DamageMode, FailureSite};
 use munarium_retrieval::executor::ArtifactExecutor;
 use munarium_retrieval::mirror::ArtifactStoreFactory;
 use munarium_retrieval::serving::ServingPlane;
 use munarium_retrieval::RequiredVersionsPolicy;
+use munarium_store_pg::artifact_damage::ArtifactDamageLedger;
 use munarium_store_pg::artifacts::{ArtifactCatalog, ArtifactState, BindingSlot};
 use munarium_store_pg::rollout::{RolloutChange, RolloutSelector};
 
@@ -45,6 +47,9 @@ pub struct DatastoreParts {
     pub stores: Arc<dyn ArtifactStoreFactory>,
     pub reader: ReaderCapabilities,
     pub limits: Limits,
+    /// Durable artifact damage handling (ClearView ART1/ART2). Process-wide,
+    /// like the caches; `off` unless MUNARIUM_ARTIFACT_DAMAGE_MODE says so.
+    pub damage: Arc<DamageGuard>,
 }
 
 impl std::fmt::Debug for DatastoreParts {
@@ -72,18 +77,58 @@ impl DatastoreParts {
         let cache = L1Cache::new(std::path::Path::new(&local_root).join("l1"), budget)
             .map_err(|e| e.to_string())?;
         let stores = state.artifact_store_factory().map_err(|e| e.to_string())?;
-        Ok(Arc::new(Self {
-            cache: Arc::new(cache),
-            l0: Arc::new(munarium_retrieval::executor::L0Cache::new(
-                std::env::var("MUNARIUM_DATASTORE_L0_OPEN_SHARDS")
-                    .ok()
-                    .and_then(|v| v.parse().ok())
-                    .unwrap_or(8),
-            )),
+        // An unknown mode is a refusal, not a silent `off`: an operator who
+        // asked for fleet blocking must not get a replica that ignores blocks.
+        let mode =
+            DamageMode::parse(&std::env::var("MUNARIUM_ARTIFACT_DAMAGE_MODE").unwrap_or_default())
+                .map_err(|e| e.to_string())?;
+        if mode != DamageMode::Off {
+            tracing::info!(
+                mode = mode.as_str(),
+                "durable artifact damage handling enabled"
+            );
+        }
+        let verifier = format!(
+            "{}/{}",
+            state.deployment_environment_id(),
+            state.config.instance_id
+        );
+        Ok(Self::from_parts(
+            Arc::new(cache),
+            stores,
+            std::env::var("MUNARIUM_DATASTORE_L0_OPEN_SHARDS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(8),
+            Arc::new(DamageGuard::new(mode, verifier)),
+        ))
+    }
+
+    /// Assemble parts from already-built pieces. `build` uses it after
+    /// reading the environment; tests use it to stand up several replicas'
+    /// parts over one database without process-global configuration.
+    pub fn from_parts(
+        cache: Arc<L1Cache>,
+        stores: Arc<dyn ArtifactStoreFactory>,
+        l0_open_shards: usize,
+        damage: Arc<DamageGuard>,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            cache,
+            l0: Arc::new(munarium_retrieval::executor::L0Cache::new(l0_open_shards)),
             stores,
             reader: ReaderCapabilities::v1(),
             limits: Limits::default(),
-        }))
+            damage,
+        })
+    }
+
+    /// The tenant's damage handle, when damage handling is on.
+    pub fn damage_context(&self, pool: &sqlx::PgPool, tenant: &str) -> Option<DamageContext> {
+        self.damage.active().then(|| DamageContext {
+            guard: Arc::clone(&self.damage),
+            ledger: ArtifactDamageLedger::new(pool.clone(), tenant),
+        })
     }
 
     /// A tenant-scoped executor over these parts.
@@ -96,6 +141,7 @@ impl DatastoreParts {
             reader: self.reader.clone(),
             limits: self.limits,
             isolation_domain: tenant_path_hash(tenant),
+            damage: self.damage_context(pool, tenant),
         }
     }
 
@@ -315,6 +361,52 @@ pub async fn warm_once(
                 );
                 let env = state.deployment_environment_id();
                 let node = state.config.instance_id.clone();
+                let damage = parts.damage_context(pool, tenant);
+                if let Some(damage) = &damage {
+                    // A fleet-blocked pin is not hydrated or opened. It does
+                    // not withdraw this replica's readiness: every replica
+                    // refuses the pin alike, and taking the fleet out of
+                    // service for one blocked artifact would turn an
+                    // integrity incident into an outage of every other scope.
+                    // Reads of the pin fail with datastore-unavailable.
+                    match damage
+                        .admit(
+                            &version.index_version_id,
+                            &binding.artifact_id,
+                            &key,
+                            &parts.cache,
+                            &parts.l0,
+                        )
+                        .await
+                    {
+                        Ok(a) if a.blocked_by.is_some() => {
+                            opened.remove(&key);
+                            record_residency(
+                                pool,
+                                &env,
+                                &node,
+                                tenant,
+                                &version.index_version_id,
+                                &binding.artifact_id,
+                                &row.engine_id,
+                                "blocked",
+                                None,
+                            )
+                            .await;
+                            continue;
+                        }
+                        Ok(_) => {}
+                        Err(e) => {
+                            if gate {
+                                blocking.push(format!(
+                                    "{scope_hash}:{}:integrity-check:{e}",
+                                    short(&version.index_version_id)
+                                ));
+                            }
+                            continue;
+                        }
+                    }
+                }
                 if let Some(resident) = parts.cache.resident(&key) {
                     if opened.contains(&key) {
                         // Still resident and previously proven open: refresh
@@ -349,17 +441,16 @@ pub async fn warm_once(
                 let limits = parts.limits;
                 let artifact_id = binding.artifact_id.clone();
                 let key_for_task = key.clone();
+                let audit_store = Arc::clone(&store);
+                let was_quarantined = parts.cache.is_quarantined(&key);
                 let outcome = tokio::task::spawn_blocking(move || {
-                    let resident = cache.hydrate(
-                        &key_for_task,
-                        store.as_ref(),
-                        &reader,
-                        &limits,
-                        residency,
-                    )?;
+                    let resident = cache
+                        .hydrate(&key_for_task, store.as_ref(), &reader, &limits, residency)
+                        .map_err(|e| (FailureSite::Hydrate, e))?;
                     // Openable is part of the admission bar (§9.2): hydrated
                     // bytes that cannot open are not capacity.
-                    let local = munarium_datastore::store::LocalFileStore::new(&resident.path)?;
+                    let local = munarium_datastore::store::LocalFileStore::new(&resident.path)
+                        .map_err(|e| (FailureSite::Open, e))?;
                     munarium_datastore::shard::OpenShard::open(
                         &local,
                         &artifact_id,
@@ -367,8 +458,30 @@ pub async fn warm_once(
                         &limits,
                     )
                     .map(|_| ())
+                    .map_err(|e| (FailureSite::Open, e))
                 })
                 .await;
+                if let (Some(damage), Ok(Err((site, munarium_datastore::Error::Integrity(m))))) =
+                    (&damage, &outcome)
+                {
+                    if *site != FailureSite::Hydrate || !was_quarantined {
+                        damage
+                            .on_integrity_failure(
+                                &version.index_version_id,
+                                &binding.artifact_id,
+                                &key,
+                                *site,
+                                m,
+                                &parts.cache,
+                                &parts.l0,
+                                audit_store,
+                                &parts.reader,
+                                &parts.limits,
+                            )
+                            .await;
+                    }
+                }
+                let outcome = outcome.map(|r| r.map_err(|(_, e)| e));
                 match outcome {
                     Ok(Ok(())) => {
                         let bytes = parts.cache.resident(&key).map(|r| r.bytes as i64);
@@ -422,7 +535,25 @@ pub async fn warm_once(
 
     state.datastore_readiness().record(selected, blocking);
     heartbeat(state, parts, pool).await;
+    verify_repairs(parts, pool).await;
     Ok(())
+}
+
+/// Verify preauthorized repair attempts as this replica's verifier (ART2).
+/// Failure is logged, never fatal: a verifier that cannot run leaves the
+/// block in force, which is the safe direction.
+pub async fn verify_repairs(parts: &Arc<DatastoreParts>, pool: &sqlx::PgPool) {
+    if let Err(e) = munarium_retrieval::damage::verify_repairs(
+        &parts.damage,
+        pool,
+        parts.stores.as_ref(),
+        &parts.reader,
+        &parts.limits,
+    )
+    .await
+    {
+        tracing::warn!(error = %e, "repair verification sweep failed");
+    }
 }
 
 fn short(version: &str) -> String {
@@ -667,6 +798,7 @@ pub async fn op_rollout_set(
             )));
         }
         let catalog = ArtifactCatalog::new(pool.clone(), tenant);
+        let damage = ArtifactDamageLedger::new(pool.clone(), tenant);
         let mut missing = Vec::new();
         for version in &required {
             match catalog
@@ -678,7 +810,21 @@ pub async fn op_rollout_set(
                     .artifact(&version.index_version_id, &b.artifact_id)
                     .await?
                 {
-                    Some(row) if row.state == ArtifactState::Verified => {}
+                    // A fleet-blocked artifact is not servable, whatever this
+                    // replica's damage mode: selecting it would only route
+                    // reads into refusals.
+                    Some(row) if row.state == ArtifactState::Verified => {
+                        if let Some(incident) = damage
+                            .admit(&version.index_version_id, &b.artifact_id)
+                            .await?
+                            .blocked_by
+                        {
+                            missing.push(format!(
+                                "{}: artifact {} is blocked by integrity incident {incident}",
+                                version.index_version_id, b.artifact_id
+                            ));
+                        }
+                    }
                     Some(row) => missing.push(format!(
                         "{}: artifact {} is {}",
                         version.index_version_id,
