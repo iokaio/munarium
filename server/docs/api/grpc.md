@@ -36,6 +36,11 @@ the v1.4 behavior:
   (`false` = v1.4) and `HybridSearchResponse.execution = 3`, a
   `SearchExecution` whose legs use proto3 `optional` fields so an unmeasured
   count or exhaustion state is unset, not zero (R1).
+- `SessionService/Turn`: `TurnRequest.collection_availability = 7`
+  (`""` = v1.4, `report`, `require`; anything else is `INVALID_ARGUMENT`) and
+  `TurnResponse.coverage = 9` (C1). The semantics are those of the REST turn in
+  [rest.md](rest.md); streamed turns use `ServerApiService/TurnStream`, whose
+  `progress` and `done` JSON match the REST SSE stream.
 
 ## The two gRPC planes
 

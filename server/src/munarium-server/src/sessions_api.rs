@@ -577,6 +577,131 @@ fn scoped_prepared(
     prepared
 }
 
+/// ClearView C1: the errors that make one member of an explicit-policy read
+/// UNAVAILABLE instead of failing the read, with their content-free reasons.
+///
+/// Deliberately narrow. Authorization and policy refusals (forbidden,
+/// unauthenticated, `source-denied`), invalid input and provider errors are
+/// never converted into a gap: they fail the turn exactly as in v1.4, so a
+/// coverage report can never stand in for an access decision.
+fn member_unavailable_reason(error: &KernelError) -> Option<&'static str> {
+    match error {
+        KernelError::NotFound { .. } => Some("no_active_index"),
+        KernelError::DatastoreUnavailable(_) => Some("engine_unavailable"),
+        KernelError::Storage(_) => Some("search_failed"),
+        _ => None,
+    }
+}
+
+/// The optional `outcome`/`reason` of a `probe`/`retrieval` progress event.
+/// Both stay `None` without an explicit policy, so a v1.4 event is
+/// byte-identical.
+fn event_outcome(
+    policy: Option<dto::CollectionAvailabilityDto>,
+    result: &Result<SearchResult>,
+) -> (Option<String>, Option<String>) {
+    if policy.is_none() {
+        return (None, None);
+    }
+    match result {
+        Ok(result) if result.hits.is_empty() => (Some("empty".into()), None),
+        Ok(_) => (Some("complete".into()), None),
+        Err(error) => match member_unavailable_reason(error) {
+            Some(reason) => (Some("unavailable".into()), Some(reason.into())),
+            None => (None, None),
+        },
+    }
+}
+
+fn member_searched(name: &str, stage: &str, hits: usize) -> dto::CollectionOutcomeDto {
+    dto::CollectionOutcomeDto {
+        collection: name.to_string(),
+        layer: None,
+        stage: stage.to_string(),
+        outcome: if hits == 0 { "empty" } else { "complete" }.to_string(),
+        hits: Some(u32::try_from(hits).unwrap_or(u32::MAX)),
+        reason: None,
+    }
+}
+
+fn member_missing(name: &str, stage: &str, reason: &str) -> dto::CollectionOutcomeDto {
+    dto::CollectionOutcomeDto {
+        collection: name.to_string(),
+        layer: None,
+        stage: stage.to_string(),
+        outcome: "unavailable".to_string(),
+        hits: None,
+        reason: Some(reason.to_string()),
+    }
+}
+
+/// `require`: refuse as soon as a visible member is known to be unavailable,
+/// before query expansion or a completion can spend on a read that cannot
+/// stand.
+fn refuse_if_required(
+    policy: Option<dto::CollectionAvailabilityDto>,
+    members: &std::collections::HashMap<String, dto::CollectionOutcomeDto>,
+    order: &[String],
+) -> ApiResult<()> {
+    if policy != Some(dto::CollectionAvailabilityDto::Require) {
+        return Ok(());
+    }
+    for name in order {
+        if let Some(member) = members.get(name).filter(|m| m.outcome == "unavailable") {
+            return Err(ApiError::Custom(
+                CustomError::required_collection_unavailable(
+                    &member.collection,
+                    member.reason.as_deref().unwrap_or("unavailable"),
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Coverage for a turn that selected a policy (C1). `withheld_claims` lists
+/// the claims a missing member would be needed to support.
+pub(crate) fn coverage(
+    policy: dto::CollectionAvailabilityDto,
+    members: Vec<dto::CollectionOutcomeDto>,
+) -> dto::TurnCoverageDto {
+    let complete = members.iter().all(|m| m.outcome != "unavailable");
+    dto::TurnCoverageDto {
+        policy,
+        complete,
+        members,
+        withheld_claims: if complete {
+            Vec::new()
+        } else {
+            vec!["absence".into(), "exhaustive_coverage".into()]
+        },
+    }
+}
+
+/// The coverage notice appended to a completion's context when a member is
+/// unavailable. It names only members the session can see, carries no
+/// content, and states the claims the answer must not make.
+pub(crate) fn coverage_notice(coverage: &dto::TurnCoverageDto) -> Option<String> {
+    if coverage.complete {
+        return None;
+    }
+    let mut missing: Vec<&str> = coverage
+        .members
+        .iter()
+        .filter(|m| m.outcome == "unavailable")
+        .map(|m| m.collection.as_str())
+        .collect();
+    missing.sort_unstable();
+    missing.dedup();
+    Some(format!(
+        "\n[coverage notice] These collections in this read were unavailable and \
+         contributed no evidence: {}. Do not state that anything is absent, and do \
+         not claim the evidence is complete or exhaustive, across this read. Answer \
+         only from the evidence above, and say that the answer is partial.\n",
+        missing.join(", ")
+    ))
+}
+
 async fn search_collections_bounded(
     retrieval: &munarium_retrieval::Retrieval,
     infos: &[munarium_core::retrieval::CollectionInfo],
@@ -639,6 +764,9 @@ pub(crate) struct DocumentRetrieval {
     pub envelopes: Vec<dto::CollectionEnvelopeDto>,
     pub searched: Vec<String>,
     pub skipped: Vec<String>,
+    /// Per-member outcomes (C1). Empty unless the turn selected a
+    /// `collection_availability` policy.
+    pub members: Vec<dto::CollectionOutcomeDto>,
 }
 
 pub(crate) async fn retrieve_documents(
@@ -651,6 +779,12 @@ pub(crate) async fn retrieve_documents(
 ) -> ApiResult<DocumentRetrieval> {
     let retrieval_spec = doc.spec.retrieval.clone().unwrap_or_default();
     let permitted = route_collections(&req.query, &retrieval_spec.collection_routes, permitted);
+    // C1. `None` is the v1.4 path, and every C1 branch below is conditional
+    // on it, so an omitted policy cannot change what this function returns.
+    let policy = req.collection_availability;
+    let read_order: Vec<String> = permitted.iter().map(|info| info.name.clone()).collect();
+    let mut members: std::collections::HashMap<String, dto::CollectionOutcomeDto> =
+        std::collections::HashMap::new();
     for info in &permitted {
         state
             .retrieval_for(tenant)?
@@ -755,12 +889,15 @@ pub(crate) async fn retrieve_documents(
                     Err(KernelError::NotFound { .. }) => (0, true),
                     Err(_) => (0, false),
                 };
+                let (outcome, reason) = event_outcome(policy, result);
                 emit(
                     progress,
                     dto::TurnProgressEvent::Probe {
                         collection: info.name.clone(),
                         hits,
                         skipped,
+                        outcome,
+                        reason,
                     },
                 );
             },
@@ -774,10 +911,27 @@ pub(crate) async fn retrieve_documents(
                     collection_name: info.name.clone(),
                     result,
                 }),
-                Err(KernelError::NotFound { .. }) => skipped.push(info.name.clone()),
-                Err(error) => return Err(error.into()),
+                Err(KernelError::NotFound { .. }) => {
+                    skipped.push(info.name.clone());
+                    if policy.is_some() {
+                        members.insert(
+                            info.name.clone(),
+                            member_missing(&info.name, "probe", "no_active_index"),
+                        );
+                    }
+                }
+                Err(error) => match policy.and(member_unavailable_reason(&error)) {
+                    Some(reason) => {
+                        members.insert(
+                            info.name.clone(),
+                            member_missing(&info.name, "probe", reason),
+                        );
+                    }
+                    None => return Err(error.into()),
+                },
             }
         }
+        refuse_if_required(policy, &members, &read_order)?;
         // Rank EVERY probed collection (the merge's evidence leg reads all
         // ranks); the strongest `max_collections` get the deep search.
         let ranked = munarium_retrieval::select_collection_indices(
@@ -809,10 +963,24 @@ pub(crate) async fn retrieve_documents(
         // (and drop the empty probe pools so nothing is merged twice).
         let chosen = if narrowed.is_empty() {
             unselected_pools.clear();
-            permitted.clone()
+            // Under an explicit policy a member already found unavailable
+            // is not searched again; v1.4 keeps the whole permitted list.
+            permitted
+                .iter()
+                .filter(|info| policy.is_none() || !members.contains_key(&info.name))
+                .cloned()
+                .collect()
         } else {
             narrowed
         };
+        if policy.is_some() {
+            for pool in &unselected_pools {
+                members.insert(
+                    pool.collection_name.clone(),
+                    member_searched(&pool.collection_name, "probe", pool.result.hits.len()),
+                );
+            }
+        }
         emit(
             progress,
             dto::TurnProgressEvent::Selection {
@@ -898,12 +1066,15 @@ pub(crate) async fn retrieve_documents(
                 Err(KernelError::NotFound { .. }) => (0, true),
                 Err(_) => (0, false),
             };
+            let (outcome, reason) = event_outcome(policy, result);
             emit(
                 progress,
                 dto::TurnProgressEvent::Retrieval {
                     collection: info.name.clone(),
                     hits,
                     skipped,
+                    outcome,
+                    reason,
                 },
             );
         },
@@ -938,6 +1109,12 @@ pub(crate) async fn retrieve_documents(
                         );
                     }
                 }
+                if policy.is_some() {
+                    members.insert(
+                        info.name.clone(),
+                        member_searched(&info.name, "search", result.hits.len()),
+                    );
+                }
                 results.push(munarium_core::retrieval::CollectionSearchResult {
                     collection_id: info.id.clone(),
                     collection_name: info.name.clone(),
@@ -948,10 +1125,25 @@ pub(crate) async fn retrieve_documents(
                 if !skipped.contains(&info.name) {
                     skipped.push(info.name.clone());
                 }
+                if policy.is_some() {
+                    members.insert(
+                        info.name.clone(),
+                        member_missing(&info.name, "search", "no_active_index"),
+                    );
+                }
             }
-            Err(e) => return Err(e.into()),
+            Err(e) => match policy.and(member_unavailable_reason(&e)) {
+                Some(reason) => {
+                    members.insert(
+                        info.name.clone(),
+                        member_missing(&info.name, "search", reason),
+                    );
+                }
+                None => return Err(e.into()),
+            },
         }
     }
+    refuse_if_required(policy, &members, &read_order)?;
     // The collections that did not get the deep search still contribute
     // their probe pools (original query, serving policy applied) — see the
     // note at `unselected_pools`. They are reported as searched, with their
@@ -1008,15 +1200,27 @@ pub(crate) async fn retrieve_documents(
         })
         .collect();
     let searched: Vec<String> = results.iter().map(|r| r.collection_name.clone()).collect();
+    // Visible members only, in the read's order. A hidden collection never
+    // reached this function: `permitted` was filtered by the session's
+    // clearance before the fan-out.
+    let members = read_order
+        .iter()
+        .filter_map(|name| members.remove(name))
+        .collect();
     Ok(DocumentRetrieval {
         merged,
         hits,
         envelopes,
         searched,
         skipped,
+        members,
     })
 }
 
+/// The turn without its C1 coverage: the v1.4 shape, kept for the tests that
+/// exercise the legacy pipeline directly. Every transport calls
+/// [`op_turn_covered`].
+#[cfg(test)]
 pub async fn op_turn(
     state: &AppState,
     access: &AccessCtx,
@@ -1024,6 +1228,20 @@ pub async fn op_turn(
     req: dto::TurnRequest,
     progress: Option<TurnProgressTx>,
 ) -> ApiResult<(dto::TurnResponse, InteractionMeta)> {
+    op_turn_covered(state, access, session_id, req, progress)
+        .await
+        .map(|(response, meta)| (response.turn, meta))
+}
+
+/// The turn with its C1 coverage. `coverage` is `None` unless the request
+/// selected a `collection_availability` policy.
+pub async fn op_turn_covered(
+    state: &AppState,
+    access: &AccessCtx,
+    session_id: &str,
+    req: dto::TurnRequest,
+    progress: Option<TurnProgressTx>,
+) -> ApiResult<(dto::CoveredTurnResponse, InteractionMeta)> {
     let tenant = &access.tenant_id;
     let session = load_session(state, tenant, session_id).await?;
     if session.uid != access.uid {
@@ -1094,6 +1312,7 @@ pub async fn op_turn(
         envelopes,
         searched,
         skipped,
+        members,
         hierarchy_dto,
         hierarchy_context,
         hierarchy_blocks,
@@ -1105,8 +1324,22 @@ pub async fn op_turn(
                 envelopes,
                 searched,
                 skipped,
+                members,
             } = retrieve_documents(state, tenant, &doc, permitted, &req, &progress).await?;
-            (merged, hits, envelopes, searched, skipped, None, None, None)
+            // C1-T1 under `report`: when no visible member completed, every
+            // possible answer rests on missing evidence. Refuse rather than
+            // return an empty read that reads as "nothing exists".
+            if !members.is_empty() && members.iter().all(|m| m.outcome == "unavailable") {
+                return Err(ApiError::Custom(
+                    CustomError::required_collection_unavailable(
+                        &members[0].collection,
+                        members[0].reason.as_deref().unwrap_or("unavailable"),
+                    ),
+                ));
+            }
+            (
+                merged, hits, envelopes, searched, skipped, members, None, None, None,
+            )
         }
         Some(profile) => {
             let intent =
@@ -1187,19 +1420,14 @@ pub async fn op_turn(
                 },
             );
 
-            let docs = outcome.documents.unwrap_or_else(|| DocumentRetrieval {
-                merged: Vec::new(),
-                hits: Vec::new(),
-                envelopes: Vec::new(),
-                searched: Vec::new(),
-                skipped: Vec::new(),
-            });
+            let docs = outcome.documents.unwrap_or_default();
             (
                 docs.merged,
                 docs.hits,
                 docs.envelopes,
                 docs.searched,
                 docs.skipped,
+                docs.members,
                 Some(crate::evidence_hierarchy::decision_to_dto(
                     &outcome.decision,
                 )),
@@ -1208,6 +1436,10 @@ pub async fn op_turn(
             )
         }
     };
+
+    let coverage = req
+        .collection_availability
+        .map(|policy| coverage(policy, members));
 
     // Optional RAG completion through the shared model resolver.
     let mut completion_dto = None;
@@ -1258,6 +1490,12 @@ pub async fn op_turn(
                 }
                 context.push_str(&entry);
             }
+        }
+        // C1: a partial read tells the model what it cannot claim. Appended
+        // only when a member is unavailable, so a complete or v1.4 turn's
+        // prompt is unchanged.
+        if let Some(notice) = coverage.as_ref().and_then(coverage_notice) {
+            context.push_str(&notice);
         }
         let prompt = completion_prompt(&template, &context, &req.query);
         let store = state.store_for(tenant).await?;
@@ -1560,15 +1798,18 @@ pub async fn op_turn(
         .assert_sources_readable(&hits.iter().map(|h| h.source_id.clone()).collect::<Vec<_>>())
         .await?;
     Ok((
-        dto::TurnResponse {
-            session_id: session_id.to_string(),
-            ordinal: ordinal as u32,
-            collections_searched: searched,
-            skipped,
-            hits,
-            envelopes,
-            completion: completion_dto,
-            hierarchy: hierarchy_dto,
+        dto::CoveredTurnResponse {
+            turn: dto::TurnResponse {
+                session_id: session_id.to_string(),
+                ordinal: ordinal as u32,
+                collections_searched: searched,
+                skipped,
+                hits,
+                envelopes,
+                completion: completion_dto,
+                hierarchy: hierarchy_dto,
+            },
+            coverage,
         },
         meta,
     ))
@@ -1785,7 +2026,7 @@ pub async fn create_session(
     params(("id" = String, Path, description = "session id (ses-…)")),
     request_body = dto::TurnRequest,
     responses(
-        (status = 200, description = "access-filtered multi-collection retrieval (+ optional completion)", body = dto::TurnResponse),
+        (status = 200, description = "access-filtered multi-collection retrieval (+ optional completion)", body = dto::CoveredTurnResponse),
         (status = 403, description = "uid/session mismatch, scope missing, or override-not-allowed"),
         (status = 410, description = "runbook removed")
     ),
@@ -1799,7 +2040,7 @@ pub async fn turn(
 ) -> ApiResult<axum::response::Response> {
     let uid = uid_of(uid.as_ref());
     let access = auth_query(&state, &headers, &uid).await?;
-    let (resp, meta) = op_turn(&state, &access, &id, req, None).await?;
+    let (resp, meta) = op_turn_covered(&state, &access, &id, req, None).await?;
     let mut response = Json(resp).into_response();
     response.extensions_mut().insert(meta);
     Ok(response)
@@ -1876,7 +2117,7 @@ pub async fn turn_stream(
 
     let state2 = state.clone();
     tokio::spawn(async move {
-        let result = op_turn(&state2, &access, &id, req, Some(progress_tx)).await;
+        let result = op_turn_covered(&state2, &access, &id, req, Some(progress_tx)).await;
         // progress_tx was moved into op_turn and is dropped by now, so the
         // forwarder drains and exits — awaiting it keeps the terminal event
         // strictly AFTER every progress event.
@@ -2039,6 +2280,10 @@ pub async fn get_session(
 #[cfg(test)]
 #[path = "sessions_model_tests.rs"]
 mod model_integration_tests;
+
+#[cfg(test)]
+#[path = "clearview_c1_tests.rs"]
+mod clearview_c1_tests;
 
 /// The terminal event when a turn's own result or problem cannot be
 /// rendered: a constant, valid storage-error problem. The client sees an

@@ -550,7 +550,16 @@ where
                         provider: "documents".into(),
                     });
                 }
-                let out = document_layer(layer.clone()).await?;
+                let mut out = document_layer(layer.clone()).await?;
+                // C1: `members` is populated only under an explicit
+                // availability policy. A REQUIRED layer missing any member
+                // cannot stand, so it refuses (and the turn with it); an
+                // optional layer keeps its verified partial hits.
+                for member in &mut out.members {
+                    member.layer = Some(layer.name.clone());
+                }
+                let partial = out.members.iter().any(|m| m.outcome == "unavailable");
+                let required_gap = partial && layer.requirement == LayerRequirement::Required;
                 let hits = out.merged.iter().map(|(_, h)| h.clone()).collect();
                 document_evidence.push((
                     layer.name.clone(),
@@ -565,7 +574,17 @@ where
                 accumulated.envelopes.extend(out.envelopes);
                 accumulated.searched.extend(out.searched);
                 accumulated.skipped.extend(out.skipped);
-                EvidenceBlock::DocumentHits { hits }
+                accumulated.members.extend(out.members);
+                if required_gap {
+                    // Names no source: the layer is the runbook author's word.
+                    EvidenceBlock::Refusal(munarium_core::hierarchy::EvidenceRefusal {
+                        code: "collection_unavailable".to_string(),
+                        message: "a collection this layer reads was unavailable".into(),
+                        source: None,
+                    })
+                } else {
+                    EvidenceBlock::DocumentHits { hits }
+                }
             }
         };
 
@@ -1192,6 +1211,99 @@ mod tests {
             !text.contains("matrix:register"),
             "must NOT name the layer's sources: {text}"
         );
+    }
+
+    fn partial_documents() -> DocumentRetrieval {
+        let hit = munarium_core::retrieval::SearchHit {
+            chunk_id: "c1".into(),
+            source_id: "s1".into(),
+            source_path: "alpha.txt".into(),
+            source_content_hash: "h".into(),
+            text: "fictional".into(),
+            score: 1.0,
+            lexical_rank: Some(1),
+            vector_rank: None,
+            lexical_score: None,
+            vector_distance: None,
+            metadata: None,
+        };
+        DocumentRetrieval {
+            merged: vec![("alpha".into(), hit)],
+            members: vec![
+                dto::CollectionOutcomeDto {
+                    collection: "alpha".into(),
+                    layer: None,
+                    stage: "search".into(),
+                    outcome: "complete".into(),
+                    hits: Some(1),
+                    reason: None,
+                },
+                dto::CollectionOutcomeDto {
+                    collection: "beta".into(),
+                    layer: None,
+                    stage: "search".into(),
+                    outcome: "unavailable".into(),
+                    hits: None,
+                    reason: Some("search_failed".into()),
+                },
+            ],
+            ..Default::default()
+        }
+    }
+
+    /// ClearView C1-T1 inside a research profile: an optional document layer
+    /// keeps its verified partial hits, and its gap is tagged with the layer.
+    #[tokio::test]
+    async fn an_optional_document_layer_keeps_verified_hits_from_a_partial_read() {
+        let p = plan_with(vec![layer("docs", false)]);
+        let out = execute_plan(&p, &[], |_| async { Ok(partial_documents()) }, |_| {})
+            .await
+            .expect("an optional partial layer is not a refusal");
+        assert!(
+            matches!(&out.blocks[0].1, EvidenceBlock::DocumentHits { hits } if hits.len() == 1)
+        );
+        assert!(!out.decision.completeness_available);
+        let members = out.documents.unwrap().members;
+        assert!(members.iter().all(|m| m.layer.as_deref() == Some("docs")));
+        assert_eq!(members[1].outcome, "unavailable");
+    }
+
+    /// A REQUIRED document layer missing a member cannot stand: the turn
+    /// refuses, naming the layer and never the missing collection.
+    #[tokio::test]
+    async fn a_required_document_layer_missing_a_member_refuses_the_turn() {
+        let mut l = layer("docs", false);
+        l.requirement = LayerRequirement::Required;
+        let p = plan_with(vec![l]);
+        let Err(err) = execute_plan(&p, &[], |_| async { Ok(partial_documents()) }, |_| {}).await
+        else {
+            panic!("a required layer with a missing member must refuse the turn")
+        };
+        let text = format!("{err:?}");
+        assert!(text.contains("required-evidence-unavailable"), "{text}");
+        assert!(
+            text.contains("'docs'") && text.contains("collection_unavailable"),
+            "{text}"
+        );
+        assert!(!text.contains("beta"), "must not name the member: {text}");
+
+        // The same layer with every member complete is unaffected.
+        let mut l = layer("docs", false);
+        l.requirement = LayerRequirement::Required;
+        let p = plan_with(vec![l]);
+        let out = execute_plan(
+            &p,
+            &[],
+            |_| async {
+                let mut docs = partial_documents();
+                docs.members.truncate(1);
+                Ok(docs)
+            },
+            |_| {},
+        )
+        .await
+        .unwrap();
+        assert!(!out.blocks[0].1.is_refusal());
     }
 
     #[tokio::test]

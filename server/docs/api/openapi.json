@@ -5320,7 +5320,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TurnResponse"
+                  "$ref": "#/components/schemas/CoveredTurnResponse"
                 }
               }
             }
@@ -8055,6 +8055,14 @@
           "correction"
         ]
       },
+      "CollectionAvailabilityDto": {
+        "type": "string",
+        "description": "Availability policy for a multi-collection read (ClearView C1, experimental).",
+        "enum": [
+          "report",
+          "require"
+        ]
+      },
       "CollectionDto": {
         "type": "object",
         "required": [
@@ -8210,6 +8218,51 @@
               "null"
             ],
             "description": "The collection's active version AFTER this call, whichever way it went."
+          }
+        }
+      },
+      "CollectionOutcomeDto": {
+        "type": "object",
+        "description": "One member of a multi-collection read, within the caller's visible scope\n(ClearView C1, experimental). A collection the session cannot see never\nappears: no outcome, name, count or diagnostic.",
+        "required": [
+          "collection",
+          "stage",
+          "outcome"
+        ],
+        "properties": {
+          "collection": {
+            "type": "string"
+          },
+          "hits": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Hits this member returned before the merge; absent when unavailable.",
+            "minimum": 0
+          },
+          "layer": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The research-profile layer that read this member, when a profile ran."
+          },
+          "outcome": {
+            "type": "string",
+            "description": "`complete` (searched, with hits), `empty` (searched, no hits: a\nsuccessful empty outcome) or `unavailable` (not searched)."
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Content-free reason for `unavailable`: `no_active_index`,\n`engine_unavailable` or `search_failed`."
+          },
+          "stage": {
+            "type": "string",
+            "description": "Where the member's outcome was decided: `search` (the deep search) or\n`probe` (the runbook's collection-selection probe: a member the probe\ndid not select contributes its probe pool; a member whose probe failed\nis unavailable at this stage)."
           }
         }
       },
@@ -8598,6 +8651,29 @@
             }
           }
         }
+      },
+      "CoveredTurnResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TurnResponse"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "coverage": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TurnCoverageDto"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "description": "The turn response on REST, SSE `done` and the native bridge: the v1.4\n[`TurnResponse`] members, plus `coverage` only when the request selected a\n`collection_availability` policy (ClearView C1, experimental). Without\none the bytes are exactly the v1.4 response's. Deserialized from JSON\ntext, like [`DisclosedSearchResponse`]."
       },
       "CreateCollectionRequest": {
         "type": "object",
@@ -13568,6 +13644,39 @@
           }
         }
       },
+      "TurnCoverageDto": {
+        "type": "object",
+        "description": "What a multi-collection read covered, and which claims it cannot support\n(ClearView C1, experimental). Present only when the turn selected an\navailability policy.",
+        "required": [
+          "policy",
+          "complete",
+          "members",
+          "withheld_claims"
+        ],
+        "properties": {
+          "complete": {
+            "type": "boolean",
+            "description": "True when every visible member completed (with or without hits).\nDocument hits still never prove exhaustive coverage; see\n`hierarchy.completeness_available` for evidence that can."
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CollectionOutcomeDto"
+            },
+            "description": "Visible members in read order."
+          },
+          "policy": {
+            "$ref": "#/components/schemas/CollectionAvailabilityDto"
+          },
+          "withheld_claims": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Claims withheld because they depend on an unavailable member:\n`absence` and `exhaustive_coverage` across this read's scope. Empty\nwhen `complete`."
+          }
+        }
+      },
       "TurnHitDto": {
         "type": "object",
         "required": [
@@ -13626,6 +13735,20 @@
                 "type": "integer",
                 "format": "int32",
                 "minimum": 0
+              },
+              "outcome": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "`complete` | `empty` | `unavailable`, only when the turn selected a\n`collection_availability` policy (ClearView C1, experimental)."
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Content-free reason for `unavailable`."
               },
               "skipped": {
                 "type": "boolean",
@@ -13733,6 +13856,20 @@
                 "type": "integer",
                 "format": "int32",
                 "minimum": 0
+              },
+              "outcome": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "`complete` | `empty` | `unavailable`, only when the turn selected a\n`collection_availability` policy (ClearView C1, experimental)."
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Content-free reason for `unavailable`."
               },
               "skipped": {
                 "type": "boolean",
@@ -14082,6 +14219,17 @@
           "query"
         ],
         "properties": {
+          "collection_availability": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CollectionAvailabilityDto",
+                "description": "Experimental (ClearView C1): how this multi-collection read treats a\nmember collection that cannot be searched. Omitted keeps v1.4 behavior:\na member with no active index is listed in `skipped`, and any other\nmember failure fails the whole turn. `report` returns the verified,\nauthorized results of the other members with a `coverage` object;\n`require` refuses the turn when any member is unavailable."
+              }
+            ]
+          },
           "complete": {
             "type": [
               "boolean",

@@ -1767,6 +1767,86 @@ pub struct TurnRequest {
     /// add to a wire contract every existing client already speaks.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub research_profile: Option<String>,
+    /// Experimental (ClearView C1): how this multi-collection read treats a
+    /// member collection that cannot be searched. Omitted keeps v1.4 behavior:
+    /// a member with no active index is listed in `skipped`, and any other
+    /// member failure fails the whole turn. `report` returns the verified,
+    /// authorized results of the other members with a `coverage` object;
+    /// `require` refuses the turn when any member is unavailable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collection_availability: Option<CollectionAvailabilityDto>,
+}
+
+/// Availability policy for a multi-collection read (ClearView C1, experimental).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CollectionAvailabilityDto {
+    /// Return what completed, report what did not, withhold unsupported claims.
+    Report,
+    /// Refuse the read when any visible member is unavailable.
+    Require,
+}
+
+impl CollectionAvailabilityDto {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Report => "report",
+            Self::Require => "require",
+        }
+    }
+
+    /// Parse the typed-gRPC string carrier. Empty is "not selected".
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "report" => Some(Self::Report),
+            "require" => Some(Self::Require),
+            _ => None,
+        }
+    }
+}
+
+/// One member of a multi-collection read, within the caller's visible scope
+/// (ClearView C1, experimental). A collection the session cannot see never
+/// appears: no outcome, name, count or diagnostic.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct CollectionOutcomeDto {
+    pub collection: String,
+    /// The research-profile layer that read this member, when a profile ran.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer: Option<String>,
+    /// Where the member's outcome was decided: `search` (the deep search) or
+    /// `probe` (the runbook's collection-selection probe: a member the probe
+    /// did not select contributes its probe pool; a member whose probe failed
+    /// is unavailable at this stage).
+    pub stage: String,
+    /// `complete` (searched, with hits), `empty` (searched, no hits: a
+    /// successful empty outcome) or `unavailable` (not searched).
+    pub outcome: String,
+    /// Hits this member returned before the merge; absent when unavailable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hits: Option<u32>,
+    /// Content-free reason for `unavailable`: `no_active_index`,
+    /// `engine_unavailable` or `search_failed`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// What a multi-collection read covered, and which claims it cannot support
+/// (ClearView C1, experimental). Present only when the turn selected an
+/// availability policy.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct TurnCoverageDto {
+    pub policy: CollectionAvailabilityDto,
+    /// True when every visible member completed (with or without hits).
+    /// Document hits still never prove exhaustive coverage; see
+    /// `hierarchy.completeness_available` for evidence that can.
+    pub complete: bool,
+    /// Visible members in read order.
+    pub members: Vec<CollectionOutcomeDto>,
+    /// Claims withheld because they depend on an unavailable member:
+    /// `absence` and `exhaustive_coverage` across this read's scope. Empty
+    /// when `complete`.
+    pub withheld_claims: Vec<String>,
 }
 
 /// What one evidence layer produced.
@@ -1881,6 +1961,19 @@ pub struct TurnResponse {
     pub hierarchy: Option<EvidenceHierarchyDecisionDto>,
 }
 
+/// The turn response on REST, SSE `done` and the native bridge: the v1.4
+/// [`TurnResponse`] members, plus `coverage` only when the request selected a
+/// `collection_availability` policy (ClearView C1, experimental). Without
+/// one the bytes are exactly the v1.4 response's. Deserialized from JSON
+/// text, like [`DisclosedSearchResponse`].
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct CoveredTurnResponse {
+    #[serde(flatten)]
+    pub turn: TurnResponse,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coverage: Option<TurnCoverageDto>,
+}
+
 /// Split one optional extension member off a v1.4 response object, decoding
 /// the remainder with the base type's own (exact) readers. Requires a JSON
 /// text deserializer, as `json::LiteralValue` does.
@@ -1912,6 +2005,13 @@ impl<'de> Deserialize<'de> for DisclosedSearchResponse {
     }
 }
 
+impl<'de> Deserialize<'de> for CoveredTurnResponse {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let (turn, coverage) = split_extension(deserializer, "coverage")?;
+        Ok(Self { turn, coverage })
+    }
+}
+
 /// One progress event on the streaming turn plane
 /// (`POST /v1/sessions/{id}/turns/stream`, SSE). Each event names its stage;
 /// the stream ends with an SSE `done` event carrying the full [`TurnResponse`]
@@ -1930,6 +2030,13 @@ pub enum TurnProgressEvent {
         hits: u32,
         /// True when the collection has no active index and was skipped.
         skipped: bool,
+        /// `complete` | `empty` | `unavailable`, only when the turn selected a
+        /// `collection_availability` policy (ClearView C1, experimental).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        outcome: Option<String>,
+        /// Content-free reason for `unavailable`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
     },
     /// Evidence-driven collection selection ran (only when the runbook
     /// declares `retrieval.collectionSelection`): every permitted collection
@@ -1960,6 +2067,13 @@ pub enum TurnProgressEvent {
         hits: u32,
         /// True when the collection has no active index and was skipped.
         skipped: bool,
+        /// `complete` | `empty` | `unavailable`, only when the turn selected a
+        /// `collection_availability` policy (ClearView C1, experimental).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        outcome: Option<String>,
+        /// Content-free reason for `unavailable`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
     },
     /// RRF merge across the searched collections is done.
     Merge { hits: u32 },
@@ -3077,7 +3191,7 @@ pub struct MaxTokensResponse {
 mod clearview_wrapper_tests {
     use super::*;
 
-    /// The R1 wrapper decodes with the base types' exact readers, accept an
+    /// The R1/C1 wrappers decode with the base types' exact readers, accept an
     /// absent or `null` extension, and re-serialize an absent one as nothing.
     #[test]
     fn extension_wrappers_round_trip_exact_members() {
@@ -3098,5 +3212,19 @@ mod clearview_wrapper_tests {
         assert_eq!(execution.legs[0].candidate_limit, Some(50));
         assert_eq!(execution.legs[0].fetched, None);
         assert_eq!(decoded.result.envelope.event_watermark, 9007199254740993);
+
+        let turn = r#"{"session_id":"s","ordinal":1,"collections_searched":["a"],"skipped":[],"hits":[],"envelopes":[],"coverage":{"policy":"report","complete":false,"members":[{"collection":"b","stage":"search","outcome":"unavailable","reason":"search_failed"}],"withheld_claims":["absence","exhaustive_coverage"]}}"#;
+        let decoded: CoveredTurnResponse = serde_json::from_str(turn).unwrap();
+        let coverage = decoded.coverage.clone().unwrap();
+        assert_eq!(coverage.policy, CollectionAvailabilityDto::Report);
+        assert_eq!(coverage.members[0].hits, None);
+        let reencoded: serde_json::Value = serde_json::to_value(&decoded).unwrap();
+        assert_eq!(
+            reencoded,
+            serde_json::from_str::<serde_json::Value>(turn).unwrap()
+        );
+        // A v1.4 reader of the turn ignores the new member.
+        let old: TurnResponse = serde_json::from_str(turn).unwrap();
+        assert_eq!(old.collections_searched, vec!["a"]);
     }
 }

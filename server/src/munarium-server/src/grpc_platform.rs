@@ -152,7 +152,20 @@ impl pb::session_service_server::SessionService for SessionSvc {
         let access =
             data_plane_access(&self.state, req.metadata(), munarium_access::SCOPE_QUERY).await?;
         let inner = req.into_inner();
+        // Empty = v1.4 (every older client); anything but the two policy
+        // names is rejected rather than read as the legacy path.
+        let collection_availability = match inner.collection_availability.as_str() {
+            "" => None,
+            value => Some(
+                munarium_api_types::CollectionAvailabilityDto::parse(value).ok_or_else(|| {
+                    to_status(&munarium_core::KernelError::InvalidInput(
+                        "collection_availability must be empty, \"report\" or \"require\"".into(),
+                    ))
+                })?,
+            ),
+        };
         let dto_req = munarium_api_types::TurnRequest {
+            collection_availability,
             // gRPC carries the profile too; None on an older client,
             // which is exactly the legacy path.
             research_profile: crate::grpc::none_if_empty(&inner.research_profile),
@@ -167,11 +180,35 @@ impl pb::session_service_server::SessionService for SessionSvc {
                     tier: crate::grpc::none_if_empty(&o.tier),
                 }),
         };
-        let (resp, meta) =
-            crate::sessions_api::op_turn(&self.state, &access, &inner.session_id, dto_req, None)
-                .await
-                .map_err(|e| e.into_status())?;
+        let (covered, meta) = crate::sessions_api::op_turn_covered(
+            &self.state,
+            &access,
+            &inner.session_id,
+            dto_req,
+            None,
+        )
+        .await
+        .map_err(|e| e.into_status())?;
+        let resp = covered.turn;
         let mut response = Response::new(pb::TurnResponse {
+            // Fresh tag 9, absent unless the request selected a policy.
+            coverage: covered.coverage.map(|c| pb::TurnCoverage {
+                policy: c.policy.as_str().to_string(),
+                complete: c.complete,
+                members: c
+                    .members
+                    .into_iter()
+                    .map(|m| pb::CollectionOutcome {
+                        collection: m.collection,
+                        layer: m.layer.unwrap_or_default(),
+                        stage: m.stage,
+                        outcome: m.outcome,
+                        hits: m.hits,
+                        reason: m.reason.unwrap_or_default(),
+                    })
+                    .collect(),
+                withheld_claims: c.withheld_claims,
+            }),
             // Absent on a legacy turn, so an older client sees the
             // response it has always seen.
             hierarchy: resp.hierarchy.map(|h| pb::EvidenceHierarchyDecision {

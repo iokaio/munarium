@@ -22,6 +22,24 @@ See [wire compatibility](../wire-compatibility.md#clearview-phase-2-explain-a-re
   `lexical_domain`, and `legs[]` with `leg`, `candidate_limit`, `fetched` and
   `exhausted`. A `null` member was not measured by that engine; it is unknown,
   never zero. PostgreSQL reports neither fetch counts nor exhaustion.
+- `POST /v1/sessions/{id}/turns` and `/turns/stream` accept
+  `collection_availability` (C1, the shared semantics in hub ADR 0021, Proposed).
+  Omitted keeps v1.4: a member with no active index is listed in `skipped` and
+  any other member failure fails the turn. `report` returns the verified,
+  authorized results of the members that completed and a `coverage` object:
+  `policy`, `complete`, `members[]` (`collection`, optional `layer`, `stage`
+  `search` or `probe`, `outcome` `complete`, `empty` or `unavailable`, `hits`,
+  and a content-free `reason`: `no_active_index`, `engine_unavailable` or
+  `search_failed`) and `withheld_claims` (`absence`, `exhaustive_coverage`
+  while any member is unavailable). Only collections the session can see
+  appear; a hidden collection contributes no outcome, name, count or
+  diagnostic. A completion over a partial read receives a coverage notice
+  forbidding absence and exhaustive-coverage claims across the read. The answer
+  is refused with 424 `required-evidence-unavailable` under `require` when any
+  visible member is unavailable, under `report` when no member completed, and
+  when a required research-profile layer is missing a member. Authorization,
+  `source-denied`, invalid input and provider errors still fail the turn.
+  Streamed `probe` and `retrieval` stages carry the same `outcome` and `reason`.
 
 Token accounting evidence uses management-only `GET /v1/budgets/{id}/evidence`,
 `GET /v1/budgets/{id}/adjustments`, `POST /v1/budgets/{id}/adjustments`, and

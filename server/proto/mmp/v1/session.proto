@@ -38,6 +38,10 @@ message TurnRequest {
   // Run this turn through a named research profile (an evidence
   // hierarchy). Empty = the legacy single-layer document path, byte-identical.
   string research_profile = 6;
+  // Experimental (ClearView C1): "report" | "require". Empty = v1.4: a member
+  // with no active index is listed in `skipped` and any other member failure
+  // fails the turn. Any other value is INVALID_ARGUMENT.
+  string collection_availability = 7;
 }
 
 message TurnHit {
@@ -86,6 +90,29 @@ message TurnResponse {
   TurnCompletion completion = 7;      // absent when no completion ran
   // Present only when a research profile ran.
   EvidenceHierarchyDecision hierarchy = 8;
+  // Present only when the request selected collection_availability.
+  TurnCoverage coverage = 9;
+}
+
+// One visible member of a multi-collection read (ClearView C1, experimental).
+// A collection the session cannot see never appears.
+message CollectionOutcome {
+  string collection = 1;
+  string layer = 2;                   // research-profile layer; empty = none
+  string stage = 3;                   // search | probe
+  string outcome = 4;                 // complete | empty | unavailable
+  optional uint32 hits = 5;           // unset when unavailable
+  string reason = 6;                  // no_active_index | engine_unavailable | search_failed; empty otherwise
+}
+
+// What a multi-collection read covered (ClearView C1, experimental).
+message TurnCoverage {
+  string policy = 1;                  // report | require
+  bool complete = 2;                  // every visible member completed
+  repeated CollectionOutcome members = 3;
+  // Claims withheld because they depend on an unavailable member:
+  // absence | exhaustive_coverage. Empty when complete.
+  repeated string withheld_claims = 4;
 }
 
 // What one evidence layer produced.

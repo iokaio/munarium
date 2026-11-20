@@ -34,20 +34,22 @@ class SessionModelOverride(_message.Message):
     def __init__(self, provider: _Optional[str] = ..., model: _Optional[str] = ..., tier: _Optional[str] = ...) -> None: ...
 
 class TurnRequest(_message.Message):
-    __slots__ = ("session_id", "query", "top_k", "complete", "model_override", "research_profile")
+    __slots__ = ("session_id", "query", "top_k", "complete", "model_override", "research_profile", "collection_availability")
     SESSION_ID_FIELD_NUMBER: _ClassVar[int]
     QUERY_FIELD_NUMBER: _ClassVar[int]
     TOP_K_FIELD_NUMBER: _ClassVar[int]
     COMPLETE_FIELD_NUMBER: _ClassVar[int]
     MODEL_OVERRIDE_FIELD_NUMBER: _ClassVar[int]
     RESEARCH_PROFILE_FIELD_NUMBER: _ClassVar[int]
+    COLLECTION_AVAILABILITY_FIELD_NUMBER: _ClassVar[int]
     session_id: str
     query: str
     top_k: int
     complete: bool
     model_override: SessionModelOverride
     research_profile: str
-    def __init__(self, session_id: _Optional[str] = ..., query: _Optional[str] = ..., top_k: _Optional[int] = ..., complete: _Optional[bool] = ..., model_override: _Optional[_Union[SessionModelOverride, _Mapping]] = ..., research_profile: _Optional[str] = ...) -> None: ...
+    collection_availability: str
+    def __init__(self, session_id: _Optional[str] = ..., query: _Optional[str] = ..., top_k: _Optional[int] = ..., complete: _Optional[bool] = ..., model_override: _Optional[_Union[SessionModelOverride, _Mapping]] = ..., research_profile: _Optional[str] = ..., collection_availability: _Optional[str] = ...) -> None: ...
 
 class TurnHit(_message.Message):
     __slots__ = ("collection", "chunk_id", "source_id", "source_path", "source_content_hash", "text", "score")
@@ -106,7 +108,7 @@ class TurnCompletion(_message.Message):
     def __init__(self, provider: _Optional[str] = ..., model: _Optional[str] = ..., was_override: _Optional[bool] = ..., text: _Optional[str] = ..., input_tokens: _Optional[int] = ..., output_tokens: _Optional[int] = ..., verification: _Optional[_Union[TurnVerification, _Mapping]] = ...) -> None: ...
 
 class TurnResponse(_message.Message):
-    __slots__ = ("session_id", "ordinal", "collections_searched", "skipped", "hits", "envelopes", "completion", "hierarchy")
+    __slots__ = ("session_id", "ordinal", "collections_searched", "skipped", "hits", "envelopes", "completion", "hierarchy", "coverage")
     SESSION_ID_FIELD_NUMBER: _ClassVar[int]
     ORDINAL_FIELD_NUMBER: _ClassVar[int]
     COLLECTIONS_SEARCHED_FIELD_NUMBER: _ClassVar[int]
@@ -115,6 +117,7 @@ class TurnResponse(_message.Message):
     ENVELOPES_FIELD_NUMBER: _ClassVar[int]
     COMPLETION_FIELD_NUMBER: _ClassVar[int]
     HIERARCHY_FIELD_NUMBER: _ClassVar[int]
+    COVERAGE_FIELD_NUMBER: _ClassVar[int]
     session_id: str
     ordinal: int
     collections_searched: _containers.RepeatedScalarFieldContainer[str]
@@ -123,7 +126,36 @@ class TurnResponse(_message.Message):
     envelopes: _containers.RepeatedCompositeFieldContainer[CollectionEnvelope]
     completion: TurnCompletion
     hierarchy: EvidenceHierarchyDecision
-    def __init__(self, session_id: _Optional[str] = ..., ordinal: _Optional[int] = ..., collections_searched: _Optional[_Iterable[str]] = ..., skipped: _Optional[_Iterable[str]] = ..., hits: _Optional[_Iterable[_Union[TurnHit, _Mapping]]] = ..., envelopes: _Optional[_Iterable[_Union[CollectionEnvelope, _Mapping]]] = ..., completion: _Optional[_Union[TurnCompletion, _Mapping]] = ..., hierarchy: _Optional[_Union[EvidenceHierarchyDecision, _Mapping]] = ...) -> None: ...
+    coverage: TurnCoverage
+    def __init__(self, session_id: _Optional[str] = ..., ordinal: _Optional[int] = ..., collections_searched: _Optional[_Iterable[str]] = ..., skipped: _Optional[_Iterable[str]] = ..., hits: _Optional[_Iterable[_Union[TurnHit, _Mapping]]] = ..., envelopes: _Optional[_Iterable[_Union[CollectionEnvelope, _Mapping]]] = ..., completion: _Optional[_Union[TurnCompletion, _Mapping]] = ..., hierarchy: _Optional[_Union[EvidenceHierarchyDecision, _Mapping]] = ..., coverage: _Optional[_Union[TurnCoverage, _Mapping]] = ...) -> None: ...
+
+class CollectionOutcome(_message.Message):
+    __slots__ = ("collection", "layer", "stage", "outcome", "hits", "reason")
+    COLLECTION_FIELD_NUMBER: _ClassVar[int]
+    LAYER_FIELD_NUMBER: _ClassVar[int]
+    STAGE_FIELD_NUMBER: _ClassVar[int]
+    OUTCOME_FIELD_NUMBER: _ClassVar[int]
+    HITS_FIELD_NUMBER: _ClassVar[int]
+    REASON_FIELD_NUMBER: _ClassVar[int]
+    collection: str
+    layer: str
+    stage: str
+    outcome: str
+    hits: int
+    reason: str
+    def __init__(self, collection: _Optional[str] = ..., layer: _Optional[str] = ..., stage: _Optional[str] = ..., outcome: _Optional[str] = ..., hits: _Optional[int] = ..., reason: _Optional[str] = ...) -> None: ...
+
+class TurnCoverage(_message.Message):
+    __slots__ = ("policy", "complete", "members", "withheld_claims")
+    POLICY_FIELD_NUMBER: _ClassVar[int]
+    COMPLETE_FIELD_NUMBER: _ClassVar[int]
+    MEMBERS_FIELD_NUMBER: _ClassVar[int]
+    WITHHELD_CLAIMS_FIELD_NUMBER: _ClassVar[int]
+    policy: str
+    complete: bool
+    members: _containers.RepeatedCompositeFieldContainer[CollectionOutcome]
+    withheld_claims: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, policy: _Optional[str] = ..., complete: _Optional[bool] = ..., members: _Optional[_Iterable[_Union[CollectionOutcome, _Mapping]]] = ..., withheld_claims: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class LayerOutcome(_message.Message):
     __slots__ = ("layer", "role", "requirement", "block", "evidence_id", "supports_completeness", "refusal_code", "elapsed_ms")

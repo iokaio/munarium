@@ -1098,6 +1098,7 @@ models.allowOverrides policy. Empty strings mean "not set".
 | 4 | complete | bool | run the runbook's completion step |
 | 5 | model_override | SessionModelOverride |  |
 | 6 | research_profile | string | Run this turn through a named research profile (an evidence hierarchy). Empty = the legacy single-layer document path, byte-identical. |
+| 7 | collection_availability | string | Experimental (ClearView C1): "report" \| "require". Empty = v1.4: a member with no active index is listed in `skipped` and any other member failure fails the turn. Any other value is INVALID_ARGUMENT. |
 
 ### message TurnHit
 
@@ -1156,6 +1157,32 @@ completion.verification.
 | 6 | envelopes | repeated CollectionEnvelope |  |
 | 7 | completion | TurnCompletion | absent when no completion ran |
 | 8 | hierarchy | EvidenceHierarchyDecision | Present only when a research profile ran. |
+| 9 | coverage | TurnCoverage | Present only when the request selected collection_availability. |
+
+### message CollectionOutcome
+
+One visible member of a multi-collection read (ClearView C1, experimental).
+A collection the session cannot see never appears.
+
+| # | Field | Type | Notes |
+|---|---|---|---|
+| 1 | collection | string |  |
+| 2 | layer | string | research-profile layer; empty = none |
+| 3 | stage | string | search \| probe |
+| 4 | outcome | string | complete \| empty \| unavailable |
+| 5 | hits | optional uint32 | unset when unavailable |
+| 6 | reason | string | no_active_index \| engine_unavailable \| search_failed; empty otherwise |
+
+### message TurnCoverage
+
+What a multi-collection read covered (ClearView C1, experimental).
+
+| # | Field | Type | Notes |
+|---|---|---|---|
+| 1 | policy | string | report \| require |
+| 2 | complete | bool | every visible member completed |
+| 3 | members | repeated CollectionOutcome |  |
+| 4 | withheld_claims | repeated string | Claims withheld because they depend on an unavailable member: absence \| exhaustive_coverage. Empty when complete. |
 
 ### message LayerOutcome
 

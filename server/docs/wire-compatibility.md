@@ -27,7 +27,7 @@ UTF-8 JSON bytes, not `google.protobuf.Struct` floating-point numbers.
 | Access/minimum access levels; interaction status/latency; artifact format version/file count/attempts | REST `i32`; relevant typed fields `int32` | Signed 32-bit carrier, with endpoint-specific valid values. These are not general unsigned counters. |
 | Artifact bytes, evidence row windows, generation and expected/staged/serving generations | REST `i64`; native bridge | Signed 64-bit database fields, with domain checks for valid generations/window bounds. |
 | Build-job history (ClearView R6/R9): per-version `attempts`, progress `units_done` / `units_total`, event `seq`; `generation`, `selected_ordinal`, `committed_generation`, `attempt_generation` | REST `i64` / `i32`; native bridge only | Nonnegative `BIGINT` / `INTEGER` columns. New members on new read-only routes; absent `units_total` means unknown, never zero. No typed protobuf message or field is added. |
-| ClearView R1 (experimental): search `execution.version`, leg `candidate_limit` and `fetched` | REST `u32`/`u64`; typed `uint32`/`optional uint64` with presence | Computed per request, never persisted. `null`/unset means not measured, never zero. |
+| ClearView R1/C1 (experimental): search `execution.version`, leg `candidate_limit` and `fetched`; turn `coverage.members[].hits` | REST `u32`/`u64`; typed `uint32`/`optional uint64`/`optional uint32` with presence | Computed per request, never persisted. `null`/unset means not measured or not searched, never zero. |
 | Evidence `from`, optional total; recorded/skipped duplicate/rule counts | REST `usize` | Architecture-sized local carrier, exact integer JSON. Evidence `from` is also bounded by signed-64 audit storage; window defaults and caps remain operation-specific. |
 | Context estimated/budget tokens, health latency/failure counts, turn elapsed milliseconds, authoring finding totals, datastore chunk count, build `max_chars`, token `ttl_secs` | REST `u64` / `usize`; relevant typed fields `uint64` | In-memory/computed quantities are not all persisted `BIGINT`s. Token TTL retains its 24-hour clamp. Existing admission and resource caps remain in effect. |
 
@@ -135,6 +135,25 @@ protobuf tag or default changes.
   presence) and `SearchLegExecution` proto3 `optional` fields: an unmeasured
   count or exhaustion state is unset, never zero. REST serializes it as `null`.
 
+### C1: explicit partial multi-collection reads
+
+The shared semantics are hub ADR 0021 (Proposed). Its open choices are taken as
+follows, for maintainer review:
+
+| ADR 0021 open choice | Choice in this implementation |
+|---|---|
+| Wire spelling of the policy selector | `collection_availability` on the turn request: REST/SSE enum string, typed gRPC `string` tag 7 where `""` is v1.4. Unknown values are `invalid-input` on both. |
+| Per-member outcome and reason fields | `coverage` (`policy`, `complete`, `members[]`, `withheld_claims`) on `CoveredTurnResponse`, which flattens the unchanged v1.4 `TurnResponse`; typed gRPC `TurnResponse.coverage` tag 9. Outcomes `complete`, `empty`, `unavailable`; stages `search`, `probe`; reasons `no_active_index`, `engine_unavailable`, `search_failed`. |
+| Whether `require` is offered natively | Offered, explicit only. It refuses with the existing `required-evidence-unavailable` slug before query expansion or completion spends. |
+| A shared deadline across members | Not introduced. Members keep the request's existing bounds. |
+
+- Without a policy the turn response, the SSE sequence and the typed response
+  are unchanged; a response without `coverage` serializes byte for byte as v1.4.
+- SSE `probe` and `retrieval` stages gain optional `outcome`/`reason` members
+  only under an explicit policy. No stage is added or renamed.
+- A turn's `coverage` is returned, not written to the transcript, so
+  `GET /v1/sessions/{id}` is unchanged.
+
 ### SDK status
 
 The generated full-API operation catalog is unchanged (no operation is added),
@@ -146,3 +165,6 @@ read them from raw JSON.
   request field breaks exhaustive `prost` literals of `HybridSearchRequest`
   without `..Default::default()`, including the official Rust client's gRPC
   transport. That client change is pending maintainer direction.
+- C1: Python's committed `session_pb2` stubs are regenerated. The new
+  request field breaks exhaustive `prost` literals of `TurnRequest` in the same
+  way, including the official Rust client's gRPC transport.

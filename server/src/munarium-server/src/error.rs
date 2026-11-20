@@ -313,6 +313,25 @@ impl CustomError {
         }
     }
 
+    /// 424 under an explicit ClearView C1 availability policy: the answer
+    /// requires evidence from a member collection that could not be searched
+    /// (`require`, or no member completed under `report`). Same slug as a
+    /// required hierarchy layer, because the caller's recovery is the same.
+    /// The collection is one the session can see; a hidden collection is
+    /// never searched, so it can never be named here.
+    pub fn required_collection_unavailable(collection: &str, reason: &str) -> Self {
+        Self {
+            slug: "required-evidence-unavailable",
+            status: StatusCode::FAILED_DEPENDENCY,
+            code: tonic::Code::FailedPrecondition,
+            title: "required evidence unavailable",
+            detail: format!(
+                "collection '{collection}' was unavailable ({reason}) and this read \
+                 requires its evidence; refusing rather than answering from a partial read"
+            ),
+        }
+    }
+
     /// 400: the turn named a research profile the pinned runbook does not
     /// declare. Fails closed — silently falling back to the document path
     /// would answer a different question than the caller asked.
