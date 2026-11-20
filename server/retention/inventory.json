@@ -2359,12 +2359,13 @@
         "progress_phase": "text",
         "recorded_at": "timestamptz"
       },
-      "content": "Trigger-written build-job transitions (closed kinds, states and phases, the holder node name already exposed as claimed_by); identifiers only. Bounded per tenant to the newest events_per_tenant rows (provisional default 1024, not yet measured; ClearView B2).",
+      "content": "Trigger-written build-job transitions (closed kinds, states and phases, the holder node name already exposed as claimed_by); identifiers only. Bounded per tenant to the newest events_per_tenant rows (provisional default 1024, not yet measured; ClearView B2), pruned in the writing transaction; since 0086 a prune skips rows a concurrent prune holds, and the next event prunes any it left.",
       "json_content": {},
       "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
       "policy": "catalog",
       "origins": [
-        "src/munarium-store-pg/migrations/0046_build_job_progress_events.sql"
+        "src/munarium-store-pg/migrations/0046_build_job_progress_events.sql",
+        "src/munarium-store-pg/migrations/0086_build_job_event_prune_skip_locked.sql"
       ]
     },
     "index_build_job_event_retention": {

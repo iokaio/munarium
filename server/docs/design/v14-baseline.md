@@ -85,6 +85,8 @@ release.
 | 0080 | ClearView IR-1–IR-4 | Inference stage tables, empty without an enrolled collection | As for 0043 |
 | 0082 | ClearView ART1/ART2 amendment | `block_assurance` and `clear_assurance` on artifact damage incidents; existing rows are `independent`, and the independence CHECKs keep their condition for them | As for 0043 |
 | 0083 | ClearView ART1/ART2 amendment | Enrolled verifier public keys, empty until an operator enrolls one | As for 0043 |
+| 0084 | ClearView IR-1 | `text_changed_at` on `provider_configs`; existing rows take the migration time, so an earlier inference probe must be repeated | As for 0043 |
+| 0085 | ClearView §5.3 | MCP operation key tombstones, empty until the key janitor prunes a key | As for 0043 |
 | 0086 | ClearView B2 follow-up | Replaces the build-job event trigger function so its prune skips event rows a concurrent prune holds; no row is touched | As for 0043 |
 
 In short, once any of 0043–0086 is applied, the v1.4.0 image cannot serve that
