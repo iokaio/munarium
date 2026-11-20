@@ -65,6 +65,11 @@ pub(crate) struct AdminCtx {
     pub view_only: bool,
     /// The CSRF synchronizer token bound to this request's credential.
     pub csrf: String,
+    /// The replica that rendered the page (U2 header context): replicas can
+    /// disagree about process-local state such as gauges.
+    pub instance: String,
+    /// The store mode this replica runs (U2 header context).
+    pub store: &'static str,
 }
 
 fn cookie_token(headers: &HeaderMap) -> Option<String> {
@@ -108,6 +113,12 @@ fn admin_auth(state: &AppState, headers: &HeaderMap) -> Result<AdminCtx, Respons
             csrf: csrf_token(state, headers),
             view_only: view_only_requested(headers),
             tenant: ctx,
+            instance: state.config.instance_id.clone(),
+            store: if state.pg_pool().is_some() {
+                "postgres"
+            } else {
+                "memory"
+            },
         }),
         _ => Err(Redirect::to("/admin/login").into_response()),
     }
@@ -314,19 +325,43 @@ fn nav(active: &str, view_only: bool) -> String {
     )
 }
 
-fn page(active: &str, view_only: bool, title: &str, body: &str) -> Html<String> {
+/// The header every console page shares (ClearView U2): the title, the
+/// page's one-sentence purpose, optional actions (trusted HTML — callers
+/// build them with `action`), and the context the numbers below were read
+/// in: the credential's tenant, the replica that rendered the page, the
+/// store mode, and the time of the read.
+fn page_header(admin: &AdminCtx, active: &str, title: &str, actions: &str) -> String {
+    let purpose = nav_lookup(active)
+        .map(|(_, p)| format!(r#"<p class="purpose">{}</p>"#, charts::esc(p.purpose)))
+        .unwrap_or_default();
+    let actions = if actions.is_empty() {
+        String::new()
+    } else {
+        format!(r#"<div class="actions">{actions}</div>"#)
+    };
+    format!(
+        r#"<header class="pagehead"><div class="headrow"><h1>{}</h1>{actions}</div>{purpose}<p class="context">tenant <code>{}</code> · instance <code>{}</code> · store {} · read {}</p></header>"#,
+        charts::esc(title),
+        charts::esc(&admin.tenant.tenant_id),
+        charts::esc(&admin.instance),
+        admin.store,
+        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
+    )
+}
+
+fn page(admin: &AdminCtx, active: &str, title: &str, actions: &str, body: &str) -> Html<String> {
     Html(format!(
-        r#"<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{} — munarium admin</title>{}</head><body>{}<main><h1>{}</h1>{body}</main></body></html>"#,
+        r#"<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{} — munarium admin</title>{}</head><body>{}<main>{}{body}</main></body></html>"#,
         charts::esc(title),
         charts::STYLE,
-        nav(active, view_only),
-        charts::esc(title),
+        nav(active, admin.view_only),
+        page_header(admin, active, title, actions),
     ))
 }
 
 /// A full page for an authenticated admin request.
 pub(crate) fn render(admin: &AdminCtx, active: &str, title: &str, body: &str) -> Response {
-    page(active, admin.view_only, title, body).into_response()
+    page(admin, active, title, "", body).into_response()
 }
 
 /// The honest panel for a page whose ONLY source failed (most commonly: the
@@ -346,7 +381,7 @@ pub(crate) fn error_panel(
         r#"<div class="notice">{}</div>"#,
         charts::esc(&e.to_string())
     );
-    (status, page(active, admin.view_only, title, &body)).into_response()
+    (status, page(admin, active, title, "", &body)).into_response()
 }
 
 /// The per-section note for a page that still has other sources to show.
@@ -822,6 +857,38 @@ mod tests {
         "/admin/matrix",
         "/admin/health",
     ];
+
+    /// U2: every page has one `h1`, its purpose line, and the read context
+    /// (tenant, instance, store mode, read time).
+    #[tokio::test]
+    async fn every_page_has_the_shared_header() {
+        let state = state(static_auth()).await;
+        for group in NAV {
+            for page in group.pages {
+                let body = body_string(get(&state, page.href, Some("m"), false).await).await;
+                assert_eq!(body.matches("<h1>").count(), 1, "{}: {body}", page.href);
+                assert!(
+                    body.contains(&format!(
+                        r#"<p class="purpose">{}</p>"#,
+                        charts::esc(page.purpose)
+                    )),
+                    "{}: {body}",
+                    page.href
+                );
+                assert!(
+                    body.contains(
+                        r#"tenant <code>t</code> · instance <code>test-instance</code> · store memory · read "#
+                    ),
+                    "{}: {body}",
+                    page.href
+                );
+            }
+        }
+        // Detail and error pages share the header too.
+        let body = body_string(get(&state, "/admin/shapes/nope@9", Some("m"), false).await).await;
+        assert_eq!(body.matches("<h1>").count(), 1, "{body}");
+        assert!(body.contains(r#"class="context""#), "{body}");
+    }
 
     #[tokio::test]
     async fn every_nav_link_is_a_served_route_and_v14_urls_still_serve() {

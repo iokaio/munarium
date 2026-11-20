@@ -97,6 +97,15 @@ nav.subnav { padding: 6px 20px 6px 36px; gap: 12px; font-size: 13px; }
 nav a[aria-current=page] { text-decoration: underline; text-underline-offset: 4px; }
 main { max-width: 1080px; margin: 0 auto; padding: 20px; }
 h1 { font-size: 19px; margin: 6px 0 14px; }
+header.pagehead { margin: 0 0 14px; }
+header.pagehead .headrow { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline;
+                           justify-content: space-between; }
+header.pagehead h1 { margin: 6px 0 4px; }
+header.pagehead .purpose { margin: 0 0 4px; color: var(--ink-2); }
+header.pagehead .context { margin: 0; font-size: 12px; color: var(--muted); }
+a.button { display: inline-block; padding: 5px 12px; border-radius: 5px;
+           background: var(--s1); color: #fff; }
+a.button:hover { text-decoration: none; }
 h2 { font-size: 15px; margin: 22px 0 8px; color: var(--ink-2); }
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
 .tile { background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; padding: 12px 14px; }
