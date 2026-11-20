@@ -186,6 +186,15 @@ summary:focus-visible { outline: 2px solid var(--s1); outline-offset: 2px; }
               border: 1px solid var(--ring); border-radius: 5px; z-index: 10; }
 .viewonly { color: var(--muted); font-size: 12px; }
 .muted { color: var(--muted); }
+section.equiv { margin: 22px 0 0; }
+section.equiv dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px;
+                   margin: 0 0 8px; font-size: 13px; }
+section.equiv dt { color: var(--muted); }
+section.equiv dd { margin: 0; }
+code.cmd { user-select: all; -webkit-user-select: all; word-break: break-all;
+           background: var(--page); border: 1px solid var(--grid); border-radius: 4px;
+           padding: 1px 5px; }
+details.complete summary { color: var(--ink-2); cursor: pointer; }
 form.action.confirm { display: block; margin: 12px 0; }
 .pager { margin: 8px 0 0; }
 a.tilelink { color: inherit; display: block; }

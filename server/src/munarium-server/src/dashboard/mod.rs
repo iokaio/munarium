@@ -510,6 +510,58 @@ pub(crate) fn json_block(v: &serde_json::Value) -> String {
     pre(&serde_json::to_string_pretty(v).unwrap_or_default())
 }
 
+/// One path segment, percent-encoded, for an API path the console prints.
+pub(crate) fn path_segment(s: &str) -> String {
+    inventory::urlencode(s)
+}
+
+/// One shell word: bare when it needs no quoting, otherwise single-quoted
+/// (POSIX shells, PowerShell and cmd's mmctl all accept the bare form the
+/// console's own identifiers use).
+pub(crate) fn shell_word(s: &str) -> String {
+    let bare = !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || "@._:/+=-".contains(c));
+    if bare {
+        s.to_string()
+    } else {
+        format!("'{}'", s.replace('\'', r"'\''"))
+    }
+}
+
+/// The equivalent scripted route of a console detail page (ClearView U7):
+/// the API request and, where one exists, the `mmctl` command, as
+/// selectable text beside a "complete result" disclosure holding the whole
+/// object the API returns. No script: the commands select with one click
+/// (`user-select: all`), and the disclosure is a plain `<details>`.
+///
+/// `api` and `mmctl` are plain text (escaped here). `cli_note` explains a
+/// missing CLI command. `value` is the complete result, when the page has
+/// one that is not already shown in full.
+pub(crate) fn complete_result(
+    api: &str,
+    mmctl: Option<&str>,
+    cli_note: &str,
+    value: Option<&serde_json::Value>,
+) -> String {
+    let cli = match mmctl {
+        Some(cmd) => format!(r#"<code class="cmd">{}</code>"#, charts::esc(cmd)),
+        None => format!(r#"<span class="muted">{}</span>"#, charts::esc(cli_note)),
+    };
+    let details = value
+        .map(|v| {
+            format!(
+                r#"<details class="complete"><summary>complete result</summary>{}</details>"#,
+                json_block(v)
+            )
+        })
+        .unwrap_or_default();
+    format!(
+        r#"<section class="equiv" aria-label="equivalent API request and command"><h2>complete result</h2><dl><dt>API</dt><dd><code class="cmd">{}</code></dd><dt>mmctl</dt><dd>{cli}</dd></dl>{details}</section>"#,
+        charts::esc(api)
+    )
+}
+
 /// A two-column definition table. Values are TRUSTED HTML — callers escape
 /// (or link) them.
 pub(crate) fn kv(rows: &[(&str, String)]) -> String {
@@ -2025,6 +2077,164 @@ mod tests {
         assert!(body.contains("0 running · 1 queued"), "{body}");
         assert_classes_styled("/admin/collections/{id}", &body);
         assert_status_cues_have_text("/admin/collections/{id}", &body);
+    }
+
+    // -----------------------------------------------------------------------
+    // U7: complete result and the equivalent route
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn equivalent_commands_are_quoted_and_escaped() {
+        assert_eq!(shell_word("run-1a2b"), "run-1a2b");
+        assert_eq!(shell_word("contracts@3"), "contracts@3");
+        assert_eq!(shell_word("a b"), "'a b'");
+        assert_eq!(shell_word("it's"), r"'it'\''s'");
+        assert_eq!(shell_word("$(rm -rf /)"), "'$(rm -rf /)'");
+        assert_eq!(shell_word(""), "''");
+        assert_eq!(path_segment("a/b c"), "a%2Fb%20c");
+
+        let html = complete_result(
+            "GET /v1/runs/<x>",
+            Some("mmctl get run '<x>'"),
+            "",
+            Some(&serde_json::json!({"run_id": "<x>"})),
+        );
+        assert!(
+            html.contains(r#"<code class="cmd">GET /v1/runs/&lt;x&gt;</code>"#),
+            "{html}"
+        );
+        assert!(
+            html.contains(r#"<code class="cmd">mmctl get run &#39;&lt;x&gt;&#39;</code>"#),
+            "{html}"
+        );
+        assert!(
+            html.contains(r#"<details class="complete"><summary>complete result</summary><pre>"#),
+            "{html}"
+        );
+        assert!(
+            html.contains("&quot;run_id&quot;: &quot;&lt;x&gt;&quot;"),
+            "{html}"
+        );
+        assert!(!html.contains("<script"), "{html}");
+        // No CLI command: the note says so instead of inventing one, and a
+        // page whose full result is already shown gets no disclosure.
+        let html = complete_result("GET /v1/x", None, "no mmctl command reads this", None);
+        assert!(html.contains(r#"<span class="muted">no mmctl command reads this</span>"#));
+        assert!(!html.contains("<details"), "{html}");
+        assert_classes_styled("complete_result", &html);
+    }
+
+    /// Every route and command the console prints exists: the API paths
+    /// are in the served OpenAPI contract and the mmctl commands are the
+    /// CLI's own usage lines.
+    #[test]
+    fn printed_routes_and_commands_exist() {
+        let paths = crate::openapi::doc().paths.paths;
+        for p in [
+            "/v1/runs/{run_id}",
+            "/v1/runbooks/{name}",
+            "/v1/collections/{id}",
+            "/v1/sessions/{id}",
+            "/v1/chronology-rules/{name}",
+        ] {
+            assert!(paths.contains_key(p), "{p} is not in the contract");
+        }
+        let cli = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../munarium-cli/src/main.rs"
+        ));
+        for usage in [
+            "usage: mmctl get run <run-id>",
+            "usage: mmctl runbook info <name[@version]>",
+        ] {
+            assert!(cli.contains(usage), "mmctl no longer has `{usage}`");
+        }
+    }
+
+    /// Against PostgreSQL: the run, session and collection pages each end
+    /// with one equivalent-route section and one complete-result
+    /// disclosure holding the object the API returns.
+    #[tokio::test]
+    async fn detail_pages_offer_the_complete_result_on_postgres() {
+        let Ok(url) = std::env::var("MUNARIUM_TEST_DATABASE_URL") else {
+            eprintln!("console U7 PostgreSQL test NOT RUN: MUNARIUM_TEST_DATABASE_URL unset");
+            return;
+        };
+        let tenant = format!("console-u7-{}", uuid::Uuid::new_v4().simple());
+        let mut cfg = test_config(AuthMode::Static(vec![(
+            "m".into(),
+            tenant.clone(),
+            "mgmt".into(),
+        )]));
+        cfg.store = StoreKind::Postgres;
+        cfg.database_url = Some(url);
+        let state = AppState::new(cfg).await.expect("state");
+        let pool = state.pg_pool().expect("pool").clone();
+        for sql in [
+            "INSERT INTO runbook_runs (tenant_id, id, runbook_ref, state)
+             VALUES ($1, 'run-u7', 'rb@1', 'awaiting_approval')",
+            "INSERT INTO runbook_steps (tenant_id, run_id, ordinal, name, state)
+             VALUES ($1, 'run-u7', 0, 'cutover', 'awaiting_approval')",
+            "INSERT INTO sessions (tenant_id, id, uid, runbook_ref, access_level)
+             VALUES ($1, 'ses-u7', 'u', 'rb@1', 0)",
+            "INSERT INTO collections (tenant_id, id, name, shape_ref)
+             VALUES ($1, 'col-u7', 'u7', 's@1')",
+        ] {
+            sqlx::query(sql)
+                .bind(&tenant)
+                .execute(&pool)
+                .await
+                .unwrap_or_else(|e| panic!("{sql}: {e}"));
+        }
+        for (path, api, cli, key) in [
+            (
+                "/admin/runs/run-u7",
+                "GET /v1/runs/run-u7",
+                Some("mmctl get run run-u7"),
+                "&quot;run_id&quot;: &quot;run-u7&quot;",
+            ),
+            (
+                "/admin/sessions/ses-u7",
+                "GET /v1/sessions/ses-u7",
+                None,
+                "&quot;session_id&quot;: &quot;ses-u7&quot;",
+            ),
+            (
+                "/admin/collections/col-u7",
+                "GET /v1/collections/col-u7",
+                None,
+                "&quot;id&quot;: &quot;col-u7&quot;",
+            ),
+        ] {
+            let resp = get(&state, path, Some("m"), false).await;
+            assert_eq!(resp.status(), StatusCode::OK, "{path}");
+            let body = body_string(resp).await;
+            assert_eq!(
+                body.matches(r#"<section class="equiv""#).count(),
+                1,
+                "{path}"
+            );
+            assert_eq!(
+                body.matches(r#"<details class="complete">"#).count(),
+                1,
+                "{path}"
+            );
+            assert!(
+                body.contains(&format!(r#"<code class="cmd">{api}</code>"#)),
+                "{path}: {body}"
+            );
+            match cli {
+                Some(cmd) => assert!(
+                    body.contains(&format!(r#"<code class="cmd">{cmd}</code>"#)),
+                    "{path}: {body}"
+                ),
+                None => assert!(body.contains("no mmctl command reads"), "{path}"),
+            }
+            let disclosure = &body[body.find(r#"<details class="complete">"#).unwrap()..];
+            assert!(disclosure.contains(key), "{path}: {disclosure}");
+            assert!(!body.contains("<script"), "{path}");
+            assert_classes_styled(path, &body);
+        }
     }
 
     // -----------------------------------------------------------------------

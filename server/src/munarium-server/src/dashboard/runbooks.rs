@@ -7,9 +7,9 @@
 //! rule).
 
 use super::{
-    action, admin_auth, csrf_field, csrf_ok, error_panel, html_table, json_block, kv, link, notice,
-    opt, pill, pre, render, rw_credential, short, stale_form, state_badge, store_note,
-    window_picker, Tone, WindowParam,
+    action, admin_auth, complete_result, csrf_field, csrf_ok, error_panel, html_table, json_block,
+    kv, link, notice, opt, path_segment, pill, pre, render, rw_credential, shell_word, short,
+    stale_form, state_badge, store_note, window_picker, Tone, WindowParam,
 };
 use crate::charts::{self, esc};
 use crate::reports_api;
@@ -467,10 +467,23 @@ pub(super) async fn runbook(
 <h2>models</h2><div class="card">{models_html}</div>
 <h2>completion</h2><div class="card">{completion_html}</div>
 <h2>recent runs</h2><div class="card">{}</div>
-<h2>applied yaml</h2><div class="card">{}</div>"#,
+<h2>applied yaml</h2><div class="card">{}</div>
+{}"#,
         kv(&lifecycle),
         runs,
         pre(&src.yaml),
+        complete_result(
+            &format!("GET /v1/runbooks/{}", path_segment(&src.runbook_ref)),
+            Some(&format!(
+                "mmctl runbook info {}",
+                shell_word(&src.runbook_ref)
+            )),
+            "",
+            info.as_ref()
+                .ok()
+                .and_then(|i| serde_json::to_value(i).ok())
+                .as_ref(),
+        ),
     );
     render(
         &admin,
@@ -647,13 +660,20 @@ pub(super) async fn chronology(
     let body = format!(
         r#"<div class="card">{}</div>
 <h2>applied yaml</h2><div class="card">{}</div>
-<div class="notice">A memory version arms these rules by naming the asset in its creation metadata — <code>{{"chronology_rules": "{}"}}</code> — and the sixth gate then runs on every gated write of that lineage.</div>"#,
+<div class="notice">A memory version arms these rules by naming the asset in its creation metadata — <code>{{"chronology_rules": "{}"}}</code> — and the sixth gate then runs on every gated write of that lineage.</div>
+{}"#,
         kv(&[
             ("asset", format!("<code>{}</code>", esc(&name))),
             ("rule targets", esc(&rule_count)),
         ]),
         pre(&yaml),
-        esc(&name)
+        esc(&name),
+        complete_result(
+            &format!("GET /v1/chronology-rules/{}", path_segment(&name)),
+            None,
+            "no mmctl command reads a rules asset; the applied yaml above is the complete result",
+            None,
+        ),
     );
     render(
         &admin,
@@ -719,7 +739,8 @@ pub(super) async fn run(
     let body = format!(
         r#"<div class="card">{}</div>
 <h2>steps</h2><div class="card">{steps}</div>
-<div class="notice">Approving a gate is an <strong>rw</strong> operation (it can append ledger events when the run names a lineage), so the form asks for the rw credential each time and never stores it — the mgmt session alone cannot approve. It is the same call as <code>POST /v1/runs/{}/steps/&lt;ordinal&gt;/approve</code>.</div>"#,
+<div class="notice">Approving a gate is an <strong>rw</strong> operation (it can append ledger events when the run names a lineage), so the form asks for the rw credential each time and never stores it — the mgmt session alone cannot approve. It is the same call as <code>POST /v1/runs/{}/steps/&lt;ordinal&gt;/approve</code>.</div>
+{}"#,
         kv(&[
             ("run", format!("<code>{}</code>", esc(&run.run_id))),
             ("runbook", runbook_link(&run.runbook_ref)),
@@ -735,7 +756,13 @@ pub(super) async fn run(
                     .unwrap_or_else(|| "none (transitions persist in runbook_steps only)".into()),
             ),
         ]),
-        esc(&run.run_id)
+        esc(&run.run_id),
+        complete_result(
+            &format!("GET /v1/runs/{}", path_segment(&run.run_id)),
+            Some(&format!("mmctl get run {}", shell_word(&run.run_id))),
+            "",
+            serde_json::to_value(&run).ok().as_ref(),
+        )
     );
     render(&admin, "runbooks", &format!("Run {}", run.run_id), &body)
 }

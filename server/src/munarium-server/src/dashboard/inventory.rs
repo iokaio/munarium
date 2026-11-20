@@ -7,9 +7,9 @@
 //! twins do and are mgmt-role by construction.
 
 use super::{
-    action, admin_auth, csrf_field, csrf_ok, error_panel, html_table, json_block, kv, link, notice,
-    opt, pill, pre, render, render_with_actions, severity_badge, short, stale_form, store_note,
-    window_of, CsrfOnlyForm, Tone,
+    action, admin_auth, complete_result, csrf_field, csrf_ok, error_panel, html_table, json_block,
+    kv, link, notice, opt, pill, pre, render, render_with_actions, severity_badge, short,
+    stale_form, store_note, window_of, CsrfOnlyForm, Tone,
 };
 use crate::charts::{self, esc};
 use crate::reports_api;
@@ -490,7 +490,8 @@ pub(super) async fn collection(
         r#"<div class="card">{}</div>
 <h2>operational state</h2><div class="card">{}</div>
 <h2>index versions</h2><div class="card">{indexes}</div>
-<h2>runbooks reaching this collection</h2><div class="card">{runbooks}</div>"#,
+<h2>runbooks reaching this collection</h2><div class="card">{runbooks}</div>
+{}"#,
         kv(&[
             ("collection", format!("<code>{}</code>", esc(&c.id))),
             ("name", esc(&c.name)),
@@ -517,7 +518,13 @@ pub(super) async fn collection(
                 ),
             ),
             ("build jobs", facts.builds),
-        ])
+        ]),
+        complete_result(
+            &format!("GET /v1/collections/{}", super::path_segment(&c.id)),
+            None,
+            "no mmctl command reads a collection; use the API request",
+            serde_json::to_value(&c).ok().as_ref(),
+        ),
     );
     render(
         &admin,
@@ -771,7 +778,7 @@ pub(super) async fn session(
         turns = "<div class=\"empty\">no turns yet</div>".into();
     }
     let body = format!(
-        r#"<div class="card">{}</div><h2>turns</h2>{turns}"#,
+        r#"<div class="card">{}</div><h2>turns</h2>{turns}{}"#,
         kv(&[
             ("session", format!("<code>{}</code>", esc(&s.session_id))),
             ("uid", esc(&s.uid)),
@@ -787,7 +794,13 @@ pub(super) async fn session(
             ("compartments (snapshot)", list_or_dash(&s.compartments)),
             ("created", esc(&s.created_at)),
             ("turns", s.turns.len().to_string()),
-        ])
+        ]),
+        complete_result(
+            &format!("GET /v1/sessions/{}", super::path_segment(&s.session_id)),
+            None,
+            "no mmctl command reads a session; use the API request",
+            serde_json::to_value(&s).ok().as_ref(),
+        ),
     );
     render(
         &admin,
@@ -1493,8 +1506,9 @@ pub(super) async fn audit(
     render(&admin, "audit", "Audit trail", &body)
 }
 
-/// Minimal percent-encoding for query values we build ourselves.
-fn urlencode(s: &str) -> String {
+/// Minimal percent-encoding for query values and path segments we build
+/// ourselves.
+pub(super) fn urlencode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         match b {
