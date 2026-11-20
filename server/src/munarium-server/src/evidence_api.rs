@@ -743,6 +743,28 @@ pub async fn evidence_access(
     crate::rest::data_plane_access(state, headers, uid, munarium_access::SCOPE_EVIDENCE).await
 }
 
+/// The entry check for the two READ handlers (manifest and rows): the v1.4
+/// `evidence` scope, or the additive read-only `evidence_read` grant
+/// (ClearView A4). Sealing, upload and commit keep `evidence_access`, so the
+/// read-only grant can never write. Domination, tenant and retention are
+/// checked per artifact by the operations exactly as before.
+pub async fn evidence_read_access(
+    state: &Arc<AppState>,
+    headers: &axum::http::HeaderMap,
+    uid: &str,
+) -> ApiResult<munarium_access::AccessCtx> {
+    crate::rest::data_plane_access_any(
+        state,
+        headers,
+        uid,
+        &[
+            munarium_access::SCOPE_EVIDENCE,
+            munarium_access::SCOPE_EVIDENCE_READ,
+        ],
+    )
+    .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

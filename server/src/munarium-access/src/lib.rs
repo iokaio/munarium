@@ -53,6 +53,30 @@ pub const SCOPE_FINDINGS: &str = "findings";
 /// The scope says "this service participates in the evidence plane"; the class
 /// says "and only within this clearance".
 pub const SCOPE_EVIDENCE: &str = "evidence";
+/// Transport-entry scope for the opt-in MCP endpoint (ClearView A1). It admits
+/// authenticated protocol discovery and a scope-filtered tool listing ONLY:
+/// every tool invocation also needs its ordinary data-plane scope. On native
+/// routes it grants nothing, so adding it to a token never widens what the
+/// token can do there, and a deployment that never enables MCP never honours
+/// it anywhere.
+pub const SCOPE_MCP: &str = "mcp";
+/// Read-only evidence capability (ClearView A4): resolve a sealed manifest
+/// and read bounded canonical rows, never seal, upload or commit. Like
+/// `evidence`, it never widens what the token may READ: domination is still
+/// checked per artifact. A v1.4 `evidence` token keeps its read and sealing
+/// permissions; this scope is the additive grant for readers that must not
+/// seal (the MCP evidence tools require it, see docs/security-posture.md).
+pub const SCOPE_EVIDENCE_READ: &str = "evidence_read";
+/// Every scope `issue` accepts, in the order error messages list them.
+pub const KNOWN_SCOPES: &[&str] = &[
+    SCOPE_QUERY,
+    SCOPE_INGEST,
+    SCOPE_FINDINGS,
+    SCOPE_EVIDENCE,
+    SCOPE_VOCABULARY,
+    SCOPE_MCP,
+    SCOPE_EVIDENCE_READ,
+];
 /// Hard ceiling on token lifetime; issuance clamps to this.
 pub const MAX_TTL_SECS: u64 = 86_400;
 /// Default token lifetime when the deployment does not configure one.
@@ -218,19 +242,16 @@ pub fn issue(
         return Err(AccessError::Invalid("uid is required".into()));
     }
     if scopes.is_empty() {
-        return Err(AccessError::Invalid(
-            "at least one scope (query|ingest|findings|evidence) is required".into(),
-        ));
+        return Err(AccessError::Invalid(format!(
+            "at least one scope ({}) is required",
+            KNOWN_SCOPES.join("|")
+        )));
     }
     for s in &scopes {
-        if s != SCOPE_QUERY
-            && s != SCOPE_INGEST
-            && s != SCOPE_FINDINGS
-            && s != SCOPE_EVIDENCE
-            && s != SCOPE_VOCABULARY
-        {
+        if !KNOWN_SCOPES.contains(&s.as_str()) {
             return Err(AccessError::Invalid(format!(
-                "unknown scope '{s}' (query|ingest|findings|evidence|vocabulary)"
+                "unknown scope '{s}' ({})",
+                KNOWN_SCOPES.join("|")
             )));
         }
     }
@@ -451,6 +472,49 @@ mod tests {
             0,
             vec![],
             vec!["admin".into()],
+            None,
+            60,
+            "j".into()
+        )
+        .is_err());
+    }
+
+    /// ClearView A1/A4: the two additive scopes issue and verify like any
+    /// other, and neither is implied by the static-token principal. `mcp` is
+    /// transport entry only; `evidence_read` is a distinct value, so a
+    /// `query` token never carries either.
+    #[test]
+    fn the_mcp_and_read_only_evidence_scopes_are_additive() {
+        let (tok, c) = issue(
+            SECRET,
+            "u",
+            "t",
+            0,
+            vec![],
+            vec![
+                SCOPE_MCP.into(),
+                SCOPE_QUERY.into(),
+                SCOPE_EVIDENCE_READ.into(),
+            ],
+            None,
+            60,
+            "j".into(),
+        )
+        .unwrap();
+        let ctx: AccessCtx = verify(SECRET, &tok).unwrap().into();
+        assert_eq!(c.scopes, ctx.scopes);
+        assert!(ctx.has_scope(SCOPE_MCP) && ctx.has_scope(SCOPE_EVIDENCE_READ));
+        assert!(!ctx.has_scope(SCOPE_EVIDENCE));
+        let unrestricted = AccessCtx::unrestricted("op", "t");
+        assert!(!unrestricted.has_scope(SCOPE_MCP));
+        assert!(!unrestricted.has_scope(SCOPE_EVIDENCE_READ));
+        assert!(issue(
+            SECRET,
+            "u",
+            "t",
+            0,
+            vec![],
+            vec!["evidence.read".into()],
             None,
             60,
             "j".into()

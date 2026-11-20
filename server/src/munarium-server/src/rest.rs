@@ -142,6 +142,34 @@ pub(crate) async fn data_plane_access(
     Ok(access)
 }
 
+/// `data_plane_access` for an entry point any one of several scopes opens
+/// (the evidence read handlers: `evidence` or the read-only `evidence_read`).
+/// The refusal names the first scope listed, so a v1.4 caller reads the same
+/// detail it always did.
+pub(crate) async fn data_plane_access_any(
+    state: &AppState,
+    headers: &HeaderMap,
+    uid: &str,
+    any_of: &[&str],
+) -> ApiResult<munarium_access::AccessCtx> {
+    let principal = state
+        .authenticate_principal(bearer(headers))
+        .map_err(promote_auth_error)?;
+    let access = principal.access_ctx(uid)?;
+    if !any_of.iter().any(|s| access.has_scope(s)) {
+        return Err(ApiError::Custom(crate::error::CustomError::scope_missing(
+            any_of.first().copied().unwrap_or_default(),
+        )));
+    }
+    if !access.jti.is_empty() {
+        state
+            .check_revocation(&access.tenant_id, &access.jti)
+            .await
+            .map_err(promote_auth_error)?;
+    }
+    Ok(access)
+}
+
 /// content_hash values are content addresses (hex sha-256). Rejecting
 /// non-hex input keeps junk out of ledger subjects and makes byte-prefix
 /// slicing safe (no multi-byte char boundaries).

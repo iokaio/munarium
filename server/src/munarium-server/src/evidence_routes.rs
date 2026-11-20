@@ -134,7 +134,7 @@ pub async fn get_manifest(
     uid: Option<axum::Extension<crate::middleware::Uid>>,
 ) -> ApiResult<Json<dto::EvidenceManifestResponse>> {
     let uid = uid_or_anonymous(uid.as_ref());
-    let access = evidence_api::evidence_access(&state, &headers, &uid).await?;
+    let access = evidence_api::evidence_read_access(&state, &headers, &uid).await?;
     Ok(Json(
         evidence_api::op_get_manifest(&state, &access, &evidence_id).await?,
     ))
@@ -170,7 +170,7 @@ pub async fn get_rows(
     uid: Option<axum::Extension<crate::middleware::Uid>>,
 ) -> ApiResult<Json<dto::EvidenceRowsResponse>> {
     let uid = uid_or_anonymous(uid.as_ref());
-    let access = evidence_api::evidence_access(&state, &headers, &uid).await?;
+    let access = evidence_api::evidence_read_access(&state, &headers, &uid).await?;
     Ok(Json(
         evidence_api::op_get_rows(
             &state,
