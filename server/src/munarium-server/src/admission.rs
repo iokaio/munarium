@@ -86,6 +86,12 @@ pub const REST_CONTROL: &[(&str, &str, ControlAuth)] = &[
         ControlAuth::Rw,
     ),
     ("POST", "/v1/access-tokens/{jti}/revoke", ControlAuth::Mgmt),
+    // ClearView IR-4: rollback calls no endpoint and must work under load.
+    (
+        "POST",
+        "/v1/collections/{id}/inference/rollback",
+        ControlAuth::Mgmt,
+    ),
     (
         "GET",
         "/v1/index-build-jobs/{job_id}",
@@ -119,6 +125,8 @@ pub const REST_HEAVY: &[(&str, &str)] = &[
     ("POST", "/v1.2/answers"),
     ("POST", "/v1/providers/{name}/complete"),
     ("POST", "/v1/providers/{name}/embed"),
+    // ClearView IR-1: the probe makes outbound inference calls.
+    ("POST", "/v1/providers/{name}/inference-probe"),
     ("PUT", "/v1/sources"),
     ("POST", "/v1/ingest"),
     ("POST", "/v1/ingest/batch"),

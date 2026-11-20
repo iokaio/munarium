@@ -2514,6 +2514,181 @@
         "src/munarium-store-pg/migrations/0050_console_sessions.sql",
         "src/munarium-server/src/console_sessions.rs"
       ]
+    },
+    "inference_probes": {
+      "columns": {
+        "tenant_id": "text",
+        "probe_id": "text",
+        "provider_config": "text",
+        "config_hash": "text",
+        "endpoint_fingerprint": "text",
+        "embed_model": "text",
+        "rerank_model": "text",
+        "embed_dimensions": "integer",
+        "passed": "boolean",
+        "checks": "jsonb",
+        "probed_by": "text",
+        "probed_at": "timestamptz"
+      },
+      "content": "Conformance probe results: configuration name and text hash, endpoint fingerprint (never the address), model names, dimension, outcome, fixed check names and reason codes, the probing principal and time. No credential, input or reply.",
+      "json_content": {
+        "checks": "Array of {check, passed, reason} with fixed check names and fixed reason codes."
+      },
+      "owner": "Tenant inference operators (mgmt role) for the collection; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "retained",
+      "origins": [
+        "src/munarium-store-pg/migrations/0080_inference_stages.sql",
+        "src/munarium-server/src/inference.rs"
+      ]
+    },
+    "collection_inference_bindings": {
+      "columns": {
+        "tenant_id": "text",
+        "collection_id": "text",
+        "revision": "bigint",
+        "state": "text",
+        "provider_config": "text",
+        "embedding": "jsonb",
+        "rerank": "jsonb",
+        "shadow": "jsonb",
+        "timeout_ms": "integer",
+        "semantic_index_id": "text",
+        "prior_index_id": "text",
+        "updated_by": "text",
+        "updated_at": "timestamptz"
+      },
+      "content": "Current inference binding per collection: state, revision, bound configuration name, stage settings (model names, query/passage instructions, caps, policies), shadow switches, the semantic and prior approved index ids, last actor and time.",
+      "json_content": {
+        "embedding": "{model, query_instruction, passage_instruction, policy}; instructions are operator-authored text.",
+        "rerank": "{model, max_candidates, max_document_bytes, policy}.",
+        "shadow": "{rerank, semantic_index} booleans."
+      },
+      "owner": "Tenant inference operators (mgmt role) for the collection; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "retained",
+      "origins": [
+        "src/munarium-store-pg/migrations/0080_inference_stages.sql",
+        "src/munarium-server/src/inference.rs"
+      ]
+    },
+    "collection_inference_binding_history": {
+      "columns": {
+        "tenant_id": "text",
+        "collection_id": "text",
+        "revision": "bigint",
+        "action": "text",
+        "state": "text",
+        "binding": "jsonb",
+        "actor": "text",
+        "recorded_at": "timestamptz"
+      },
+      "content": "Append-only history of every binding change: revision, action (bind, semantic_index_built, enroll, rollback), resulting state, a snapshot of the binding settings and the actor.",
+      "json_content": {
+        "binding": "Snapshot of provider_config, embedding, rerank, shadow, timeout_ms, semantic_index_id and prior_index_id as in collection_inference_bindings."
+      },
+      "owner": "Tenant inference operators (mgmt role) for the collection; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "retained",
+      "origins": [
+        "src/munarium-store-pg/migrations/0080_inference_stages.sql",
+        "src/munarium-server/src/inference.rs"
+      ]
+    },
+    "semantic_chunk_vectors": {
+      "columns": {
+        "tenant_id": "text",
+        "collection_id": "text",
+        "index_version_id": "text",
+        "chunk_id": "text",
+        "embedding": "vector(1024)"
+      },
+      "content": "One semantic embedding per chunk of a semantic index version, derived from the chunk text (with the passage instruction) by the bound endpoint.",
+      "json_content": {},
+      "owner": "Collection owner, like the chunks the vectors are derived from; the database operator controls retained copies.",
+      "policy": "chunks",
+      "origins": [
+        "src/munarium-store-pg/migrations/0080_inference_stages.sql",
+        "src/munarium-retrieval-pg/src/semantic.rs"
+      ]
+    },
+    "inference_attempts": {
+      "columns": {
+        "tenant_id": "text",
+        "attempt_id": "text",
+        "purpose": "text",
+        "stage": "text",
+        "provider_config": "text",
+        "model": "text",
+        "caller": "text",
+        "collection_ids": "text[]",
+        "job_id": "text",
+        "reservation_id": "text",
+        "estimate_units": "bigint",
+        "accounted_units": "bigint",
+        "usage_source": "text",
+        "outcome": "text",
+        "reason": "text",
+        "started_at": "timestamptz",
+        "finished_at": "timestamptz"
+      },
+      "content": "One row per physical inference endpoint attempt: purpose, stage, configuration and model, initiating caller, collections served, build job, budget reservation, estimated and accounted tokens, usage source, outcome, fixed reason code and times. No input or reply content.",
+      "json_content": {},
+      "owner": "Tenant budget owner and audit owner; the initiating caller is recorded for attribution.",
+      "policy": "retained",
+      "origins": [
+        "src/munarium-store-pg/migrations/0080_inference_stages.sql",
+        "src/munarium-server/src/inference.rs"
+      ]
+    },
+    "inference_stage_events": {
+      "columns": {
+        "tenant_id": "text",
+        "event_id": "text",
+        "collection_id": "text",
+        "stage": "text",
+        "policy": "text",
+        "policy_revision": "bigint",
+        "outcome": "text",
+        "state": "text",
+        "reason": "text",
+        "caller": "text",
+        "recorded_at": "timestamptz"
+      },
+      "content": "Enrolled reads whose stage did not apply: stage, policy and revision, fallback or refusal, state, fixed reason code, caller and time. No query or passage content.",
+      "json_content": {},
+      "owner": "Tenant inference operators (mgmt role) for the collection; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "retained",
+      "origins": [
+        "src/munarium-store-pg/migrations/0080_inference_stages.sql",
+        "src/munarium-retrieval/src/inference.rs",
+        "src/munarium-server/src/inference.rs"
+      ]
+    },
+    "inference_shadow_comparisons": {
+      "columns": {
+        "tenant_id": "text",
+        "comparison_id": "text",
+        "collection_id": "text",
+        "kind": "text",
+        "query_fingerprint": "text",
+        "served_index_id": "text",
+        "candidate_index_id": "text",
+        "outcome": "text",
+        "reason": "text",
+        "k": "integer",
+        "overlap_at_k": "integer",
+        "top1_agrees": "boolean",
+        "moved_positions": "integer",
+        "caller": "text",
+        "recorded_at": "timestamptz"
+      },
+      "content": "Shadow comparison measures: kind, a truncated SHA-256 fingerprint of the query (never the query), served and candidate index ids, outcome, reason code, k, overlap, top-1 agreement, moved positions, caller and time.",
+      "json_content": {},
+      "owner": "Tenant inference operators (mgmt role) for the collection; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "retained",
+      "origins": [
+        "src/munarium-store-pg/migrations/0080_inference_stages.sql",
+        "src/munarium-retrieval/src/inference.rs",
+        "src/munarium-server/src/inference.rs"
+      ]
     }
   },
   "artifacts": {

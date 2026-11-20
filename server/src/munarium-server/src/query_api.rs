@@ -233,7 +233,7 @@ pub async fn query_collections(
         )
         .into());
     }
-    let retrieval = Arc::new(state.retrieval_for(&access.tenant_id)?);
+    let retrieval = Arc::new(state.retrieval_for(&access.tenant_id)?.with_caller(&uid));
     let mut snapshots = Vec::new();
     let mut targets = Vec::new();
     let mut pools = Vec::new();

@@ -85,6 +85,14 @@ public sealed partial class ServerApiClient {
     public Task<ApiResponse> ActivateCollectionIndexAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("ActivateCollectionIndex", "POST", "/v1/collections/{collection_id}/activate-index", "application/json", request ?? new(), ct);
     /// <summary>GET /v1/collections/{id}</summary>
     public Task<ApiResponse> GetCollectionAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("GetCollection", "GET", "/v1/collections/{id}", "application/json", request ?? new(), ct);
+    /// <summary>GET /v1/collections/{id}/inference</summary>
+    public Task<ApiResponse> GetInferenceAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("GetInference", "GET", "/v1/collections/{id}/inference", "application/json", request ?? new(), ct);
+    /// <summary>PUT /v1/collections/{id}/inference</summary>
+    public Task<ApiResponse> PutInferenceAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("PutInference", "PUT", "/v1/collections/{id}/inference", "application/json", request ?? new(), ct);
+    /// <summary>POST /v1/collections/{id}/inference/enroll</summary>
+    public Task<ApiResponse> EnrollInferenceAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("EnrollInference", "POST", "/v1/collections/{id}/inference/enroll", "application/json", request ?? new(), ct);
+    /// <summary>POST /v1/collections/{id}/inference/rollback</summary>
+    public Task<ApiResponse> RollbackInferenceAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("RollbackInference", "POST", "/v1/collections/{id}/inference/rollback", "application/json", request ?? new(), ct);
     /// <summary>GET /v1/command-recovery</summary>
     public Task<ApiResponse> CommandRecoveryPolicyAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("CommandRecoveryPolicy", "GET", "/v1/command-recovery", "application/json", request ?? new(), ct);
     /// <summary>POST /v1/command-recovery</summary>
@@ -179,6 +187,8 @@ public sealed partial class ServerApiClient {
     public Task<ApiResponse> ProviderEmbedAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("ProviderEmbed", "POST", "/v1/providers/{name}/embed", "application/json", request ?? new(), ct);
     /// <summary>GET /v1/providers/{name}/health</summary>
     public Task<ApiResponse> ProviderHealthAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("ProviderHealth", "GET", "/v1/providers/{name}/health", "application/json", request ?? new(), ct);
+    /// <summary>POST /v1/providers/{name}/inference-probe</summary>
+    public Task<ApiResponse> ProbeProviderAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("ProbeProvider", "POST", "/v1/providers/{name}/inference-probe", "application/json", request ?? new(), ct);
     /// <summary>GET /v1/reports/audit</summary>
     public Task<ApiResponse> AuditAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("Audit", "GET", "/v1/reports/audit", "application/json", request ?? new(), ct);
     /// <summary>GET /v1/reports/budget-usage</summary>

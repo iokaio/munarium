@@ -106,6 +106,14 @@ service ServerApiService {
   rpc ActivateCollectionIndex(ServerApiRequest) returns (ServerApiResponse);
   // GET /v1/collections/{id}
   rpc GetCollection(ServerApiRequest) returns (ServerApiResponse);
+  // GET /v1/collections/{id}/inference
+  rpc GetInference(ServerApiRequest) returns (ServerApiResponse);
+  // PUT /v1/collections/{id}/inference
+  rpc PutInference(ServerApiRequest) returns (ServerApiResponse);
+  // POST /v1/collections/{id}/inference/enroll
+  rpc EnrollInference(ServerApiRequest) returns (ServerApiResponse);
+  // POST /v1/collections/{id}/inference/rollback
+  rpc RollbackInference(ServerApiRequest) returns (ServerApiResponse);
   // GET /v1/command-recovery
   rpc CommandRecoveryPolicy(ServerApiRequest) returns (ServerApiResponse);
   // POST /v1/command-recovery
@@ -200,6 +208,8 @@ service ServerApiService {
   rpc ProviderEmbed(ServerApiRequest) returns (ServerApiResponse);
   // GET /v1/providers/{name}/health
   rpc ProviderHealth(ServerApiRequest) returns (ServerApiResponse);
+  // POST /v1/providers/{name}/inference-probe
+  rpc ProbeProvider(ServerApiRequest) returns (ServerApiResponse);
   // GET /v1/reports/audit
   rpc Audit(ServerApiRequest) returns (ServerApiResponse);
   // GET /v1/reports/budget-usage

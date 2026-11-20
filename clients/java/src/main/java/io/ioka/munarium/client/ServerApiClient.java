@@ -132,6 +132,18 @@ public final class ServerApiClient extends ServerApiTransport {
     /** GET /v1/collections/{id} */
     public ApiResponse getCollection(ApiRequest request) { return call("GetCollection", "GET", "/v1/collections/{id}", "application/json", request); }
     public CompletableFuture<ApiResponse> getCollectionAsync(ApiRequest request) { return async(() -> getCollection(request)); }
+    /** GET /v1/collections/{id}/inference */
+    public ApiResponse getInference(ApiRequest request) { return call("GetInference", "GET", "/v1/collections/{id}/inference", "application/json", request); }
+    public CompletableFuture<ApiResponse> getInferenceAsync(ApiRequest request) { return async(() -> getInference(request)); }
+    /** PUT /v1/collections/{id}/inference */
+    public ApiResponse putInference(ApiRequest request) { return call("PutInference", "PUT", "/v1/collections/{id}/inference", "application/json", request); }
+    public CompletableFuture<ApiResponse> putInferenceAsync(ApiRequest request) { return async(() -> putInference(request)); }
+    /** POST /v1/collections/{id}/inference/enroll */
+    public ApiResponse enrollInference(ApiRequest request) { return call("EnrollInference", "POST", "/v1/collections/{id}/inference/enroll", "application/json", request); }
+    public CompletableFuture<ApiResponse> enrollInferenceAsync(ApiRequest request) { return async(() -> enrollInference(request)); }
+    /** POST /v1/collections/{id}/inference/rollback */
+    public ApiResponse rollbackInference(ApiRequest request) { return call("RollbackInference", "POST", "/v1/collections/{id}/inference/rollback", "application/json", request); }
+    public CompletableFuture<ApiResponse> rollbackInferenceAsync(ApiRequest request) { return async(() -> rollbackInference(request)); }
     /** GET /v1/command-recovery */
     public ApiResponse commandRecoveryPolicy(ApiRequest request) { return call("CommandRecoveryPolicy", "GET", "/v1/command-recovery", "application/json", request); }
     public CompletableFuture<ApiResponse> commandRecoveryPolicyAsync(ApiRequest request) { return async(() -> commandRecoveryPolicy(request)); }
@@ -273,6 +285,9 @@ public final class ServerApiClient extends ServerApiTransport {
     /** GET /v1/providers/{name}/health */
     public ApiResponse providerHealth(ApiRequest request) { return call("ProviderHealth", "GET", "/v1/providers/{name}/health", "application/json", request); }
     public CompletableFuture<ApiResponse> providerHealthAsync(ApiRequest request) { return async(() -> providerHealth(request)); }
+    /** POST /v1/providers/{name}/inference-probe */
+    public ApiResponse probeProvider(ApiRequest request) { return call("ProbeProvider", "POST", "/v1/providers/{name}/inference-probe", "application/json", request); }
+    public CompletableFuture<ApiResponse> probeProviderAsync(ApiRequest request) { return async(() -> probeProvider(request)); }
     /** GET /v1/reports/audit */
     public ApiResponse audit(ApiRequest request) { return call("Audit", "GET", "/v1/reports/audit", "application/json", request); }
     public CompletableFuture<ApiResponse> auditAsync(ApiRequest request) { return async(() -> audit(request)); }

@@ -26,8 +26,8 @@ same names (`"true"`/`"false"` and the action string):
 | Slug | `retryable` | `retry_action` | Meaning |
 |---|---|---|---|
 | `overloaded` | `true` | `repeat` | Shed at admission before any handler ran. The identical request may be repeated after `Retry-After`. |
-| `rate-limited`, `daily-cap-reached`, `run-locked`, `datastore-unavailable` | `false` | `retry_later` | Transient, but the response does not prove the request had no effect. Repeat only a safe read or a request under a documented idempotency key; otherwise decide again later. Existing `Retry-After` headers are unchanged. |
-| `head-conflict` | `false` | `reread` | Read the current head and make a fresh decision. Never replay the stale request. |
+| `rate-limited`, `daily-cap-reached`, `run-locked`, `datastore-unavailable`, `inference-stage-unavailable` | `false` | `retry_later` | Transient, but the response does not prove the request had no effect. Repeat only a safe read or a request under a documented idempotency key; otherwise decide again later. Existing `Retry-After` headers are unchanged. |
+| `head-conflict`, `inference-not-qualified` | `false` | `reread` | Read the current head (or the collection's inference state) and make a fresh decision. Never replay the stale request. |
 | `command-unresolved` | `false` | `inspect_outcome` | The guarded command's outcome is unknown. Inspect it ([guarded command recovery](../ops/command-recovery.md)) before explicitly authorizing a new key. Never replay automatically. |
 
 Every other slug carries neither member. An absent, unknown or future action
@@ -60,6 +60,8 @@ official clients regardless of these members.
 | `provider-error` | 502 | `UNAVAILABLE` | upstream LLM failure, refused/malformed/unsupported completion, or session token exhaustion after its single bounded retry; extensions: `provider`, `endpoint_fingerprint` (never key material). Dispatched calls retain their accounted usage even when no answer is returned. |
 | `storage-error` | 500 | `INTERNAL` | backend failure. |
 | `datastore-unavailable` | 503 | `UNAVAILABLE` | a scope selected to serve from the datastore could not be served from its artifacts. There is deliberately **no fallback past selection**: a replica that agreed to serve a scope from the datastore leaves the traffic pool rather than silently answering from PostgreSQL, so the two engines can never be confused for each other. Recovery is an operator action, never a request-path one — `PUT /v1/retrieval-rollout` with `serving: postgres` (the rollback, never gated) or `mmctl datastore rollout set <collection|shape> <id> postgres` per scope for a whole corpus. |
+| `inference-stage-unavailable` | 503 | `UNAVAILABLE` | **Experimental (ClearView I1).** A read of an inference-enrolled collection whose configured stage could not run under the `require` policy (the default). The detail is content-free: `stage=<embedding\|reranking> state=<disabled\|unconfigured\|probe_failed\|unavailable\|budget_exhausted> reason=<code> policy=require policy_revision=<n>`. No partial or fallback result is returned. Recovery is an operator action: restore the endpoint or budget, re-probe after a configuration change, explicitly select `prefer`, or roll the collection back. See [inference endpoints](../guides/inference-endpoints.md#outage-policy). |
+| `inference-not-qualified` | 409 | `FAILED_PRECONDITION` | **Experimental (ClearView IR-1 to IR-4).** An inference management operation whose precondition is not met: inference disabled on the deployment, no `dailyTotalTokens` or `shadowDailyTokens` for what was asked, no current passing probe, an incomplete or mismatched semantic index, a change that requires rollback first, or a state that does not permit the transition. The detail names the unmet condition. |
 
 ### platform identity/token slugs (emitted by the server layer, not the kernel)
 

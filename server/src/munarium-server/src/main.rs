@@ -62,6 +62,9 @@ mod grpc;
 mod grpc_api;
 mod grpc_data;
 mod grpc_platform;
+mod inference;
+#[cfg(test)]
+mod inference_tests;
 mod ingest_api;
 mod interactions;
 #[cfg(test)]

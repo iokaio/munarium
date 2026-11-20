@@ -181,6 +181,10 @@ pub struct AppState {
         std::sync::OnceLock<Option<std::sync::Arc<crate::datastore_serving::DatastoreParts>>>,
     /// Maintained by the readiness warmer; read (never computed) by /readyz.
     datastore_readiness: std::sync::Arc<crate::datastore_serving::DatastoreReadiness>,
+    /// The optional inference endpoint (ClearView IR-1 to IR-4). Off unless
+    /// `MUNARIUM_INFERENCE=enabled`; even then nothing is sent until an
+    /// operator probes a configuration and enrolls a collection.
+    pub inference: Arc<crate::inference::InferenceRuntime>,
     /// Process metrics (counters/histograms); gauges are polled at render
     /// time by `metrics::render`. Arc because the interaction writer task
     /// holds a clone (it outlives no AppState borrow). See metrics.rs for
@@ -625,6 +629,14 @@ impl AppState {
             ),
         }
         let admission = crate::admission::Admission::new(admission);
+        let inference = Arc::new(crate::inference::InferenceRuntime::new(
+            crate::inference::InferenceSettings::from_env().map_err(KernelError::InvalidInput)?,
+            match &stores {
+                StoreRegistry::Pg(base) => Some(base.pool().clone()),
+                StoreRegistry::Mem(_) => None,
+            },
+            budgets.clone(),
+        ));
         let matrix_http =
             crate::evidence_providers::MatrixProvider::client(std::time::Duration::from_secs(5))?;
         let matrix_breaker = Arc::new(crate::evidence_providers::CircuitBreaker::default());
@@ -674,6 +686,7 @@ impl AppState {
             ),
             metrics,
             admission,
+            inference,
             draining: std::sync::atomic::AtomicBool::new(false),
             console: crate::console_sessions::ConsoleSessions::new(console),
             chrono_rules_mem: Mutex::new(HashMap::new()),
@@ -1029,7 +1042,13 @@ impl AppState {
         )
         .with_doc_intel(self.doc_intel.clone())
         .with_extractors(Arc::clone(&self.extractors));
-        let mut retrieval = munarium_retrieval::Retrieval::new(pg, self.retrieval_mode);
+        // Every collection read consults the binding table (one primary-key
+        // lookup); an unbound collection keeps the v1.4 path.
+        let mut retrieval = munarium_retrieval::Retrieval::new(pg, self.retrieval_mode)
+            .with_inference(Arc::new(crate::inference::Governor {
+                runtime: self.inference.clone(),
+                tenant: tenant_id.to_string(),
+            }));
         if self.retrieval_mode == munarium_retrieval::RetrievalMode::Datastore {
             if let Some(parts) = self.datastore_parts() {
                 retrieval = retrieval.with_serving(parts.serving_plane(pool, tenant_id));

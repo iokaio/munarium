@@ -1184,8 +1184,9 @@ pub(crate) fn disclose(
 ) -> dto::DisclosedSearchResponse {
     dto::DisclosedSearchResponse {
         result: result.convert(),
-        execution: requested
-            .unwrap_or(false)
+        // An enrolled collection's stage receipts are always returned: its
+        // read is not a v1.4 read, and a fallback must be disclosed.
+        execution: (requested.unwrap_or(false) || !execution.stages.is_empty())
             .then(|| execution_dto(&execution)),
     }
 }
@@ -1203,6 +1204,21 @@ pub(crate) fn execution_dto(e: &munarium_retrieval::SearchExecution) -> dto::Sea
                 candidate_limit: l.candidate_limit,
                 fetched: l.fetched,
                 exhausted: l.exhausted,
+            })
+            .collect(),
+        stages: e
+            .stages
+            .iter()
+            .map(|s| dto::SearchStageDto {
+                stage: s.stage.as_str().to_string(),
+                policy: s.policy.as_str().to_string(),
+                policy_revision: s.policy_revision,
+                applied: s.applied,
+                state: s.state.to_string(),
+                reason: s.reason.map(str::to_string),
+                fallback: s.fallback.map(str::to_string),
+                identity: s.identity.clone(),
+                scored: s.scored,
             })
             .collect(),
     }
@@ -1252,7 +1268,7 @@ async fn hybrid_search(
             .unwrap_or_else(|| "anonymous".to_string());
         let access =
             data_plane_access(&state, &headers, &uid, munarium_access::SCOPE_QUERY).await?;
-        let retrieval = state.retrieval_for(&access.tenant_id)?;
+        let retrieval = state.retrieval_for(&access.tenant_id)?.with_caller(&uid);
         let info = match retrieval.collection_by_id(name).await {
             Ok(info) => info,
             Err(KernelError::NotFound { .. }) => retrieval.collection_by_name(name).await?,
@@ -1518,6 +1534,10 @@ pub fn router(state: Arc<AppState>) -> Router {
             post(crate::providers_api::provider_embed),
         )
         .route(
+            "/v1/providers/{name}/inference-probe",
+            post(crate::inference::probe_provider),
+        )
+        .route(
             "/v1/runbooks",
             post(crate::runbooks_api::apply_runbook).get(crate::runbooks_api::list_runbooks),
         )
@@ -1728,6 +1748,18 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route(
             "/v1/collections/{id}",
             get(crate::collections_api::get_collection),
+        )
+        .route(
+            "/v1/collections/{id}/inference",
+            get(crate::inference::get_inference).put(crate::inference::put_inference),
+        )
+        .route(
+            "/v1/collections/{id}/inference/enroll",
+            post(crate::inference::enroll_inference),
+        )
+        .route(
+            "/v1/collections/{id}/inference/rollback",
+            post(crate::inference::rollback_inference),
         )
         // The derived-index tier. Reporting and operating
         // on artifacts; none of these changes which version is ACTIVE, and a

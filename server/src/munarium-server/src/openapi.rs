@@ -237,6 +237,11 @@ impl Modify for SecurityAddon {
         crate::collections_api::create_collection,
         crate::collections_api::list_collections,
         crate::collections_api::get_collection,
+        crate::inference::probe_provider,
+        crate::inference::get_inference,
+        crate::inference::put_inference,
+        crate::inference::enroll_inference,
+        crate::inference::rollback_inference,
     ),
     components(schemas(
         crate::answers_api::AnswerSource,

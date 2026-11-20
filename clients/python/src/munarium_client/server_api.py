@@ -541,6 +541,58 @@ class ServerApiClient(BaseServerApi):
             request,
         )
 
+    def get_inference(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/collections/{id}/inference"""
+        return self._call(
+            "GetInference",
+            "GET",
+            "/v1/collections/{id}/inference",
+            "application/json",
+            request,
+        )
+
+    def put_inference(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """PUT /v1/collections/{id}/inference"""
+        return self._call(
+            "PutInference",
+            "PUT",
+            "/v1/collections/{id}/inference",
+            "application/json",
+            request,
+        )
+
+    def enroll_inference(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """POST /v1/collections/{id}/inference/enroll"""
+        return self._call(
+            "EnrollInference",
+            "POST",
+            "/v1/collections/{id}/inference/enroll",
+            "application/json",
+            request,
+        )
+
+    def rollback_inference(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """POST /v1/collections/{id}/inference/rollback"""
+        return self._call(
+            "RollbackInference",
+            "POST",
+            "/v1/collections/{id}/inference/rollback",
+            "application/json",
+            request,
+        )
+
     def command_recovery_policy(
         self,
         request: ApiRequest | None = None,
@@ -1148,6 +1200,19 @@ class ServerApiClient(BaseServerApi):
             "ProviderHealth",
             "GET",
             "/v1/providers/{name}/health",
+            "application/json",
+            request,
+        )
+
+    def probe_provider(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """POST /v1/providers/{name}/inference-probe"""
+        return self._call(
+            "ProbeProvider",
+            "POST",
+            "/v1/providers/{name}/inference-probe",
             "application/json",
             request,
         )
@@ -2402,6 +2467,58 @@ class AsyncServerApiClient(BaseAsyncServerApi):
             request,
         )
 
+    async def get_inference(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/collections/{id}/inference"""
+        return await self._call(
+            "GetInference",
+            "GET",
+            "/v1/collections/{id}/inference",
+            "application/json",
+            request,
+        )
+
+    async def put_inference(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """PUT /v1/collections/{id}/inference"""
+        return await self._call(
+            "PutInference",
+            "PUT",
+            "/v1/collections/{id}/inference",
+            "application/json",
+            request,
+        )
+
+    async def enroll_inference(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """POST /v1/collections/{id}/inference/enroll"""
+        return await self._call(
+            "EnrollInference",
+            "POST",
+            "/v1/collections/{id}/inference/enroll",
+            "application/json",
+            request,
+        )
+
+    async def rollback_inference(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """POST /v1/collections/{id}/inference/rollback"""
+        return await self._call(
+            "RollbackInference",
+            "POST",
+            "/v1/collections/{id}/inference/rollback",
+            "application/json",
+            request,
+        )
+
     async def command_recovery_policy(
         self,
         request: ApiRequest | None = None,
@@ -3009,6 +3126,19 @@ class AsyncServerApiClient(BaseAsyncServerApi):
             "ProviderHealth",
             "GET",
             "/v1/providers/{name}/health",
+            "application/json",
+            request,
+        )
+
+    async def probe_provider(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """POST /v1/providers/{name}/inference-probe"""
+        return await self._call(
+            "ProbeProvider",
+            "POST",
+            "/v1/providers/{name}/inference-probe",
             "application/json",
             request,
         )

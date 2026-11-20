@@ -92,6 +92,8 @@ pub mod budget_evidence {
 
 /// Optional monetary API wire shapes. Inline so the standalone contract crate
 /// carries the same schemas without a dependency on the domain or stores.
+pub mod inference;
+
 pub mod monetary {
     use super::*;
     use std::collections::BTreeMap;
@@ -901,6 +903,43 @@ pub struct SearchExecutionDto {
     pub lexical_domain: String,
     /// The legs the engine ran, lexical first. A leg that did not run is absent.
     pub legs: Vec<SearchLegDto>,
+    /// ClearView IR-0 (experimental): the configured inference stages of an
+    /// enrolled collection and what each did. Absent for every unenrolled
+    /// read, so an R1 disclosure of a v1.4 collection is unchanged. An
+    /// enrolled collection's response always carries `execution` with this
+    /// member, whether or not disclosure was requested.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stages: Vec<SearchStageDto>,
+}
+
+/// One inference stage's receipt on one enrolled read (ClearView IR-0/I1,
+/// experimental). Content-free: no query, passage or endpoint detail.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct SearchStageDto {
+    /// `embedding` | `reranking`.
+    pub stage: String,
+    /// The effective policy: `require` (the default) | `prefer`.
+    pub policy: String,
+    /// The collection binding revision that set the policy.
+    pub policy_revision: u64,
+    /// True only when the stage's output shaped the served result.
+    pub applied: bool,
+    /// `ready` when it ran; otherwise `not_applicable`, `disabled`,
+    /// `unconfigured`, `probe_failed`, `unavailable` or `budget_exhausted`.
+    pub state: String,
+    /// A content-free reason code when the stage did not apply.
+    #[serde(default)]
+    pub reason: Option<String>,
+    /// The disclosed fallback that served instead, under `prefer` only:
+    /// `lexical_only` | `fused_order`.
+    #[serde(default)]
+    pub fallback: Option<String>,
+    /// The stage identity: the semantic space id, or the reranking model.
+    #[serde(default)]
+    pub identity: Option<String>,
+    /// Candidates the reranker scored.
+    #[serde(default)]
+    pub scored: Option<u64>,
 }
 
 /// One retrieval leg's observations (ClearView R1, experimental).

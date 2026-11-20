@@ -84,6 +84,7 @@ pub async fn run_one_job(
             .await?;
             Ok(serde_json::to_value(&built).map_err(|e| KernelError::Storage(e.to_string()))?)
         }
+        JobKind::Semantic => crate::inference::run_semantic_job(state, job, fence, signal).await,
         JobKind::Direct => {
             let collection_id = job.scope_id.as_deref().ok_or_else(|| {
                 KernelError::InvalidInput("a direct job names a collection".into())
@@ -403,6 +404,7 @@ type ApiResult<T> = std::result::Result<T, ApiError>;
 pub async fn enqueue_job(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
+    uid: Option<axum::Extension<crate::middleware::Uid>>,
     crate::rest::ProblemJson(req): crate::rest::ProblemJson<dto::IndexBuildJobRequest>,
 ) -> ApiResult<axum::Json<dto::IndexBuildJobDto>> {
     let ctx = crate::rest::auth_ctx(&state, &headers)?;
@@ -430,7 +432,7 @@ pub async fn enqueue_job(
         },
         (_, _, None) => {
             return Err(ApiError::from(KernelError::InvalidInput(
-                "backfill and direct jobs name collection_id".into(),
+                "backfill, direct and semantic jobs name collection_id".into(),
             )))
         }
     };
@@ -440,6 +442,16 @@ pub async fn enqueue_job(
     }
     if let Some(w) = req.watermark_seq {
         params.insert("watermark_seq".into(), w.into());
+    }
+    if kind == JobKind::Semantic {
+        // ClearView I2: the initiating caller rides the queued job, so every
+        // endpoint attempt the build makes is attributed to them.
+        params.insert(
+            "caller".into(),
+            uid.map(|axum::Extension(u)| u.0)
+                .unwrap_or_else(|| format!("api:{}", ctx.role))
+                .into(),
+        );
     }
 
     let jobs = BuildJobs::new(pool.clone());

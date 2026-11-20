@@ -14321,6 +14321,9 @@ route family needs one rule there.
 | `/v1/collections` | GET · POST | collections | §16 |
 | `/v1/collections/{collection_id}/activate-index` | POST | index-artifacts | §8A |
 | `/v1/collections/{id}` | GET | collections | §16 |
+| `/v1/collections/{id}/inference` | GET · PUT | collections | [inference endpoints](inference-endpoints.md) |
+| `/v1/collections/{id}/inference/enroll` | POST | collections | [inference endpoints](inference-endpoints.md) |
+| `/v1/collections/{id}/inference/rollback` | POST | collections | [inference endpoints](inference-endpoints.md) |
 | `/v1/evidence` | POST | evidence | §21C |
 | `/v1/evidence/{evidence_id}` | GET · DELETE | evidence | §21C |
 | `/v1/evidence/{evidence_id}/accesses` | GET | evidence | §21C |
@@ -14352,6 +14355,7 @@ route family needs one rule there.
 | `/v1/providers` | GET · POST | providers | §11 (BYOK diagnostic), §17 |
 | `/v1/providers/{name}/complete` | POST | providers | §11 (BYOK diagnostic), §17 |
 | `/v1/providers/{name}/embed` | POST | providers | §11 (BYOK diagnostic), §17 |
+| `/v1/providers/{name}/inference-probe` | POST | providers | [inference endpoints](inference-endpoints.md) |
 | `/v1/providers/{name}/health` | GET | providers | §11 (BYOK diagnostic), §17 |
 | `/v1/providers/{name}/diagnostics` | GET | providers | Management-only alias/readiness disclosure; [operator diagnostics](../tokenbudgets.md#operator-diagnostics) |
 | `/v1/reports/audit` | GET | reports | §20; rest.md Reports rows |

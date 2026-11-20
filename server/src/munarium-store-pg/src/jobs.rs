@@ -48,6 +48,10 @@ pub enum JobKind {
     Rebuild,
     /// The direct build of a collection.
     Direct,
+    /// A collection's semantic index (ClearView IR-2): built beside the
+    /// active index, its vectors filled through the collection's inference
+    /// binding. Never activated by the job.
+    Semantic,
 }
 
 impl JobKind {
@@ -56,6 +60,7 @@ impl JobKind {
             Self::Backfill => "backfill",
             Self::Rebuild => "rebuild",
             Self::Direct => "direct",
+            Self::Semantic => "semantic",
         }
     }
 
@@ -64,6 +69,7 @@ impl JobKind {
             "backfill" => Self::Backfill,
             "rebuild" => Self::Rebuild,
             "direct" => Self::Direct,
+            "semantic" => Self::Semantic,
             other => {
                 return Err(KernelError::InvalidInput(format!(
                     "unknown build-job kind {other:?}"

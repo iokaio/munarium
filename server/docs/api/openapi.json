@@ -1661,6 +1661,204 @@
         }
       }
     },
+    "/v1/collections/{id}/inference": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on legacy /v1 requests (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "collections"
+        ],
+        "summary": "GET /v1/collections/{id}/inference",
+        "operationId": "get_inference",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "collection id or name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "binding, stage readiness and today's usage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionInferenceDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "collections"
+        ],
+        "summary": "PUT /v1/collections/{id}/inference",
+        "operationId": "put_inference",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "collection id or name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InferenceBindingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "the binding after the change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionInferenceDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "head-conflict on a stale expected_revision, or inference-not-qualified"
+          }
+        }
+      }
+    },
+    "/v1/collections/{id}/inference/enroll": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on legacy /v1 requests (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "collections"
+        ],
+        "summary": "POST /v1/collections/{id}/inference/enroll",
+        "operationId": "enroll_inference",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "collection id or name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InferenceRevisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "enrolled: the semantic index is active and the stages serve",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionInferenceDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "head-conflict, or inference-not-qualified with the unmet condition"
+          }
+        }
+      }
+    },
+    "/v1/collections/{id}/inference/rollback": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on legacy /v1 requests (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "collections"
+        ],
+        "summary": "POST /v1/collections/{id}/inference/rollback",
+        "operationId": "rollback_inference",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "collection id or name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InferenceRevisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "rolled back: the prior approved index is active; no endpoint is called",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionInferenceDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "head-conflict, or inference-not-qualified when not enrolled"
+          }
+        }
+      }
+    },
     "/v1/command-recovery": {
       "parameters": [
         {
@@ -3906,6 +4104,52 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/v1/providers/{name}/inference-probe": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on legacy /v1 requests (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "providers"
+        ],
+        "summary": "POST /v1/providers/{name}/inference-probe",
+        "operationId": "probe_provider",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "an openai-compatible provider configuration",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "the recorded probe; `passed` false is a recorded failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InferenceProbeResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "inference-not-qualified: inference is disabled on this deployment"
           }
         }
       }
@@ -8221,6 +8465,126 @@
           }
         }
       },
+      "CollectionInferenceDto": {
+        "type": "object",
+        "description": "`GET /v1/collections/{id}/inference` and every binding change's response.",
+        "required": [
+          "collection_id",
+          "state",
+          "revision",
+          "stages",
+          "usage"
+        ],
+        "properties": {
+          "active_index_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The collection's active index now."
+          },
+          "collection_id": {
+            "type": "string"
+          },
+          "embedding": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/InferenceEmbeddingSettings"
+              }
+            ]
+          },
+          "prior_index_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The prior approved index rollback restores."
+          },
+          "provider_config": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rerank": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/InferenceRerankSettings"
+              }
+            ]
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64",
+            "description": "0 when unbound.",
+            "minimum": 0
+          },
+          "semantic_chunks": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Chunks and vectors of that index: complete when equal.",
+            "minimum": 0
+          },
+          "semantic_index_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The built semantic index, if any."
+          },
+          "semantic_vectors": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "shadow": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/InferenceShadowSettings"
+              }
+            ]
+          },
+          "stages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InferenceStageStatusDto"
+            }
+          },
+          "state": {
+            "type": "string",
+            "description": "`unbound` | `bound` | `enrolled` | `rolled_back`."
+          },
+          "timeout_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "usage": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InferenceUsageDto"
+            }
+          }
+        }
+      },
       "CollectionOutcomeDto": {
         "type": "object",
         "description": "One member of a multi-collection read, within the caller's visible scope\n(ClearView C1, experimental). A collection the session cannot see never\nappears: no outcome, name, count or diagnostic.",
@@ -10454,6 +10818,317 @@
           },
           "shape_ref": {
             "type": "string"
+          }
+        }
+      },
+      "InferenceBindingRequest": {
+        "type": "object",
+        "description": "`PUT /v1/collections/{id}/inference` request.",
+        "required": [
+          "expected_revision",
+          "provider_config"
+        ],
+        "properties": {
+          "embedding": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/InferenceEmbeddingSettings"
+              }
+            ]
+          },
+          "expected_revision": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The binding revision this change replaces; 0 creates the binding.",
+            "minimum": 0
+          },
+          "provider_config": {
+            "type": "string",
+            "description": "An `openai-compatible` provider configuration of this tenant, with\n`budgets.dailyTotalTokens` set. Its budget pays for the collection."
+          },
+          "rerank": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/InferenceRerankSettings"
+              }
+            ]
+          },
+          "shadow": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/InferenceShadowSettings"
+              }
+            ]
+          },
+          "timeout_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "One deadline for a read's stages (default 5,000; 100 to 60,000).",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "InferenceEmbeddingSettings": {
+        "type": "object",
+        "description": "The embedding stage of a binding.",
+        "required": [
+          "model"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "A model listed in the configuration's `models.embed`."
+          },
+          "passage_instruction": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Prefixed to every passage before embedding. Part of the index identity."
+          },
+          "policy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`require` (the default when omitted) | `prefer`."
+          },
+          "query_instruction": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Prefixed to every query before embedding. Part of the index identity."
+          }
+        },
+        "additionalProperties": false
+      },
+      "InferenceProbeCheckDto": {
+        "type": "object",
+        "description": "One check of a conformance probe.",
+        "required": [
+          "check",
+          "passed"
+        ],
+        "properties": {
+          "check": {
+            "type": "string",
+            "description": "`discovery` | `embedding` | `reranking`."
+          },
+          "passed": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A fixed reason code when the check failed."
+          }
+        }
+      },
+      "InferenceProbeResponse": {
+        "type": "object",
+        "description": "`POST /v1/providers/{name}/inference-probe` response.",
+        "required": [
+          "probe_id",
+          "provider_config",
+          "passed",
+          "endpoint_fingerprint",
+          "checks"
+        ],
+        "properties": {
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InferenceProbeCheckDto"
+            }
+          },
+          "embed_dimensions": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "embed_model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "endpoint_fingerprint": {
+            "type": "string",
+            "description": "16 hex digits of the resolved base URL; never the address."
+          },
+          "passed": {
+            "type": "boolean",
+            "description": "True only when every check passed. A probe is valid until the\nconfiguration's text changes."
+          },
+          "probe_id": {
+            "type": "string"
+          },
+          "provider_config": {
+            "type": "string"
+          },
+          "rerank_model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "InferenceRerankSettings": {
+        "type": "object",
+        "description": "The reranking stage of a binding.",
+        "required": [
+          "model"
+        ],
+        "properties": {
+          "max_candidates": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Head candidates scored per read (default 20, at most 100).",
+            "minimum": 0
+          },
+          "max_document_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "A candidate passage over this many bytes refuses the stage (default\n8,192). Server never truncates.",
+            "minimum": 0
+          },
+          "model": {
+            "type": "string",
+            "description": "A model listed in the configuration's `models.rerank`."
+          },
+          "policy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`require` (the default when omitted) | `prefer`."
+          }
+        },
+        "additionalProperties": false
+      },
+      "InferenceRevisionRequest": {
+        "type": "object",
+        "description": "`POST .../inference/enroll` and `.../inference/rollback` request.",
+        "required": [
+          "expected_revision"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "InferenceShadowSettings": {
+        "type": "object",
+        "description": "Explicitly authorized shadow comparisons. Both require the\nconfiguration's `budgets.shadowDailyTokens` allocation.",
+        "properties": {
+          "rerank": {
+            "type": "boolean",
+            "description": "Rerank served single-collection reads in shadow while reranking is\nnot serving."
+          },
+          "semantic_index": {
+            "type": "boolean",
+            "description": "Search the built, not yet enrolled semantic index in shadow."
+          }
+        },
+        "additionalProperties": false
+      },
+      "InferenceStageStatusDto": {
+        "type": "object",
+        "description": "One configured stage's readiness, without calling the endpoint.",
+        "required": [
+          "stage",
+          "model",
+          "policy",
+          "state"
+        ],
+        "properties": {
+          "identity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The semantic space id (embedding only)."
+          },
+          "model": {
+            "type": "string"
+          },
+          "policy": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stage": {
+            "type": "string",
+            "description": "`embedding` | `reranking`."
+          },
+          "state": {
+            "type": "string",
+            "description": "`ready` | `disabled` | `unconfigured` | `probe_failed`."
+          }
+        }
+      },
+      "InferenceUsageDto": {
+        "type": "object",
+        "description": "Endpoint usage attributed to one collection, by purpose, for the current\nUTC day. `missing_usage` counts attempts charged at their estimate\nbecause the endpoint reported no usage.",
+        "required": [
+          "purpose",
+          "attempts",
+          "accounted_units",
+          "missing_usage"
+        ],
+        "properties": {
+          "accounted_units": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "attempts": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "missing_usage": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "purpose": {
+            "type": "string",
+            "description": "`serving` | `shadow` | `build` | `probe`."
           }
         }
       },
@@ -12895,6 +13570,13 @@
             "type": "string",
             "description": "That engine's lexical score domain. Scores from different domains are\nnot comparable."
           },
+          "stages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchStageDto"
+            },
+            "description": "ClearView IR-0 (experimental): the configured inference stages of an\nenrolled collection and what each did. Absent for every unenrolled\nread, so an R1 disclosure of a v1.4 collection is unchanged. An\nenrolled collection's response always carries `execution` with this\nmember, whether or not disclosure was requested."
+          },
           "version": {
             "type": "integer",
             "format": "int32",
@@ -13076,6 +13758,71 @@
             "items": {
               "$ref": "#/components/schemas/SearchHitDto"
             }
+          }
+        }
+      },
+      "SearchStageDto": {
+        "type": "object",
+        "description": "One inference stage's receipt on one enrolled read (ClearView IR-0/I1,\nexperimental). Content-free: no query, passage or endpoint detail.",
+        "required": [
+          "stage",
+          "policy",
+          "policy_revision",
+          "applied",
+          "state"
+        ],
+        "properties": {
+          "applied": {
+            "type": "boolean",
+            "description": "True only when the stage's output shaped the served result."
+          },
+          "fallback": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The disclosed fallback that served instead, under `prefer` only:\n`lexical_only` | `fused_order`."
+          },
+          "identity": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The stage identity: the semantic space id, or the reranking model."
+          },
+          "policy": {
+            "type": "string",
+            "description": "The effective policy: `require` (the default) | `prefer`."
+          },
+          "policy_revision": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The collection binding revision that set the policy.",
+            "minimum": 0
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A content-free reason code when the stage did not apply."
+          },
+          "scored": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Candidates the reranker scored.",
+            "minimum": 0
+          },
+          "stage": {
+            "type": "string",
+            "description": "`embedding` | `reranking`."
+          },
+          "state": {
+            "type": "string",
+            "description": "`ready` when it ran; otherwise `not_applicable`, `disabled`,\n`unconfigured`, `probe_failed`, `unavailable` or `budget_exhausted`."
           }
         }
       },

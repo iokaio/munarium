@@ -40,10 +40,12 @@ const BASE: &str = "https://munarium.ioka.io/problems";
 pub(crate) fn retry_hint(slug: &str) -> Option<(bool, &'static str)> {
     match slug {
         "overloaded" => Some((true, "repeat")),
-        "rate-limited" | "daily-cap-reached" | "run-locked" | "datastore-unavailable" => {
-            Some((false, "retry_later"))
-        }
-        "head-conflict" => Some((false, "reread")),
+        "rate-limited"
+        | "daily-cap-reached"
+        | "run-locked"
+        | "datastore-unavailable"
+        | "inference-stage-unavailable" => Some((false, "retry_later")),
+        "head-conflict" | "inference-not-qualified" => Some((false, "reread")),
         "command-unresolved" => Some((false, "inspect_outcome")),
         _ => None,
     }
@@ -477,6 +479,35 @@ fn source_denied(e: &KernelError) -> Option<CustomError> {
     })
 }
 
+/// ClearView I1: a governed read refused because a required inference stage
+/// could not run (`munarium_core::inference::refusal`).
+fn inference_refusal(e: &KernelError) -> Option<CustomError> {
+    Some(CustomError {
+        slug: "inference-stage-unavailable",
+        status: StatusCode::SERVICE_UNAVAILABLE,
+        code: tonic::Code::Unavailable,
+        title: "a required inference stage is unavailable",
+        detail: munarium_core::inference::refusal_detail(e)?.into(),
+    })
+}
+
+/// ClearView IR-4: an inference management operation whose precondition
+/// (probe, budget, built index, state) is not met.
+fn inference_not_qualified(e: &KernelError) -> Option<CustomError> {
+    let KernelError::InvalidInput(message) = e else {
+        return None;
+    };
+    Some(CustomError {
+        slug: "inference-not-qualified",
+        status: StatusCode::CONFLICT,
+        code: tonic::Code::FailedPrecondition,
+        title: "inference precondition not met",
+        detail: message
+            .strip_prefix(crate::inference::NOT_QUALIFIED_PREFIX)?
+            .into(),
+    })
+}
+
 fn run_locked_detail(e: &KernelError) -> Option<&str> {
     match e {
         KernelError::InvalidInput(msg) => msg.strip_prefix(RUN_LOCKED_PREFIX),
@@ -553,6 +584,9 @@ pub fn slug(e: &KernelError) -> &'static str {
 
 pub fn to_problem(e: &KernelError) -> (StatusCode, Problem) {
     if let Some(error) = command_unresolved(e) {
+        return error.to_problem();
+    }
+    if let Some(error) = inference_refusal(e).or_else(|| inference_not_qualified(e)) {
         return error.to_problem();
     }
     if let Some(error) = source_denied(e) {
@@ -706,6 +740,9 @@ pub fn to_status(e: &KernelError) -> tonic::Status {
     }
     use tonic::Code;
     if let Some(error) = command_unresolved(e) {
+        return error.to_status();
+    }
+    if let Some(error) = inference_refusal(e).or_else(|| inference_not_qualified(e)) {
         return error.to_status();
     }
     if let Some(detail) = run_locked_detail(e) {

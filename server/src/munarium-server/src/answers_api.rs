@@ -225,7 +225,7 @@ pub async fn answer(
     {
         return Err(KernelError::InvalidInput("invalid question or source set".into()).into());
     }
-    let retrieval = state.retrieval_for(&access.tenant_id)?;
+    let retrieval = state.retrieval_for(&access.tenant_id)?.with_caller(&uid);
     let mut collections = Vec::new();
     for source in &req.sources {
         let info = match retrieval.collection_by_id(&source.collection).await {

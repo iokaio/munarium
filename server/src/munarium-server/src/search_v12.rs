@@ -43,7 +43,7 @@ pub async fn search(
         )
         .into());
     }
-    let retrieval = state.retrieval_for(&access.tenant_id)?;
+    let retrieval = state.retrieval_for(&access.tenant_id)?.with_caller(&uid);
     let mut scopes = Vec::new();
     for name in [
         &body.collection,

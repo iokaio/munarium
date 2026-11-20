@@ -126,6 +126,18 @@ impl pb::server_api_service_server::ServerApiService for ServerApiSvc {
     async fn get_collection(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "GET", "/v1/collections/{id}", "application/json").await
     }
+    async fn get_inference(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "GET", "/v1/collections/{id}/inference", "application/json").await
+    }
+    async fn put_inference(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "PUT", "/v1/collections/{id}/inference", "application/json").await
+    }
+    async fn enroll_inference(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "POST", "/v1/collections/{id}/inference/enroll", "application/json").await
+    }
+    async fn rollback_inference(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "POST", "/v1/collections/{id}/inference/rollback", "application/json").await
+    }
     async fn command_recovery_policy(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "GET", "/v1/command-recovery", "application/json").await
     }
@@ -266,6 +278,9 @@ impl pb::server_api_service_server::ServerApiService for ServerApiSvc {
     }
     async fn provider_health(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "GET", "/v1/providers/{name}/health", "application/json").await
+    }
+    async fn probe_provider(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
+        self.unary(request, "POST", "/v1/providers/{name}/inference-probe", "application/json").await
     }
     async fn audit(&self, request: Request<pb::ServerApiRequest>) -> Result<Response<pb::ServerApiResponse>, Status> {
         self.unary(request, "GET", "/v1/reports/audit", "application/json").await

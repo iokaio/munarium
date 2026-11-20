@@ -1298,6 +1298,10 @@ no evidence rows appear here.
 | CreateCollection | ServerApiRequest | ServerApiResponse | POST /v1/collections |
 | ActivateCollectionIndex | ServerApiRequest | ServerApiResponse | POST /v1/collections/{collection_id}/activate-index |
 | GetCollection | ServerApiRequest | ServerApiResponse | GET /v1/collections/{id} |
+| GetInference | ServerApiRequest | ServerApiResponse | GET /v1/collections/{id}/inference |
+| PutInference | ServerApiRequest | ServerApiResponse | PUT /v1/collections/{id}/inference |
+| EnrollInference | ServerApiRequest | ServerApiResponse | POST /v1/collections/{id}/inference/enroll |
+| RollbackInference | ServerApiRequest | ServerApiResponse | POST /v1/collections/{id}/inference/rollback |
 | CommandRecoveryPolicy | ServerApiRequest | ServerApiResponse | GET /v1/command-recovery |
 | EnableCommandRecovery | ServerApiRequest | ServerApiResponse | POST /v1/command-recovery |
 | CommandRecoveryReceipt | ServerApiRequest | ServerApiResponse | GET /v1/command-recovery/receipt |
@@ -1345,6 +1349,7 @@ no evidence rows appear here.
 | ProviderDiagnostics | ServerApiRequest | ServerApiResponse | GET /v1/providers/{name}/diagnostics |
 | ProviderEmbed | ServerApiRequest | ServerApiResponse | POST /v1/providers/{name}/embed |
 | ProviderHealth | ServerApiRequest | ServerApiResponse | GET /v1/providers/{name}/health |
+| ProbeProvider | ServerApiRequest | ServerApiResponse | POST /v1/providers/{name}/inference-probe |
 | Audit | ServerApiRequest | ServerApiResponse | GET /v1/reports/audit |
 | BudgetUsageReport | ServerApiRequest | ServerApiResponse | GET /v1/reports/budget-usage |
 | Budgets | ServerApiRequest | ServerApiResponse | GET /v1/reports/budgets |

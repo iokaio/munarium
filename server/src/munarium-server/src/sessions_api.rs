@@ -589,6 +589,10 @@ fn member_unavailable_reason(error: &KernelError) -> Option<&'static str> {
         KernelError::NotFound { .. } => Some("no_active_index"),
         KernelError::DatastoreUnavailable(_) => Some("engine_unavailable"),
         KernelError::Storage(_) => Some("search_failed"),
+        // ClearView I1: an enrolled member whose required inference stage
+        // could not run is unavailable to an explicit-policy read; it never
+        // contributes an unapproved fallback.
+        e if munarium_core::inference::refusal_detail(e).is_some() => Some("inference_unavailable"),
         _ => None,
     }
 }
@@ -776,6 +780,7 @@ pub(crate) async fn retrieve_documents(
     permitted: Vec<munarium_core::retrieval::CollectionInfo>,
     req: &dto::TurnRequest,
     progress: &Option<TurnProgressTx>,
+    caller: &str,
 ) -> ApiResult<DocumentRetrieval> {
     let retrieval_spec = doc.spec.retrieval.clone().unwrap_or_default();
     let permitted = route_collections(&req.query, &retrieval_spec.collection_routes, permitted);
@@ -803,7 +808,7 @@ pub(crate) async fn retrieve_documents(
     // `select_collection_indices`), and run the full expanded search only
     // over the strongest. No collection names or query vocabulary are
     // compiled into this path.
-    let retrieval = state.retrieval_for(tenant)?;
+    let retrieval = state.retrieval_for(tenant)?.with_caller(caller);
     // Number-form normalization (2026-08-30, §13.5 entry 25; the tuning
     // study's class A). A question writing `4,436,097` cannot reach a corpus
     // writing `US4436097`: the parser makes one token of the doc form and
@@ -1325,7 +1330,16 @@ pub async fn op_turn_covered(
                 searched,
                 skipped,
                 members,
-            } = retrieve_documents(state, tenant, &doc, permitted, &req, &progress).await?;
+            } = retrieve_documents(
+                state,
+                tenant,
+                &doc,
+                permitted,
+                &req,
+                &progress,
+                &session.uid,
+            )
+            .await?;
             // C1-T1 under `report`: when no visible member completed, every
             // possible answer rests on missing evidence. Refuse rather than
             // return an empty read that reads as "nothing exists".
@@ -1369,6 +1383,7 @@ pub async fn op_turn_covered(
             }
             providers.push(&fact_provider);
 
+            let caller = session.uid.as_str();
             let permitted_for_docs = permitted.clone();
             let outcome = crate::evidence_hierarchy::execute_plan(
                 &plan,
@@ -1389,7 +1404,7 @@ pub async fn op_turn_covered(
                                 .filter(|c| layer.sources.iter().any(|s| s == &c.name))
                                 .collect()
                         };
-                        retrieve_documents(state, tenant, doc, scoped, req, progress).await
+                        retrieve_documents(state, tenant, doc, scoped, req, progress, caller).await
                     }
                 },
                 |event| emit(&progress, event),

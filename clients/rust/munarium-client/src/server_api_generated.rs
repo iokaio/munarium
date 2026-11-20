@@ -166,6 +166,22 @@ impl ServerApiClient {
     pub async fn get_collection(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("GetCollection", "GET", "/v1/collections/{id}", "application/json", request).await
     }
+    /// GET /v1/collections/{id}/inference
+    pub async fn get_inference(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("GetInference", "GET", "/v1/collections/{id}/inference", "application/json", request).await
+    }
+    /// PUT /v1/collections/{id}/inference
+    pub async fn put_inference(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("PutInference", "PUT", "/v1/collections/{id}/inference", "application/json", request).await
+    }
+    /// POST /v1/collections/{id}/inference/enroll
+    pub async fn enroll_inference(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("EnrollInference", "POST", "/v1/collections/{id}/inference/enroll", "application/json", request).await
+    }
+    /// POST /v1/collections/{id}/inference/rollback
+    pub async fn rollback_inference(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("RollbackInference", "POST", "/v1/collections/{id}/inference/rollback", "application/json", request).await
+    }
     /// GET /v1/command-recovery
     pub async fn command_recovery_policy(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("CommandRecoveryPolicy", "GET", "/v1/command-recovery", "application/json", request).await
@@ -353,6 +369,10 @@ impl ServerApiClient {
     /// GET /v1/providers/{name}/health
     pub async fn provider_health(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("ProviderHealth", "GET", "/v1/providers/{name}/health", "application/json", request).await
+    }
+    /// POST /v1/providers/{name}/inference-probe
+    pub async fn probe_provider(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("ProbeProvider", "POST", "/v1/providers/{name}/inference-probe", "application/json", request).await
     }
     /// GET /v1/reports/audit
     pub async fn audit(&self, request: ApiRequest) -> Result<ApiResponse> {

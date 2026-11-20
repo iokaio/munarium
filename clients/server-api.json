@@ -330,6 +330,38 @@
       "streaming": false
     },
     {
+      "name": "get_inference",
+      "rpc": "GetInference",
+      "method": "GET",
+      "path": "/v1/collections/{id}/inference",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "put_inference",
+      "rpc": "PutInference",
+      "method": "PUT",
+      "path": "/v1/collections/{id}/inference",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "enroll_inference",
+      "rpc": "EnrollInference",
+      "method": "POST",
+      "path": "/v1/collections/{id}/inference/enroll",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "rollback_inference",
+      "rpc": "RollbackInference",
+      "method": "POST",
+      "path": "/v1/collections/{id}/inference/rollback",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
       "name": "command_recovery_policy",
       "rpc": "CommandRecoveryPolicy",
       "method": "GET",
@@ -702,6 +734,14 @@
       "rpc": "ProviderHealth",
       "method": "GET",
       "path": "/v1/providers/{name}/health",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
+      "name": "probe_provider",
+      "rpc": "ProbeProvider",
+      "method": "POST",
+      "path": "/v1/providers/{name}/inference-probe",
       "content_type": "application/json",
       "streaming": false
     },
