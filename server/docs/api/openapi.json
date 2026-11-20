@@ -11587,6 +11587,20 @@
               "null"
             ]
           },
+          "retry_action": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Experimental (ClearView R11): `repeat`, `retry_later`, `reread` or\n`inspect_outcome`. Absent or unrecognized authorizes no automated replay."
+          },
+          "retryable": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Experimental (ClearView R11): `true` only when the server has evidence\nthe request was rejected before execution, so the identical request may\nbe repeated (after any `Retry-After`). Absent: no guidance."
+          },
           "shape_ref": {
             "type": [
               "string",

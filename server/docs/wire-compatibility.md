@@ -154,6 +154,12 @@ follows, for maintainer review:
 - A turn's `coverage` is returned, not written to the transcript, so
   `GET /v1/sessions/{id}` is unchanged.
 
+### R11: retry guidance
+
+Problems may carry `retryable`/`retry_action` for the six slugs listed in
+[retry guidance](api/errors.md#retry-guidance), and gRPC adds the same keys to
+existing `ErrorInfo` metadata. Other problems serialize exactly as before.
+
 ### SDK status
 
 The generated full-API operation catalog is unchanged (no operation is added),

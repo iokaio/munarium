@@ -19,6 +19,52 @@ use munarium_core::KernelError;
 use tonic_types::{ErrorDetails, StatusExt};
 
 const BASE: &str = "https://munarium.ioka.io/problems";
+
+/// ClearView R11 (experimental): typed retry guidance, keyed by problem slug
+/// and carried identically as the REST `retryable`/`retry_action` members and
+/// the gRPC `ErrorInfo` metadata keys of the same names.
+///
+/// - `repeat` (`retryable: true`): the server rejected the request before
+///   any handler ran, so the identical request may be repeated after any
+///   `Retry-After`. Only load shedding proves that.
+/// - `retry_later`: the condition is transient, but this response does not
+///   prove the request had no effect. Repeat only a safe read or a request
+///   under a documented idempotency key; otherwise decide again later.
+/// - `reread`: read current state and make a new decision; never replay.
+/// - `inspect_outcome`: the outcome is unknown. Inspect the recorded outcome
+///   before authorizing anything new; never replay automatically.
+///
+/// Every other slug carries no guidance, and an absent or unrecognized action
+/// authorizes no automated replay. `retryable` is never `true` without
+/// `repeat`.
+pub(crate) fn retry_hint(slug: &str) -> Option<(bool, &'static str)> {
+    match slug {
+        "overloaded" => Some((true, "repeat")),
+        "rate-limited" | "daily-cap-reached" | "run-locked" | "datastore-unavailable" => {
+            Some((false, "retry_later"))
+        }
+        "head-conflict" => Some((false, "reread")),
+        "command-unresolved" => Some((false, "inspect_outcome")),
+        _ => None,
+    }
+}
+
+/// Add the R11 members to a REST problem.
+fn with_retry_hint(slug: &str, mut problem: Problem) -> Problem {
+    if let Some((retryable, action)) = retry_hint(slug) {
+        problem.retryable = Some(retryable);
+        problem.retry_action = Some(action.to_string());
+    }
+    problem
+}
+
+/// Add the R11 keys to gRPC `ErrorInfo` metadata.
+fn insert_retry_hint(slug: &str, metadata: &mut std::collections::HashMap<String, String>) {
+    if let Some((retryable, action)) = retry_hint(slug) {
+        metadata.insert("retryable".into(), retryable.to_string());
+        metadata.insert("retry_action".into(), action.to_string());
+    }
+}
 /// The ErrorInfo domain for every munarium-emitted gRPC error detail.
 const ERROR_DOMAIN: &str = "mmp.ioka.io";
 
@@ -361,29 +407,32 @@ impl CustomError {
     pub fn to_problem(&self) -> (StatusCode, Problem) {
         (
             self.status,
-            Problem {
-                problem_type: format!("{BASE}/{}", self.slug),
-                title: self.title.to_string(),
-                status: self.status.as_u16(),
-                detail: Some(self.detail.clone()),
-                gate_findings: None,
-                policy_citation: None,
-                expected: None,
-                actual: None,
-                shape_ref: None,
-                kind: None,
-                id: None,
-            },
+            with_retry_hint(
+                self.slug,
+                Problem {
+                    problem_type: format!("{BASE}/{}", self.slug),
+                    title: self.title.to_string(),
+                    status: self.status.as_u16(),
+                    detail: Some(self.detail.clone()),
+                    gate_findings: None,
+                    policy_citation: None,
+                    expected: None,
+                    actual: None,
+                    shape_ref: None,
+                    kind: None,
+                    id: None,
+                    retryable: None,
+                    retry_action: None,
+                },
+            ),
         )
     }
 
     pub fn to_status(&self) -> tonic::Status {
         let mut details = ErrorDetails::new();
-        details.set_error_info(
-            self.slug,
-            ERROR_DOMAIN,
-            std::collections::HashMap::<String, String>::new(),
-        );
+        let mut metadata = std::collections::HashMap::<String, String>::new();
+        insert_retry_hint(self.slug, &mut metadata);
+        details.set_error_info(self.slug, ERROR_DOMAIN, metadata);
         tonic::Status::with_error_details(self.code, self.detail.clone(), details)
     }
 }
@@ -577,6 +626,8 @@ pub fn to_problem(e: &KernelError) -> (StatusCode, Problem) {
         shape_ref: None,
         kind: None,
         id: None,
+        retryable: None,
+        retry_action: None,
     };
     match e {
         KernelError::HeadConflict { expected, actual } => {
@@ -595,7 +646,7 @@ pub fn to_problem(e: &KernelError) -> (StatusCode, Problem) {
         }
         _ => {}
     }
-    (status, problem)
+    (status, with_retry_hint(slug(e), problem))
 }
 
 impl IntoResponse for ApiError {
@@ -738,6 +789,7 @@ pub fn to_status(e: &KernelError) -> tonic::Status {
         _ => {}
     }
 
+    insert_retry_hint(slug(e), &mut metadata);
     let mut details = ErrorDetails::new();
     details.set_error_info(slug(e), ERROR_DOMAIN, metadata);
     tonic::Status::with_error_details(code, e.to_string(), details)
@@ -794,3 +846,7 @@ mod tests {
         assert_eq!(seconds_to_next_utc_midnight(last), 43_200);
     }
 }
+
+#[cfg(test)]
+#[path = "clearview_r11_tests.rs"]
+mod clearview_r11_tests;

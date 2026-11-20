@@ -40,6 +40,8 @@ See [wire compatibility](../wire-compatibility.md#clearview-phase-2-explain-a-re
   when a required research-profile layer is missing a member. Authorization,
   `source-denied`, invalid input and provider errors still fail the turn.
   Streamed `probe` and `retrieval` stages carry the same `outcome` and `reason`.
+- Problems (R11) may carry `retryable` and `retry_action` (`repeat`,
+  `retry_later`, `reread`, `inspect_outcome`). See [errors.md](errors.md#retry-guidance).
 
 Token accounting evidence uses management-only `GET /v1/budgets/{id}/evidence`,
 `GET /v1/budgets/{id}/adjustments`, `POST /v1/budgets/{id}/adjustments`, and
@@ -267,6 +269,9 @@ curl -s -H "$TOK" "localhost:8080/v1/versions/$VER/facts?as_of_seq=1"
 
 `application/problem+json` everywhere — see [errors.md](errors.md) for the full registry
 (problem type ↔ HTTP status ↔ gRPC code ↔ extension members, and the `gate.*` rule-id table).
+Experimental retry guidance (`retryable`, `retry_action`) is described in
+[errors.md](errors.md#retry-guidance); an absent or unrecognized action
+authorizes no automated replay.
 
 ## Client libraries
 

@@ -365,6 +365,15 @@ pub struct Problem {
     pub kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
+    /// Experimental (ClearView R11): `true` only when the server has evidence
+    /// the request was rejected before execution, so the identical request may
+    /// be repeated (after any `Retry-After`). Absent: no guidance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retryable: Option<bool>,
+    /// Experimental (ClearView R11): `repeat`, `retry_later`, `reread` or
+    /// `inspect_outcome`. Absent or unrecognized authorizes no automated replay.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_action: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

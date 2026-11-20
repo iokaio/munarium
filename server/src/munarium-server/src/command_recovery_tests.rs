@@ -293,10 +293,15 @@ async fn guarded_policy_authority_legacy_replay_scope_and_two_pool_race() {
                     version = Some(body);
                 }
             }
-            409 => assert!(body["type"]
-                .as_str()
-                .unwrap()
-                .ends_with("command-unresolved")),
+            409 => {
+                assert!(body["type"]
+                    .as_str()
+                    .unwrap()
+                    .ends_with("command-unresolved"));
+                // R11: typed guidance, never an invitation to replay.
+                assert_eq!(body["retryable"], false);
+                assert_eq!(body["retry_action"], "inspect_outcome");
+            }
             other => panic!("unexpected status {other}"),
         }
     }
@@ -375,19 +380,31 @@ async fn guarded_policy_authority_legacy_replay_scope_and_two_pool_race() {
     let metadata: Value = serde_json::from_slice(&metadata.body).unwrap();
     assert_eq!(metadata["state"], "completed");
     assert!(metadata.get("response_body").is_none());
-    assert_eq!(
-        call(
-            &router,
-            "GET",
-            "/v1/command-recovery/receipt?key=race",
-            "reader",
-            "unused",
-            Value::Null
-        )
-        .await
-        .0,
-        403
-    );
+    // R11 status recovery is authorized like activation: only the tenant's
+    // management credential reads claim metadata. The rw writer that issued
+    // the command and a read-only token are refused on both planes.
+    for role in ["reader", "writer"] {
+        assert_eq!(
+            call(
+                &router,
+                "GET",
+                "/v1/command-recovery/receipt?key=race",
+                role,
+                "unused",
+                Value::Null
+            )
+            .await
+            .0,
+            403
+        );
+        assert_eq!(
+            rpc.command_recovery_receipt(native(role, Value::Null, "race"))
+                .await
+                .unwrap_err()
+                .code(),
+            tonic::Code::PermissionDenied
+        );
+    }
     // Body-equivalent requests targeting distinct versions must not replay.
     let a = version["version_id"].as_str().unwrap();
     let b = legacy.1["version_id"].as_str().unwrap();
@@ -482,10 +499,10 @@ async fn guarded_policy_authority_legacy_replay_scope_and_two_pool_race() {
         .await
         .unwrap_err();
     assert_eq!(error.code(), tonic::Code::FailedPrecondition);
-    assert_eq!(
-        error.get_error_details().error_info().unwrap().reason,
-        "command-unresolved"
-    );
+    let info = error.get_error_details().error_info().unwrap().clone();
+    assert_eq!(info.reason, "command-unresolved");
+    assert_eq!(info.metadata["retryable"], "false");
+    assert_eq!(info.metadata["retry_action"], "inspect_outcome");
     let typed = crate::grpc::CommandSvc {
         state: second.clone(),
     };
@@ -512,10 +529,31 @@ async fn guarded_policy_authority_legacy_replay_scope_and_two_pool_race() {
     );
     let error = typed.create_version(typed_request()).await.unwrap_err();
     assert_eq!(error.code(), tonic::Code::FailedPrecondition);
-    assert_eq!(
-        error.get_error_details().error_info().unwrap().reason,
-        "command-unresolved"
-    );
+    let info = error.get_error_details().error_info().unwrap().clone();
+    assert_eq!(info.reason, "command-unresolved");
+    assert_eq!(info.metadata["retry_action"], "inspect_outcome");
+    // Zero automatic replay: the same typed request stays unresolved and
+    // the failed command applied no second effect.
+    let versions_before: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM memory_versions WHERE tenant_id=$1")
+            .bind(&tenant)
+            .fetch_one(first.pg_pool().unwrap())
+            .await
+            .unwrap();
+    for _ in 0..2 {
+        let again = typed.create_version(typed_request()).await.unwrap_err();
+        assert_eq!(
+            again.get_error_details().error_info().unwrap().reason,
+            "command-unresolved"
+        );
+    }
+    let versions_after: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM memory_versions WHERE tenant_id=$1")
+            .bind(&tenant)
+            .fetch_one(first.pg_pool().unwrap())
+            .await
+            .unwrap();
+    assert_eq!(versions_after, versions_before);
     sqlx::query("UPDATE command_receipts SET created_at=now()-interval '10 days',completed_at=CASE WHEN state='completed' THEN now()-interval '10 days' END WHERE tenant_id=$1")
         .bind(&tenant).execute(first.pg_pool().unwrap()).await.unwrap();
     assert_eq!(

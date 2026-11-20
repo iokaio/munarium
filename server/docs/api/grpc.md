@@ -41,6 +41,8 @@ the v1.4 behavior:
   `TurnResponse.coverage = 9` (C1). The semantics are those of the REST turn in
   [rest.md](rest.md); streamed turns use `ServerApiService/TurnStream`, whose
   `progress` and `done` JSON match the REST SSE stream.
+- Every `ErrorInfo` may carry `retryable` and `retry_action` metadata (R11), as
+  described in [errors.md](errors.md#retry-guidance).
 
 ## The two gRPC planes
 

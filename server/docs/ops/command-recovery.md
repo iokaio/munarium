@@ -41,6 +41,10 @@ historical hash binding; activation cannot retroactively add missing evidence.
 A duplicate pending call, cancellation, handler failure or crash before receipt
 commit returns `command-unresolved` on a subsequent identical request: HTTP 409,
 gRPC `FAILED_PRECONDITION`. This error is **not** a retryable head conflict.
+The problem (and the gRPC `ErrorInfo` metadata) carries the experimental
+typed guidance `retryable: false` and `retry_action: inspect_outcome`; see
+[retry guidance](../api/errors.md#retry-guidance). Clients must not replay
+automatically on that action, nor on any absent or unrecognized action.
 The original request may have applied no effects, some effects or all effects.
 The command mutation and receipt are not one database transaction. The durable
 claim intentionally prevents a second execution even when the first owner died
@@ -48,7 +52,10 @@ before applying an effect.
 
 Management callers can inspect metadata using
 `GET /v1/command-recovery/receipt?key=<original-key>`. It returns operation, state
-and timestamps, never the stored response payload. Inspect the ledger and other
+and timestamps, never the stored response payload. This status recovery is
+authorized like activation: only the tenant's management credential may read it,
+on REST and the native `CommandRecoveryReceipt` RPC. The `rw` writer that issued
+the command and read-only tokens are refused; another tenant's key is not found. Inspect the ledger and other
 affected systems before explicitly authorizing a new command/key; a new key is
 a new execution, not a repair or continuation of the old claim. No automatic
 resubmission or manual "mark complete" endpoint is provided.

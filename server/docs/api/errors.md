@@ -17,6 +17,25 @@ gRPC: `tonic::Status` with structured details in `grpc-status-details-bin` — a
 Clients must key on the slug (REST `type`, gRPC `ErrorInfo.reason`) — never on
 English message text.
 
+## Retry guidance
+
+**Experimental (ClearView R11).** Some problems carry two optional members,
+identical in REST problem+json and as gRPC `ErrorInfo.metadata` keys of the
+same names (`"true"`/`"false"` and the action string):
+
+| Slug | `retryable` | `retry_action` | Meaning |
+|---|---|---|---|
+| `overloaded` | `true` | `repeat` | Shed at admission before any handler ran. The identical request may be repeated after `Retry-After`. |
+| `rate-limited`, `daily-cap-reached`, `run-locked`, `datastore-unavailable` | `false` | `retry_later` | Transient, but the response does not prove the request had no effect. Repeat only a safe read or a request under a documented idempotency key; otherwise decide again later. Existing `Retry-After` headers are unchanged. |
+| `head-conflict` | `false` | `reread` | Read the current head and make a fresh decision. Never replay the stale request. |
+| `command-unresolved` | `false` | `inspect_outcome` | The guarded command's outcome is unknown. Inspect it ([guarded command recovery](../ops/command-recovery.md)) before explicitly authorizing a new key. Never replay automatically. |
+
+Every other slug carries neither member. An absent, unknown or future action
+authorizes **no** automated replay, and `retryable` is never `true` without
+`repeat`. A v1.4 client ignores both members; problems without guidance
+serialize exactly as before. Session turns remain non-retryable in the
+official clients regardless of these members.
+
 ## Problem types
 
 | Slug | HTTP | gRPC code | Meaning / extensions |
