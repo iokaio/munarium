@@ -1,24 +1,24 @@
 # Third-party notices — Munarium Server
 
-Generated 2026-10-13 by `tools/third_party_notices.py` from: `./Cargo.lock` via `cargo metadata` (x86_64-unknown-linux-musl).
+Generated 2026-11-19 by `tools/third_party_notices.py` from: `./Cargo.lock` via `cargo metadata` (x86_64-unknown-linux-musl).
 Runtime dependencies only. Each component is governed by its own license, which takes
 precedence for that component; the texts and copyright statements below are reproduced
 from the components' own license files. Reviewed by: _(name, date)_.
 
-## Summary — 370 components
+## Summary — 371 components
 
 | License | Components |
 |---|---|
-| MIT OR Apache-2.0 | 174 |
-| MIT | 86 |
-| Apache-2.0 OR MIT | 27 |
+| MIT OR Apache-2.0 | 173 |
+| MIT | 85 |
+| Apache-2.0 OR MIT | 28 |
 | Unicode-3.0 | 18 |
-| MIT/Apache-2.0 | 12 |
-| Apache-2.0 | 6 |
+| MIT/Apache-2.0 | 11 |
+| BSD-3-Clause | 6 |
+| Apache-2.0 | 5 |
 | Apache-2.0 OR ISC OR MIT | 4 |
 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | 4 |
 | Apache-2.0/MIT | 4 |
-| BSD-3-Clause | 4 |
 | Unlicense/MIT | 4 |
 | Unlicense OR MIT | 3 |
 | CDLA-Permissive-2.0 | 2 |
@@ -34,6 +34,8 @@ from the components' own license files. Reviewed by: _(name, date)_.
 | Apache-2.0 OR BSL-1.0 | 1 |
 | Apache-2.0 OR BSL-1.0 OR MIT | 1 |
 | BSD-2-Clause OR Apache-2.0 OR MIT | 1 |
+| BSD-3-Clause AND BSD-2-Clause | 1 |
+| CC0-1.0 OR MIT-0 OR Apache-2.0 | 1 |
 | MIT / Apache-2.0 | 1 |
 | MIT OR Zlib OR Apache-2.0 | 1 |
 | MIT-0 | 1 |
@@ -76,7 +78,6 @@ from the components' own license files. Reviewed by: _(name, date)_.
 | block-buffer | 0.12.1 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils |
 | block-padding | 0.3.3 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils |
 | borrow-or-share | 0.2.4 | MIT-0 | https://github.com/yescallop/borrow-or-share |
-| bumpalo | 3.20.3 | MIT OR Apache-2.0 | https://github.com/fitzgen/bumpalo |
 | bytecount | 0.6.9 | Apache-2.0/MIT | https://github.com/llogiq/bytecount |
 | byteorder | 1.5.0 | Unlicense OR MIT | https://github.com/BurntSushi/byteorder |
 | bytes | 1.12.1 | MIT | https://github.com/tokio-rs/bytes |
@@ -88,6 +89,7 @@ from the components' own license files. Reviewed by: _(name, date)_.
 | chrono | 0.4.45 | MIT OR Apache-2.0 | https://github.com/chronotope/chrono |
 | cipher | 0.4.4 | MIT OR Apache-2.0 | https://github.com/RustCrypto/traits |
 | const-oid | 0.9.6 | Apache-2.0 OR MIT | https://github.com/RustCrypto/formats/tree/master/const-oid |
+| constant_time_eq | 0.6.1 | CC0-1.0 OR MIT-0 OR Apache-2.0 | https://codeberg.org/cesarb/constant_time_eq |
 | cpufeatures | 0.2.17 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils |
 | cpufeatures | 0.3.0 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils |
 | crc | 3.4.0 | MIT OR Apache-2.0 | https://github.com/mrhooray/crc-rs.git |
@@ -290,12 +292,12 @@ from the components' own license files. Reviewed by: _(name, date)_.
 | rustc-hash | 2.1.3 | Apache-2.0 OR MIT | https://github.com/rust-lang/rustc-hash |
 | rustix | 0.38.44 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | https://github.com/bytecodealliance/rustix |
 | rustix | 1.1.4 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | https://github.com/bytecodealliance/rustix |
-| rustls | 0.23.45 | Apache-2.0 OR ISC OR MIT | https://github.com/rustls/rustls |
+| rustls | 0.23.46 | Apache-2.0 OR ISC OR MIT | https://github.com/rustls/rustls |
 | rustls-native-certs | 0.8.4 | Apache-2.0 OR ISC OR MIT | https://github.com/rustls/rustls-native-certs |
 | rustls-pemfile | 2.2.0 | Apache-2.0 OR ISC OR MIT | https://github.com/rustls/pemfile |
 | rustls-pki-types | 1.15.1 | MIT OR Apache-2.0 | https://github.com/rustls/pki-types |
 | rustls-platform-verifier | 0.7.0 | MIT OR Apache-2.0 | https://github.com/rustls/rustls-platform-verifier |
-| rustls-webpki | 0.103.15 | ISC | https://github.com/rustls/webpki |
+| rustls-webpki | 0.103.17 | ISC | https://github.com/rustls/webpki |
 | rustversion | 1.0.23 | MIT OR Apache-2.0 | https://github.com/dtolnay/rustversion |
 | ryu | 1.0.23 | Apache-2.0 OR BSL-1.0 | https://github.com/dtolnay/ryu |
 | same-file | 1.0.6 | Unlicense/MIT | https://github.com/BurntSushi/same-file |
@@ -356,7 +358,7 @@ from the components' own license files. Reviewed by: _(name, date)_.
 | tinystr | 0.8.3 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | tinyvec | 1.12.0 | Zlib OR Apache-2.0 OR MIT | https://github.com/Lokathor/tinyvec |
 | tinyvec_macros | 0.1.1 | MIT OR Apache-2.0 OR Zlib | https://github.com/Soveu/tinyvec_macros |
-| tokio | 1.53.1 | MIT | https://github.com/tokio-rs/tokio |
+| tokio | 1.54.1 | MIT | https://github.com/tokio-rs/tokio |
 | tokio-macros | 2.7.2 | MIT | https://github.com/tokio-rs/tokio |
 | tokio-rustls | 0.26.4 | MIT OR Apache-2.0 | https://github.com/rustls/tokio-rustls |
 | tokio-stream | 0.1.19 | MIT | https://github.com/tokio-rs/tokio |
@@ -379,6 +381,7 @@ from the components' own license files. Reviewed by: _(name, date)_.
 | try-lock | 0.2.5 | MIT | https://github.com/seanmonstar/try-lock |
 | ttf-parser | 0.25.1 | MIT OR Apache-2.0 | https://github.com/harfbuzz/ttf-parser |
 | type1-encoding-parser | 0.1.1 | MIT | https://github.com/jrmuizel/type1-encoding-parser |
+| typed-path | 0.13.0 | MIT OR Apache-2.0 | https://github.com/chipsenkbeil/typed-path |
 | typenum | 1.20.1 | MIT OR Apache-2.0 | https://github.com/paholg/typenum |
 | unicode-bidi | 0.3.18 | MIT OR Apache-2.0 | https://github.com/servo/unicode-bidi |
 | unicode-ident | 1.0.24 | (MIT OR Apache-2.0) AND Unicode-3.0 | https://github.com/dtolnay/unicode-ident |
@@ -397,7 +400,7 @@ from the components' own license files. Reviewed by: _(name, date)_.
 | walkdir | 2.5.0 | Unlicense/MIT | https://github.com/BurntSushi/walkdir |
 | want | 0.3.1 | MIT | https://github.com/seanmonstar/want |
 | webpki-roots | 0.26.11 | CDLA-Permissive-2.0 | https://github.com/rustls/webpki-roots |
-| webpki-roots | 1.0.9 | CDLA-Permissive-2.0 | https://github.com/rustls/webpki-roots |
+| webpki-roots | 1.0.12 | CDLA-Permissive-2.0 | https://github.com/rustls/webpki-roots |
 | weezl | 0.1.12 | MIT OR Apache-2.0 | https://github.com/image-rs/weezl |
 | whoami | 1.6.1 | Apache-2.0 OR BSL-1.0 OR MIT | https://github.com/ardaku/whoami |
 | writeable | 0.6.3 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
@@ -407,15 +410,15 @@ from the components' own license files. Reviewed by: _(name, date)_.
 | zerofrom | 0.1.8 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | zerofrom-derive | 0.1.7 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | zeroize | 1.9.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/utils |
+| zeroize_derive | 1.5.0 | Apache-2.0 OR MIT | https://github.com/RustCrypto/utils |
 | zerotrie | 0.2.4 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | zerovec | 0.11.6 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
 | zerovec-derive | 0.11.3 | Unicode-3.0 | https://github.com/unicode-org/icu4x |
-| zip | 2.4.2 | MIT | https://github.com/zip-rs/zip2.git |
+| zip | 9.8.0 | MIT | https://github.com/zip-rs/zip2 |
 | zmij | 1.0.23 | MIT | https://github.com/dtolnay/zmij |
-| zopfli | 0.8.3 | Apache-2.0 | https://github.com/zopfli-rs/zopfli |
-| zstd | 0.13.3 | MIT | https://github.com/gyscos/zstd-rs |
-| zstd-safe | 7.2.4 | MIT OR Apache-2.0 | https://github.com/gyscos/zstd-rs |
-| zstd-sys | 2.0.16+zstd.1.5.7 | MIT/Apache-2.0 | https://github.com/gyscos/zstd-rs |
+| zstd | 0.13.5 | BSD-3-Clause | https://github.com/gyscos/zstd-rs |
+| zstd-safe | 7.4.1 | BSD-3-Clause | https://github.com/gyscos/zstd-rs |
+| zstd-sys | 2.1.3+zstd.1.5.7 | BSD-3-Clause AND BSD-2-Clause | https://github.com/gyscos/zstd-rs |
 
 ## Copyright statements
 
@@ -447,7 +450,6 @@ From each component's own license file, where one carries them.
 - **block-buffer 0.12.1**: Copyright (c) 2018-2025 The RustCrypto Project Developers
 - **block-padding 0.3.3**: Copyright (c) 2018-2019 The RustCrypto Project Developers
 - **borrow-or-share 0.2.4**: Copyright 2024 Scallop Ye
-- **bumpalo 3.20.3**: Copyright (c) 2019 Nick Fitzgerald
 - **bytecount 0.6.9**: Copyright (c) 2017 The bytecount Developers
 - **byteorder 1.5.0**: Copyright (c) 2015 Andrew Gallant
 - **bytes 1.12.1**: Copyright (c) 2018 Carl Lerche
@@ -629,12 +631,12 @@ From each component's own license file, where one carries them.
 - **reqwest 0.13.4**: Copyright 2016 Sean McArthur · Copyright (c) 2016-2026 Sean McArthur
 - **ring 0.17.14**: Copyright (c) 2009 The Go Authors. All rights reserved. · Copyright 2015 The Chromium Authors. All rights reserved. · Copyright 2015-2025 Brian Smith.
 - **rust-stemmers 1.2.0**: Copyright (c) 2017 Jakob Demler
-- **rustls 0.23.45**: Copyright (c) 2016, Joseph Birr-Pixton <jpixton@gmail.com · Copyright (c) 2016 Joseph Birr-Pixton <jpixton@gmail.com
+- **rustls 0.23.46**: Copyright (c) 2016, Joseph Birr-Pixton <jpixton@gmail.com · Copyright (c) 2016 Joseph Birr-Pixton <jpixton@gmail.com
 - **rustls-native-certs 0.8.4**: Copyright (c) 2016, Joseph Birr-Pixton <jpixton@gmail.com · Copyright (c) 2016 Joseph Birr-Pixton <jpixton@gmail.com
 - **rustls-pemfile 2.2.0**: Copyright (c) 2016, Joseph Birr-Pixton <jpixton@gmail.com · Copyright (c) 2016 Joseph Birr-Pixton <jpixton@gmail.com
 - **rustls-pki-types 1.15.1**: Copyright 2023 Dirkjan Ochtman · Copyright (c) 2023 Dirkjan Ochtman <dirkjan@ochtman.nl
 - **rustls-platform-verifier 0.7.0**: Copyright (c) 2022 1Password
-- **rustls-webpki 0.103.15**: Copyright 2015 Brian Smith.
+- **rustls-webpki 0.103.17**: Copyright 2015 Brian Smith.
 - **same-file 1.0.6**: Copyright (c) 2017 Andrew Gallant
 - **scopeguard 1.2.0**: Copyright (c) 2016-2019 Ulrik Sverdrup "bluss" and scopeguard developers
 - **serde_urlencoded 0.7.1**: Copyright (c) 2016 Anthony Ramine
@@ -672,7 +674,7 @@ From each component's own license file, where one carries them.
 - **tinystr 0.8.3**: Copyright © 2020-2024 Unicode, Inc.
 - **tinyvec 1.12.0**: Copyright (c) 2019 Daniel "Lokathor" Gee.
 - **tinyvec_macros 0.1.1**: Copyright 2020 Tomasz "Soveu" Marx · Copyright (c) 2020 Soveu
-- **tokio 1.53.1**: Copyright (c) Tokio Contributors
+- **tokio 1.54.1**: Copyright (c) Tokio Contributors
 - **tokio-macros 2.7.2**: Copyright (c) 2019 Yoshua Wuyts · Copyright (c) Tokio Contributors
 - **tokio-rustls 0.26.4**: Copyright 2017 quininer kel · Copyright (c) 2017 quininer kel
 - **tokio-stream 0.1.19**: Copyright (c) Tokio Contributors
@@ -716,23 +718,23 @@ From each component's own license file, where one carries them.
 - **zerofrom 0.1.8**: Copyright © 2020-2024 Unicode, Inc.
 - **zerofrom-derive 0.1.7**: Copyright © 2020-2024 Unicode, Inc.
 - **zeroize 1.9.0**: Copyright (c) 2018-2026 The RustCrypto Project Developers
+- **zeroize_derive 1.5.0**: Copyright (c) 2019-2026 The RustCrypto Project Developers
 - **zerotrie 0.2.4**: Copyright © 2020-2024 Unicode, Inc.
 - **zerovec 0.11.6**: Copyright © 2020-2024 Unicode, Inc.
 - **zerovec-derive 0.11.3**: Copyright © 2020-2024 Unicode, Inc.
-- **zip 2.4.2**: Copyright (c) 2014 Mathijs van de Nes
-- **zopfli 0.8.3**: Copyright 2011 Google Inc.
-- **zstd 0.13.3**: Copyright (c) 2016 Alexandre Bury
-- **zstd-safe 7.2.4**: Copyright (c) 2016 Alexandre Bury
-- **zstd-sys 2.0.16+zstd.1.5.7**: Copyright (c) 2016-present, Facebook, Inc. All rights reserved. · Copyright (c) 2016 Alexandre Bury
+- **zip 9.8.0**: Copyright (c) 2014 Mathijs van de Nes
+- **zstd 0.13.5**: Copyright (c) 2026, Alexandre Bury
+- **zstd-safe 7.4.1**: Copyright (c) 2026, Alexandre Bury
+- **zstd-sys 2.1.3+zstd.1.5.7**: Copyright (c) 2026, Alexandre Bury · Copyright (C) 2013-2016, Yann Collet. · Copyright (c) Meta Platforms, Inc. and affiliates. All rights reserved.
 
-## License texts — 63 distinct
+## License texts — 66 distinct
 
 Each text once, followed by the components whose license file is that text (identical
 after removing copyright lines and whitespace).
 
-### Text 56959050891f — 244 component(s)
+### Text 56959050891f — 245 component(s)
 
-Used by: adler2 2.0.1 (LICENSE-MIT), aes 0.8.4 (LICENSE-MIT), ahash 0.8.12 (LICENSE-MIT), allocator-api2 0.2.21 (LICENSE-MIT), annotate-snippets 0.12.16 (LICENSE-MIT), anstyle 1.0.14 (LICENSE-MIT), anyhow 1.0.104 (LICENSE-MIT), arc-swap 1.9.2 (LICENSE-MIT), async-trait 0.1.92 (LICENSE-MIT), atomic-waker 1.1.2 (LICENSE-MIT), axum 0.7.9 (LICENSE), axum 0.8.9 (LICENSE), axum-core 0.4.5 (LICENSE), base64ct 1.8.3 (LICENSE-MIT), bit-set 0.8.0 (LICENSE-MIT), bit-vec 0.8.0 (LICENSE-MIT), bitflags 2.13.1 (LICENSE-MIT), bitpacking 0.9.3 (LICENSE), block-buffer 0.10.4 (LICENSE-MIT), block-buffer 0.12.1 (LICENSE-MIT), block-padding 0.3.3 (LICENSE-MIT), bumpalo 3.20.3 (LICENSE-MIT), bytecount 0.6.9 (LICENSE.MIT), bytes 1.12.1 (LICENSE), cbc 0.1.2 (LICENSE-MIT), census 0.4.2 (LICENSE), cff-parser 0.2.0 (LICENSE-MIT), cfg-if 1.0.4 (LICENSE-MIT), chacha20 0.10.2 (LICENSE-MIT), cipher 0.4.4 (LICENSE-MIT), const-oid 0.9.6 (LICENSE-MIT), cpufeatures 0.2.17 (LICENSE-MIT), cpufeatures 0.3.0 (LICENSE-MIT), crc-fast 1.10.0 (LICENSE-MIT), crypto-common 0.1.7 (LICENSE-MIT), crypto-common 0.2.2 (LICENSE-MIT), curve25519-dalek-derive 0.1.1 (LICENSE-MIT), der 0.7.10 (LICENSE-MIT), deranged 0.5.8 (LICENSE-MIT), digest 0.10.7 (LICENSE-MIT), digest 0.11.3 (LICENSE-MIT), displaydoc 0.2.7 (LICENSE-MIT), downcast-rs 1.2.1 (LICENSE-MIT), ed25519 2.2.3 (LICENSE-MIT), either 1.17.0 (LICENSE-MIT), equivalent 1.0.2 (LICENSE-MIT), errno 0.3.14 (LICENSE-MIT), euclid 0.20.14 (LICENSE-MIT), event-listener 5.4.2 (LICENSE-MIT), fastrand 2.5.0 (LICENSE-MIT), flate2 1.1.9 (LICENSE-MIT), flume 0.11.1 (LICENSE-MIT), fnv 1.0.7 (LICENSE-MIT), form_urlencoded 1.2.2 (LICENSE-MIT), fraction 0.15.4 (LICENSE-MIT), fs4 0.8.4 (LICENSE-MIT), futures-channel 0.3.33 (LICENSE-MIT), futures-core 0.3.33 (LICENSE-MIT), futures-executor 0.3.33 (LICENSE-MIT), futures-intrusive 0.5.0 (LICENSE-MIT), futures-io 0.3.33 (LICENSE-MIT), futures-macro 0.3.33 (LICENSE-MIT), futures-sink 0.3.33 (LICENSE-MIT), futures-task 0.3.33 (LICENSE-MIT), futures-util 0.3.33 (LICENSE-MIT), getrandom 0.2.17 (LICENSE-MIT), getrandom 0.3.4 (LICENSE-MIT), getrandom 0.4.3 (LICENSE-MIT), h2 0.4.16 (LICENSE), hashbrown 0.12.3 (LICENSE-MIT), hashbrown 0.15.5 (LICENSE-MIT), hashbrown 0.17.1 (LICENSE-MIT), heck 0.5.0 (LICENSE-MIT), hex 0.4.3 (LICENSE-MIT), hkdf 0.12.4 (LICENSE-MIT), hmac 0.12.1 (LICENSE-MIT), home 0.5.12 (LICENSE-MIT), http 1.5.0 (LICENSE-MIT), http-body 1.1.0 (LICENSE), http-body-util 0.1.4 (LICENSE), httparse 1.10.1 (LICENSE-MIT), httpdate 1.0.3 (LICENSE-MIT), hybrid-array 0.4.14 (LICENSE-MIT), hyper 1.11.0 (LICENSE), hyper-rustls 0.27.9 (LICENSE-MIT), hyper-util 0.1.20 (LICENSE), iana-time-zone 0.1.65 (LICENSE-MIT), idna 1.1.0 (LICENSE-MIT), idna_adapter 1.2.2 (LICENSE-MIT), indexmap 1.9.3 (LICENSE-MIT), indexmap 2.14.0 (LICENSE-MIT), inout 0.1.4 (LICENSE-MIT), ipnet 2.12.1 (LICENSE-MIT), itertools 0.12.1 (LICENSE-MIT), itertools 0.14.0 (LICENSE-MIT), itertools 0.15.0 (LICENSE-MIT), itoa 1.0.18 (LICENSE-MIT), lazy_static 1.5.0 (LICENSE-MIT), levenshtein_automata 0.2.1 (LICENSE), libc 0.2.189 (LICENSE-MIT), libsqlite3-sys 0.30.1 (LICENSE), linux-raw-sys 0.12.1 (LICENSE-MIT), linux-raw-sys 0.4.15 (LICENSE-MIT), lock_api 0.4.14 (LICENSE-MIT), log 0.4.33 (LICENSE-MIT), lru-slab 0.1.2 (LICENSE-MIT), matchers 0.2.0 (LICENSE), md-5 0.10.6 (LICENSE-MIT), md-5 0.11.0 (LICENSE-MIT), memmap2 0.9.11 (LICENSE-MIT), mime 0.3.17 (LICENSE-MIT), minimal-lexical 0.2.1 (LICENSE-MIT), mio 1.2.2 (LICENSE), murmurhash32 0.3.1 (LICENSE), nohash-hasher 0.2.0 (LICENSE-MIT), nom 7.1.3 (LICENSE), nom 8.0.0 (LICENSE), num 0.4.3 (LICENSE-MIT), num-bigint 0.4.8 (LICENSE-MIT), num-bigint-dig 0.8.6 (LICENSE-MIT), num-complex 0.4.6 (LICENSE-MIT), num-conv 0.2.2 (LICENSE-MIT), num-integer 0.1.46 (LICENSE-MIT), num-iter 0.1.46 (LICENSE-MIT), num-rational 0.4.2 (LICENSE-MIT), num-traits 0.2.19 (LICENSE-MIT), num_cpus 1.17.0 (LICENSE-MIT), once_cell 1.21.4 (LICENSE-MIT), oneshot 0.1.13 (LICENSE-MIT), openssl-probe 0.2.1 (LICENSE-MIT), parking 2.2.1 (LICENSE-MIT), parking_lot 0.12.5 (LICENSE-MIT), parking_lot_core 0.9.12 (LICENSE-MIT), pem-rfc7468 0.7.0 (LICENSE-MIT), percent-encoding 2.3.2 (LICENSE-MIT), pin-project 1.1.13 (LICENSE-MIT), pin-project-internal 1.1.13 (LICENSE-MIT), pin-project-lite 0.2.17 (LICENSE-MIT), pkcs1 0.7.5 (LICENSE-MIT), pkcs8 0.10.2 (LICENSE-MIT), powerfmt 0.2.0 (LICENSE-MIT), ppv-lite86 0.2.21 (LICENSE-MIT), proc-macro2 1.0.107 (LICENSE-MIT), quinn 0.11.11 (LICENSE-MIT), quinn-proto 0.11.16 (LICENSE-MIT), quinn-udp 0.5.15 (LICENSE-MIT), quote 1.0.47 (LICENSE-MIT), rand 0.10.2 (LICENSE-MIT), rand 0.8.7 (LICENSE-MIT), rand_chacha 0.3.1 (LICENSE-MIT), rand_core 0.10.1 (LICENSE-MIT), rand_core 0.6.4 (LICENSE-MIT), rand_distr 0.4.3 (LICENSE-MIT), rand_pcg 0.10.2 (LICENSE-MIT), rangemap 1.7.1 (LICENSE-MIT), rayon 1.12.0 (LICENSE-MIT), rayon-core 1.13.0 (LICENSE-MIT), ref-cast 1.0.26 (LICENSE-MIT), ref-cast-impl 1.0.26 (LICENSE-MIT), regex 1.13.1 (LICENSE-MIT), regex-automata 0.4.18 (LICENSE-MIT), regex-syntax 0.8.11 (LICENSE-MIT), reqwest 0.12.28 (LICENSE-MIT), reqwest 0.13.4 (LICENSE-MIT), rsa 0.9.10 (LICENSE-MIT), rustc-hash 1.1.0 (LICENSE-MIT), rustc-hash 2.1.3 (LICENSE-MIT), rustix 0.38.44 (LICENSE-MIT), rustix 1.1.4 (LICENSE-MIT), rustls 0.23.45 (LICENSE-MIT), rustls-native-certs 0.8.4 (LICENSE-MIT), rustls-pemfile 2.2.0 (LICENSE-MIT), rustls-pki-types 1.15.1 (LICENSE-MIT), rustversion 1.0.23 (LICENSE-MIT), scopeguard 1.2.0 (LICENSE-MIT), serde 1.0.229 (LICENSE-MIT), serde-saphyr 2.0.0 (LICENSE-MIT), serde_core 1.0.229 (LICENSE-MIT), serde_derive 1.0.229 (LICENSE-MIT), serde_json 1.0.151 (LICENSE-MIT), serde_path_to_error 0.1.20 (LICENSE-MIT), serde_urlencoded 0.7.1 (LICENSE-MIT), sha1 0.10.7 (LICENSE-MIT), sha2 0.10.9 (LICENSE-MIT), sharded-slab 0.1.7 (LICENSE), signal-hook-registry 1.4.8 (LICENSE-MIT), signature 2.2.0 (LICENSE-MIT), slab 0.4.12 (LICENSE), smallvec 1.15.2 (LICENSE-MIT), socket2 0.5.10 (LICENSE-MIT), socket2 0.6.5 (LICENSE-MIT), spki 0.7.3 (LICENSE-MIT), sqlx 0.8.6 (LICENSE-MIT), sqlx-core 0.8.6 (LICENSE-MIT), sqlx-macros 0.8.6 (LICENSE-MIT), sqlx-macros-core 0.8.6 (LICENSE-MIT), sqlx-mysql 0.8.6 (LICENSE-MIT), sqlx-postgres 0.8.6 (LICENSE-MIT), sqlx-sqlite 0.8.6 (LICENSE-MIT), stable_deref_trait 1.2.1 (LICENSE-MIT), stringprep 0.1.5 (LICENSE-MIT), syn 2.0.119 (LICENSE-MIT), syn 3.0.3 (LICENSE-MIT), synstructure 0.13.2 (LICENSE), tantivy 0.22.1 (LICENSE), tempfile 3.27.0 (LICENSE-MIT), thiserror 1.0.69 (LICENSE-MIT), thiserror 2.0.20 (LICENSE-MIT), thiserror-impl 1.0.69 (LICENSE-MIT), thiserror-impl 2.0.20 (LICENSE-MIT), thread_local 1.1.10 (LICENSE-MIT), time 0.3.55 (LICENSE-MIT), time-core 0.1.9 (LICENSE-MIT), time-macros 0.2.32 (LICENSE-MIT), tinyvec 1.12.0 (LICENSE-MIT.md), tokio-rustls 0.26.4 (LICENSE-MIT), tonic 0.12.3 (LICENSE), tonic-health 0.12.3 (LICENSE), tonic-reflection 0.12.3 (LICENSE), tonic-types 0.12.3 (LICENSE), tower 0.4.13 (LICENSE), tower 0.5.3 (LICENSE), tower-http 0.6.11 (LICENSE), tower-layer 0.3.3 (LICENSE), tower-service 0.3.3 (LICENSE), tracing 0.1.44 (LICENSE), tracing-attributes 0.1.31 (LICENSE), tracing-core 0.1.36 (LICENSE), tracing-log 0.2.0 (LICENSE), tracing-serde 0.2.0 (LICENSE), tracing-subscriber 0.3.23 (LICENSE), try-lock 0.2.5 (LICENSE), ttf-parser 0.25.1 (LICENSE-MIT), unicode-bidi 0.3.18 (LICENSE-MIT), unicode-ident 1.0.24 (LICENSE-MIT), unicode-normalization 0.1.25 (LICENSE-MIT), unicode-properties 0.1.4 (LICENSE-MIT), unicode-width 0.2.2 (LICENSE-MIT), url 2.5.8 (LICENSE-MIT), uuid 1.24.0 (LICENSE-MIT), want 0.3.1 (LICENSE), zerocopy 0.8.56 (LICENSE-MIT), zeroize 1.9.0 (LICENSE-MIT), zmij 1.0.23 (LICENSE-MIT)
+Used by: adler2 2.0.1 (LICENSE-MIT), aes 0.8.4 (LICENSE-MIT), ahash 0.8.12 (LICENSE-MIT), allocator-api2 0.2.21 (LICENSE-MIT), annotate-snippets 0.12.16 (LICENSE-MIT), anstyle 1.0.14 (LICENSE-MIT), anyhow 1.0.104 (LICENSE-MIT), arc-swap 1.9.2 (LICENSE-MIT), async-trait 0.1.92 (LICENSE-MIT), atomic-waker 1.1.2 (LICENSE-MIT), axum 0.7.9 (LICENSE), axum 0.8.9 (LICENSE), axum-core 0.4.5 (LICENSE), base64ct 1.8.3 (LICENSE-MIT), bit-set 0.8.0 (LICENSE-MIT), bit-vec 0.8.0 (LICENSE-MIT), bitflags 2.13.1 (LICENSE-MIT), bitpacking 0.9.3 (LICENSE), block-buffer 0.10.4 (LICENSE-MIT), block-buffer 0.12.1 (LICENSE-MIT), block-padding 0.3.3 (LICENSE-MIT), bytecount 0.6.9 (LICENSE.MIT), bytes 1.12.1 (LICENSE), cbc 0.1.2 (LICENSE-MIT), census 0.4.2 (LICENSE), cff-parser 0.2.0 (LICENSE-MIT), cfg-if 1.0.4 (LICENSE-MIT), chacha20 0.10.2 (LICENSE-MIT), cipher 0.4.4 (LICENSE-MIT), const-oid 0.9.6 (LICENSE-MIT), cpufeatures 0.2.17 (LICENSE-MIT), cpufeatures 0.3.0 (LICENSE-MIT), crc-fast 1.10.0 (LICENSE-MIT), crypto-common 0.1.7 (LICENSE-MIT), crypto-common 0.2.2 (LICENSE-MIT), curve25519-dalek-derive 0.1.1 (LICENSE-MIT), der 0.7.10 (LICENSE-MIT), deranged 0.5.8 (LICENSE-MIT), digest 0.10.7 (LICENSE-MIT), digest 0.11.3 (LICENSE-MIT), displaydoc 0.2.7 (LICENSE-MIT), downcast-rs 1.2.1 (LICENSE-MIT), ed25519 2.2.3 (LICENSE-MIT), either 1.17.0 (LICENSE-MIT), equivalent 1.0.2 (LICENSE-MIT), errno 0.3.14 (LICENSE-MIT), euclid 0.20.14 (LICENSE-MIT), event-listener 5.4.2 (LICENSE-MIT), fastrand 2.5.0 (LICENSE-MIT), flate2 1.1.9 (LICENSE-MIT), flume 0.11.1 (LICENSE-MIT), fnv 1.0.7 (LICENSE-MIT), form_urlencoded 1.2.2 (LICENSE-MIT), fraction 0.15.4 (LICENSE-MIT), fs4 0.8.4 (LICENSE-MIT), futures-channel 0.3.33 (LICENSE-MIT), futures-core 0.3.33 (LICENSE-MIT), futures-executor 0.3.33 (LICENSE-MIT), futures-intrusive 0.5.0 (LICENSE-MIT), futures-io 0.3.33 (LICENSE-MIT), futures-macro 0.3.33 (LICENSE-MIT), futures-sink 0.3.33 (LICENSE-MIT), futures-task 0.3.33 (LICENSE-MIT), futures-util 0.3.33 (LICENSE-MIT), getrandom 0.2.17 (LICENSE-MIT), getrandom 0.3.4 (LICENSE-MIT), getrandom 0.4.3 (LICENSE-MIT), h2 0.4.16 (LICENSE), hashbrown 0.12.3 (LICENSE-MIT), hashbrown 0.15.5 (LICENSE-MIT), hashbrown 0.17.1 (LICENSE-MIT), heck 0.5.0 (LICENSE-MIT), hex 0.4.3 (LICENSE-MIT), hkdf 0.12.4 (LICENSE-MIT), hmac 0.12.1 (LICENSE-MIT), home 0.5.12 (LICENSE-MIT), http 1.5.0 (LICENSE-MIT), http-body 1.1.0 (LICENSE), http-body-util 0.1.4 (LICENSE), httparse 1.10.1 (LICENSE-MIT), httpdate 1.0.3 (LICENSE-MIT), hybrid-array 0.4.14 (LICENSE-MIT), hyper 1.11.0 (LICENSE), hyper-rustls 0.27.9 (LICENSE-MIT), hyper-util 0.1.20 (LICENSE), iana-time-zone 0.1.65 (LICENSE-MIT), idna 1.1.0 (LICENSE-MIT), idna_adapter 1.2.2 (LICENSE-MIT), indexmap 1.9.3 (LICENSE-MIT), indexmap 2.14.0 (LICENSE-MIT), inout 0.1.4 (LICENSE-MIT), ipnet 2.12.1 (LICENSE-MIT), itertools 0.12.1 (LICENSE-MIT), itertools 0.14.0 (LICENSE-MIT), itertools 0.15.0 (LICENSE-MIT), itoa 1.0.18 (LICENSE-MIT), lazy_static 1.5.0 (LICENSE-MIT), levenshtein_automata 0.2.1 (LICENSE), libc 0.2.189 (LICENSE-MIT), libsqlite3-sys 0.30.1 (LICENSE), linux-raw-sys 0.12.1 (LICENSE-MIT), linux-raw-sys 0.4.15 (LICENSE-MIT), lock_api 0.4.14 (LICENSE-MIT), log 0.4.33 (LICENSE-MIT), lru-slab 0.1.2 (LICENSE-MIT), matchers 0.2.0 (LICENSE), md-5 0.10.6 (LICENSE-MIT), md-5 0.11.0 (LICENSE-MIT), memmap2 0.9.11 (LICENSE-MIT), mime 0.3.17 (LICENSE-MIT), minimal-lexical 0.2.1 (LICENSE-MIT), mio 1.2.2 (LICENSE), murmurhash32 0.3.1 (LICENSE), nohash-hasher 0.2.0 (LICENSE-MIT), nom 7.1.3 (LICENSE), nom 8.0.0 (LICENSE), num 0.4.3 (LICENSE-MIT), num-bigint 0.4.8 (LICENSE-MIT), num-bigint-dig 0.8.6 (LICENSE-MIT), num-complex 0.4.6 (LICENSE-MIT), num-conv 0.2.2 (LICENSE-MIT), num-integer 0.1.46 (LICENSE-MIT), num-iter 0.1.46 (LICENSE-MIT), num-rational 0.4.2 (LICENSE-MIT), num-traits 0.2.19 (LICENSE-MIT), num_cpus 1.17.0 (LICENSE-MIT), once_cell 1.21.4 (LICENSE-MIT), oneshot 0.1.13 (LICENSE-MIT), openssl-probe 0.2.1 (LICENSE-MIT), parking 2.2.1 (LICENSE-MIT), parking_lot 0.12.5 (LICENSE-MIT), parking_lot_core 0.9.12 (LICENSE-MIT), pem-rfc7468 0.7.0 (LICENSE-MIT), percent-encoding 2.3.2 (LICENSE-MIT), pin-project 1.1.13 (LICENSE-MIT), pin-project-internal 1.1.13 (LICENSE-MIT), pin-project-lite 0.2.17 (LICENSE-MIT), pkcs1 0.7.5 (LICENSE-MIT), pkcs8 0.10.2 (LICENSE-MIT), powerfmt 0.2.0 (LICENSE-MIT), ppv-lite86 0.2.21 (LICENSE-MIT), proc-macro2 1.0.107 (LICENSE-MIT), quinn 0.11.11 (LICENSE-MIT), quinn-proto 0.11.16 (LICENSE-MIT), quinn-udp 0.5.15 (LICENSE-MIT), quote 1.0.47 (LICENSE-MIT), rand 0.10.2 (LICENSE-MIT), rand 0.8.7 (LICENSE-MIT), rand_chacha 0.3.1 (LICENSE-MIT), rand_core 0.10.1 (LICENSE-MIT), rand_core 0.6.4 (LICENSE-MIT), rand_distr 0.4.3 (LICENSE-MIT), rand_pcg 0.10.2 (LICENSE-MIT), rangemap 1.7.1 (LICENSE-MIT), rayon 1.12.0 (LICENSE-MIT), rayon-core 1.13.0 (LICENSE-MIT), ref-cast 1.0.26 (LICENSE-MIT), ref-cast-impl 1.0.26 (LICENSE-MIT), regex 1.13.1 (LICENSE-MIT), regex-automata 0.4.18 (LICENSE-MIT), regex-syntax 0.8.11 (LICENSE-MIT), reqwest 0.12.28 (LICENSE-MIT), reqwest 0.13.4 (LICENSE-MIT), rsa 0.9.10 (LICENSE-MIT), rustc-hash 1.1.0 (LICENSE-MIT), rustc-hash 2.1.3 (LICENSE-MIT), rustix 0.38.44 (LICENSE-MIT), rustix 1.1.4 (LICENSE-MIT), rustls 0.23.46 (LICENSE-MIT), rustls-native-certs 0.8.4 (LICENSE-MIT), rustls-pemfile 2.2.0 (LICENSE-MIT), rustls-pki-types 1.15.1 (LICENSE-MIT), rustversion 1.0.23 (LICENSE-MIT), scopeguard 1.2.0 (LICENSE-MIT), serde 1.0.229 (LICENSE-MIT), serde-saphyr 2.0.0 (LICENSE-MIT), serde_core 1.0.229 (LICENSE-MIT), serde_derive 1.0.229 (LICENSE-MIT), serde_json 1.0.151 (LICENSE-MIT), serde_path_to_error 0.1.20 (LICENSE-MIT), serde_urlencoded 0.7.1 (LICENSE-MIT), sha1 0.10.7 (LICENSE-MIT), sha2 0.10.9 (LICENSE-MIT), sharded-slab 0.1.7 (LICENSE), signal-hook-registry 1.4.8 (LICENSE-MIT), signature 2.2.0 (LICENSE-MIT), slab 0.4.12 (LICENSE), smallvec 1.15.2 (LICENSE-MIT), socket2 0.5.10 (LICENSE-MIT), socket2 0.6.5 (LICENSE-MIT), spki 0.7.3 (LICENSE-MIT), sqlx 0.8.6 (LICENSE-MIT), sqlx-core 0.8.6 (LICENSE-MIT), sqlx-macros 0.8.6 (LICENSE-MIT), sqlx-macros-core 0.8.6 (LICENSE-MIT), sqlx-mysql 0.8.6 (LICENSE-MIT), sqlx-postgres 0.8.6 (LICENSE-MIT), sqlx-sqlite 0.8.6 (LICENSE-MIT), stable_deref_trait 1.2.1 (LICENSE-MIT), stringprep 0.1.5 (LICENSE-MIT), syn 2.0.119 (LICENSE-MIT), syn 3.0.3 (LICENSE-MIT), synstructure 0.13.2 (LICENSE), tantivy 0.22.1 (LICENSE), tempfile 3.27.0 (LICENSE-MIT), thiserror 1.0.69 (LICENSE-MIT), thiserror 2.0.20 (LICENSE-MIT), thiserror-impl 1.0.69 (LICENSE-MIT), thiserror-impl 2.0.20 (LICENSE-MIT), thread_local 1.1.10 (LICENSE-MIT), time 0.3.55 (LICENSE-MIT), time-core 0.1.9 (LICENSE-MIT), time-macros 0.2.32 (LICENSE-MIT), tinyvec 1.12.0 (LICENSE-MIT.md), tokio-rustls 0.26.4 (LICENSE-MIT), tonic 0.12.3 (LICENSE), tonic-health 0.12.3 (LICENSE), tonic-reflection 0.12.3 (LICENSE), tonic-types 0.12.3 (LICENSE), tower 0.4.13 (LICENSE), tower 0.5.3 (LICENSE), tower-http 0.6.11 (LICENSE), tower-layer 0.3.3 (LICENSE), tower-service 0.3.3 (LICENSE), tracing 0.1.44 (LICENSE), tracing-attributes 0.1.31 (LICENSE), tracing-core 0.1.36 (LICENSE), tracing-log 0.2.0 (LICENSE), tracing-serde 0.2.0 (LICENSE), tracing-subscriber 0.3.23 (LICENSE), try-lock 0.2.5 (LICENSE), ttf-parser 0.25.1 (LICENSE-MIT), typed-path 0.13.0 (LICENSE-MIT), unicode-bidi 0.3.18 (LICENSE-MIT), unicode-ident 1.0.24 (LICENSE-MIT), unicode-normalization 0.1.25 (LICENSE-MIT), unicode-properties 0.1.4 (LICENSE-MIT), unicode-width 0.2.2 (LICENSE-MIT), url 2.5.8 (LICENSE-MIT), uuid 1.24.0 (LICENSE-MIT), want 0.3.1 (LICENSE), zerocopy 0.8.56 (LICENSE-MIT), zeroize 1.9.0 (LICENSE-MIT), zeroize_derive 1.5.0 (LICENSE-MIT), zmij 1.0.23 (LICENSE-MIT)
 
 ```text
 Permission is hereby granted, free of charge, to any
@@ -762,7 +764,7 @@ DEALINGS IN THE SOFTWARE.
 
 ### Text 948703bcf1cb — 144 component(s)
 
-Used by: aes 0.8.4 (LICENSE-APACHE), ahash 0.8.12 (LICENSE-APACHE), arc-swap 1.9.2 (LICENSE-APACHE), atomic-waker 1.1.2 (LICENSE-APACHE), base64 0.22.1 (LICENSE-APACHE), base64ct 1.8.3 (LICENSE-APACHE), bit-set 0.8.0 (LICENSE-APACHE), bit-vec 0.8.0 (LICENSE-APACHE), bitflags 2.13.1 (LICENSE-APACHE), block-buffer 0.10.4 (LICENSE-APACHE), block-buffer 0.12.1 (LICENSE-APACHE), block-padding 0.3.3 (LICENSE-APACHE), bumpalo 3.20.3 (LICENSE-APACHE), cbc 0.1.2 (LICENSE-APACHE), cff-parser 0.2.0 (LICENSE-APACHE), cfg-if 1.0.4 (LICENSE-APACHE), chacha20 0.10.2 (LICENSE-APACHE), cipher 0.4.4 (LICENSE-APACHE), const-oid 0.9.6 (LICENSE-APACHE), cpufeatures 0.2.17 (LICENSE-APACHE), cpufeatures 0.3.0 (LICENSE-APACHE), crc-fast 1.10.0 (LICENSE-Apache), crossbeam-channel 0.5.16 (LICENSE-APACHE), crossbeam-deque 0.8.7 (LICENSE-APACHE), crossbeam-epoch 0.9.20 (LICENSE-APACHE), crossbeam-queue 0.3.13 (LICENSE-APACHE), crossbeam-utils 0.8.22 (LICENSE-APACHE), crypto-common 0.1.7 (LICENSE-APACHE), crypto-common 0.2.2 (LICENSE-APACHE), curve25519-dalek-derive 0.1.1 (LICENSE-APACHE), der 0.7.10 (LICENSE-APACHE), digest 0.10.7 (LICENSE-APACHE), digest 0.11.3 (LICENSE-APACHE), displaydoc 0.2.7 (LICENSE-APACHE), downcast-rs 1.2.1 (LICENSE-APACHE), either 1.17.0 (LICENSE-APACHE), encoding_rs 0.8.35 (LICENSE-APACHE), encoding_rs_io 0.1.8 (LICENSE-APACHE), equivalent 1.0.2 (LICENSE-APACHE), errno 0.3.14 (LICENSE-APACHE), euclid 0.20.14 (LICENSE-APACHE), event-listener 5.4.2 (LICENSE-APACHE), fastrand 2.5.0 (LICENSE-APACHE), flate2 1.1.9 (LICENSE-APACHE), flume 0.11.1 (LICENSE-APACHE), fnv 1.0.7 (LICENSE-APACHE), form_urlencoded 1.2.2 (LICENSE-APACHE), fraction 0.15.4 (LICENSE-APACHE), fs4 0.8.4 (LICENSE-APACHE), hashbrown 0.12.3 (LICENSE-APACHE), hashbrown 0.15.5 (LICENSE-APACHE), hashbrown 0.17.1 (LICENSE-APACHE), hashlink 0.10.0 (LICENSE-APACHE), heck 0.5.0 (LICENSE-APACHE), hkdf 0.12.4 (LICENSE-APACHE), hmac 0.12.1 (LICENSE-APACHE), httparse 1.10.1 (LICENSE-APACHE), httpdate 1.0.3 (LICENSE-APACHE), hybrid-array 0.4.14 (LICENSE-APACHE), hyper-rustls 0.27.9 (LICENSE-APACHE), hyper-timeout 0.5.2 (LICENSE-APACHE), idna 1.1.0 (LICENSE-APACHE), idna_adapter 1.2.2 (LICENSE-APACHE), indexmap 1.9.3 (LICENSE-APACHE), indexmap 2.14.0 (LICENSE-APACHE), inout 0.1.4 (LICENSE-APACHE), itertools 0.12.1 (LICENSE-APACHE), itertools 0.14.0 (LICENSE-APACHE), itertools 0.15.0 (LICENSE-APACHE), lazy_static 1.5.0 (LICENSE-APACHE), linux-raw-sys 0.12.1 (LICENSE-APACHE), linux-raw-sys 0.4.15 (LICENSE-APACHE), lock_api 0.4.14 (LICENSE-APACHE), log 0.4.33 (LICENSE-APACHE), lru-slab 0.1.2 (LICENSE-APACHE), md-5 0.10.6 (LICENSE-APACHE), md-5 0.11.0 (LICENSE-APACHE), mime 0.3.17 (LICENSE-APACHE), minimal-lexical 0.2.1 (LICENSE-APACHE), nohash-hasher 0.2.0 (LICENSE-APACHE), num 0.4.3 (LICENSE-APACHE), num-bigint 0.4.8 (LICENSE-APACHE), num-bigint-dig 0.8.6 (LICENSE-APACHE), num-complex 0.4.6 (LICENSE-APACHE), num-integer 0.1.46 (LICENSE-APACHE), num-iter 0.1.46 (LICENSE-APACHE), num-rational 0.4.2 (LICENSE-APACHE), num-traits 0.2.19 (LICENSE-APACHE), num_cpus 1.17.0 (LICENSE-APACHE), object_store 0.14.1 (LICENSE.txt), once_cell 1.21.4 (LICENSE-APACHE), openssl-probe 0.2.1 (LICENSE-APACHE), parking 2.2.1 (LICENSE-APACHE), parking_lot 0.12.5 (LICENSE-APACHE), parking_lot_core 0.9.12 (LICENSE-APACHE), pem-rfc7468 0.7.0 (LICENSE-APACHE), percent-encoding 2.3.2 (LICENSE-APACHE), pgvector 0.4.2 (LICENSE-APACHE), pkcs1 0.7.5 (LICENSE-APACHE), pkcs8 0.10.2 (LICENSE-APACHE), prost 0.13.5 (LICENSE), prost-derive 0.13.5 (LICENSE), prost-types 0.13.5 (LICENSE), quinn 0.11.11 (LICENSE-APACHE), quinn-proto 0.11.16 (LICENSE-APACHE), quinn-udp 0.5.15 (LICENSE-APACHE), rayon 1.12.0 (LICENSE-APACHE), rayon-core 1.13.0 (LICENSE-APACHE), regex 1.13.1 (LICENSE-APACHE), regex-automata 0.4.18 (LICENSE-APACHE), regex-syntax 0.8.11 (LICENSE-APACHE), rsa 0.9.10 (LICENSE-APACHE), rustc-hash 1.1.0 (LICENSE-APACHE), rustix 0.38.44 (LICENSE-APACHE), rustix 1.1.4 (LICENSE-APACHE), rustls 0.23.45 (LICENSE-APACHE), rustls-native-certs 0.8.4 (LICENSE-APACHE), rustls-pemfile 2.2.0 (LICENSE-APACHE), rustls-platform-verifier 0.7.0 (LICENSE-APACHE), scopeguard 1.2.0 (LICENSE-APACHE), sha1 0.10.7 (LICENSE-APACHE), sha2 0.10.9 (LICENSE-APACHE), signal-hook-registry 1.4.8 (LICENSE-APACHE), signature 2.2.0 (LICENSE-APACHE), smallvec 1.15.2 (LICENSE-APACHE), socket2 0.5.10 (LICENSE-APACHE), socket2 0.6.5 (LICENSE-APACHE), spki 0.7.3 (LICENSE-APACHE), stable_deref_trait 1.2.1 (LICENSE-APACHE), tempfile 3.27.0 (LICENSE-APACHE), thread_local 1.1.10 (LICENSE-APACHE), tinyvec 1.12.0 (LICENSE-APACHE.md), ttf-parser 0.25.1 (LICENSE-APACHE), unicode-bidi 0.3.18 (LICENSE-APACHE), unicode-normalization 0.1.25 (LICENSE-APACHE), unicode-properties 0.1.4 (LICENSE-APACHE), unicode-width 0.2.2 (LICENSE-APACHE), url 2.5.8 (LICENSE-APACHE), utf8_iter 1.0.4 (LICENSE-APACHE), utoipa 5.5.0 (LICENSE-APACHE), utoipa-gen 5.5.0 (LICENSE-APACHE), uuid 1.24.0 (LICENSE-APACHE), weezl 0.1.12 (LICENSE-APACHE), zeroize 1.9.0 (LICENSE-APACHE)
+Used by: aes 0.8.4 (LICENSE-APACHE), ahash 0.8.12 (LICENSE-APACHE), arc-swap 1.9.2 (LICENSE-APACHE), atomic-waker 1.1.2 (LICENSE-APACHE), base64 0.22.1 (LICENSE-APACHE), base64ct 1.8.3 (LICENSE-APACHE), bit-set 0.8.0 (LICENSE-APACHE), bit-vec 0.8.0 (LICENSE-APACHE), bitflags 2.13.1 (LICENSE-APACHE), block-buffer 0.10.4 (LICENSE-APACHE), block-buffer 0.12.1 (LICENSE-APACHE), block-padding 0.3.3 (LICENSE-APACHE), cbc 0.1.2 (LICENSE-APACHE), cff-parser 0.2.0 (LICENSE-APACHE), cfg-if 1.0.4 (LICENSE-APACHE), chacha20 0.10.2 (LICENSE-APACHE), cipher 0.4.4 (LICENSE-APACHE), const-oid 0.9.6 (LICENSE-APACHE), cpufeatures 0.2.17 (LICENSE-APACHE), cpufeatures 0.3.0 (LICENSE-APACHE), crc-fast 1.10.0 (LICENSE-Apache), crossbeam-channel 0.5.16 (LICENSE-APACHE), crossbeam-deque 0.8.7 (LICENSE-APACHE), crossbeam-epoch 0.9.20 (LICENSE-APACHE), crossbeam-queue 0.3.13 (LICENSE-APACHE), crossbeam-utils 0.8.22 (LICENSE-APACHE), crypto-common 0.1.7 (LICENSE-APACHE), crypto-common 0.2.2 (LICENSE-APACHE), curve25519-dalek-derive 0.1.1 (LICENSE-APACHE), der 0.7.10 (LICENSE-APACHE), digest 0.10.7 (LICENSE-APACHE), digest 0.11.3 (LICENSE-APACHE), displaydoc 0.2.7 (LICENSE-APACHE), downcast-rs 1.2.1 (LICENSE-APACHE), either 1.17.0 (LICENSE-APACHE), encoding_rs 0.8.35 (LICENSE-APACHE), encoding_rs_io 0.1.8 (LICENSE-APACHE), equivalent 1.0.2 (LICENSE-APACHE), errno 0.3.14 (LICENSE-APACHE), euclid 0.20.14 (LICENSE-APACHE), event-listener 5.4.2 (LICENSE-APACHE), fastrand 2.5.0 (LICENSE-APACHE), flate2 1.1.9 (LICENSE-APACHE), flume 0.11.1 (LICENSE-APACHE), fnv 1.0.7 (LICENSE-APACHE), form_urlencoded 1.2.2 (LICENSE-APACHE), fraction 0.15.4 (LICENSE-APACHE), fs4 0.8.4 (LICENSE-APACHE), hashbrown 0.12.3 (LICENSE-APACHE), hashbrown 0.15.5 (LICENSE-APACHE), hashbrown 0.17.1 (LICENSE-APACHE), hashlink 0.10.0 (LICENSE-APACHE), heck 0.5.0 (LICENSE-APACHE), hkdf 0.12.4 (LICENSE-APACHE), hmac 0.12.1 (LICENSE-APACHE), httparse 1.10.1 (LICENSE-APACHE), httpdate 1.0.3 (LICENSE-APACHE), hybrid-array 0.4.14 (LICENSE-APACHE), hyper-rustls 0.27.9 (LICENSE-APACHE), hyper-timeout 0.5.2 (LICENSE-APACHE), idna 1.1.0 (LICENSE-APACHE), idna_adapter 1.2.2 (LICENSE-APACHE), indexmap 1.9.3 (LICENSE-APACHE), indexmap 2.14.0 (LICENSE-APACHE), inout 0.1.4 (LICENSE-APACHE), itertools 0.12.1 (LICENSE-APACHE), itertools 0.14.0 (LICENSE-APACHE), itertools 0.15.0 (LICENSE-APACHE), lazy_static 1.5.0 (LICENSE-APACHE), linux-raw-sys 0.12.1 (LICENSE-APACHE), linux-raw-sys 0.4.15 (LICENSE-APACHE), lock_api 0.4.14 (LICENSE-APACHE), log 0.4.33 (LICENSE-APACHE), lru-slab 0.1.2 (LICENSE-APACHE), md-5 0.10.6 (LICENSE-APACHE), md-5 0.11.0 (LICENSE-APACHE), mime 0.3.17 (LICENSE-APACHE), minimal-lexical 0.2.1 (LICENSE-APACHE), nohash-hasher 0.2.0 (LICENSE-APACHE), num 0.4.3 (LICENSE-APACHE), num-bigint 0.4.8 (LICENSE-APACHE), num-bigint-dig 0.8.6 (LICENSE-APACHE), num-complex 0.4.6 (LICENSE-APACHE), num-integer 0.1.46 (LICENSE-APACHE), num-iter 0.1.46 (LICENSE-APACHE), num-rational 0.4.2 (LICENSE-APACHE), num-traits 0.2.19 (LICENSE-APACHE), num_cpus 1.17.0 (LICENSE-APACHE), object_store 0.14.1 (LICENSE.txt), once_cell 1.21.4 (LICENSE-APACHE), openssl-probe 0.2.1 (LICENSE-APACHE), parking 2.2.1 (LICENSE-APACHE), parking_lot 0.12.5 (LICENSE-APACHE), parking_lot_core 0.9.12 (LICENSE-APACHE), pem-rfc7468 0.7.0 (LICENSE-APACHE), percent-encoding 2.3.2 (LICENSE-APACHE), pgvector 0.4.2 (LICENSE-APACHE), pkcs1 0.7.5 (LICENSE-APACHE), pkcs8 0.10.2 (LICENSE-APACHE), prost 0.13.5 (LICENSE), prost-derive 0.13.5 (LICENSE), prost-types 0.13.5 (LICENSE), quinn 0.11.11 (LICENSE-APACHE), quinn-proto 0.11.16 (LICENSE-APACHE), quinn-udp 0.5.15 (LICENSE-APACHE), rayon 1.12.0 (LICENSE-APACHE), rayon-core 1.13.0 (LICENSE-APACHE), regex 1.13.1 (LICENSE-APACHE), regex-automata 0.4.18 (LICENSE-APACHE), regex-syntax 0.8.11 (LICENSE-APACHE), rsa 0.9.10 (LICENSE-APACHE), rustc-hash 1.1.0 (LICENSE-APACHE), rustix 0.38.44 (LICENSE-APACHE), rustix 1.1.4 (LICENSE-APACHE), rustls 0.23.46 (LICENSE-APACHE), rustls-native-certs 0.8.4 (LICENSE-APACHE), rustls-pemfile 2.2.0 (LICENSE-APACHE), rustls-platform-verifier 0.7.0 (LICENSE-APACHE), scopeguard 1.2.0 (LICENSE-APACHE), sha1 0.10.7 (LICENSE-APACHE), sha2 0.10.9 (LICENSE-APACHE), signal-hook-registry 1.4.8 (LICENSE-APACHE), signature 2.2.0 (LICENSE-APACHE), smallvec 1.15.2 (LICENSE-APACHE), socket2 0.5.10 (LICENSE-APACHE), socket2 0.6.5 (LICENSE-APACHE), spki 0.7.3 (LICENSE-APACHE), stable_deref_trait 1.2.1 (LICENSE-APACHE), tempfile 3.27.0 (LICENSE-APACHE), thread_local 1.1.10 (LICENSE-APACHE), tinyvec 1.12.0 (LICENSE-APACHE.md), ttf-parser 0.25.1 (LICENSE-APACHE), unicode-bidi 0.3.18 (LICENSE-APACHE), unicode-normalization 0.1.25 (LICENSE-APACHE), unicode-properties 0.1.4 (LICENSE-APACHE), unicode-width 0.2.2 (LICENSE-APACHE), url 2.5.8 (LICENSE-APACHE), utf8_iter 1.0.4 (LICENSE-APACHE), utoipa 5.5.0 (LICENSE-APACHE), utoipa-gen 5.5.0 (LICENSE-APACHE), uuid 1.24.0 (LICENSE-APACHE), weezl 0.1.12 (LICENSE-APACHE), zeroize 1.9.0 (LICENSE-APACHE), zeroize_derive 1.5.0 (LICENSE-APACHE)
 
 ```text
 Apache License
@@ -970,7 +972,7 @@ limitations under the License.
 
 ### Text 95cef6332b35 — 39 component(s)
 
-Used by: allocator-api2 0.2.21 (LICENSE-APACHE), anyhow 1.0.104 (LICENSE-APACHE), async-trait 0.1.92 (LICENSE-APACHE), itoa 1.0.18 (LICENSE-APACHE), libc 0.2.189 (LICENSE-APACHE), miniz_oxide 0.8.9 (LICENSE-APACHE.md), num-conv 0.2.2 (LICENSE-Apache), oneshot 0.1.13 (LICENSE-APACHE), pin-project 1.1.13 (LICENSE-APACHE), pin-project-internal 1.1.13 (LICENSE-APACHE), pin-project-lite 0.2.17 (LICENSE-APACHE), proc-macro2 1.0.107 (LICENSE-APACHE), quote 1.0.47 (LICENSE-APACHE), ref-cast 1.0.26 (LICENSE-APACHE), ref-cast-impl 1.0.26 (LICENSE-APACHE), rustc-hash 2.1.3 (LICENSE-APACHE), rustversion 1.0.23 (LICENSE-APACHE), ryu 1.0.23 (LICENSE-APACHE), serde 1.0.229 (LICENSE-APACHE), serde-saphyr 2.0.0 (LICENSE-APACHE), serde_core 1.0.229 (LICENSE-APACHE), serde_derive 1.0.229 (LICENSE-APACHE), serde_json 1.0.151 (LICENSE-APACHE), serde_path_to_error 0.1.20 (LICENSE-APACHE), serde_urlencoded 0.7.1 (LICENSE-APACHE), syn 2.0.119 (LICENSE-APACHE), syn 3.0.3 (LICENSE-APACHE), sync_wrapper 1.0.2 (LICENSE), thiserror 1.0.69 (LICENSE-APACHE), thiserror 2.0.20 (LICENSE-APACHE), thiserror-impl 1.0.69 (LICENSE-APACHE), thiserror-impl 2.0.20 (LICENSE-APACHE), time 0.3.55 (LICENSE-Apache), time-core 0.1.9 (LICENSE-Apache), time-macros 0.2.32 (LICENSE-Apache), unicode-ident 1.0.24 (LICENSE-APACHE), whoami 1.6.1 (LICENSE_APACHE), zstd-safe 7.2.4 (LICENSE.Apache-2.0), zstd-sys 2.0.16+zstd.1.5.7 (LICENSE.Apache-2.0)
+Used by: allocator-api2 0.2.21 (LICENSE-APACHE), anyhow 1.0.104 (LICENSE-APACHE), async-trait 0.1.92 (LICENSE-APACHE), constant_time_eq 0.6.1 (LICENSE-APACHE), itoa 1.0.18 (LICENSE-APACHE), libc 0.2.189 (LICENSE-APACHE), miniz_oxide 0.8.9 (LICENSE-APACHE.md), num-conv 0.2.2 (LICENSE-Apache), oneshot 0.1.13 (LICENSE-APACHE), pin-project 1.1.13 (LICENSE-APACHE), pin-project-internal 1.1.13 (LICENSE-APACHE), pin-project-lite 0.2.17 (LICENSE-APACHE), proc-macro2 1.0.107 (LICENSE-APACHE), quote 1.0.47 (LICENSE-APACHE), ref-cast 1.0.26 (LICENSE-APACHE), ref-cast-impl 1.0.26 (LICENSE-APACHE), rustc-hash 2.1.3 (LICENSE-APACHE), rustversion 1.0.23 (LICENSE-APACHE), ryu 1.0.23 (LICENSE-APACHE), serde 1.0.229 (LICENSE-APACHE), serde-saphyr 2.0.0 (LICENSE-APACHE), serde_core 1.0.229 (LICENSE-APACHE), serde_derive 1.0.229 (LICENSE-APACHE), serde_json 1.0.151 (LICENSE-APACHE), serde_path_to_error 0.1.20 (LICENSE-APACHE), serde_urlencoded 0.7.1 (LICENSE-APACHE), syn 2.0.119 (LICENSE-APACHE), syn 3.0.3 (LICENSE-APACHE), sync_wrapper 1.0.2 (LICENSE), thiserror 1.0.69 (LICENSE-APACHE), thiserror 2.0.20 (LICENSE-APACHE), thiserror-impl 1.0.69 (LICENSE-APACHE), thiserror-impl 2.0.20 (LICENSE-APACHE), time 0.3.55 (LICENSE-Apache), time-core 0.1.9 (LICENSE-Apache), time-macros 0.2.32 (LICENSE-Apache), typed-path 0.13.0 (LICENSE-APACHE), unicode-ident 1.0.24 (LICENSE-APACHE), whoami 1.6.1 (LICENSE_APACHE)
 
 ```text
 Apache License
@@ -1151,9 +1153,9 @@ TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
 END OF TERMS AND CONDITIONS
 ```
 
-### Text 1673fc9bcd58 — 31 component(s)
+### Text 1673fc9bcd58 — 29 component(s)
 
-Used by: aho-corasick 1.1.5 (LICENSE-MIT), arraydeque 0.5.1 (LICENSE), base64 0.22.1 (LICENSE-MIT), byteorder 1.5.0 (LICENSE-MIT), crossbeam-channel 0.5.16 (LICENSE-MIT), crossbeam-deque 0.8.7 (LICENSE-MIT), crossbeam-epoch 0.9.20 (LICENSE-MIT), crossbeam-queue 0.3.13 (LICENSE-MIT), crossbeam-utils 0.8.22 (LICENSE-MIT), crunchy 0.2.4 (LICENSE), encoding_rs_io 0.1.8 (LICENSE-MIT), generic-array 0.14.7 (LICENSE), hyper-timeout 0.5.2 (LICENSE-MIT), jsonwebtoken 9.3.1 (LICENSE), lz4_flex 0.11.6 (LICENSE), memchr 2.8.3 (LICENSE-MIT), nix 0.31.3 (LICENSE), nu-ansi-term 0.50.3 (LICENSE), pgvector 0.4.2 (LICENSE-MIT), quick-xml 0.41.0 (LICENSE-MIT.md), same-file 1.0.6 (LICENSE-MIT), spin 0.10.1 (LICENSE), spin 0.9.9 (LICENSE), tantivy-fst 0.5.0 (LICENSE-MIT), typenum 1.20.1 (LICENSE-MIT), utf8-ranges 1.0.5 (LICENSE-MIT), walkdir 2.5.0 (LICENSE-MIT), weezl 0.1.12 (LICENSE-MIT), zstd 0.13.3 (LICENSE), zstd-safe 7.2.4 (LICENSE.Mit), zstd-sys 2.0.16+zstd.1.5.7 (LICENSE.Mit)
+Used by: aho-corasick 1.1.5 (LICENSE-MIT), arraydeque 0.5.1 (LICENSE), base64 0.22.1 (LICENSE-MIT), byteorder 1.5.0 (LICENSE-MIT), crossbeam-channel 0.5.16 (LICENSE-MIT), crossbeam-deque 0.8.7 (LICENSE-MIT), crossbeam-epoch 0.9.20 (LICENSE-MIT), crossbeam-queue 0.3.13 (LICENSE-MIT), crossbeam-utils 0.8.22 (LICENSE-MIT), crunchy 0.2.4 (LICENSE), encoding_rs_io 0.1.8 (LICENSE-MIT), generic-array 0.14.7 (LICENSE), hyper-timeout 0.5.2 (LICENSE-MIT), jsonwebtoken 9.3.1 (LICENSE), lz4_flex 0.11.6 (LICENSE), memchr 2.8.3 (LICENSE-MIT), nix 0.31.3 (LICENSE), nu-ansi-term 0.50.3 (LICENSE), pgvector 0.4.2 (LICENSE-MIT), quick-xml 0.41.0 (LICENSE-MIT.md), same-file 1.0.6 (LICENSE-MIT), spin 0.10.1 (LICENSE), spin 0.9.9 (LICENSE), tantivy-fst 0.5.0 (LICENSE-MIT), typenum 1.20.1 (LICENSE-MIT), utf8-ranges 1.0.5 (LICENSE-MIT), walkdir 2.5.0 (LICENSE-MIT), weezl 0.1.12 (LICENSE-MIT), zip 9.8.0 (LICENSE)
 
 ```text
 The MIT License (MIT)
@@ -1179,9 +1181,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### Text 46be4098b02d — 30 component(s)
+### Text 46be4098b02d — 29 component(s)
 
-Used by: deranged 0.5.8 (LICENSE-Apache), ed25519 2.2.3 (LICENSE-APACHE), futures-channel 0.3.33 (LICENSE-APACHE), futures-core 0.3.33 (LICENSE-APACHE), futures-executor 0.3.33 (LICENSE-APACHE), futures-intrusive 0.5.0 (LICENSE-APACHE), futures-io 0.3.33 (LICENSE-APACHE), futures-macro 0.3.33 (LICENSE-APACHE), futures-sink 0.3.33 (LICENSE-APACHE), futures-task 0.3.33 (LICENSE-APACHE), futures-util 0.3.33 (LICENSE-APACHE), http 1.5.0 (LICENSE-APACHE), iana-time-zone 0.1.65 (LICENSE-APACHE), powerfmt 0.2.0 (LICENSE-Apache), ppv-lite86 0.2.21 (LICENSE-APACHE), reqwest 0.12.28 (LICENSE-APACHE), reqwest 0.13.4 (LICENSE-APACHE), rustls-pki-types 1.15.1 (LICENSE-APACHE), sqlx 0.8.6 (LICENSE-APACHE), sqlx-core 0.8.6 (LICENSE-APACHE), sqlx-macros 0.8.6 (LICENSE-APACHE), sqlx-macros-core 0.8.6 (LICENSE-APACHE), sqlx-mysql 0.8.6 (LICENSE-APACHE), sqlx-postgres 0.8.6 (LICENSE-APACHE), sqlx-sqlite 0.8.6 (LICENSE-APACHE), tinyvec_macros 0.1.1 (LICENSE-APACHE.md), tokio-rustls 0.26.4 (LICENSE-APACHE), typenum 1.20.1 (LICENSE-APACHE), zerocopy 0.8.56 (LICENSE-APACHE), zopfli 0.8.3 (COPYING)
+Used by: deranged 0.5.8 (LICENSE-Apache), ed25519 2.2.3 (LICENSE-APACHE), futures-channel 0.3.33 (LICENSE-APACHE), futures-core 0.3.33 (LICENSE-APACHE), futures-executor 0.3.33 (LICENSE-APACHE), futures-intrusive 0.5.0 (LICENSE-APACHE), futures-io 0.3.33 (LICENSE-APACHE), futures-macro 0.3.33 (LICENSE-APACHE), futures-sink 0.3.33 (LICENSE-APACHE), futures-task 0.3.33 (LICENSE-APACHE), futures-util 0.3.33 (LICENSE-APACHE), http 1.5.0 (LICENSE-APACHE), iana-time-zone 0.1.65 (LICENSE-APACHE), powerfmt 0.2.0 (LICENSE-Apache), ppv-lite86 0.2.21 (LICENSE-APACHE), reqwest 0.12.28 (LICENSE-APACHE), reqwest 0.13.4 (LICENSE-APACHE), rustls-pki-types 1.15.1 (LICENSE-APACHE), sqlx 0.8.6 (LICENSE-APACHE), sqlx-core 0.8.6 (LICENSE-APACHE), sqlx-macros 0.8.6 (LICENSE-APACHE), sqlx-macros-core 0.8.6 (LICENSE-APACHE), sqlx-mysql 0.8.6 (LICENSE-APACHE), sqlx-postgres 0.8.6 (LICENSE-APACHE), sqlx-sqlite 0.8.6 (LICENSE-APACHE), tinyvec_macros 0.1.1 (LICENSE-APACHE.md), tokio-rustls 0.26.4 (LICENSE-APACHE), typenum 1.20.1 (LICENSE-APACHE), zerocopy 0.8.56 (LICENSE-APACHE)
 
 ```text
 Apache License
@@ -1389,7 +1391,7 @@ Apache License
 
 ### Text 69539425723b — 24 component(s)
 
-Used by: atoi 2.0.0 (LICENSE), axum-core 0.5.6 (LICENSE), crc 3.4.0 (LICENSE-MIT), crc32fast 1.5.0 (LICENSE-MIT), ecb 0.1.2 (LICENSE), email_address 0.2.9 (LICENSE), fluent-uri 0.3.2 (LICENSE), lopdf 0.42.0 (LICENSE), lru 0.12.5 (LICENSE), matchit 0.7.3 (LICENSE), matchit 0.8.4 (LICENSE), miniz_oxide 0.8.9 (LICENSE), miniz_oxide 0.8.9 (LICENSE-MIT.md), outref 0.5.2 (LICENSE), pom 1.1.0 (LICENSE), rust-stemmers 1.2.0 (LICENSE), rustls-platform-verifier 0.7.0 (LICENSE-MIT), simd-adler32 0.3.10 (LICENSE.md), tinyvec_macros 0.1.1 (LICENSE-MIT.md), tokio 1.53.1 (LICENSE), tokio-macros 2.7.2 (LICENSE), tokio-stream 0.1.19 (LICENSE), tokio-util 0.7.19 (LICENSE), whoami 1.6.1 (LICENSE_MIT)
+Used by: atoi 2.0.0 (LICENSE), axum-core 0.5.6 (LICENSE), crc 3.4.0 (LICENSE-MIT), crc32fast 1.5.0 (LICENSE-MIT), ecb 0.1.2 (LICENSE), email_address 0.2.9 (LICENSE), fluent-uri 0.3.2 (LICENSE), lopdf 0.42.0 (LICENSE), lru 0.12.5 (LICENSE), matchit 0.7.3 (LICENSE), matchit 0.8.4 (LICENSE), miniz_oxide 0.8.9 (LICENSE), miniz_oxide 0.8.9 (LICENSE-MIT.md), outref 0.5.2 (LICENSE), pom 1.1.0 (LICENSE), rust-stemmers 1.2.0 (LICENSE), rustls-platform-verifier 0.7.0 (LICENSE-MIT), simd-adler32 0.3.10 (LICENSE.md), tinyvec_macros 0.1.1 (LICENSE-MIT.md), tokio 1.54.1 (LICENSE), tokio-macros 2.7.2 (LICENSE), tokio-stream 0.1.19 (LICENSE), tokio-util 0.7.19 (LICENSE), whoami 1.6.1 (LICENSE_MIT)
 
 ```text
 MIT License
@@ -1953,7 +1955,7 @@ limitations under the License.
 
 ### Text ce6b026f87de — 4 component(s)
 
-Used by: hyper-rustls 0.27.9 (LICENSE-ISC), rustls 0.23.45 (LICENSE-ISC), rustls-native-certs 0.8.4 (LICENSE-ISC), rustls-pemfile 2.2.0 (LICENSE-ISC)
+Used by: hyper-rustls 0.27.9 (LICENSE-ISC), rustls 0.23.46 (LICENSE-ISC), rustls-native-certs 0.8.4 (LICENSE-ISC), rustls-pemfile 2.2.0 (LICENSE-ISC)
 
 ```text
 ISC License (ISC)
@@ -2427,12 +2429,39 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-### Text bc423209e73e — 3 component(s)
+### Text 29150bda3b3a — 3 component(s)
 
-Used by: typenum 1.20.1 (LICENSE), zstd-safe 7.2.4 (LICENSE), zstd-sys 2.0.16+zstd.1.5.7 (LICENSE)
+Used by: zstd 0.13.5 (LICENSE), zstd-safe 7.4.1 (LICENSE), zstd-sys 2.1.3+zstd.1.5.7 (LICENSE)
 
 ```text
-MIT OR Apache-2.0
+BSD 3-Clause License
+
+Copyright (c) 2026, Alexandre Bury
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
 ### Text e1985b6f3102 — 2 component(s)
@@ -3013,7 +3042,7 @@ THE SOFTWARE.
 
 ### Text 3b68c51aac02 — 2 component(s)
 
-Used by: webpki-roots 0.26.11 (LICENSE), webpki-roots 1.0.9 (LICENSE)
+Used by: webpki-roots 0.26.11 (LICENSE), webpki-roots 1.0.12 (LICENSE)
 
 ```text
 # Community Data License Agreement - Permissive - Version 2.0
@@ -3419,6 +3448,155 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ~~~~
+```
+
+### Text 3de3b5118df8 — 1 component(s)
+
+Used by: constant_time_eq 0.6.1 (LICENSE-CC0)
+
+```text
+Creative Commons Legal Code
+
+CC0 1.0 Universal
+
+    CREATIVE COMMONS CORPORATION IS NOT A LAW FIRM AND DOES NOT PROVIDE
+    LEGAL SERVICES. DISTRIBUTION OF THIS DOCUMENT DOES NOT CREATE AN
+    ATTORNEY-CLIENT RELATIONSHIP. CREATIVE COMMONS PROVIDES THIS
+    INFORMATION ON AN "AS-IS" BASIS. CREATIVE COMMONS MAKES NO WARRANTIES
+    REGARDING THE USE OF THIS DOCUMENT OR THE INFORMATION OR WORKS
+    PROVIDED HEREUNDER, AND DISCLAIMS LIABILITY FOR DAMAGES RESULTING FROM
+    THE USE OF THIS DOCUMENT OR THE INFORMATION OR WORKS PROVIDED
+    HEREUNDER.
+
+Statement of Purpose
+
+The laws of most jurisdictions throughout the world automatically confer
+exclusive Copyright and Related Rights (defined below) upon the creator
+and subsequent owner(s) (each and all, an "owner") of an original work of
+authorship and/or a database (each, a "Work").
+
+Certain owners wish to permanently relinquish those rights to a Work for
+the purpose of contributing to a commons of creative, cultural and
+scientific works ("Commons") that the public can reliably and without fear
+of later claims of infringement build upon, modify, incorporate in other
+works, reuse and redistribute as freely as possible in any form whatsoever
+and for any purposes, including without limitation commercial purposes.
+These owners may contribute to the Commons to promote the ideal of a free
+culture and the further production of creative, cultural and scientific
+works, or to gain reputation or greater distribution for their Work in
+part through the use and efforts of others.
+
+For these and/or other purposes and motivations, and without any
+expectation of additional consideration or compensation, the person
+associating CC0 with a Work (the "Affirmer"), to the extent that he or she
+is an owner of Copyright and Related Rights in the Work, voluntarily
+elects to apply CC0 to the Work and publicly distribute the Work under its
+terms, with knowledge of his or her Copyright and Related Rights in the
+Work and the meaning and intended legal effect of CC0 on those rights.
+
+1. Copyright and Related Rights. A Work made available under CC0 may be
+protected by copyright and related or neighboring rights ("Copyright and
+Related Rights"). Copyright and Related Rights include, but are not
+limited to, the following:
+
+  i. the right to reproduce, adapt, distribute, perform, display,
+     communicate, and translate a Work;
+ ii. moral rights retained by the original author(s) and/or performer(s);
+iii. publicity and privacy rights pertaining to a person's image or
+     likeness depicted in a Work;
+ iv. rights protecting against unfair competition in regards to a Work,
+     subject to the limitations in paragraph 4(a), below;
+  v. rights protecting the extraction, dissemination, use and reuse of data
+     in a Work;
+ vi. database rights (such as those arising under Directive 96/9/EC of the
+     European Parliament and of the Council of 11 March 1996 on the legal
+     protection of databases, and under any national implementation
+     thereof, including any amended or successor version of such
+     directive); and
+vii. other similar, equivalent or corresponding rights throughout the
+     world based on applicable law or treaty, and any national
+     implementations thereof.
+
+2. Waiver. To the greatest extent permitted by, but not in contravention
+of, applicable law, Affirmer hereby overtly, fully, permanently,
+irrevocably and unconditionally waives, abandons, and surrenders all of
+Affirmer's Copyright and Related Rights and associated claims and causes
+of action, whether now known or unknown (including existing as well as
+future claims and causes of action), in the Work (i) in all territories
+worldwide, (ii) for the maximum duration provided by applicable law or
+treaty (including future time extensions), (iii) in any current or future
+medium and for any number of copies, and (iv) for any purpose whatsoever,
+including without limitation commercial, advertising or promotional
+purposes (the "Waiver"). Affirmer makes the Waiver for the benefit of each
+member of the public at large and to the detriment of Affirmer's heirs and
+successors, fully intending that such Waiver shall not be subject to
+revocation, rescission, cancellation, termination, or any other legal or
+equitable action to disrupt the quiet enjoyment of the Work by the public
+as contemplated by Affirmer's express Statement of Purpose.
+
+3. Public License Fallback. Should any part of the Waiver for any reason
+be judged legally invalid or ineffective under applicable law, then the
+Waiver shall be preserved to the maximum extent permitted taking into
+account Affirmer's express Statement of Purpose. In addition, to the
+extent the Waiver is so judged Affirmer hereby grants to each affected
+person a royalty-free, non transferable, non sublicensable, non exclusive,
+irrevocable and unconditional license to exercise Affirmer's Copyright and
+Related Rights in the Work (i) in all territories worldwide, (ii) for the
+maximum duration provided by applicable law or treaty (including future
+time extensions), (iii) in any current or future medium and for any number
+of copies, and (iv) for any purpose whatsoever, including without
+limitation commercial, advertising or promotional purposes (the
+"License"). The License shall be deemed effective as of the date CC0 was
+applied by Affirmer to the Work. Should any part of the License for any
+reason be judged legally invalid or ineffective under applicable law, such
+partial invalidity or ineffectiveness shall not invalidate the remainder
+of the License, and in such case Affirmer hereby affirms that he or she
+will not (i) exercise any of his or her remaining Copyright and Related
+Rights in the Work or (ii) assert any associated claims and causes of
+action with respect to the Work, in either case contrary to Affirmer's
+express Statement of Purpose.
+
+4. Limitations and Disclaimers.
+
+ a. No trademark or patent rights held by Affirmer are waived, abandoned,
+    surrendered, licensed or otherwise affected by this document.
+ b. Affirmer offers the Work as-is and makes no representations or
+    warranties of any kind concerning the Work, express, implied,
+    statutory or otherwise, including without limitation warranties of
+    title, merchantability, fitness for a particular purpose, non
+    infringement, or the absence of latent or other defects, accuracy, or
+    the present or absence of errors, whether or not discoverable, all to
+    the greatest extent permissible under applicable law.
+ c. Affirmer disclaims responsibility for clearing rights of other persons
+    that may apply to the Work or any use thereof, including without
+    limitation any person's Copyright and Related Rights in the Work.
+    Further, Affirmer disclaims responsibility for obtaining any necessary
+    consents, permissions or other rights required for any use of the
+    Work.
+ d. Affirmer understands and acknowledges that Creative Commons is not a
+    party to this document and has no duty or obligation with respect to
+    this CC0 or use of the Work.
+```
+
+### Text 0987ca29df7a — 1 component(s)
+
+Used by: constant_time_eq 0.6.1 (LICENSE-MIT0)
+
+```text
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
 ### Text f7977d313e84 — 1 component(s)
@@ -6271,7 +6449,7 @@ of these licenses, at your option.
 
 ### Text c77176d16f7c — 1 component(s)
 
-Used by: rustls-webpki 0.103.15 (LICENSE)
+Used by: rustls-webpki 0.103.17 (LICENSE)
 
 ```text
 Except as otherwise noted, this project is licensed under the following
@@ -6529,6 +6707,14 @@ freely, subject to the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 ```
 
+### Text bc423209e73e — 1 component(s)
+
+Used by: typenum 1.20.1 (LICENSE)
+
+```text
+MIT OR Apache-2.0
+```
+
 ### Text 78d44ee722d3 — 1 component(s)
 
 Used by: unicode-ident 1.0.24 (LICENSE-UNICODE)
@@ -6626,40 +6812,45 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-### Text c3b55f149d09 — 1 component(s)
+### Text 796263ab89e0 — 1 component(s)
 
-Used by: zip 2.4.2 (LICENSE)
+Used by: zstd-sys 2.1.3+zstd.1.5.7 (LICENSE.BSD-2-Clause)
 
 ```text
-The MIT License (MIT)
+The decoders for legacy formats, in zstd/lib/legacy/, include code under the
+2-clause BSD license:
 
-Copyright (c) 2014 Mathijs van de Nes
+BSD 2-Clause License
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Copyright (C) 2013-2016, Yann Collet.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+    * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
 
-Some files in the "tests/data" subdirectory of this repository are under other
-licences; see files named LICENSE.*.txt for details.
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-### Text 711eff6473ef — 1 component(s)
+### Text 5efbb42fcd5d — 1 component(s)
 
-Used by: zstd-sys 2.0.16+zstd.1.5.7 (LICENSE.BSD-3-Clause)
+Used by: zstd-sys 2.1.3+zstd.1.5.7 (LICENSE.BSD-3-Clause)
 
 ```text
 The auto-generated bindings are under the 3-clause BSD license:
@@ -6668,7 +6859,7 @@ BSD License
 
 For Zstandard software
 
-Copyright (c) 2016-present, Facebook, Inc. All rights reserved.
+Copyright (c) Meta Platforms, Inc. and affiliates. All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
 are permitted provided that the following conditions are met:
@@ -6680,9 +6871,9 @@ are permitted provided that the following conditions are met:
    this list of conditions and the following disclaimer in the documentation
    and/or other materials provided with the distribution.
 
- * Neither the name Facebook nor the names of its contributors may be used to
-   endorse or promote products derived from this software without specific
-   prior written permission.
+ * Neither the name Facebook, nor Meta, nor the names of its contributors may
+   be used to endorse or promote products derived from this software without
+   specific prior written permission.
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
 ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED

@@ -143,6 +143,56 @@ ignore = [
     # advisory lands against `instant` — the last of which flips it from
     # acceptable to blocking.
     "RUSTSEC-2024-0384",
+    # humantime is unmaintained (RUSTSEC-2026-0542), with no fixed release.
+    # It reaches us only through object_store 0.14 -> munarium-store-objects,
+    # the S3 / Azure Blob / GCS source and artifact store
+    # (`cargo tree -i humantime`).
+    #
+    # Checked by READING object_store 0.14.1: `src/config.rs` is the only
+    # user. It calls `parse_duration` on ClientOptions/retry duration
+    # strings and `format_duration` when echoing them back. Here those
+    # strings come only from the process environment that the cloud
+    # builders' `from_env()` reads (AWS_*, AZURE_*, GOOGLE_* client options);
+    # munarium-store-objects passes no duration string of its own, and its
+    # one `with_config` call sets the SAS key, which is not a duration. That
+    # is the operator's deployment configuration, never a tenant request or
+    # stored data, so the unmaintained parser sees only trusted, short input.
+    #
+    # An UNMAINTAINED advisory, not a vulnerability. Accepted by maintainer
+    # decision, 19 November 2026. Matrix's `deny.toml` carries the same
+    # entry for the same object_store path; keep the two entries aligned.
+    #
+    # Re-evaluate when: object_store drops or replaces humantime (take that
+    # release), munarium-store-objects starts passing tenant-supplied option
+    # strings to object_store, or any vulnerability advisory lands against
+    # humantime. Either of the last two makes this entry wrong.
+    "RUSTSEC-2026-0542",
+    # chrono is unmaintained (RUSTSEC-2026-0543), with no fixed release.
+    #
+    # It is the workspace's timestamp type: munarium-core's domain types, the
+    # REST DTOs and utoipa schemas, the sqlx Postgres driver, and
+    # object_store's object metadata all carry chrono values. Replacing it
+    # with jiff or time changes every timestamp boundary, including wire
+    # serialization, and depends on driver support. That is a planned
+    # migration, not a lockfile update.
+    #
+    # Checked by READING the call sites: today's exposure is parsing and
+    # formatting timestamps, and some of that parsing is authenticated
+    # request input: RFC 3339 timestamps and `%Y-%m-%d` dates in query
+    # parameters and bodies (the query, governance, budget, reports and
+    # money APIs, and evidence validation in munarium-core), plus serde
+    # deserialization of `DateTime<Utc>`. Every format string is a literal;
+    # none is caller-supplied. There is no known vulnerability.
+    #
+    # An UNMAINTAINED advisory, not a vulnerability. Accepted by maintainer
+    # decision, 19 November 2026. Matrix's `deny.toml` carries the same
+    # decision; keep the two entries aligned.
+    #
+    # Re-evaluate when: any vulnerability advisory lands against chrono
+    # (blocking), a maintained fork or chrono release appears, or sqlx,
+    # utoipa and object_store all support the replacement type, at which
+    # point schedule the migration.
+    "RUSTSEC-2026-0543",
 ]
 
 [bans]
