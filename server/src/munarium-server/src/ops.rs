@@ -174,7 +174,13 @@ mod tests {
         cfg.max_concurrency = 1;
         let state = AppState::new(cfg).await.expect("state");
         // Hold the only permit: the next /v1 request must shed, before auth.
-        let _held = state.rest_permits.clone().try_acquire_owned().unwrap();
+        let _held = state
+            .admission
+            .rest
+            .ordinary
+            .clone()
+            .try_acquire_owned()
+            .unwrap();
         let resp = crate::rest::router(state.clone())
             .oneshot(
                 axum::http::Request::get("/v1/versions/v-x/head")

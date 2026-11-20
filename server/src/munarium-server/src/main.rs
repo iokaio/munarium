@@ -25,6 +25,9 @@
 // per recorded dimension — both clippy defaults trade away the wrong thing here.
 #![allow(clippy::result_large_err, clippy::too_many_arguments)]
 
+mod admission;
+#[cfg(test)]
+mod admission_tests;
 mod answers_api;
 mod authoring_api;
 mod budget_api;
@@ -174,7 +177,26 @@ async fn main() {
         None => None,
     };
 
-    let state = match AppState::new(config.clone()).await {
+    // Admission by work class (R7/B3). Validated with the other settings,
+    // before any listener binds: a reserve that leaves no ordinary slot is a
+    // config error, not a server that sheds everything.
+    let admission = match admission::AdmissionConfig::from_env(config.max_concurrency) {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("config error: {e}");
+            std::process::exit(2);
+        }
+    };
+    if admission != admission::AdmissionConfig::legacy(config.max_concurrency) {
+        tracing::info!(
+            ceiling = admission.ceiling,
+            control_reserve = admission.control_reserve,
+            heavy_limit = admission.heavy_limit,
+            "admission by work class enabled (per plane)"
+        );
+    }
+
+    let state = match AppState::new_with_admission(config.clone(), admission).await {
         Ok(s) => s,
         Err(e) => {
             eprintln!("startup error: {e}");

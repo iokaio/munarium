@@ -175,8 +175,8 @@ async fn guarded_policy_authority_legacy_replay_scope_and_two_pool_race() {
     let second = crate::providers_api::usage_tests::test_state_with_auth(Some(url), auth).await;
     // Admit the entire race at the HTTP boundary; test the database claim,
     // rather than the fixture's unrelated four-request overload limit.
-    first.rest_permits.add_permits(10);
-    second.rest_permits.add_permits(10);
+    first.admission.rest.ordinary.add_permits(10);
+    second.admission.rest.ordinary.add_permits(10);
     let router = crate::rest::router(first.clone());
     let other_router = crate::rest::router(second.clone());
     let rpc = crate::grpc_api::ServerApiSvc::new(first.clone());

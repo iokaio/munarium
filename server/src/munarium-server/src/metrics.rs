@@ -100,6 +100,29 @@ const METRICS_META: &[(&str, &str, &str)] = &[
         "counter",
         "Requests refused 503 overloaded by the concurrency-limit load shed.",
     ),
+    // Admission by work class (R7/B3, admission.rs). Labelled by plane,
+    // class (ordinary|control|heavy) and slot or pool only: the classes are a
+    // fixed allowlist, so the series set is bounded, and no tenant label.
+    (
+        "munarium_admission_total",
+        "counter",
+        "Requests admitted, by plane, work class (ordinary|control|heavy) and slot (ordinary|reserve).",
+    ),
+    (
+        "munarium_admission_shed_total",
+        "counter",
+        "Requests shed 503 overloaded, by plane and work class; each is also counted in munarium_load_shed_total.",
+    ),
+    (
+        "munarium_admission_slots",
+        "gauge",
+        "Configured admission capacity per plane and pool (ordinary|reserve|heavy); reserve and heavy appear only when enabled.",
+    ),
+    (
+        "munarium_admission_slots_in_use",
+        "gauge",
+        "Admission slots held now, per plane and pool (ordinary|reserve|heavy).",
+    ),
     // Derived-index builds. Labelled by mode and outcome
     // only: a tenant, collection, version or artifact label here would
     // multiply cardinality by the corpus count and publish the tenant list to
@@ -338,6 +361,29 @@ pub fn render(state: &crate::state::AppState) -> String {
     help_type_once(&mut out, "munarium_interactions_queue_depth", &mut emitted);
     out.push_str(&format!("munarium_interactions_queue_depth {depth}\n"));
 
+    // Admission capacity and use per plane and pool (R7/B3), polled live.
+    let usage: Vec<(&str, &str, usize, usize)> = [&state.admission.rest, &state.admission.grpc]
+        .into_iter()
+        .flat_map(|plane| {
+            plane
+                .usage()
+                .into_iter()
+                .map(move |(pool, capacity, in_use)| (plane.plane, pool, capacity, in_use))
+        })
+        .collect();
+    help_type_once(&mut out, "munarium_admission_slots", &mut emitted);
+    for (plane, pool, capacity, _) in &usage {
+        let l = labels(&[("plane", plane), ("pool", pool)]);
+        out.push_str(&format!("munarium_admission_slots{{{l}}} {capacity}\n"));
+    }
+    help_type_once(&mut out, "munarium_admission_slots_in_use", &mut emitted);
+    for (plane, pool, _, in_use) in &usage {
+        let l = labels(&[("plane", plane), ("pool", pool)]);
+        out.push_str(&format!(
+            "munarium_admission_slots_in_use{{{l}}} {in_use}\n"
+        ));
+    }
+
     state.metrics.render_recorded(&mut out, &mut emitted);
     out
 }
@@ -447,6 +493,10 @@ mod tests {
             "munarium_provider_tokens_total",
             "munarium_runbook_step_transitions_total",
             "munarium_load_shed_total",
+            "munarium_admission_total",
+            "munarium_admission_shed_total",
+            "munarium_admission_slots",
+            "munarium_admission_slots_in_use",
         ] {
             assert!(
                 METRICS_META.iter().any(|(n, _, _)| *n == name),

@@ -195,8 +195,12 @@ pub struct AppState {
     /// meta routes — /healthz, /readyz — must keep answering under
     /// overload, or orchestrators kill exactly the instances that are
     /// working hardest.
-    pub rest_permits: Arc<tokio::sync::Semaphore>,
-    pub grpc_permits: Arc<tokio::sync::Semaphore>,
+    ///
+    /// Since R7/B3 the pools live in `admission` (`admission.rs`): each
+    /// plane's `ordinary` pool is `MUNARIUM_MAX_CONCURRENCY` minus the opt-in
+    /// control reserve, which is the whole ceiling by default, beside the
+    /// reserve and the opt-in heavy bound.
+    pub admission: crate::admission::Admission,
     /// Set by main's shutdown watcher the moment a stop signal fires; both
     /// planes' /readyz flip to 503 "draining" so load balancers stop
     /// routing while in-flight work finishes under the grace window.
@@ -332,7 +336,26 @@ fn build_doc_intel(config: &Config) -> Result<Option<Arc<dyn DocumentIntelligenc
 }
 
 impl AppState {
+    /// The v1.4 admission shape: one pool per plane, sized
+    /// `MUNARIUM_MAX_CONCURRENCY`, with no control reserve and no heavy bound.
+    /// Production startup uses `new_with_admission` with validated settings.
+    #[cfg(test)]
     pub async fn new(config: Config) -> Result<Arc<Self>> {
+        let admission = crate::admission::AdmissionConfig::legacy(config.max_concurrency);
+        Self::new_with_admission(config, admission).await
+    }
+
+    /// Builds the state with explicit admission settings (R7/B3). `main`
+    /// validates them from the environment before calling this.
+    pub async fn new_with_admission(
+        config: Config,
+        admission: crate::admission::AdmissionConfig,
+    ) -> Result<Arc<Self>> {
+        if admission.ceiling != config.max_concurrency {
+            return Err(KernelError::InvalidInput(
+                "admission ceiling must equal MUNARIUM_MAX_CONCURRENCY".into(),
+            ));
+        }
         let stores = match config.store {
             StoreKind::Memory => StoreRegistry::Mem(RwLock::new(HashMap::new())),
             StoreKind::Postgres => {
@@ -536,8 +559,7 @@ impl AppState {
                 "document intelligence disabled (MUNARIUM_DOCINTEL=none) — local extraction only"
             ),
         }
-        let rest_permits = Arc::new(tokio::sync::Semaphore::new(config.max_concurrency));
-        let grpc_permits = Arc::new(tokio::sync::Semaphore::new(config.max_concurrency));
+        let admission = crate::admission::Admission::new(admission);
         let matrix_http =
             crate::evidence_providers::MatrixProvider::client(std::time::Duration::from_secs(5))?;
         let matrix_breaker = Arc::new(crate::evidence_providers::CircuitBreaker::default());
@@ -585,8 +607,7 @@ impl AppState {
                 crate::datastore_serving::DatastoreReadiness::default(),
             ),
             metrics,
-            rest_permits,
-            grpc_permits,
+            admission,
             draining: std::sync::atomic::AtomicBool::new(false),
             chrono_rules_mem: Mutex::new(HashMap::new()),
             // Two v4 UUIDs = 256 bits of CSPRNG-backed entropy.

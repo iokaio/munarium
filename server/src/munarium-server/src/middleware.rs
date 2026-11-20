@@ -157,10 +157,19 @@ pub async fn capture(
     // ceiling, refuse immediately with 503 `overloaded` + Retry-After
     // rather than queueing into a latency collapse. The permit is held for
     // the rest of this function (request lifetime).
-    let _permit = match state.rest_permits.clone().try_acquire_owned() {
-        Ok(p) => p,
-        Err(_) => {
-            state.metrics.inc("munarium_load_shed_total", String::new());
+    //
+    // Admission by work class (R7/B3, admission.rs): an ordinary slot is
+    // tried first for every route, before any authentication, exactly as in
+    // v1.4. Only an allowlisted control route that finds none, on a plane
+    // with an opt-in reserve, authenticates here and takes a reserved slot
+    // when the caller passes that route's own role check. Heavy routes also
+    // need a heavy token when that bound is configured.
+    let class = crate::admission::rest_class(&http_method, &route);
+    let _permit = match state.admission.rest.admit(&state.metrics, class, |need| {
+        crate::admission::authorized(&state, crate::rest::bearer(req.headers()), need)
+    }) {
+        Some(p) => p,
+        None => {
             let mut r = ApiError::Custom(CustomError::overloaded()).into_response();
             r.headers_mut().insert(
                 axum::http::header::RETRY_AFTER,
@@ -434,7 +443,7 @@ struct SseCapture {
     /// request the server serves — retrieval fan-out, expansion, completion,
     /// corrective retries — and releasing the permit with the head would
     /// leave exactly that work outside `MUNARIUM_MAX_CONCURRENCY`.
-    _permit: tokio::sync::OwnedSemaphorePermit,
+    _permit: crate::admission::AdmissionPermit,
 }
 
 impl http_body::Body for SseCapture {
@@ -596,13 +605,16 @@ where
 
         Box::pin(async move {
             // Load shed at the same ceiling as REST (its own permit pool).
-            // Health/reflection passed through above and never shed.
-            let _permit = match state.grpc_permits.clone().try_acquire_owned() {
-                Ok(p) => p,
-                Err(_) => {
-                    state.metrics.inc("munarium_load_shed_total", String::new());
-                    return Ok(grpc_reject(CustomError::overloaded()));
-                }
+            // Health/reflection passed through above and never shed. The
+            // work classes match REST (admission.rs): ordinary first, the
+            // reserve only for an allowlisted control method whose caller
+            // passes that method's own role check.
+            let class = crate::admission::grpc_class(&path);
+            let _permit = match state.admission.grpc.admit(&state.metrics, class, |need| {
+                crate::admission::authorized(&state, bearer.as_deref(), need)
+            }) {
+                Some(p) => p,
+                None => return Ok(grpc_reject(CustomError::overloaded())),
             };
             let principal = state.authenticate_principal(bearer.as_deref()).ok();
             let uid = match uid {
