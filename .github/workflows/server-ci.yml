@@ -101,6 +101,9 @@ jobs:
           --health-retries 10
     env:
       MUNARIUM_TEST_DATABASE_URL: postgres://munarium:munarium-dev@localhost:5433/munarium
+      # Read only by tools/matrix_pin.py (the contract.matrix gate's second
+      # command); check_matrix_contract.py keeps the audited checkout below.
+      MUNARIUM_MATRIX_PIN_ROOT: ${{ github.workspace }}/munarium-matrix-pin
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: checkout Matrix contract source
@@ -109,6 +112,18 @@ jobs:
           repository: iokaio/munarium-matrix
           ref: 2203173e863931873ed8af0e69d272f58f64021d # PR #2 audited extraction
           path: munarium-matrix
+          persist-credentials: false
+      # tools/matrix_pin.py --check needs Matrix at exactly the publisher
+      # revision named in src/munarium-core/src/matrix_pin.rs. A second path
+      # keeps the audited extraction above as check_matrix_contract.py's input.
+      # Re-pin and update this ref in the same commit; test_gate_catalog.py
+      # rejects a ref that differs from the pin's PUBLISHER_REVISION.
+      - name: checkout pinned Matrix consumer publisher
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: iokaio/munarium-matrix
+          ref: 79aa8c573011e8095c171dc532b01f19a6ecda63 # feat/clearview candidate pinned by matrix_pin.rs; unreviewed, unmerged
+          path: munarium-matrix-pin
           persist-credentials: false
       # The featured (vector-diskann) step below compiles a second
       # configuration of three crates and their test binaries into the same
@@ -127,6 +142,8 @@ jobs:
           workspaces: server
       - name: fmt
         run: python3 tools/gate_catalog.py runner.regression catalog.regression catalog.equivalence format
+      - name: compat harness unit tests
+        run: python3 tools/gate_catalog.py compat.regression
       - name: clippy
         run: python3 tools/gate_catalog.py clippy.default
       - name: cargo clippy (all features, all targets)

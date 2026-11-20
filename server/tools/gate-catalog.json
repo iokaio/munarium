@@ -75,6 +75,32 @@
       }
     },
     {
+      "id": "compat.regression",
+      "commands": [
+        [
+          "{python}",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tools/compat",
+          "-p",
+          "test_compat.py"
+        ]
+      ],
+      "features": "default",
+      "depends_on": [],
+      "cwd": "server",
+      "required": true,
+      "prerequisites": [
+        "py"
+      ],
+      "adapters": {
+        "local": "receipt-command-arrays",
+        "ci": "python-command-arrays"
+      }
+    },
+    {
       "id": "format",
       "commands": [
         [
@@ -206,6 +232,11 @@
         [
           "{python}",
           "tools/check_matrix_contract.py"
+        ],
+        [
+          "{python}",
+          "tools/matrix_pin.py",
+          "--check"
         ]
       ],
       "features": "default",

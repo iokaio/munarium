@@ -1,13 +1,20 @@
 {
   "schema_version": 1,
   "source_commit": "5fbc92958552c21612f60b6236e6dbc8b8a81ef4",
-  "preserved_sha256": "496096750b4fde05b7ed71cea76ef4191e7ff999f6b138f8fe2dfd1c603de99e",
+  "preserved_sha256": "ab8faf0a06a66614206dd8e430c7566d6c608014b714619d70a8b7951c7d0d97",
   "steps": {
     "fmt": {
       "ids": [
         "format"
       ],
       "before": "      - name: fmt\n        run: cargo fmt --all --check\n"
+    },
+    "compat harness unit tests": {
+      "ids": [
+        "compat.regression"
+      ],
+      "before": null,
+      "added": "Maintainer decision 13 (20 November 2026): a new requirement with no pre-P16 block. It runs the local compatibility harness's stdlib unit tests only; the Docker replay stays local."
     },
     "clippy": {
       "ids": [
@@ -154,6 +161,32 @@
         }
       },
       {
+        "id": "compat.regression",
+        "commands": [
+          [
+            "{python}",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tools/compat",
+            "-p",
+            "test_compat.py"
+          ]
+        ],
+        "features": "default",
+        "depends_on": [],
+        "cwd": "server",
+        "required": true,
+        "prerequisites": [
+          "py"
+        ],
+        "adapters": {
+          "local": "receipt-command-arrays",
+          "ci": "python-command-arrays"
+        }
+      },
+      {
         "id": "format",
         "commands": [
           [
@@ -285,6 +318,11 @@
           [
             "{python}",
             "tools/check_matrix_contract.py"
+          ],
+          [
+            "{python}",
+            "tools/matrix_pin.py",
+            "--check"
           ]
         ],
         "features": "default",

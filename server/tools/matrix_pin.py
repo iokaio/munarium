@@ -5,8 +5,11 @@
     py tools/matrix_pin.py --check                      # the tracked pin is what the pinned publisher exports
     py tools/matrix_pin.py --write --review "<status>"  # re-pin to the Matrix checkout's HEAD
 
-Run from `server/`. The Matrix checkout is found as `check_matrix_contract.py` finds it:
-`MUNARIUM_MATRIX_ROOT`, then `munarium-matrix` inside or beside the repository root.
+Run from `server/`. When `MUNARIUM_MATRIX_PIN_ROOT` is set, the Matrix checkout is that
+directory and nothing else; Server CI sets it to a second checkout at the pinned revision,
+so `check_matrix_contract.py` keeps its own audited input. Otherwise the checkout is found
+as `check_matrix_contract.py` finds it: `MUNARIUM_MATRIX_ROOT`, then `munarium-matrix`
+inside or beside the repository root.
 
 The pin has two generated outputs and no hand-written content:
 
@@ -35,6 +38,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -53,6 +57,20 @@ HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
 class PinError(Exception):
     pass
+
+
+def pin_matrix_root() -> Path:
+    """The Matrix checkout to pin against: `MUNARIUM_MATRIX_PIN_ROOT` strictly, else `matrix_root()`."""
+    configured = os.environ.get("MUNARIUM_MATRIX_PIN_ROOT")
+    if not configured:
+        return matrix_root()
+    candidate = Path(configured)
+    # A configured root that is not a Matrix checkout fails; it never falls back.
+    if not (candidate / "contract" / "publish.py").is_file():
+        raise FileNotFoundError(
+            f"MUNARIUM_MATRIX_PIN_ROOT={configured} has no contract/publish.py"
+        )
+    return candidate.resolve()
 
 
 def git(matrix: Path, *args: str) -> str:
@@ -200,7 +218,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--review", help="review status of the publisher revision (--write only)")
     a = ap.parse_args(argv)
     try:
-        matrix = matrix_root()
+        matrix = pin_matrix_root()
         if a.write:
             if not a.review:
                 raise PinError("--write needs --review describing the publisher revision's status")

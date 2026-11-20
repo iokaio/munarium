@@ -11,7 +11,7 @@ $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
 try {
     New-ValidationRun 'gates' (Split-Path $PSScriptRoot) $ReceiptPath -Inputs @('server/tools/validation.ps1','server/tools/validation-tiers.ps1','server/tools/embedded-datastore.ps1')
-    Add-CatalogSteps @('runner.regression','catalog.regression','catalog.equivalence','format','clippy.default','clippy.all-features','clippy.diskann')
+    Add-CatalogSteps @('runner.regression','catalog.regression','catalog.equivalence','compat.regression','format','clippy.default','clippy.all-features','clippy.diskann')
     Add-ValidationTiers $true $true $true $true $true
     Add-ValidationStep 'docs.openapi' {
         $json = (Invoke-ValidationCommand cargo @('run','-q','-p','munarium-server','--','openapi') -Capture) -join "`n"

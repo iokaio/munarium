@@ -75,11 +75,17 @@ the publisher revision that produced the export and its review status, the expor
 sha256 and its `profile_digest`. Neither file is edited by hand.
 
 ```bash
-# from server/, with the reviewed Matrix revision checked out (beside this repository
-# or at MUNARIUM_MATRIX_ROOT)
+# from server/, with the reviewed Matrix revision checked out (at MUNARIUM_MATRIX_PIN_ROOT,
+# else beside this repository or at MUNARIUM_MATRIX_ROOT)
 py tools/matrix_pin.py --write --review "<review status of that revision>"
 py tools/matrix_pin.py --check
 ```
+
+`--check` is the second command of the `contract.matrix` gate. Server CI checks out the
+pinned publisher revision at `munarium-matrix-pin` and points `MUNARIUM_MATRIX_PIN_ROOT`
+there, so `check_matrix_contract.py` keeps the audited checkout. A set
+`MUNARIUM_MATRIX_PIN_ROOT` that is not a Matrix checkout fails; it does not fall back.
+Locally, `gates.ps1` needs a Matrix checkout at the pinned revision for this gate.
 
 `--check` requires the Matrix checkout to be the pinned publisher revision with a clean
 `contract/` tree. It runs the publisher's self-test, cuts and verifies the wire bundle,

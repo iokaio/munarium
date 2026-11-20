@@ -45,7 +45,7 @@ the gRPC calls go through the released v1.4 stubs, the old strict readers.
 | `count_stub.py` | Counting provider stub (Ollama and OpenAI-compatible). It logs the method, path, size and client address of each arrival, never the body. |
 | `released_clients.py` | Builds disposable conformance projects that depend on the **published** 1.4.0 packages, from an export of `clients-v1.4.0` |
 | `cases/seed-v14.json`, `cases/replay-v14.json`, `cases/mmctl-*.yaml` | Seed and replay cases |
-| `test_compat.py` | 31 unit tests, including negative controls for each comparison rule. Run with `py -m unittest discover -s server/tools/compat`. CI does not run them. |
+| `test_compat.py` | 31 unit tests, including negative controls for each comparison rule. Run with `py -m unittest discover -s server/tools/compat`. Server CI and `gates.ps1` run them as the `compat.regression` gate; the Docker-based replay stays local. |
 
 **Same data for both binaries.** `seed` writes v1.4 state through the published
 v1.4.0 binary on an empty database (`compat_base`). The seed covers a ledger with

@@ -64,6 +64,21 @@ mTLS REST/gRPC tests against the built binary. Existing catalog commands and
 other jobs are unchanged. Negative controls reject removing the new triggers,
 disabling the job, or skipping its authority and live-transport tests.
 
+The November 2026 additions (maintainer decision 13, 20 November 2026) add two
+catalog requirements. `compat.regression` runs the local compatibility harness's
+stdlib unit tests (`tools/compat/test_compat.py`) as its own `lint-test` step and in
+`gates.ps1`; the Docker-based replay stays local. `contract.matrix` gains
+`tools/matrix_pin.py --check` after `tools/check_matrix_contract.py`. CI keeps the
+audited Matrix checkout for the first command and adds a second checkout at the
+publisher revision named in `munarium-core/src/matrix_pin.rs`, selected through
+`MUNARIUM_MATRIX_PIN_ROOT`. The historical source record is unchanged and every
+existing command remains; the baseline adds the new catalog entries, a step record
+with no pre-P16 block for the compat step and the audited orchestration hash.
+Regression controls require the pinned ref to equal the tracked pin. They reject
+removing, reordering or weakening either Matrix command, removing or retargeting the
+compat tests, disabling or moving the pinned checkout, and advancing the audited
+ref. A fixture shows that `--check` refuses a clean checkout at another revision.
+
 The October 2026 registry audit adds authenticated Docker Hub pulls with a public
 mirror fallback for the two Server CI services, client conformance and the
 independent `cargo-deny` action. To opt in, set repository Actions secrets

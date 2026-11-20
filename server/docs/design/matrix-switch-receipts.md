@@ -58,22 +58,22 @@ M1-T2 needs a running Matrix peer. It was not run for this change. The procedure
 
 Record one receipt per environment with the fields in [Receipt format](cluster-qualification-plan.md#receipt-format). Include both image digests, the pinned publisher revision and every step's result. Record unavailable steps as unavailable.
 
-## Server CI change still required
+## Server CI pin check
 
-The Server workflow was not changed in step 3. Its `contract.matrix` gate still runs `tools/check_matrix_contract.py` against Matrix `2203173`, the audited PR #2 extraction. That revision predates the consumer export, so `matrix_pin.py --check` cannot run there. The new Rust checks already run in CI through the existing workspace test gate. After the Matrix candidate is reviewed and merged, make one coupled change under the Server CI procedure in `AGENTS.md`:
+Under the maintainer's decision of 20 November 2026 (CI additions), Server CI runs `matrix_pin.py --check` against the current candidate pin rather than waiting for the Matrix review:
 
-1. Change the `checkout Matrix contract source` step's `ref` in `.github/workflows/server-ci.yml` to the reviewed, merged publisher revision. Update its comment.
-2. Add `["{python}", "tools/matrix_pin.py", "--check"]` as a second command of the `contract.matrix` step in `server/tools/gate-catalog.json`. Keep `tools/check_matrix_contract.py` as the first command until step 4 replaces it.
-3. Update `server/tools/gate-ci-baseline.json` for the changed checkout step and the catalog command list. Account for every difference. Preserve the historical source record and existing coverage.
-4. In `server/tools/test_gate_catalog.py`, add command assertions that the `contract.matrix` step runs both checkers. Add negative controls that reject removal of either command, and a regression test that `matrix_pin.py --check` refuses an unpinned revision.
-5. Mirror the step in `server/gates.ps1` if its catalog selection changes. Run `python tools/gate_catalog.py runner.regression catalog.regression catalog.equivalence format` from `server/` and inspect every result.
+- The `contract.matrix` gate in `server/tools/gate-catalog.json` runs `tools/check_matrix_contract.py` and then `tools/matrix_pin.py --check`. `server/gates.ps1` selects the same gate.
+- The `lint-test` job keeps its `checkout Matrix contract source` step at `2203173`, the audited PR #2 extraction, as the input of `check_matrix_contract.py`. That revision predates the consumer export, so it cannot serve the pin check. A second step, `checkout pinned Matrix consumer publisher`, checks out `79aa8c573011e8095c171dc532b01f19a6ecda63` at `munarium-matrix-pin`. The job sets `MUNARIUM_MATRIX_PIN_ROOT` to that path. `matrix_pin.py` reads that variable strictly and never falls back to another checkout.
+- `server/tools/gate-ci-baseline.json` records the catalog command and the audited orchestration hash. `server/tools/test_gate_catalog.py` asserts both commands and requires the pinned checkout's ref to equal `PUBLISHER_REVISION`. Its negative controls reject removing, reordering or weakening either command, disabling or moving the pinned checkout, and advancing the audited ref. A regression test shows that `--check` refuses a clean checkout at another revision.
+
+When the pin moves to the reviewed, merged publisher revision, update the pinned checkout's `ref` and comment in the same commit. Then update the baseline under the Server CI procedure in `AGENTS.md`. Step 4 replaces `check_matrix_contract.py` and the audited checkout.
 
 ## Step 4 prerequisites
 
 Do not start step 4 until these are complete:
 
 - Re-pin to the reviewed, merged publisher revision.
-- Make the CI change above.
+- Move the CI pin check above to that revision.
 - Pass M1-T2 and M1-T3 receipts.
 - Record each owning reviewer's confirmation in the Matrix inventory.
 
