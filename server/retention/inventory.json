@@ -2530,6 +2530,25 @@
         "src/munarium-store-pg/migrations/0060_artifact_damage.sql"
       ]
     },
+    "artifact_verifier_keys": {
+      "columns": {
+        "fingerprint": "text",
+        "public_key": "text",
+        "label": "text",
+        "enrolled_by": "text",
+        "enrolled_at": "timestamptz",
+        "revoked_at": "timestamptz",
+        "revoked_by": "text",
+        "revoke_reason": "text"
+      },
+      "content": "Enrolled artifact damage verifier public keys: fingerprint, public key, operator label, enrolling and revoking actor, times and revocation reason. Public material only; no private keys.",
+      "json_content": {},
+      "owner": "Deployment/environment operator; enrollment and revocation run with the deployment database credential.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0083_artifact_verifier_keys.sql"
+      ]
+    },
     "console_sessions": {
       "columns": {
         "handle_digest": "text",

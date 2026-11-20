@@ -91,8 +91,26 @@ impl DatastoreParts {
             state.config.replica_count,
         )
         .map_err(|e| e.to_string())?;
+        // The verifier key: an unreadable or malformed file refuses to arm.
+        // Without one, observations are recorded unsigned and only local
+        // isolation takes effect: nothing this replica sees blocks or clears.
+        let signing_key = match std::env::var("MUNARIUM_ARTIFACT_VERIFIER_KEY_FILE") {
+            Ok(path) if !path.trim().is_empty() => Some(
+                munarium_retrieval::damage::load_verifier_key(path.trim())
+                    .map_err(|e| e.to_string())?,
+            ),
+            _ => None,
+        };
+        if mode != DamageMode::Off && signing_key.is_none() {
+            tracing::warn!(
+                "MUNARIUM_ARTIFACT_VERIFIER_KEY_FILE is unset: this replica isolates damaged \
+                 copies locally, but its observations never count toward a fleet block or a \
+                 clearance"
+            );
+        }
         if mode != DamageMode::Off {
             tracing::info!(
+                verifier = signing_key.as_ref().map(|k| k.fingerprint()),
                 mode = mode.as_str(),
                 replicas = if single_replica.is_some() {
                     "single"
@@ -115,11 +133,18 @@ impl DatastoreParts {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(8),
-            Arc::new(match single_replica {
-                Some(interval) => DamageGuard::new(mode, verifier)
-                    .with_single_replica(interval)
-                    .map_err(|e| e.to_string())?,
-                None => DamageGuard::new(mode, verifier),
+            Arc::new({
+                let guard = DamageGuard::new(mode, verifier);
+                let guard = match signing_key {
+                    Some(key) => guard.with_signing_key(key),
+                    None => guard,
+                };
+                match single_replica {
+                    Some(interval) => guard
+                        .with_single_replica(interval)
+                        .map_err(|e| e.to_string())?,
+                    None => guard,
+                }
             }),
         ))
     }

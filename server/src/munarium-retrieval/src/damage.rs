@@ -9,8 +9,10 @@
 //!   at open is evicted so the next read re-fetches and re-verifies.
 //! - **Authoritative verification.** The replica then fetches the pinned
 //!   artifact directly from the authoritative store, compares every object
-//!   with the pin, and records what it saw under its own verifier identity.
-//!   Whether that confirms a fleet block is the ledger's decision.
+//!   with the pin, and records what it saw under its own verifier identity,
+//!   signed with its verifier key ([`DamageGuard::with_signing_key`]).
+//!   Whether that confirms a fleet block is the ledger's decision; an
+//!   unsigned observation, from a replica without a key, never counts.
 //! - **Admission and release.** A read checks the pin at admission and must
 //!   pass the release fence before its result leaves the serving plane.
 //! - **Repair verification.** A replica verifies each preauthorized repair
@@ -28,6 +30,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use munarium_core::artifact_verifier::VerifierSigningKey;
 use munarium_core::{KernelError, Result};
 use munarium_datastore::audit::{audit_artifact, ArtifactAudit, AuditOutcome};
 use munarium_datastore::hydrate::L1Cache;
@@ -36,8 +39,9 @@ use munarium_datastore::verify::{Limits, ReaderCapabilities};
 use munarium_datastore::ArtifactCacheKey;
 use munarium_store_pg::artifact_damage::{
     check_single_replica_interval, ArtifactDamageLedger, AuthoritativeObservation, Authority,
-    Decision, ObjectPin, Outcome, PgPool, PinAdmission, RecordResult, RepairAttempt, Timestamp,
-    VerifierIdentity, DEFAULT_SINGLE_REPLICA_INTERVAL_SECS, MANIFEST_OBJECT,
+    Decision, ObjectPin, ObservationSignature, Outcome, PgPool, PinAdmission, RecordResult,
+    RepairAttempt, Timestamp, VerifierIdentity, DEFAULT_SINGLE_REPLICA_INTERVAL_SECS,
+    MANIFEST_OBJECT,
 };
 
 use crate::executor::L0Cache;
@@ -121,6 +125,20 @@ pub fn parse_replica_assurance(
     }
 }
 
+/// Load a replica's verifier signing key from `MUNARIUM_ARTIFACT_VERIFIER_KEY_FILE`.
+/// The error names the path, never the file's contents.
+pub fn load_verifier_key(path: &str) -> Result<VerifierSigningKey> {
+    let text = std::fs::read_to_string(path).map_err(|e| {
+        KernelError::InvalidInput(format!(
+            "MUNARIUM_ARTIFACT_VERIFIER_KEY_FILE {path:?} could not be read: {}",
+            e.kind()
+        ))
+    })?;
+    VerifierSigningKey::from_encoded(&text).map_err(|e| {
+        KernelError::InvalidInput(format!("MUNARIUM_ARTIFACT_VERIFIER_KEY_FILE {path:?}: {e}"))
+    })
+}
+
 /// Where an integrity failure was detected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureSite {
@@ -136,9 +154,12 @@ pub enum FailureSite {
 #[derive(Debug)]
 pub struct DamageGuard {
     pub mode: DamageMode,
-    /// This replica's verifier identity. Must be unique per replica; see the
-    /// specification's independence criteria.
+    /// This replica's verifier identity: its verifier key's fingerprint once
+    /// [`DamageGuard::with_signing_key`] is applied. Without a key it is the
+    /// configured instance name, and its observations never count.
     pub verifier_id: String,
+    /// The verifier signing key. Never logged.
+    signing_key: Option<VerifierSigningKey>,
     /// Locally isolated keys and the pin generation at isolation. A key is
     /// released only after the pin's generation advances unblocked, i.e. a
     /// block followed by a verified clearance.
@@ -159,9 +180,23 @@ impl DamageGuard {
             verifier_id: verifier_id.into(),
             isolated: Mutex::new(HashMap::new()),
             verified_attempts: Mutex::new(HashSet::new()),
+            signing_key: None,
             single_replica_interval_secs: None,
             reconfirmed_candidates: Mutex::new(HashSet::new()),
         }
+    }
+
+    /// Sign this replica's observations with `key`. Its verifier identity
+    /// becomes the key's fingerprint, which is what the operator enrolls.
+    pub fn with_signing_key(mut self, key: VerifierSigningKey) -> Self {
+        self.verifier_id = key.fingerprint();
+        self.signing_key = Some(key);
+        self
+    }
+
+    /// Whether this replica signs its observations.
+    pub fn signs(&self) -> bool {
+        self.signing_key.is_some()
     }
 
     /// Declare this replica the deployment's only one (see
@@ -349,6 +384,14 @@ impl DamageContext {
         limits: &Limits,
         attempt: Option<&RepairAttempt>,
     ) -> Result<RecordResult> {
+        // The generation the observation is signed at. If a block or a
+        // clearance commits before it is recorded, the ledger refuses it as
+        // signed for another generation: it counts for nothing.
+        let generation = self
+            .ledger
+            .admit(index_version_id, artifact_id)
+            .await?
+            .generation;
         let fetched_at = self.ledger.db_now().await?;
         let id = artifact_id.to_string();
         let reader = reader.clone();
@@ -358,7 +401,7 @@ impl DamageContext {
         })
         .await
         .map_err(|e| KernelError::Storage(format!("verification task: {e}")))?;
-        let observation = observation_from(
+        let mut observation = observation_from(
             audit.as_ref().map_err(|e| e.to_string()),
             index_version_id,
             artifact_id,
@@ -366,6 +409,12 @@ impl DamageContext {
             self.guard.identity(),
             fetched_at,
         );
+        if let Some(key) = &self.guard.signing_key {
+            observation.signature = Some(ObservationSignature {
+                pin_generation: generation,
+                signature: key.sign(&observation.claims(self.ledger.tenant_id(), generation)),
+            });
+        }
         self.ledger
             .record_authoritative(&observation, self.guard.authority())
             .await
@@ -450,6 +499,7 @@ fn observation_from(
         observed_sha256: observed,
         repair_attempt_id: attempt.map(|a| a.attempt_id.clone()),
         detail: Some(detail),
+        signature: None,
     }
 }
 

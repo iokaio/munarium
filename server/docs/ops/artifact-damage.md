@@ -12,9 +12,39 @@ This procedure covers what happens when a Datastore artifact's bytes no longer m
 | `observe` | Records findings and honors existing blocks. Never commits a block or a clearance. |
 | `enforce` | Also commits confirmed fleet blocks and verified clearances. |
 
-1. Give every replica a distinct, stable instance id (`MUNARIUM_INSTANCE_ID`, or the pod `HOSTNAME`). Two replicas with the same id count as one verifier.
+1. Give every serving replica its own verifier key and enroll it (see [Verifier keys](#verifier-keys)). Two replicas that share a key count as one verifier, and a replica without an enrolled key only isolates its own copy.
 2. Upgrade every serving replica, then set `observe` everywhere. Drain or replace any v1.4 reader.
 3. Switch every serving replica to `enforce`.
+
+### Verifier keys
+
+A fleet block or a clearance counts only observations signed by enrolled, unrevoked verifier keys. Each replica needs its own key.
+
+1. **Generate** a key where the replica's secrets are prepared, never in a tracked directory:
+
+   ```console
+   munarium-server artifact-damage generate-verifier-key --out /secure/path/verifier.key
+   ```
+
+   The command refuses to overwrite a file, creates it owner-only on Unix, and prints only the `fingerprint` and `public_key`. The file holds the private key. Deliver it like any other secret, for example as a Kubernetes secret mounted read-only, and never log it or commit it.
+2. **Configure** the replica with `MUNARIUM_ARTIFACT_VERIFIER_KEY_FILE=/path/to/verifier.key`. An unreadable or malformed file stops Datastore infrastructure from arming. With no file, the replica logs that its observations will not count. The startup line `durable artifact damage handling enabled` shows its `verifier` fingerprint.
+3. **Enroll** the public key with the deployment's database credential:
+
+   ```console
+   munarium-server artifact-damage enroll-verifier --public-key <public_key> \
+       --label <replica name> --actor <your-name>
+   ```
+
+   `verifier-public-key --key-file <path>` prints the public key and fingerprint of an existing key file. `list-verifiers` shows every enrolled key and whether it is revoked.
+4. **Rotate** by generating and enrolling a new key, switching the replica to it, and then revoking the old fingerprint. Observations made with the old key after its revocation count for nothing.
+5. **Revoke** a key that is lost, copied or retired:
+
+   ```console
+   munarium-server artifact-damage revoke-verifier --fingerprint <fingerprint> \
+       --actor <your-name> [--reason "<ticket>"]
+   ```
+
+   Revocation is permanent and takes effect at once. An unconfirmed finding or first repair match made with the key is never confirmed, and a revoked key cannot be enrolled again. Committed blocks and clearances keep the fingerprints they recorded.
 
 ### Single-replica deployments
 
@@ -37,6 +67,7 @@ An unknown value stops Datastore infrastructure from arming, and a `datastore` r
 
 - **Local isolation.** One replica logs `artifact integrity failure verified against the authoritative store`. Its reads of that artifact return `datastore-unavailable` (`integrity (quarantined)`). Other replicas keep serving.
 - **Fleet block.** After a second replica independently observes the same mismatch (or, in a declared single-replica deployment, after the replica's own second run at least the interval later), every replica refuses the artifact with `datastore-unavailable`. The refusal names `blocked by integrity incident inc-…`. The warmer records the residency as `blocked`. Replica readiness does not change, and other scopes keep serving.
+- **Unauthenticated observations.** History entries with decision `unauthenticated` come from a replica without a key, with an unenrolled or revoked key, or with a signature that does not verify. They count for nothing. Check the replica's key file and `list-verifiers`.
 - **History full.** Logs report `history_full = true`. Findings, blocks and clearances still work. Review and resolve the incidents. Entries are never evicted.
 
 List the state for a tenant:
@@ -73,7 +104,7 @@ Before you set `off` on any serving replica with an incident still `blocked`: fi
 
 ## Limits
 
-- Verifier independence relies on distinct instance ids, because replicas share one database credential.
+- Verifier independence relies on each replica having its own enrolled key. Replicas share one database credential, so whoever holds it can also enroll keys.
 - A declared single-replica deployment confirms with one replica's view. See the residual risk above.
 - Storage object generations are not yet recorded.
 - The release fence operates on whole search results.

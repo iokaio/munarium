@@ -5,6 +5,13 @@
 //! The rules are specified in `server/docs/design/artifact-damage.md`. This
 //! module is where they are enforced, inside single PostgreSQL transactions:
 //!
+//! - **Authenticated verifiers (ADR 0028 amendment).** An authoritative
+//!   observation counts toward a block or a clearance only when it is signed
+//!   by an enrolled, unrevoked verifier key and its `verifier_id` is that
+//!   key's fingerprint ([`munarium_core::artifact_verifier`]). Anything else
+//!   is recorded as [`Decision::Unauthenticated`] and counts for nothing. A
+//!   candidate or first repair match whose key has since been revoked is
+//!   replaced, never confirmed.
 //! - **Independence (ART1).** A fleet block commits only when a second
 //!   authoritative mismatch on the *same pinned object* (artifact, object key,
 //!   expected digest, storage generation) at the pin's *current generation*
@@ -48,6 +55,9 @@ use sqlx::{Postgres, Row, Transaction};
 pub use sqlx::PgPool;
 pub type Timestamp = DateTime<Utc>;
 
+use munarium_core::artifact_verifier::{
+    fingerprint_of, parse_public_key, verify_observation, ObservationClaims,
+};
 use munarium_core::{KernelError, Result};
 
 use crate::storage_err;
@@ -108,13 +118,24 @@ pub enum Outcome {
 }
 
 impl Outcome {
-    fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Match => "match",
             Self::Mismatch => "mismatch",
             Self::Unavailable => "unavailable",
         }
     }
+}
+
+/// A verifier's signature over one observation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObservationSignature {
+    /// The pin's integrity generation the verifier observed at. It must be
+    /// the pin's generation when the ledger records the observation.
+    pub pin_generation: i64,
+    /// Unpadded base64url Ed25519 signature over
+    /// [`AuthoritativeObservation::claims`].
+    pub signature: String,
 }
 
 /// One verifier's direct fetch from the authoritative store.
@@ -132,6 +153,31 @@ pub struct AuthoritativeObservation {
     pub repair_attempt_id: Option<String>,
     /// Bounded diagnostics. Never corpus or query text.
     pub detail: Option<String>,
+    /// The verifier's signature. Without a valid one from an enrolled,
+    /// unrevoked key the observation never counts.
+    pub signature: Option<ObservationSignature>,
+}
+
+impl AuthoritativeObservation {
+    /// What the verifier signs, for `tenant_id` at `pin_generation`.
+    pub fn claims<'a>(&'a self, tenant_id: &'a str, pin_generation: i64) -> ObservationClaims<'a> {
+        ObservationClaims {
+            tenant_id,
+            index_version_id: &self.pin.index_version_id,
+            artifact_id: &self.pin.artifact_id,
+            object_key: &self.pin.object_key,
+            expected_sha256: &self.pin.expected_sha256,
+            storage_generation: self.pin.storage_generation.as_deref().unwrap_or(""),
+            pin_generation,
+            outcome: self.outcome.as_str(),
+            observed_sha256: self.observed_sha256.as_deref(),
+            verifier_id: &self.verifier.verifier_id,
+            run_id: &self.verifier.run_id,
+            fetch_id: &self.fetch_id,
+            fetched_at_micros: self.fetched_at.timestamp_micros(),
+            repair_attempt_id: self.repair_attempt_id.as_deref(),
+        }
+    }
 }
 
 /// Which independence rule produced a block or a clearance. Recorded on the
@@ -199,6 +245,9 @@ pub enum Decision {
     RepairInvalidated,
     /// The observation cannot bind to the pin or attempt it names.
     Rejected(String),
+    /// Not signed by an enrolled, unrevoked verifier key for this tenant,
+    /// pin and generation. Recorded, never counted.
+    Unauthenticated(String),
 }
 
 impl Decision {
@@ -216,6 +265,7 @@ impl Decision {
             Self::ClearWithheld => "clear_withheld",
             Self::RepairInvalidated => "repair_invalidated",
             Self::Rejected(_) => "rejected",
+            Self::Unauthenticated(_) => "unauthenticated",
         }
     }
 }
@@ -726,6 +776,8 @@ impl ArtifactDamageLedger {
 
         let decision = if replayed {
             Decision::ReplayedFetch
+        } else if let Some(reason) = self.unauthenticated(&mut tx, o, pin.generation).await? {
+            Decision::Unauthenticated(reason)
         } else if let Some(reason) = untrusted_pin(&o.pin, &manifest) {
             Decision::Rejected(reason)
         } else if let Some(attempt) = o.repair_attempt_id.as_deref() {
@@ -755,7 +807,9 @@ impl ArtifactDamageLedger {
             false
         } else {
             let detail = match &decision {
-                Decision::Rejected(reason) => Some(reason.as_str()),
+                Decision::Rejected(reason) | Decision::Unauthenticated(reason) => {
+                    Some(reason.as_str())
+                }
                 _ => o.detail.as_deref(),
             };
             self.append_history(
@@ -787,6 +841,50 @@ impl ArtifactDamageLedger {
         })
     }
 
+    /// Why an observation is not authenticated, if it is not: it must carry
+    /// a signature, at the pin's current generation, from the enrolled and
+    /// unrevoked key whose fingerprint is its verifier id. The key row is
+    /// share-locked, so a concurrent revocation is either seen or ordered
+    /// after this decision.
+    async fn unauthenticated(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        o: &AuthoritativeObservation,
+        pin_generation: i64,
+    ) -> Result<Option<String>> {
+        let Some(signature) = &o.signature else {
+            return Ok(Some("unsigned observation".into()));
+        };
+        let key = sqlx::query(
+            "SELECT public_key, revoked_at IS NULL AS active FROM artifact_verifier_keys
+              WHERE fingerprint = $1 FOR SHARE",
+        )
+        .bind(&o.verifier.verifier_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(storage_err)?;
+        let Some(key) = key else {
+            return Ok(Some("verifier key is not enrolled".into()));
+        };
+        if !key.get::<bool, _>("active") {
+            return Ok(Some("verifier key is revoked".into()));
+        }
+        if signature.pin_generation != pin_generation {
+            return Ok(Some(format!(
+                "signed at integrity generation {}, the pin is at {pin_generation}",
+                signature.pin_generation
+            )));
+        }
+        let public: String = key.get("public_key");
+        Ok(verify_observation(
+            &public,
+            &o.claims(&self.tenant_id, signature.pin_generation),
+            &signature.signature,
+        )
+        .err()
+        .map(str::to_string))
+    }
+
     async fn decide_confirmation(
         &self,
         tx: &mut Transaction<'_, Postgres>,
@@ -804,7 +902,10 @@ impl ArtifactDamageLedger {
         let candidate = sqlx::query(
             "SELECT pin_generation, verifier_id, verifier_run_id, fetch_id, fetched_at,
                     observed_sha256,
-                    abs(extract(epoch FROM (fetched_at - $7::timestamptz))) <= $8 AS fresh
+                    abs(extract(epoch FROM (fetched_at - $7::timestamptz))) <= $8 AS fresh,
+                    EXISTS(SELECT 1 FROM artifact_verifier_keys k
+                            WHERE k.fingerprint = artifact_integrity_candidates.verifier_id
+                              AND k.revoked_at IS NULL) AS enrolled
                FROM artifact_integrity_candidates
               WHERE tenant_id = $1 AND index_version_id = $2 AND artifact_id = $3
                 AND object_key = $4 AND expected_sha256 = $5 AND storage_generation = $6
@@ -823,11 +924,14 @@ impl ArtifactDamageLedger {
         .map_err(storage_err)?;
 
         let usable = candidate.filter(|c| {
-            c.get::<i64, _>("pin_generation") == pin.generation && c.get::<bool, _>("fresh")
+            c.get::<i64, _>("pin_generation") == pin.generation
+                && c.get::<bool, _>("fresh")
+                && c.get::<bool, _>("enrolled")
         });
         let Some(first) = usable else {
-            // No candidate, or one from an earlier generation or outside the
-            // confirmation window: this observation becomes the candidate.
+            // No candidate, or one from an earlier generation, outside the
+            // confirmation window or from a key revoked since: this
+            // observation becomes the candidate.
             sqlx::query(
                 "INSERT INTO artifact_integrity_candidates
                      (tenant_id, index_version_id, artifact_id, object_key, expected_sha256,
@@ -951,6 +1055,9 @@ impl ArtifactDamageLedger {
                     a.first_match_fetched_at, a.first_match_observed_sha256,
                     a.first_match_storage_generation,
                     $3::timestamptz >= a.authorized_at AS fresh,
+                    EXISTS(SELECT 1 FROM artifact_verifier_keys k
+                            WHERE k.fingerprint = a.first_match_verifier_id
+                              AND k.revoked_at IS NULL) AS first_enrolled,
                     i.object_key, i.expected_sha256
                FROM artifact_repair_attempts a
                JOIN artifact_integrity_incidents i
@@ -1020,7 +1127,11 @@ impl ArtifactDamageLedger {
         }
         let storage_generation = o.pin.storage_generation.clone().unwrap_or_default();
         let observed = o.observed_sha256.clone().unwrap_or_default();
-        let first_verifier: Option<String> = a.get("first_match_verifier_id");
+        // A first match whose key was revoked since is replaced, never
+        // confirmed.
+        let first_verifier: Option<String> = a
+            .get::<Option<String>, _>("first_match_verifier_id")
+            .filter(|_| a.get::<bool, _>("first_enrolled"));
         let Some(first_verifier) = first_verifier else {
             sqlx::query(
                 "UPDATE artifact_repair_attempts
@@ -1422,6 +1533,129 @@ pub async fn verifying_attempts(pool: &PgPool) -> Result<Vec<(String, RepairAtte
         .iter()
         .map(|r| (r.get("tenant_id"), to_attempt(r)))
         .collect())
+}
+
+/// An enrolled verifier key. Public material only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VerifierKeyRecord {
+    /// The verifier identity: `ed25519:` and the SHA-256 of the public key.
+    pub fingerprint: String,
+    /// Unpadded base64url Ed25519 public key.
+    pub public_key: String,
+    pub label: String,
+    pub enrolled_by: String,
+    pub enrolled_at: Timestamp,
+    pub revoked_at: Option<Timestamp>,
+    pub revoked_by: Option<String>,
+    pub revoke_reason: Option<String>,
+}
+
+fn to_key(r: &sqlx::postgres::PgRow) -> VerifierKeyRecord {
+    VerifierKeyRecord {
+        fingerprint: r.get("fingerprint"),
+        public_key: r.get("public_key"),
+        label: r.get("label"),
+        enrolled_by: r.get("enrolled_by"),
+        enrolled_at: r.get("enrolled_at"),
+        revoked_at: r.get("revoked_at"),
+        revoked_by: r.get("revoked_by"),
+        revoke_reason: r.get("revoke_reason"),
+    }
+}
+
+const KEY_COLUMNS: &str = "fingerprint, public_key, label, enrolled_by, enrolled_at, revoked_at, \
+                           revoked_by, revoke_reason";
+
+async fn verifier_key(pool: &PgPool, fingerprint: &str) -> Result<Option<VerifierKeyRecord>> {
+    let row = sqlx::query(&format!(
+        "SELECT {KEY_COLUMNS} FROM artifact_verifier_keys WHERE fingerprint = $1"
+    ))
+    .bind(fingerprint)
+    .fetch_optional(pool)
+    .await
+    .map_err(storage_err)?;
+    Ok(row.as_ref().map(to_key))
+}
+
+/// Enroll a verifier's public key (operator boundary: the deployment's
+/// database credential, like `authorize-repair`). Enrolling the same key
+/// again returns its record. A revoked key cannot be enrolled again: the
+/// replica needs a new key.
+pub async fn enroll_verifier(
+    pool: &PgPool,
+    public_key: &str,
+    label: &str,
+    enrolled_by: &str,
+) -> Result<VerifierKeyRecord> {
+    let key = parse_public_key(public_key)?;
+    bounded("label", label, MAX_ID)?;
+    bounded("enrolled_by", enrolled_by, MAX_ID)?;
+    let fingerprint = fingerprint_of(&key);
+    sqlx::query(
+        "INSERT INTO artifact_verifier_keys (fingerprint, public_key, label, enrolled_by)
+         VALUES ($1, $2, $3, $4) ON CONFLICT (fingerprint) DO NOTHING",
+    )
+    .bind(&fingerprint)
+    .bind(public_key)
+    .bind(label)
+    .bind(enrolled_by)
+    .execute(pool)
+    .await
+    .map_err(storage_err)?;
+    let record = verifier_key(pool, &fingerprint)
+        .await?
+        .ok_or_else(|| KernelError::Storage("an enrolled verifier key vanished".into()))?;
+    if record.revoked_at.is_some() {
+        return Err(KernelError::InvalidInput(format!(
+            "verifier key {fingerprint} was revoked and cannot be enrolled again; generate a \
+             new key"
+        )));
+    }
+    Ok(record)
+}
+
+/// Revoke an enrolled verifier key, permanently. From the moment it commits,
+/// the key's observations count for nothing, and an unconfirmed candidate
+/// or first repair match it made can no longer be confirmed. Committed
+/// blocks and clearances keep their recorded evidence. Revoking an already
+/// revoked key returns its record unchanged.
+pub async fn revoke_verifier(
+    pool: &PgPool,
+    fingerprint: &str,
+    revoked_by: &str,
+    reason: Option<&str>,
+) -> Result<VerifierKeyRecord> {
+    bounded("fingerprint", fingerprint, MAX_ID)?;
+    bounded("revoked_by", revoked_by, MAX_ID)?;
+    sqlx::query(
+        "UPDATE artifact_verifier_keys
+            SET revoked_at = now(), revoked_by = $2, revoke_reason = $3
+          WHERE fingerprint = $1 AND revoked_at IS NULL",
+    )
+    .bind(fingerprint)
+    .bind(revoked_by)
+    .bind(clip(reason))
+    .execute(pool)
+    .await
+    .map_err(storage_err)?;
+    verifier_key(pool, fingerprint)
+        .await?
+        .ok_or_else(|| KernelError::NotFound {
+            kind: "verifier key",
+            id: fingerprint.to_string(),
+        })
+}
+
+/// Every enrolled verifier key, active first.
+pub async fn verifier_keys(pool: &PgPool) -> Result<Vec<VerifierKeyRecord>> {
+    let rows = sqlx::query(&format!(
+        "SELECT {KEY_COLUMNS} FROM artifact_verifier_keys
+          ORDER BY (revoked_at IS NULL) DESC, enrolled_at DESC, fingerprint LIMIT 500"
+    ))
+    .fetch_all(pool)
+    .await
+    .map_err(storage_err)?;
+    Ok(rows.iter().map(to_key).collect())
 }
 
 /// Validate a single-replica interval.

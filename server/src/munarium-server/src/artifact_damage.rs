@@ -10,18 +10,37 @@
 //! block itself. Clearance happens only when two independent serving replicas
 //! verify the repaired bytes (`docs/ops/artifact-damage.md`).
 //!
+//! The same boundary enrolls and revokes verifier public keys. Only an
+//! observation signed by an enrolled, unrevoked key counts toward a block or
+//! a clearance. `generate-verifier-key` and `verifier-public-key` run without
+//! a database and never print the private key.
+//!
 //! ```text
 //! munarium-server artifact-damage list --tenant T
 //! munarium-server artifact-damage authorize-repair --tenant T --incident I \
 //!     --workflow W --actor A [--reason R]
+//! munarium-server artifact-damage generate-verifier-key --out PATH
+//! munarium-server artifact-damage verifier-public-key --key-file PATH
+//! munarium-server artifact-damage enroll-verifier --public-key K --label L --actor A
+//! munarium-server artifact-damage revoke-verifier --fingerprint F --actor A [--reason R]
+//! munarium-server artifact-damage list-verifiers
 //! ```
 
-use munarium_store_pg::artifact_damage::{ArtifactDamageLedger, Incident, PinState};
+use munarium_core::artifact_verifier::VerifierSigningKey;
+use munarium_store_pg::artifact_damage::{
+    enroll_verifier, revoke_verifier, verifier_keys, ArtifactDamageLedger, Incident, PinState,
+    VerifierKeyRecord,
+};
 
 use crate::config::{Config, StoreKind};
 
 const USAGE: &str = "usage: munarium-server artifact-damage list --tenant T\n       \
-munarium-server artifact-damage authorize-repair --tenant T --incident I --workflow W --actor A [--reason R]";
+munarium-server artifact-damage authorize-repair --tenant T --incident I --workflow W --actor A [--reason R]\n       \
+munarium-server artifact-damage generate-verifier-key --out PATH\n       \
+munarium-server artifact-damage verifier-public-key --key-file PATH\n       \
+munarium-server artifact-damage enroll-verifier --public-key K --label L --actor A\n       \
+munarium-server artifact-damage revoke-verifier --fingerprint F --actor A [--reason R]\n       \
+munarium-server artifact-damage list-verifiers";
 
 /// Parse `--name value` pairs, refusing anything else.
 fn flags(args: &[String]) -> Result<std::collections::BTreeMap<String, String>, String> {
@@ -80,11 +99,103 @@ fn incident_json(i: &Incident) -> serde_json::Value {
     })
 }
 
+fn key_json(k: &VerifierKeyRecord) -> serde_json::Value {
+    serde_json::json!({
+        "fingerprint": k.fingerprint,
+        "public_key": k.public_key,
+        "label": k.label,
+        "enrolled_by": k.enrolled_by,
+        "enrolled_at": k.enrolled_at,
+        "revoked_at": k.revoked_at,
+        "revoked_by": k.revoked_by,
+        "revoke_reason": k.revoke_reason,
+    })
+}
+
+/// Write a fresh verifier key to `path`, which must not exist yet. The file
+/// holds only the encoded seed; on Unix it is created owner-read/write only.
+fn generate_key_file(path: &str) -> Result<serde_json::Value, String> {
+    use std::io::Write as _;
+    let key = VerifierSigningKey::generate();
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.mode(0o600);
+    }
+    let mut file = options
+        .open(path)
+        .map_err(|e| format!("cannot create key file {path:?}: {}", e.kind()))?;
+    file.write_all(format!("{}\n", key.encode_secret()).as_bytes())
+        .and_then(|()| file.sync_all())
+        .map_err(|e| format!("cannot write key file {path:?}: {}", e.kind()))?;
+    Ok(serde_json::json!({
+        "key_file": path,
+        "fingerprint": key.fingerprint(),
+        "public_key": key.public_key(),
+    }))
+}
+
+/// The commands that need no database: key generation and public-key
+/// derivation. `None` for every other command.
+fn offline(command: &str, rest: &[String]) -> Option<Result<serde_json::Value, String>> {
+    let run = || -> Result<serde_json::Value, String> {
+        let flags = flags(rest)?;
+        match command {
+            "generate-verifier-key" => generate_key_file(need(&flags, "out")?),
+            _ => {
+                let key = munarium_retrieval::damage::load_verifier_key(need(&flags, "key-file")?)
+                    .map_err(|e| e.to_string())?;
+                Ok(serde_json::json!({
+                    "fingerprint": key.fingerprint(),
+                    "public_key": key.public_key(),
+                }))
+            }
+        }
+    };
+    matches!(command, "generate-verifier-key" | "verifier-public-key").then(run)
+}
+
 /// Run one command against `pool`. Split from [`run`] so tests drive it
 /// without process configuration.
 pub async fn execute(pool: &sqlx::PgPool, args: &[String]) -> Result<serde_json::Value, String> {
     let (command, rest) = args.split_first().ok_or_else(|| USAGE.to_string())?;
+    if let Some(out) = offline(command, rest) {
+        return out;
+    }
     let flags = flags(rest)?;
+    match command.as_str() {
+        "enroll-verifier" => {
+            return enroll_verifier(
+                pool,
+                need(&flags, "public-key")?,
+                need(&flags, "label")?,
+                need(&flags, "actor")?,
+            )
+            .await
+            .map(|k| key_json(&k))
+            .map_err(|e| e.to_string());
+        }
+        "revoke-verifier" => {
+            return revoke_verifier(
+                pool,
+                need(&flags, "fingerprint")?,
+                need(&flags, "actor")?,
+                flags.get("reason").map(String::as_str),
+            )
+            .await
+            .map(|k| key_json(&k))
+            .map_err(|e| e.to_string());
+        }
+        "list-verifiers" => {
+            let keys = verifier_keys(pool).await.map_err(|e| e.to_string())?;
+            return Ok(serde_json::json!({
+                "verifiers": keys.iter().map(key_json).collect::<Vec<_>>(),
+            }));
+        }
+        _ => {}
+    }
     let ledger = ArtifactDamageLedger::new(pool.clone(), need(&flags, "tenant")?);
     match command.as_str() {
         "list" => {
@@ -124,6 +235,20 @@ pub async fn execute(pool: &sqlx::PgPool, args: &[String]) -> Result<serde_json:
 
 /// The subcommand's entry point: returns the process exit code.
 pub async fn run(config: &Config, args: &[String]) -> i32 {
+    if let Some((command, rest)) = args.split_first() {
+        if let Some(out) = offline(command, rest) {
+            return match out {
+                Ok(out) => {
+                    println!("{out}");
+                    0
+                }
+                Err(e) => {
+                    eprintln!("artifact-damage: {e}");
+                    2
+                }
+            };
+        }
+    }
     if config.store != StoreKind::Postgres {
         eprintln!("artifact-damage requires MUNARIUM_STORE=postgres");
         return 2;

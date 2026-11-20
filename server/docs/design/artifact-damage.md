@@ -8,17 +8,30 @@ This page defines what Phase 8 needs before implementation: verifier identities,
 
 ### Verifier identity
 
-A verifier identity is a serving replica plus one verifier run:
+**Amendment, 20 November 2026.** The maintainer decision of 20 November 2026 rests verifier independence on a per-replica authenticated workload identity rather than on a configured instance id over the shared database credential. This amends the verifier definition recorded in hub ADR 0028 (artifact damage confirmation, fleet block and verified repair).
+
+A verifier identity is an enrolled verifier key plus one verifier run:
 
 | Part | Value | Purpose |
 |---|---|---|
-| `verifier_id` | `{MUNARIUM_DEPLOYMENT_ENVIRONMENT_ID}/{instance id}`, where the instance id is `MUNARIUM_INSTANCE_ID`, `HOSTNAME` or `COMPUTERNAME` | Who observed. Independence is judged on this value alone. |
+| `verifier_id` | The fingerprint of the replica's Ed25519 verifier key: `ed25519:` and the hex SHA-256 of the 32-byte public key | Who observed. Independence is judged on this value alone. |
 | `run_id` | A fresh random identifier per verifier run | Which run observed. Distinguishes runs in the history and never makes two runs independent. |
 | `fetch_id` | A fresh random identifier per authoritative fetch | Which fetch was observed. A fetch counts once, whatever name submits it. |
 
+**Verifier keys.** Each serving replica holds its own Ed25519 signing key, read at startup from the file named by `MUNARIUM_ARTIFACT_VERIFIER_KEY_FILE` (one unpadded base64url 32-byte seed). The operator enrolls the replica's public key in `artifact_verifier_keys` (migration `0083_artifact_verifier_keys.sql`) with `munarium-server artifact-damage enroll-verifier`, and can revoke it permanently with `revoke-verifier`. The table holds public material only.
+
+**Signed observations.** A replica signs every authoritative observation, mismatch, match or unavailable alike. The signature covers a domain-separated, length-prefixed encoding of the tenant, the pin (index version, artifact id, object key, expected digest, storage generation), the pin's integrity generation, the outcome and observed digest, the verifier id, run id, fetch id, fetch time and any repair attempt (`munarium_core::artifact_verifier`). The ledger counts an observation toward a block or a clearance only when all of the following hold:
+
+- it is signed;
+- its `verifier_id` is the fingerprint of an enrolled key that is not revoked;
+- its signed integrity generation is the pin's generation when it is recorded;
+- the signature verifies (strict Ed25519) over those claims for this tenant.
+
+Anything else is recorded as `unauthenticated` and counts for nothing: no candidate, no confirmation, no repair match. A replica without a key, or whose key is not enrolled, therefore still isolates its local copy and records what it saw, but cannot contribute to a fleet block or a clearance. An unconfirmed candidate or first repair match whose key is revoked before confirmation is replaced by the next authenticated observation, never confirmed. Committed incidents keep the fingerprints they recorded.
+
 Two observations are **independent** only when all of the following hold:
 
-1. Their `verifier_id`s differ. A verifier running twice, retrying or restarting under the same identity counts once.
+1. Their `verifier_id`s differ, so they were signed by two distinct enrolled keys. A verifier running twice, retrying or restarting under the same key counts once, and so do two replicas that share one key.
 2. Their `fetch_id`s differ. Replaying one fetch under a second name counts once.
 3. Each fetched the pinned object directly from the authoritative artifact store (L2), never from an L1 or L0 copy.
 4. Both concern the same pinned object (defined below) at the pin's current integrity generation.
@@ -27,7 +40,7 @@ Two observations are **independent** only when all of the following hold:
 
 A deployment declared single-replica replaces criterion 1 with temporal and fetch independence from the same verifier. See [Single-replica assurance](#single-replica-assurance).
 
-**Authentication and authorization (proposal).** In this release a verifier is a Server replica running with the deployment's PostgreSQL credential in `observe` or `enforce` mode. It is authorized for every tenant and pin that replica serves, which is the same authority a replica already has over the catalog. Replicas share one database credential, so the database cannot tell replicas apart. Independence therefore depends on the deployment giving each replica a distinct, stable instance id. Kubernetes pod names satisfy this, as do the chart and compose defaults. An operator who assigns two replicas the same `MUNARIUM_INSTANCE_ID` makes them one verifier. A per-replica authenticated identity, such as the platform-v1 workload certificate, is the recorded hardening path. It needs the ART1 hub decision. See [Open questions](#open-questions).
+**Authentication and authorization.** A verifier is a Server replica in `observe` or `enforce` mode holding an enrolled verifier key. Enrollment authorizes it for every tenant and pin that replica serves, which is the same authority a replica already has over the catalog. Replicas still share one database credential, so the database cannot tell their connections apart. Independence rests on the keys instead. Each replica must have its own key, and an operator who gives two replicas copies of one key makes them one verifier. Enrollment and revocation run with the deployment's database credential, the same operator boundary as `authorize-repair` and migrations. Anyone holding that credential could also enroll a key or write the ledger tables directly, so the keys defend against misconfigured, impersonating or replayed observers, not against a database administrator. Binding the verifier key to the platform-v1 workload certificate remains a possible later hardening step. Without a key file, a replica logs that its observations will not count.
 
 ### Storage pin
 
@@ -65,7 +78,7 @@ Each pin's `generation` starts at 0. It advances by one when a block commits and
 
 A deployment with one serving replica has one verifier identity, so the default rule can never block or clear there. An operator who declares the deployment single-replica (`MUNARIUM_ARTIFACT_DAMAGE_REPLICAS=single`) lets the ledger accept that verifier's own second observation in place of a second verifier, under all of these conditions:
 
-1. Both observations come from the same `verifier_id`, from **different runs** (`run_id`) and **different direct fetches** (`fetch_id`). A replayed fetch still counts once, and a run never confirms itself.
+1. Both observations are authenticated and come from the same `verifier_id` (one enrolled key), from **different runs** (`run_id`) and **different direct fetches** (`fetch_id`). A replayed fetch still counts once, and a run never confirms itself.
 2. The second fetch started at least the **single-replica interval** after the first (`MUNARIUM_ARTIFACT_DAMAGE_SINGLE_INTERVAL_SECS`, default 300 seconds, accepted range 60 to 3,600), and not in the future by the database clock. A second run inside the interval is recorded as `interval_not_elapsed` and counts for nothing. The first observation stays the reference, so waiting longer is the only way to confirm.
 3. Every other criterion holds: same pinned object at the current integrity generation, authoritative (L2) fetches, digests present, the 24-hour confirmation window for a block, and fetches after the repair authorization for a clearance. A fresh mismatch during verification still invalidates the attempt.
 
@@ -167,13 +180,14 @@ An unknown value is a configuration error. The Datastore infrastructure then ref
 | ART2-T1 unauthorized, pre-repair, single-match, same-verifier, replayed, different-object, observe-mode and invalidated repairs leave the block; a valid repair clears once and records the clearance | Ledger tests and `a_preauthorized_verified_repair_clears_and_readers_recover` (server) |
 | ART2-T2 late report from an earlier incident; in-flight read after clearance; quarantined copy re-verified; fresh mismatch starts a new incident | Same |
 | Default mode records nothing durable | `the_default_mode_records_nothing_durable` (server) |
+| Authenticated verifiers: unsigned, forged, borrowed, altered, other-tenant, other-generation, unenrolled and revoked observations count for nothing; two replicas sharing a key are one verifier; a revoked key's candidate or first match is never confirmed; distinct enrolled keys block and clear; enrollment is idempotent and revocation permanent; key commands never print the private key | `an_unsigned_or_forged_observation_counts_for_nothing`, `an_unenrolled_key_never_counts`, `two_replicas_sharing_one_key_are_one_verifier`, `a_revoked_key_counts_for_nothing_and_its_evidence_is_not_confirmed`, `enrollment_is_idempotent_and_revocation_is_permanent` (ledger); `keyless_and_key_sharing_replicas_only_isolate_locally`, `the_verifier_key_commands_enroll_and_revoke_without_exposing_the_key` (server); `artifact_verifier` unit tests (core) |
 | Single-replica assurance: spaced runs block and clear; runs inside the interval, a replayed fetch, the same run or a future fetch time do not; the default ledger never counts one verifier twice; assurance recorded; schema refuses unmarked or unspaced same-verifier rows; `single` refused above one declared replica | `single_replica_*`, `the_default_ledger_never_counts_one_verifier_twice_however_spaced` and `the_schema_admits_a_same_verifier_block_only_when_marked_and_spaced` (ledger); `a_declared_single_replica_blocks_and_clears_with_spaced_runs` (server); `replica_assurance_tests` (retrieval) |
 
 **Not covered locally.** The following remain uncovered: paused second replicas on a real fleet, a stream spanning a block on a live server, an unavailable final check against a failing database, concurrent failures across processes, binary rollback, and healthy reads on every serving replica after clearance. These are the REL1 fleet receipts. [Cluster qualification plan](cluster-qualification-plan.md)
 
 ## Open questions
 
-1. **Verifier authentication.** Should independence require a per-replica authenticated identity (for example the platform-v1 workload certificate) rather than a distinct configured instance id? This is the ART1 hub decision.
+1. **Verifier authentication.** Decided on 20 November 2026: independence requires distinct enrolled verifier keys (see [Verifier identity](#verifier-identity)). Binding those keys to the platform-v1 workload certificate is a possible later hardening step.
 2. **Storage generations.** Should the `ArtifactStore` trait report an object's ETag or version id, so that a block and its verifications bind to one stored generation?
 3. **Per-result authorization records.** The release fence commits a share-locked check, not a durable row per result. Durable per-result records would add a write to every search and need their own retention.
 4. **Bounds.** Are the 1,024-entry history and the 24-hour confirmation window the right defaults? Both are constants today.

@@ -5,10 +5,22 @@
 //! Gated on `MUNARIUM_TEST_DATABASE_URL`, and skips loudly when it is unset.
 //! Every test uses its own tenant, so the bounded history and the cross-tenant
 //! repair enumeration never see another test's rows.
+//!
+//! Each named verifier ("replica-a", ...) is a disposable Ed25519 key that the
+//! fixture generates and enrolls on first use; its verifier id is the key's
+//! fingerprint. [`Fixture::record`] signs an observation just before
+//! recording it, so a test may change any field first and the signature
+//! covers the final value. Tests that need an unsigned or forged observation
+//! call the ledger directly.
 
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+use munarium_core::artifact_verifier::VerifierSigningKey;
 use munarium_store_pg::artifact_damage::{
-    ArtifactDamageLedger, AuthoritativeObservation, Authority, Decision, ObjectPin, Outcome,
-    ReleaseDecision, VerifierIdentity, MANIFEST_OBJECT,
+    enroll_verifier, revoke_verifier, ArtifactDamageLedger, AuthoritativeObservation, Authority,
+    Decision, ObjectPin, ObservationSignature, Outcome, ReleaseDecision, VerifierIdentity,
+    MANIFEST_OBJECT,
 };
 use munarium_store_pg::artifacts::{ArtifactCatalog, NewArtifact};
 use munarium_store_pg::PgStore;
@@ -46,6 +58,8 @@ struct Fixture {
     version: String,
     artifact: String,
     component_sha: String,
+    /// Disposable verifier keys by name, generated and enrolled on first use.
+    keys: Mutex<HashMap<String, std::sync::Arc<VerifierSigningKey>>>,
 }
 
 async fn fixture(url: &str, prefix: &str) -> Fixture {
@@ -82,6 +96,7 @@ async fn fixture(url: &str, prefix: &str) -> Fixture {
         version,
         artifact,
         component_sha,
+        keys: Mutex::new(HashMap::new()),
     }
 }
 
@@ -96,6 +111,60 @@ impl Fixture {
         }
     }
 
+    /// The named verifier's key, generated and enrolled on first use.
+    async fn key(&self, name: &str) -> std::sync::Arc<VerifierSigningKey> {
+        let existing = self.keys.lock().unwrap().get(name).cloned();
+        if let Some(key) = existing {
+            return key;
+        }
+        let key = std::sync::Arc::new(VerifierSigningKey::generate());
+        enroll_verifier(&self.pool, &key.public_key(), name, "damage-test")
+            .await
+            .unwrap();
+        self.keys
+            .lock()
+            .unwrap()
+            .insert(name.to_string(), key.clone());
+        key
+    }
+
+    /// The named verifier's identity: its key's fingerprint.
+    async fn fp(&self, name: &str) -> String {
+        self.key(name).await.fingerprint()
+    }
+
+    /// Sign `o` with the key whose fingerprint is its verifier id, at the
+    /// pin's current generation. An id that is no fixture key stays unsigned.
+    async fn sign(&self, o: &mut AuthoritativeObservation) {
+        let key = self
+            .keys
+            .lock()
+            .unwrap()
+            .values()
+            .find(|k| k.fingerprint() == o.verifier.verifier_id)
+            .cloned();
+        let Some(key) = key else {
+            o.signature = None;
+            return;
+        };
+        let generation = self
+            .ledger
+            .admit(&o.pin.index_version_id, &o.pin.artifact_id)
+            .await
+            .unwrap()
+            .generation;
+        o.signature = Some(ObservationSignature {
+            pin_generation: generation,
+            signature: key.sign(&o.claims(&self.tenant, generation)),
+        });
+    }
+
+    async fn signed(&self, o: &AuthoritativeObservation) -> AuthoritativeObservation {
+        let mut o = o.clone();
+        self.sign(&mut o).await;
+        o
+    }
+
     async fn observe(
         &self,
         verifier: &str,
@@ -105,7 +174,7 @@ impl Fixture {
         AuthoritativeObservation {
             pin: self.pin(),
             verifier: VerifierIdentity {
-                verifier_id: verifier.into(),
+                verifier_id: self.fp(verifier).await,
                 run_id: uuid::Uuid::new_v4().to_string(),
             },
             fetch_id: uuid::Uuid::new_v4().to_string(),
@@ -118,12 +187,13 @@ impl Fixture {
             },
             repair_attempt_id: attempt.map(str::to_string),
             detail: Some("test".into()),
+            signature: None,
         }
     }
 
     async fn record(&self, o: &AuthoritativeObservation) -> Decision {
         self.ledger
-            .record_authoritative(o, ENFORCE)
+            .record_authoritative(&self.signed(o).await, ENFORCE)
             .await
             .unwrap()
             .decision
@@ -197,7 +267,7 @@ async fn a_replayed_fetch_under_another_name_counts_once() {
     let first = f.observe("replica-a", Outcome::Mismatch, None).await;
     assert_eq!(f.record(&first).await, Decision::Candidate);
     let mut renamed = first.clone();
-    renamed.verifier.verifier_id = "replica-b".into();
+    renamed.verifier.verifier_id = f.fp("replica-b").await;
     assert_eq!(f.record(&renamed).await, Decision::ReplayedFetch);
     assert_eq!(f.blocked_by().await, None);
 }
@@ -270,7 +340,7 @@ async fn two_independent_mismatches_on_one_pin_block_the_fleet_durably() {
     assert_eq!(incidents.len(), 1);
     assert_eq!(
         incidents[0].confirming_verifiers,
-        ["replica-a".to_string(), "replica-b".to_string()]
+        [f.fp("replica-a").await, f.fp("replica-b").await]
     );
     assert_eq!(incidents[0].object_key, COMPONENT);
     assert_eq!(incidents[0].state, "blocked");
@@ -288,7 +358,7 @@ async fn an_observe_mode_replica_records_but_never_blocks() {
     let second = f.observe("replica-b", Outcome::Mismatch, None).await;
     let r = f
         .ledger
-        .record_authoritative(&second, OBSERVE)
+        .record_authoritative(&f.signed(&second).await, OBSERVE)
         .await
         .unwrap();
     assert_eq!(r.decision, Decision::BlockWithheld);
@@ -323,7 +393,7 @@ async fn identical_bytes_in_another_tenant_are_not_blocked() {
     foreign.pin.index_version_id = g.version.clone();
     assert!(f
         .ledger
-        .record_authoritative(&foreign, ENFORCE)
+        .record_authoritative(&f.signed(&foreign).await, ENFORCE)
         .await
         .is_err());
 }
@@ -340,18 +410,27 @@ async fn a_full_history_keeps_its_findings_and_still_blocks_a_new_pin() {
     let mut filler = f.observe("replica-z", Outcome::Unavailable, None).await;
     for _ in 0..3 {
         filler.fetch_id = uuid::Uuid::new_v4().to_string();
-        let r = ledger.record_authoritative(&filler, ENFORCE).await.unwrap();
+        let r = ledger
+            .record_authoritative(&f.signed(&filler).await, ENFORCE)
+            .await
+            .unwrap();
         assert!(!r.history_full);
     }
     let before = ledger.history(10).await.unwrap();
     assert_eq!(before.len(), 3);
 
     let a = f.observe("replica-a", Outcome::Mismatch, None).await;
-    let r = ledger.record_authoritative(&a, ENFORCE).await.unwrap();
+    let r = ledger
+        .record_authoritative(&f.signed(&a).await, ENFORCE)
+        .await
+        .unwrap();
     assert_eq!(r.decision, Decision::Candidate);
     assert!(r.history_full, "the history refused the entry");
     let b = f.observe("replica-b", Outcome::Mismatch, None).await;
-    let r = ledger.record_authoritative(&b, ENFORCE).await.unwrap();
+    let r = ledger
+        .record_authoritative(&f.signed(&b).await, ENFORCE)
+        .await
+        .unwrap();
     assert!(matches!(r.decision, Decision::Blocked { .. }), "{r:?}");
     assert!(r.history_full);
 
@@ -361,7 +440,7 @@ async fn a_full_history_keeps_its_findings_and_still_blocks_a_new_pin() {
     let incidents = ledger.incidents().await.unwrap();
     assert_eq!(
         incidents[0].confirming_verifiers,
-        ["replica-a".to_string(), "replica-b".to_string()]
+        [f.fp("replica-a").await, f.fp("replica-b").await]
     );
 }
 
@@ -450,7 +529,7 @@ async fn unauthorized_stale_and_single_match_repairs_cannot_clear() {
         .await;
     assert_eq!(f.record(&same).await, Decision::SameVerifier);
     let mut replay = one.clone();
-    replay.verifier.verifier_id = "replica-b".into();
+    replay.verifier.verifier_id = f.fp("replica-b").await;
     assert_eq!(f.record(&replay).await, Decision::ReplayedFetch);
 
     // A timeout, and a match on an object that is not the incident's.
@@ -472,7 +551,7 @@ async fn unauthorized_stale_and_single_match_repairs_cannot_clear() {
         .await;
     assert_eq!(
         f.ledger
-            .record_authoritative(&withheld, OBSERVE)
+            .record_authoritative(&f.signed(&withheld).await, OBSERVE)
             .await
             .unwrap()
             .decision,
@@ -559,7 +638,7 @@ async fn a_verified_repair_clears_once_and_records_the_clearance() {
     );
     assert_eq!(
         recorded.clearing_verifiers,
-        Some(["replica-a".to_string(), "replica-b".to_string()])
+        Some([f.fp("replica-a").await, f.fp("replica-b").await])
     );
 
     // Idempotent: a repeated delivery changes nothing.
@@ -715,12 +794,18 @@ impl Fixture {
     }
 }
 
-async fn decide(ledger: &ArtifactDamageLedger, o: &AuthoritativeObservation) -> Decision {
-    ledger
-        .record_authoritative(o, ENFORCE)
-        .await
-        .unwrap()
-        .decision
+impl Fixture {
+    async fn decide(
+        &self,
+        ledger: &ArtifactDamageLedger,
+        o: &AuthoritativeObservation,
+    ) -> Decision {
+        ledger
+            .record_authoritative(&self.signed(o).await, ENFORCE)
+            .await
+            .unwrap()
+            .decision
+    }
 }
 
 #[tokio::test]
@@ -731,17 +816,17 @@ async fn single_replica_blocks_only_after_two_spaced_runs_and_fetches() {
     let now = f.ledger.db_now().await.unwrap();
     let mut first = f.observe("replica-s", Outcome::Mismatch, None).await;
     first.fetched_at = now - secs(INTERVAL + 60);
-    assert_eq!(decide(&single, &first).await, Decision::Candidate);
+    assert_eq!(f.decide(&single, &first).await, Decision::Candidate);
 
     // One fetch replayed counts once, under any name or run.
     let mut replay = first.clone();
     replay.verifier.run_id = "another-run".into();
-    assert_eq!(decide(&single, &replay).await, Decision::ReplayedFetch);
+    assert_eq!(f.decide(&single, &replay).await, Decision::ReplayedFetch);
     // The same run with a fresh fetch is not a second run.
     let mut same_run = first.clone();
     same_run.fetch_id = uuid::Uuid::new_v4().to_string();
     same_run.fetched_at = now;
-    assert_eq!(decide(&single, &same_run).await, Decision::SameVerifier);
+    assert_eq!(f.decide(&single, &same_run).await, Decision::SameVerifier);
     // A second run and fetch inside the interval does not count, nor does
     // one a second short of it, nor a fetch time in the future.
     for at in [
@@ -750,14 +835,14 @@ async fn single_replica_blocks_only_after_two_spaced_runs_and_fetches() {
         now + secs(INTERVAL),
     ] {
         let soon = f.next_run(&first, at);
-        assert_eq!(decide(&single, &soon).await, Decision::IntervalNotElapsed);
+        assert_eq!(f.decide(&single, &soon).await, Decision::IntervalNotElapsed);
     }
     assert_eq!(f.blocked_by().await, None);
     assert_eq!(f.ledger.incidents().await.unwrap(), vec![]);
 
     // A second run and fetch at least the interval later blocks.
     let spaced = f.next_run(&first, now);
-    let incident = match decide(&single, &spaced).await {
+    let incident = match f.decide(&single, &spaced).await {
         Decision::Blocked {
             incident_id,
             generation,
@@ -772,7 +857,7 @@ async fn single_replica_blocks_only_after_two_spaced_runs_and_fetches() {
     assert_eq!(recorded.block_assurance, "single_replica");
     assert_eq!(
         recorded.confirming_verifiers,
-        ["replica-s".to_string(), "replica-s".to_string()]
+        [f.fp("replica-s").await, f.fp("replica-s").await]
     );
     assert_eq!(recorded.clear_assurance, None);
 }
@@ -804,10 +889,10 @@ async fn single_replica_mode_still_records_two_verifiers_as_independent() {
     let f = fixture(&url, "dmg-sr-indep").await;
     let single = f.single();
     let a = f.observe("replica-a", Outcome::Mismatch, None).await;
-    assert_eq!(decide(&single, &a).await, Decision::Candidate);
+    assert_eq!(f.decide(&single, &a).await, Decision::Candidate);
     let b = f.observe("replica-b", Outcome::Mismatch, None).await;
     assert!(matches!(
-        decide(&single, &b).await,
+        f.decide(&single, &b).await,
         Decision::Blocked { .. }
     ));
     assert_eq!(f.incident().await.block_assurance, "independent");
@@ -821,15 +906,15 @@ async fn single_replica_clears_after_two_spaced_fresh_matches_with_authorization
     let now = f.ledger.db_now().await.unwrap();
     let mut first = f.observe("replica-s", Outcome::Mismatch, None).await;
     first.fetched_at = now - secs(INTERVAL + 60);
-    assert_eq!(decide(&single, &first).await, Decision::Candidate);
-    let incident = match decide(&single, &f.next_run(&first, now)).await {
+    assert_eq!(f.decide(&single, &first).await, Decision::Candidate);
+    let incident = match f.decide(&single, &f.next_run(&first, now)).await {
         Decision::Blocked { incident_id, .. } => incident_id,
         other => panic!("expected a block, got {other:?}"),
     };
 
     // Matches with no authorization are evidence only.
     let unauthorized = f.observe("replica-s", Outcome::Match, None).await;
-    assert_eq!(decide(&single, &unauthorized).await, Decision::Recorded);
+    assert_eq!(f.decide(&single, &unauthorized).await, Decision::Recorded);
 
     let attempt = f
         .ledger
@@ -852,7 +937,7 @@ async fn single_replica_clears_after_two_spaced_fresh_matches_with_authorization
         .observe("replica-s", Outcome::Match, Some(&attempt.attempt_id))
         .await;
     one.fetched_at = now - secs(INTERVAL + 30);
-    assert_eq!(decide(&single, &one).await, Decision::RepairMatch);
+    assert_eq!(f.decide(&single, &one).await, Decision::RepairMatch);
 
     // The default rule never accepts the same verifier's second match.
     assert_eq!(
@@ -861,14 +946,14 @@ async fn single_replica_clears_after_two_spaced_fresh_matches_with_authorization
     );
     // Too soon, or replayed, does not count.
     let soon = f.next_run(&one, one.fetched_at + secs(INTERVAL - 1));
-    assert_eq!(decide(&single, &soon).await, Decision::IntervalNotElapsed);
+    assert_eq!(f.decide(&single, &soon).await, Decision::IntervalNotElapsed);
     let mut replay = one.clone();
     replay.verifier.run_id = "another-run".into();
-    assert_eq!(decide(&single, &replay).await, Decision::ReplayedFetch);
+    assert_eq!(f.decide(&single, &replay).await, Decision::ReplayedFetch);
     assert_eq!(f.blocked_by().await.as_deref(), Some(incident.as_str()));
 
     // A second spaced run and fetch clears, once.
-    let generation = match decide(&single, &f.next_run(&one, now)).await {
+    let generation = match f.decide(&single, &f.next_run(&one, now)).await {
         Decision::Cleared {
             incident_id,
             generation,
@@ -886,7 +971,7 @@ async fn single_replica_clears_after_two_spaced_fresh_matches_with_authorization
     assert_eq!(recorded.clear_assurance.as_deref(), Some("single_replica"));
     assert_eq!(
         recorded.clearing_verifiers,
-        Some(["replica-s".to_string(), "replica-s".to_string()])
+        Some([f.fp("replica-s").await, f.fp("replica-s").await])
     );
     assert_eq!(
         recorded.clearing_workflow_id.as_deref(),
@@ -894,7 +979,7 @@ async fn single_replica_clears_after_two_spaced_fresh_matches_with_authorization
     );
     let late = f.next_run(&one, now);
     assert!(matches!(
-        decide(&single, &late).await,
+        f.decide(&single, &late).await,
         Decision::Rejected(_)
     ));
 }
@@ -913,11 +998,11 @@ async fn a_mismatch_from_a_single_replica_still_invalidates_its_repair() {
     let one = f
         .observe("replica-s", Outcome::Match, Some(&attempt.attempt_id))
         .await;
-    assert_eq!(decide(&single, &one).await, Decision::RepairMatch);
+    assert_eq!(f.decide(&single, &one).await, Decision::RepairMatch);
     let bad = f
         .observe("replica-s", Outcome::Mismatch, Some(&attempt.attempt_id))
         .await;
-    assert_eq!(decide(&single, &bad).await, Decision::RepairInvalidated);
+    assert_eq!(f.decide(&single, &bad).await, Decision::RepairInvalidated);
     assert!(f.blocked_by().await.is_some());
 }
 
@@ -990,4 +1075,205 @@ async fn the_schema_admits_a_same_verifier_block_only_when_marked_and_spaced() {
         .await;
         assert_eq!(inserted.is_ok(), accepted, "{assurance} {runs:?} {gap}");
     }
+}
+
+// ---------------------------------------------------------------------------
+// Authenticated verifier identity (ADR 0028 amendment, 20 November 2026)
+// ---------------------------------------------------------------------------
+
+/// Record without the fixture's signing step.
+async fn raw(f: &Fixture, o: &AuthoritativeObservation) -> Decision {
+    f.ledger
+        .record_authoritative(o, ENFORCE)
+        .await
+        .unwrap()
+        .decision
+}
+
+fn unauthenticated(d: &Decision) -> bool {
+    matches!(d, Decision::Unauthenticated(_))
+}
+
+#[tokio::test]
+async fn an_unsigned_or_forged_observation_counts_for_nothing() {
+    let url = guard!();
+    let f = fixture(&url, "dmg-auth-forged").await;
+    // Unsigned, from an enrolled verifier's identity.
+    let unsigned = f.observe("replica-a", Outcome::Mismatch, None).await;
+    assert!(unauthenticated(&raw(&f, &unsigned).await));
+    // A signature that does not verify.
+    let mut forged = f
+        .signed(&f.observe("replica-a", Outcome::Mismatch, None).await)
+        .await;
+    forged.signature.as_mut().unwrap().signature = "A".repeat(86);
+    assert!(unauthenticated(&raw(&f, &forged).await));
+    // Signed by another enrolled key, claiming replica-a's identity.
+    let mut borrowed = f.observe("replica-a", Outcome::Mismatch, None).await;
+    let other = f.key("replica-b").await;
+    borrowed.signature = Some(ObservationSignature {
+        pin_generation: 0,
+        signature: other.sign(&borrowed.claims(&f.tenant, 0)),
+    });
+    assert!(unauthenticated(&raw(&f, &borrowed).await));
+    // Validly signed, then changed: the digest it claims to have seen.
+    let mut altered = f
+        .signed(&f.observe("replica-a", Outcome::Mismatch, None).await)
+        .await;
+    altered.observed_sha256 = Some(hex('e'));
+    assert!(unauthenticated(&raw(&f, &altered).await));
+    // Signed for another tenant or another generation.
+    let mut elsewhere = f.observe("replica-a", Outcome::Mismatch, None).await;
+    let key = f.key("replica-a").await;
+    elsewhere.signature = Some(ObservationSignature {
+        pin_generation: 0,
+        signature: key.sign(&elsewhere.claims("another-tenant", 0)),
+    });
+    assert!(unauthenticated(&raw(&f, &elsewhere).await));
+    let mut later = f.observe("replica-a", Outcome::Mismatch, None).await;
+    later.signature = Some(ObservationSignature {
+        pin_generation: 1,
+        signature: key.sign(&later.claims(&f.tenant, 1)),
+    });
+    assert!(unauthenticated(&raw(&f, &later).await));
+
+    // None of them left a candidate: the first authenticated mismatch is
+    // still only a candidate, and a second key blocks.
+    assert_eq!(f.blocked_by().await, None);
+    assert_eq!(f.mismatch("replica-a").await, Decision::Candidate);
+    assert!(matches!(
+        f.mismatch("replica-b").await,
+        Decision::Blocked { .. }
+    ));
+    let history = f.ledger.history(20).await.unwrap();
+    assert_eq!(
+        history
+            .iter()
+            .filter(|(_, _, decision)| decision == "unauthenticated")
+            .count(),
+        6
+    );
+}
+
+#[tokio::test]
+async fn an_unenrolled_key_never_counts() {
+    let url = guard!();
+    let f = fixture(&url, "dmg-auth-unenrolled").await;
+    assert_eq!(f.mismatch("replica-a").await, Decision::Candidate);
+    let stranger = VerifierSigningKey::generate();
+    let mut o = f.observe("replica-a", Outcome::Mismatch, None).await;
+    o.verifier.verifier_id = stranger.fingerprint();
+    o.signature = Some(ObservationSignature {
+        pin_generation: 0,
+        signature: stranger.sign(&o.claims(&f.tenant, 0)),
+    });
+    assert!(unauthenticated(&raw(&f, &o).await));
+    assert_eq!(f.blocked_by().await, None);
+}
+
+#[tokio::test]
+async fn two_replicas_sharing_one_key_are_one_verifier() {
+    let url = guard!();
+    let f = fixture(&url, "dmg-auth-shared").await;
+    assert_eq!(f.mismatch("replica-a").await, Decision::Candidate);
+    // A second replica with a copy of the same key: a fresh run and fetch,
+    // the same identity.
+    let mut copy = f.observe("replica-a", Outcome::Mismatch, None).await;
+    copy.verifier.run_id = "second-replica-run".into();
+    assert_eq!(f.record(&copy).await, Decision::SameVerifier);
+    assert_eq!(f.blocked_by().await, None);
+}
+
+#[tokio::test]
+async fn a_revoked_key_counts_for_nothing_and_its_evidence_is_not_confirmed() {
+    let url = guard!();
+    let f = fixture(&url, "dmg-auth-revoked").await;
+    assert_eq!(f.mismatch("replica-a").await, Decision::Candidate);
+    let a = f.fp("replica-a").await;
+    let revoked = revoke_verifier(&f.pool, &a, "operator", Some("compromised"))
+        .await
+        .unwrap();
+    assert!(revoked.revoked_at.is_some());
+    // Its new observations count for nothing.
+    let o = f.observe("replica-a", Outcome::Mismatch, None).await;
+    assert!(unauthenticated(&f.record(&o).await));
+    // Its earlier candidate is not confirmed: replica-b's mismatch replaces
+    // it, and a third key is needed.
+    assert_eq!(f.mismatch("replica-b").await, Decision::Candidate);
+    assert_eq!(f.blocked_by().await, None);
+    let incident = match f.mismatch("replica-c").await {
+        Decision::Blocked { incident_id, .. } => incident_id,
+        other => panic!("expected a block, got {other:?}"),
+    };
+    assert_eq!(
+        f.incident().await.confirming_verifiers,
+        [f.fp("replica-b").await, f.fp("replica-c").await]
+    );
+
+    // The same during repair: a first match from a key revoked since is
+    // replaced, never confirmed.
+    let attempt = f
+        .ledger
+        .authorize_repair(&incident, "repair-workflow", "operator", None)
+        .await
+        .unwrap();
+    let m = f
+        .observe("replica-b", Outcome::Match, Some(&attempt.attempt_id))
+        .await;
+    assert_eq!(f.record(&m).await, Decision::RepairMatch);
+    revoke_verifier(&f.pool, &f.fp("replica-b").await, "operator", None)
+        .await
+        .unwrap();
+    let m = f
+        .observe("replica-c", Outcome::Match, Some(&attempt.attempt_id))
+        .await;
+    assert_eq!(f.record(&m).await, Decision::RepairMatch);
+    assert!(f.blocked_by().await.is_some());
+    let m = f
+        .observe("replica-d", Outcome::Match, Some(&attempt.attempt_id))
+        .await;
+    assert!(matches!(f.record(&m).await, Decision::Cleared { .. }));
+    assert_eq!(
+        f.incident().await.clearing_verifiers,
+        Some([f.fp("replica-c").await, f.fp("replica-d").await])
+    );
+    // Committed evidence keeps the revoked fingerprint it recorded.
+    assert_eq!(
+        f.incident().await.confirming_verifiers[0],
+        f.fp("replica-b").await
+    );
+}
+
+#[tokio::test]
+async fn enrollment_is_idempotent_and_revocation_is_permanent() {
+    let url = guard!();
+    let f = fixture(&url, "dmg-auth-enroll").await;
+    let key = VerifierSigningKey::generate();
+    let first = enroll_verifier(&f.pool, &key.public_key(), "replica-x", "operator")
+        .await
+        .unwrap();
+    assert_eq!(first.fingerprint, key.fingerprint());
+    let again = enroll_verifier(&f.pool, &key.public_key(), "replica-x", "operator")
+        .await
+        .unwrap();
+    assert_eq!(again, first);
+    for bad in ["", "not-a-key", &format!("{}=", key.public_key())] {
+        assert!(enroll_verifier(&f.pool, bad, "x", "operator")
+            .await
+            .is_err());
+    }
+    revoke_verifier(&f.pool, &key.fingerprint(), "operator", None)
+        .await
+        .unwrap();
+    assert!(
+        enroll_verifier(&f.pool, &key.public_key(), "replica-x", "operator")
+            .await
+            .is_err(),
+        "a revoked key cannot come back"
+    );
+    let unknown = VerifierSigningKey::generate();
+    assert!(
+        revoke_verifier(&f.pool, &unknown.fingerprint(), "operator", None)
+            .await
+            .is_err()
+    );
 }

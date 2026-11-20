@@ -8,12 +8,17 @@
 //! with empty caches. These are deterministic, single-process stand-ins: the
 //! multi-replica receipts on a real fleet are deferred cluster work.
 //!
+//! Each named replica signs with its own disposable Ed25519 verifier key,
+//! generated and enrolled on first use, so its verifier id is that key's
+//! fingerprint.
+//!
 //! Gated on `MUNARIUM_TEST_DATABASE_URL`; skips loudly when it is unset.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use munarium_core::artifact_verifier::VerifierSigningKey;
 use munarium_core::retrieval::{PreparedSearchQuery, SearchParams};
 use munarium_datastore::hydrate::{CacheBudget, L1Cache, Residency};
 use munarium_datastore::model::*;
@@ -133,6 +138,8 @@ struct Fleet {
     /// The component damaged by [`Fleet::corrupt`] and its original bytes.
     victim: (String, Vec<u8>),
     state: Arc<AppState>,
+    /// Disposable verifier keys by replica name (encoded seeds, test-only).
+    keys: std::sync::Mutex<std::collections::HashMap<String, String>>,
 }
 
 impl Fleet {
@@ -214,6 +221,7 @@ impl Fleet {
             l2_prefix,
             victim: (victim_path, victim_bytes),
             state,
+            keys: std::sync::Mutex::new(std::collections::HashMap::new()),
         }
     }
 
@@ -252,10 +260,44 @@ impl Fleet {
         )
     }
 
-    /// One replica: its own caches and verifier identity over the shared
+    /// The named replica's verifier key, generated and enrolled on first
+    /// use. Each call returns a copy of the same key.
+    async fn vkey(&self, name: &str) -> VerifierSigningKey {
+        let existing = self.keys.lock().unwrap().get(name).cloned();
+        let encoded = match existing {
+            Some(encoded) => encoded,
+            None => {
+                let key = VerifierSigningKey::generate();
+                munarium_store_pg::artifact_damage::enroll_verifier(
+                    &self.pool(),
+                    &key.public_key(),
+                    name,
+                    "damage-test",
+                )
+                .await
+                .unwrap();
+                let encoded = key.encode_secret();
+                self.keys
+                    .lock()
+                    .unwrap()
+                    .insert(name.to_string(), encoded.clone());
+                encoded
+            }
+        };
+        VerifierSigningKey::from_encoded(&encoded).unwrap()
+    }
+
+    /// The named replica's verifier identity.
+    async fn fp(&self, name: &str) -> String {
+        self.vkey(name).await.fingerprint()
+    }
+
+    /// One replica: its own caches and enrolled verifier key over the shared
     /// database and the shared L2 store.
-    fn replica(&self, verifier: &str, mode: DamageMode) -> Replica {
-        self.replica_with(DamageGuard::new(mode, verifier))
+    async fn replica(&self, verifier: &str, mode: DamageMode) -> Replica {
+        self.replica_with(
+            DamageGuard::new(mode, verifier).with_signing_key(self.vkey(verifier).await),
+        )
     }
 
     /// A replica with an explicitly built damage guard.
@@ -348,7 +390,7 @@ async fn independent_confirmation_blocks_warm_and_restarted_readers() {
 
     // A warm replica with good local bytes, and an in-flight read admitted
     // before any damage.
-    let warm = f.replica("replica-w", DamageMode::Enforce);
+    let warm = f.replica("replica-w", DamageMode::Enforce).await;
     let first = executed(warm.execute(&f, &pool).await);
     assert!(!first.hits.is_empty());
     let in_flight = first.admission.clone().expect("an admission was captured");
@@ -362,7 +404,7 @@ async fn independent_confirmation_blocks_warm_and_restarted_readers() {
 
     // Replica A: its hydration fails, it isolates locally and records one
     // authoritative mismatch. No fleet block.
-    let a = f.replica("replica-a", DamageMode::Enforce);
+    let a = f.replica("replica-a", DamageMode::Enforce).await;
     let refused = a.execute(&f, &pool).await;
     assert!(refusal(&refused).contains("integrity"), "{refused:?}");
     assert!(a.parts.cache.is_quarantined(&f.key()));
@@ -407,7 +449,7 @@ async fn independent_confirmation_blocks_warm_and_restarted_readers() {
     );
 
     // Replica B independently confirms: the fleet block commits.
-    let b = f.replica("replica-b", DamageMode::Enforce);
+    let b = f.replica("replica-b", DamageMode::Enforce).await;
     refusal(&b.execute(&f, &pool).await);
     let blocked = ledger.admit(&f.version, &f.artifact).await.unwrap();
     let incident = blocked.blocked_by.clone().expect("fleet block");
@@ -434,21 +476,21 @@ async fn independent_confirmation_blocks_warm_and_restarted_readers() {
     // A restarted replica: a new AppState and empty caches. It refuses at
     // admission without fetching a byte.
     let restarted_state = app_state(&f.url, &f.tenant).await;
-    let restarted = f.replica("replica-r", DamageMode::Enforce);
+    let restarted = f.replica("replica-r", DamageMode::Enforce).await;
     let restarted_pool = restarted_state.pg_pool().unwrap().clone();
     let r = restarted.execute(&f, &restarted_pool).await;
     assert!(refusal(&r).contains(&incident), "{r:?}");
     assert_eq!(restarted.parts.cache.used_bytes(), 0);
     assert!(restarted.search(&f, &restarted_state).await.is_err());
     // An observe-mode reader honors the block too.
-    let observer = f.replica("replica-o", DamageMode::Observe);
+    let observer = f.replica("replica-o", DamageMode::Observe).await;
     refusal(&observer.execute(&f, &restarted_pool).await);
 
     let incidents = ledger.incidents().await.unwrap();
     assert_eq!(incidents.len(), 1);
     assert_eq!(
         incidents[0].confirming_verifiers,
-        ["replica-a".to_string(), "replica-b".to_string()]
+        [f.fp("replica-a").await, f.fp("replica-b").await]
     );
     assert_eq!(incidents[0].object_key, f.victim.0);
 }
@@ -460,7 +502,7 @@ async fn local_damage_with_a_clean_authoritative_fetch_does_not_block() {
     let url = guard!();
     let f = Fleet::new(url, "art1-local").await;
     let pool = f.pool();
-    let a = f.replica("replica-a", DamageMode::Enforce);
+    let a = f.replica("replica-a", DamageMode::Enforce).await;
     let store = a.parts.stores.store_for_prefix(&f.l2_prefix).unwrap();
     let resident = a
         .parts
@@ -494,11 +536,12 @@ async fn local_damage_with_a_clean_authoritative_fetch_does_not_block() {
         None
     );
     let history = ledger.history(10).await.unwrap();
+    let a_fp = f.fp("replica-a").await;
     assert!(
-        history.contains(&("replica-a".into(), "match".into(), "recorded".into())),
+        history.contains(&(a_fp.clone(), "match".into(), "recorded".into())),
         "{history:?}"
     );
-    assert!(history.contains(&("replica-a".into(), "isolated".into(), "recorded".into())));
+    assert!(history.contains(&(a_fp, "isolated".into(), "recorded".into())));
     // The next read re-fetches and re-verifies from the clean source.
     executed(a.execute(&f, &pool).await);
 }
@@ -512,7 +555,7 @@ async fn the_default_mode_records_nothing_durable() {
     let pool = f.pool();
     f.corrupt();
     for verifier in ["replica-a", "replica-b"] {
-        let r = f.replica(verifier, DamageMode::Off);
+        let r = f.replica(verifier, DamageMode::Off).await;
         assert!(r.parts.damage_context(&pool, &f.tenant).is_none());
         refusal(&r.execute(&f, &pool).await);
         assert!(r.parts.cache.is_quarantined(&f.key()));
@@ -535,8 +578,8 @@ async fn a_preauthorized_verified_repair_clears_and_readers_recover() {
     let pool = f.pool();
     let ledger = f.ledger();
     f.corrupt();
-    let a = f.replica("replica-a", DamageMode::Enforce);
-    let b = f.replica("replica-b", DamageMode::Enforce);
+    let a = f.replica("replica-a", DamageMode::Enforce).await;
+    let b = f.replica("replica-b", DamageMode::Enforce).await;
     refusal(&a.execute(&f, &pool).await);
     refusal(&b.execute(&f, &pool).await);
     let incident = ledger
@@ -600,8 +643,8 @@ async fn a_preauthorized_verified_repair_clears_and_readers_recover() {
     let progress = ledger.repair_attempt(&attempt_id).await.unwrap().unwrap();
     assert_eq!(progress.state, "verifying");
     assert_eq!(
-        progress.first_match_verifier_id.as_deref(),
-        Some("replica-a")
+        progress.first_match_verifier_id,
+        Some(f.fp("replica-a").await)
     );
     assert!(ledger
         .admit(&f.version, &f.artifact)
@@ -628,7 +671,7 @@ async fn a_preauthorized_verified_repair_clears_and_readers_recover() {
     assert_eq!(recorded["clearing_attempt_id"], attempt_id.as_str());
     assert_eq!(
         recorded["clearing_verifiers"],
-        serde_json::json!(["replica-a", "replica-b"])
+        serde_json::json!([f.fp("replica-a").await, f.fp("replica-b").await])
     );
 
     // A read admitted during the block still fails release after clearance.
@@ -643,13 +686,13 @@ async fn a_preauthorized_verified_repair_clears_and_readers_recover() {
     assert!(!recovered.hits.is_empty());
     assert!(!a.parts.cache.is_quarantined(&f.key()));
     assert!(a.search(&f, &f.state).await.is_ok());
-    let fresh = f.replica("replica-r", DamageMode::Enforce);
+    let fresh = f.replica("replica-r", DamageMode::Enforce).await;
     executed(fresh.execute(&f, &pool).await);
 
     // A fresh mismatch after clearance starts a new incident under ART1.
     f.corrupt();
-    let c = f.replica("replica-c", DamageMode::Enforce);
-    let d = f.replica("replica-d", DamageMode::Enforce);
+    let c = f.replica("replica-c", DamageMode::Enforce).await;
+    let d = f.replica("replica-d", DamageMode::Enforce).await;
     refusal(&c.execute(&f, &pool).await);
     refusal(&d.execute(&f, &pool).await);
     let renewed = ledger.admit(&f.version, &f.artifact).await.unwrap();
@@ -737,7 +780,7 @@ async fn a_declared_single_replica_blocks_and_clears_with_spaced_runs() {
 
     // A default replica records its candidate and, however long it waits,
     // never confirms it alone.
-    let multi = f.replica("replica-m", DamageMode::Enforce);
+    let multi = f.replica("replica-m", DamageMode::Enforce).await;
     refusal(&multi.execute(&f, &pool).await);
     backdate(&f, &pool, interval + 60).await;
     let before = ledger.history_len().await.unwrap();
@@ -761,9 +804,11 @@ async fn a_declared_single_replica_blocks_and_clears_with_spaced_runs() {
     // confirms only once its candidate is at least the interval old.
     let single = f.replica_with(
         DamageGuard::new(DamageMode::Enforce, "replica-s")
+            .with_signing_key(f.vkey("replica-s").await)
             .with_single_replica(interval)
             .unwrap(),
     );
+    let s = f.fp("replica-s").await;
     sqlx::query("DELETE FROM artifact_integrity_candidates WHERE tenant_id = $1")
         .bind(&f.tenant)
         .execute(&pool)
@@ -812,7 +857,7 @@ async fn a_declared_single_replica_blocks_and_clears_with_spaced_runs() {
     assert_eq!(progress.state, "verifying", "one match, then a wait");
     assert_eq!(
         progress.first_match_verifier_id.as_deref(),
-        Some("replica-s")
+        Some(s.as_str())
     );
     // The single replica waits for the interval before its second match.
     assert!(ledger
@@ -837,14 +882,8 @@ async fn a_declared_single_replica_blocks_and_clears_with_spaced_runs() {
     assert_eq!(recorded["state"], "cleared");
     assert_eq!(recorded["block_assurance"], "single_replica");
     assert_eq!(recorded["clear_assurance"], "single_replica");
-    assert_eq!(
-        recorded["confirming_verifiers"],
-        serde_json::json!(["replica-s", "replica-s"])
-    );
-    assert_eq!(
-        recorded["clearing_verifiers"],
-        serde_json::json!(["replica-s", "replica-s"])
-    );
+    assert_eq!(recorded["confirming_verifiers"], serde_json::json!([s, s]));
+    assert_eq!(recorded["clearing_verifiers"], serde_json::json!([s, s]));
     // The quarantined copy is re-verified and serves again.
     executed(single.execute(&f, &pool).await);
 }
@@ -858,11 +897,13 @@ async fn an_independent_block_lists_independent_assurance() {
     f.corrupt();
     refusal(
         &f.replica("replica-a", DamageMode::Enforce)
+            .await
             .execute(&f, &pool)
             .await,
     );
     refusal(
         &f.replica("replica-b", DamageMode::Enforce)
+            .await
             .execute(&f, &pool)
             .await,
     );
@@ -877,4 +918,166 @@ async fn an_independent_block_lists_independent_assurance() {
         listed["incidents"][0]["clear_assurance"],
         serde_json::Value::Null
     );
+}
+
+/// Without an enrolled key a replica isolates its copy and records what it
+/// saw, but nothing it observes counts: two keyless replicas never block, and
+/// neither do two replicas sharing one key.
+#[tokio::test]
+async fn keyless_and_key_sharing_replicas_only_isolate_locally() {
+    let url = guard!();
+    let f = Fleet::new(url, "art-keys").await;
+    let pool = f.pool();
+    let ledger = f.ledger();
+    f.corrupt();
+    for name in ["replica-a", "replica-b"] {
+        let keyless = f.replica_with(DamageGuard::new(DamageMode::Enforce, name));
+        assert!(!keyless.parts.damage.signs());
+        let refused = keyless.execute(&f, &pool).await;
+        assert!(refusal(&refused).contains("integrity"), "{refused:?}");
+        assert!(keyless.parts.damage.is_isolated(&f.key()));
+    }
+    let history = ledger.history(10).await.unwrap();
+    assert!(
+        history
+            .iter()
+            .any(|(v, _, d)| v == "replica-a" && d == "unauthenticated"),
+        "{history:?}"
+    );
+    assert!(history.iter().all(|(_, _, d)| d != "candidate"));
+
+    // Two replicas with copies of one enrolled key are one verifier.
+    for name in ["shared-1", "shared-2"] {
+        let r = f.replica_with(
+            DamageGuard::new(DamageMode::Enforce, name).with_signing_key(f.vkey("shared").await),
+        );
+        refusal(&r.execute(&f, &pool).await);
+    }
+    assert_eq!(
+        ledger
+            .admit(&f.version, &f.artifact)
+            .await
+            .unwrap()
+            .blocked_by,
+        None
+    );
+    let history = ledger.history(10).await.unwrap();
+    let shared = f.fp("shared").await;
+    assert!(history.contains(&(shared.clone(), "mismatch".into(), "candidate".into())));
+    assert!(history.contains(&(shared, "mismatch".into(), "same_verifier".into())));
+
+    // A distinct enrolled key confirms.
+    refusal(
+        &f.replica("replica-c", DamageMode::Enforce)
+            .await
+            .execute(&f, &pool)
+            .await,
+    );
+    assert!(ledger
+        .admit(&f.version, &f.artifact)
+        .await
+        .unwrap()
+        .blocked_by
+        .is_some());
+}
+
+/// Key generation, enrollment, listing and revocation through the operator
+/// command. The private key stays in its file.
+#[tokio::test]
+async fn the_verifier_key_commands_enroll_and_revoke_without_exposing_the_key() {
+    let url = guard!();
+    let f = Fleet::new(url, "art-key-cli").await;
+    let pool = f.pool();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("verifier.key");
+    let path_s = path.to_string_lossy().to_string();
+    let run = |args: Vec<&str>| {
+        let args: Vec<String> = args.into_iter().map(String::from).collect();
+        let pool = pool.clone();
+        async move { crate::artifact_damage::execute(&pool, &args).await }
+    };
+
+    let generated = run(vec!["generate-verifier-key", "--out", &path_s])
+        .await
+        .unwrap();
+    let secret = std::fs::read_to_string(&path).unwrap();
+    assert!(!generated.to_string().contains(secret.trim()));
+    let fingerprint = generated["fingerprint"].as_str().unwrap().to_string();
+    let public_key = generated["public_key"].as_str().unwrap().to_string();
+    // It never overwrites an existing key file.
+    assert!(run(vec!["generate-verifier-key", "--out", &path_s])
+        .await
+        .is_err());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), secret);
+    let derived = run(vec!["verifier-public-key", "--key-file", &path_s])
+        .await
+        .unwrap();
+    assert_eq!(derived["fingerprint"], fingerprint.as_str());
+    assert_eq!(derived["public_key"], public_key.as_str());
+    assert_eq!(
+        munarium_retrieval::damage::load_verifier_key(&path_s)
+            .unwrap()
+            .fingerprint(),
+        fingerprint
+    );
+
+    let enrolled = run(vec![
+        "enroll-verifier",
+        "--public-key",
+        &public_key,
+        "--label",
+        "replica-1",
+        "--actor",
+        "operator",
+    ])
+    .await
+    .unwrap();
+    assert_eq!(enrolled["fingerprint"], fingerprint.as_str());
+    assert_eq!(enrolled["revoked_at"], serde_json::Value::Null);
+    let listed = run(vec!["list-verifiers"]).await.unwrap();
+    assert!(listed["verifiers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|k| k["fingerprint"] == fingerprint.as_str()));
+    let revoked = run(vec![
+        "revoke-verifier",
+        "--fingerprint",
+        &fingerprint,
+        "--actor",
+        "operator",
+        "--reason",
+        "rotated",
+    ])
+    .await
+    .unwrap();
+    assert!(revoked["revoked_at"].is_string());
+    assert_eq!(revoked["revoke_reason"], "rotated");
+    assert!(run(vec![
+        "enroll-verifier",
+        "--public-key",
+        &public_key,
+        "--label",
+        "replica-1",
+        "--actor",
+        "operator",
+    ])
+    .await
+    .is_err());
+    for bad in [
+        vec![
+            "enroll-verifier",
+            "--public-key",
+            "nope",
+            "--label",
+            "x",
+            "--actor",
+            "op",
+        ],
+        vec!["enroll-verifier", "--label", "x", "--actor", "op"],
+        vec!["revoke-verifier", "--actor", "op"],
+        vec!["verifier-public-key", "--key-file", "does-not-exist.key"],
+    ] {
+        assert!(run(bad.clone()).await.is_err(), "{bad:?}");
+    }
 }

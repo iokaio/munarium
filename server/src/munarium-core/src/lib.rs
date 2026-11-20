@@ -31,6 +31,7 @@
     )
 )]
 
+pub mod artifact_verifier;
 pub mod budget;
 pub mod chrono_gate;
 pub mod composer;
