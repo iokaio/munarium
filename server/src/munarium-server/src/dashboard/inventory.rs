@@ -14,7 +14,7 @@ use crate::charts::{self, esc};
 use crate::reports_api;
 use crate::state::AppState;
 use axum::extract::{Form, Path, Query, State};
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use munarium_api_types as dto;
 use std::sync::Arc;
@@ -613,10 +613,11 @@ pub(super) async fn tokens(
                     let revoke = if t.revoked_at.is_none() {
                         action(
                             &admin,
+                            // A read: the review page states what would
+                            // change; only its typed confirmation acts (U4).
                             format!(
-                                r#"<form class="action" method="post" action="/admin/tokens/{}/revoke">{}<button type="submit" class="danger">revoke</button></form>"#,
-                                esc(&t.jti),
-                                csrf_field(&admin)
+                                r#"<form class="action" method="get" action="{}/revoke"><button type="submit" class="danger">revoke…</button></form>"#,
+                                esc(&token_path(&t.jti)),
                             ),
                         )
                     } else {
@@ -760,6 +761,151 @@ pub(super) async fn token_issue(
     }
 }
 
+// ---------------------------------------------------------------------------
+// token revocation: review, then typed confirmation (ClearView U4)
+// ---------------------------------------------------------------------------
+
+/// The action name the revocation plan is bound to.
+const REVOKE_ACTION: &str = "token.revoke";
+
+/// A digest of the token row the review showed — the "current revision" a
+/// confirmation is bound to. Tokens are immutable apart from `revoked_at`,
+/// but every field is included so any change at all reads as stale.
+fn token_revision(t: &dto::TokenInfoDto) -> String {
+    use sha2::Digest as _;
+    let v = serde_json::json!([
+        t.jti,
+        t.uid,
+        t.access_level,
+        t.compartments,
+        t.scopes,
+        t.runbook_refs,
+        t.issued_by,
+        t.issued_at,
+        t.expires_at,
+        t.revoked_at,
+    ]);
+    hex::encode(sha2::Sha256::digest(v.to_string().as_bytes()))
+}
+
+fn revocation_consequence(state: &AppState) -> &'static str {
+    if state.config.token_revocation_check {
+        "Revocation is enforced at verify time (MUNARIUM_TOKEN_REVOCATION_CHECK=true): every request that presents this token is refused from the moment it is revoked."
+    } else {
+        "Revocation is recorded but NOT enforced at verify time (MUNARIUM_TOKEN_REVOCATION_CHECK is off): a revoked token keeps working until it expires."
+    }
+}
+
+fn token_path(jti: &str) -> String {
+    format!("/admin/tokens/{}", urlencode(jti))
+}
+
+/// The review page: what will change, the consequence, and — only when
+/// there is something to revoke — the typed-confirmation form carrying the
+/// plan. `problem` is a refusal from a previous confirmation attempt.
+fn revoke_review(
+    state: &AppState,
+    admin: &super::AdminCtx,
+    t: &dto::TokenInfoDto,
+    problem: Option<&str>,
+) -> String {
+    let problem = problem
+        .map(|p| format!(r#"<div class="notice">{}</div>"#, esc(p)))
+        .unwrap_or_default();
+    let details = kv(&[
+        ("jti", format!("<code>{}</code>", esc(&t.jti))),
+        ("uid", esc(&t.uid)),
+        ("access level", t.access_level.to_string()),
+        ("compartments", list_or_dash(&t.compartments)),
+        ("scopes", list_or_dash(&t.scopes)),
+        (
+            "runbooks",
+            t.runbook_refs
+                .as_ref()
+                .map(|r| list_or_dash(r))
+                .unwrap_or_else(|| "any".into()),
+        ),
+        ("issued by", esc(&t.issued_by)),
+        ("issued", esc(&t.issued_at)),
+        ("expires", esc(&t.expires_at)),
+        ("revoked", opt(&t.revoked_at)),
+    ]);
+    let confirm = match &t.revoked_at {
+        // An empty plan: nothing would change, so nothing is offered.
+        Some(at) => format!(
+            r#"<div class="notice">This token was already revoked at {}. There is nothing to confirm.</div>"#,
+            esc(at)
+        ),
+        None => action(
+            admin,
+            format!(
+                r#"<form class="action confirm" method="post" action="{}/revoke/confirm">{}<input type="hidden" name="plan" value="{}">
+<label>type the token's jti to confirm <input type="text" name="confirm" autocomplete="off" spellcheck="false" required></label>
+<button type="submit" class="danger">revoke this token</button></form>"#,
+                esc(&token_path(&t.jti)),
+                csrf_field(admin),
+                esc(&super::action_plan(
+                    state,
+                    admin,
+                    REVOKE_ACTION,
+                    &t.jti,
+                    &token_revision(t)
+                )),
+            ),
+        ),
+    };
+    format!(
+        r#"{problem}<div class="card">{details}</div>
+<div class="notice">Revoking adds this jti to the deny-list. {}</div>
+{confirm}
+<p><a href="/admin/tokens">← back to tokens (nothing changes)</a></p>"#,
+        revocation_consequence(state)
+    )
+}
+
+fn review_title(jti: &str) -> String {
+    format!("Revoke token {}", short(jti, 24))
+}
+
+async fn render_review(
+    state: &AppState,
+    admin: &super::AdminCtx,
+    jti: &str,
+    status: StatusCode,
+    problem: Option<&str>,
+) -> Response {
+    match reports_api::op_get_token(state, &admin.tenant.tenant_id, jti).await {
+        Ok(t) => (
+            status,
+            render(
+                admin,
+                "tokens",
+                &review_title(jti),
+                &revoke_review(state, admin, &t, problem),
+            ),
+        )
+            .into_response(),
+        Err(e) => error_panel(admin, "tokens", &review_title(jti), &e),
+    }
+}
+
+/// `GET /admin/tokens/{jti}/revoke` — the review. Reads only.
+pub(super) async fn token_revoke_review(
+    State(state): State<Arc<AppState>>,
+    Path(jti): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    let admin = match admin_auth(&state, &headers) {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    render_review(&state, &admin, &jti, StatusCode::OK, None).await
+}
+
+/// `POST /admin/tokens/{jti}/revoke` — the v1.4 action URL. It now returns
+/// the review instead of revoking, so a bookmarked or mis-clicked button
+/// cannot revoke without the typed confirmation. It keeps the v1.4 checks:
+/// view-only refusal and the CSRF token.
 pub(super) async fn token_revoke(
     State(state): State<Arc<AppState>>,
     Path(jti): Path<String>,
@@ -781,8 +927,102 @@ pub(super) async fn token_revoke(
     if !csrf_ok(&admin, &form._csrf) {
         return stale_form(&admin, "tokens", "Tokens");
     }
-    match reports_api::op_revoke_token(&state, &admin.tenant.tenant_id, jti).await {
-        Ok(_) => Redirect::to("/admin/tokens").into_response(),
+    render_review(&state, &admin, &jti, StatusCode::OK, None).await
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+pub struct ConfirmForm {
+    #[serde(default)]
+    _csrf: String,
+    #[serde(default)]
+    plan: String,
+    /// The identifier the operator typed.
+    #[serde(default)]
+    confirm: String,
+}
+
+/// `POST /admin/tokens/{jti}/revoke/confirm` — the only console route that
+/// revokes. Every check is repeated here, at submission: the mgmt role
+/// (`admin_auth`), view-only refusal, the CSRF token, the typed identifier,
+/// the target's existence and state, and the plan's binding to this
+/// operator, tenant, action, target and revision. The write itself is
+/// conditional on the token still being unrevoked, so a duplicate or racing
+/// confirmation acts at most once.
+pub(super) async fn token_revoke_confirm(
+    State(state): State<Arc<AppState>>,
+    Path(jti): Path<String>,
+    headers: HeaderMap,
+    Form(form): Form<ConfirmForm>,
+) -> Response {
+    let admin = match admin_auth(&state, &headers) {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    if admin.view_only {
+        return notice(
+            &admin,
+            "tokens",
+            "Tokens",
+            "view-only passthrough — revoke on the server's own /admin",
+        );
+    }
+    if !csrf_ok(&admin, &form._csrf) {
+        return stale_form(&admin, "tokens", "Tokens");
+    }
+    if form.confirm.trim() != jti {
+        return render_review(
+            &state,
+            &admin,
+            &jti,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Some("The identifier you typed does not match this token's jti. Nothing was revoked."),
+        )
+        .await;
+    }
+    let title = review_title(&jti);
+    let t = match reports_api::op_get_token(&state, &admin.tenant.tenant_id, &jti).await {
+        Ok(t) => t,
+        Err(e) => return error_panel(&admin, "tokens", &title, &e),
+    };
+    let conflict = |msg: String| {
+        (
+            StatusCode::CONFLICT,
+            render(
+                &admin,
+                "tokens",
+                &title,
+                &format!(
+                    r#"<div class="notice">{}</div><p><a href="{}/revoke">review the token again</a> · <a href="/admin/tokens">back to tokens</a></p>"#,
+                    esc(&msg),
+                    esc(&token_path(&jti))
+                ),
+            ),
+        )
+            .into_response()
+    };
+    if let Some(at) = &t.revoked_at {
+        return conflict(format!(
+            "This token was already revoked at {at}. Nothing changed."
+        ));
+    }
+    if !super::plan_ok(
+        &state,
+        &admin,
+        REVOKE_ACTION,
+        &jti,
+        &token_revision(&t),
+        &form.plan,
+    ) {
+        return conflict(
+            "This confirmation no longer matches the token, operator or server it was reviewed against (the token changed, another credential is submitting it, or the server restarted). Nothing was revoked; review it again."
+                .into(),
+        );
+    }
+    match reports_api::op_revoke_token_if_unrevoked(&state, &admin.tenant.tenant_id, &jti).await {
+        Ok(true) => Redirect::to("/admin/tokens").into_response(),
+        Ok(false) => {
+            conflict("This token was revoked by another request first. Nothing changed.".into())
+        }
         Err(e) => notice(&admin, "tokens", "Tokens", &e.to_string()),
     }
 }

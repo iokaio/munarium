@@ -564,8 +564,11 @@ fn csrf_token(state: &AppState, headers: &HeaderMap) -> String {
 }
 
 fn csrf_ok(admin: &AdminCtx, provided: &str) -> bool {
-    let expected = &admin.csrf;
-    // Constant-time comparison over the fixed-length hex.
+    ct_eq(&admin.csrf, provided)
+}
+
+/// Constant-time comparison over fixed-length hex.
+fn ct_eq(expected: &str, provided: &str) -> bool {
     if expected.len() != provided.len() {
         return false;
     }
@@ -574,6 +577,63 @@ fn csrf_ok(admin: &AdminCtx, provided: &str) -> bool {
         .zip(provided.bytes())
         .fold(0u8, |acc, (a, b)| acc | (a ^ b))
         == 0
+}
+
+/// The review-then-confirm binding for a destructive console action
+/// (ClearView U4). The review page embeds this value; the confirmation must
+/// return it unchanged. It is bound to:
+/// - the operator: `admin.csrf` is derived from the credential the request
+///   authenticated with, so another credential computes a different plan;
+/// - the tenant the credential belongs to;
+/// - the intended action and its target;
+/// - the target's current revision (`revision`: a digest of the row the
+///   review showed), so a target that changed after review no longer
+///   matches;
+/// - the boot secret, so a restart expires every outstanding review, like
+///   the CSRF token.
+///
+/// Stateless, like the CSRF token: nothing is stored between review and
+/// confirmation. The nested hash is the same construction as `csrf_token`.
+pub(crate) fn action_plan(
+    state: &AppState,
+    admin: &AdminCtx,
+    action: &str,
+    target: &str,
+    revision: &str,
+) -> String {
+    use sha2::Digest as _;
+    let fields = [
+        "plan",
+        admin.csrf.as_str(),
+        admin.tenant.tenant_id.as_str(),
+        action,
+        target,
+        revision,
+    ];
+    // Length-prefixed so no field can bleed into its neighbour.
+    let mut material = String::new();
+    for f in fields {
+        material.push_str(&format!("{}:{f};", f.len()));
+    }
+    let inner = sha2::Sha256::digest(format!("{}:{material}", state.boot_secret).as_bytes());
+    hex::encode(sha2::Sha256::digest(
+        [state.boot_secret.as_bytes(), &inner[..]].concat(),
+    ))
+}
+
+/// Whether a submitted plan is the one `action_plan` computes now.
+pub(crate) fn plan_ok(
+    state: &AppState,
+    admin: &AdminCtx,
+    action: &str,
+    target: &str,
+    revision: &str,
+    provided: &str,
+) -> bool {
+    ct_eq(
+        &action_plan(state, admin, action, target, revision),
+        provided,
+    )
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -665,7 +725,16 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/admin/sessions/{id}", get(inventory::session))
         .route("/admin/tokens", get(inventory::tokens))
         .route("/admin/tokens/issue", post(inventory::token_issue))
-        .route("/admin/tokens/{jti}/revoke", post(inventory::token_revoke))
+        // GET reviews; the v1.4 POST also reviews now (ClearView U4) and
+        // only the typed confirmation below acts.
+        .route(
+            "/admin/tokens/{jti}/revoke",
+            get(inventory::token_revoke_review).post(inventory::token_revoke),
+        )
+        .route(
+            "/admin/tokens/{jti}/revoke/confirm",
+            post(inventory::token_revoke_confirm),
+        )
         .route("/admin/audit", get(inventory::audit))
         .route("/admin/findings", get(inventory::findings))
         .route("/admin/matrix", get(inventory::matrix))
@@ -1041,6 +1110,312 @@ mod tests {
             .await
             .unwrap();
         assert!(body_string(resp).await.contains("view-only"));
+    }
+
+    // -----------------------------------------------------------------------
+    // U4: token revocation is reviewed, then confirmed by typing the jti
+    // -----------------------------------------------------------------------
+
+    async fn post_form_view_only(
+        state: &Arc<AppState>,
+        path: &str,
+        bearer: &str,
+        form: &str,
+    ) -> Response {
+        crate::rest::router(state.clone())
+            .oneshot(
+                axum::http::Request::post(path)
+                    .header("authorization", format!("Bearer {bearer}"))
+                    .header(VIEW_ONLY_HEADER, "1")
+                    .header("content-type", "application/x-www-form-urlencoded")
+                    .body(axum::body::Body::from(form.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+    }
+
+    fn plan_in(body: &str) -> Option<String> {
+        let start = body.find(r#"name="plan" value=""#)? + r#"name="plan" value=""#.len();
+        let len = body[start..].find('"')?;
+        Some(body[start..start + len].to_string())
+    }
+
+    /// Without a store the review cannot load its target, so it offers no
+    /// confirmation; every refusal that precedes the store read still
+    /// refuses. (The acting path is exercised against PostgreSQL below.)
+    #[tokio::test]
+    async fn revoke_review_and_refusals_on_the_memory_store() {
+        let state = state(static_auth()).await;
+        let csrf = csrf_for(&state, "m");
+        // The review is a read and offers nothing it cannot back.
+        let resp = get(&state, "/admin/tokens/tok-x/revoke", Some("m"), false).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_string(resp).await;
+        assert!(body.contains("postgres"), "{body}");
+        assert!(plan_in(&body).is_none(), "{body}");
+        // The v1.4 POST still demands the CSRF token.
+        let body = body_string(
+            post_form(&state, "/admin/tokens/tok-x/revoke", "m", "_csrf=deadbeef").await,
+        )
+        .await;
+        assert!(body.contains("stale form"), "{body}");
+        // The confirmation: missing CSRF, wrong role, view-only.
+        let form = "plan=00&confirm=tok-x";
+        let body =
+            body_string(post_form(&state, "/admin/tokens/tok-x/revoke/confirm", "m", form).await)
+                .await;
+        assert!(body.contains("stale form"), "{body}");
+        let resp = post_form(
+            &state,
+            "/admin/tokens/tok-x/revoke/confirm",
+            "w",
+            &format!("_csrf={}&{form}", csrf_for(&state, "w")),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+        assert_eq!(resp.headers()["location"], "/admin/login");
+        let body = body_string(
+            post_form_view_only(
+                &state,
+                "/admin/tokens/tok-x/revoke/confirm",
+                "m",
+                &format!("_csrf={csrf}&{form}"),
+            )
+            .await,
+        )
+        .await;
+        assert!(body.contains("view-only passthrough"), "{body}");
+        let body = body_string(
+            post_form_view_only(
+                &state,
+                "/admin/tokens/tok-x/revoke",
+                "m",
+                &format!("_csrf={csrf}"),
+            )
+            .await,
+        )
+        .await;
+        assert!(body.contains("view-only passthrough"), "{body}");
+    }
+
+    async fn revoked_at(state: &AppState, tenant: &str, jti: &str) -> Option<String> {
+        crate::reports_api::op_get_token(state, tenant, jti)
+            .await
+            .expect("token row")
+            .revoked_at
+    }
+
+    async fn issue(state: &AppState, tenant: &str, uid: &str) -> String {
+        crate::tokens_api::op_issue_token(
+            state,
+            "console-test",
+            tenant,
+            munarium_api_types::IssueTokenRequest {
+                uid: uid.into(),
+                access_level: 1,
+                compartments: vec!["finance".into()],
+                scopes: vec!["query".into()],
+                runbook_refs: None,
+                ttl_secs: Some(600),
+            },
+        )
+        .await
+        .expect("issue")
+        .jti
+    }
+
+    /// The whole U4 contract against PostgreSQL: the preview never revokes;
+    /// a wrong identifier, missing or foreign CSRF token, wrong role,
+    /// view-only header, another operator's plan, a target changed after
+    /// review, or an already-revoked target never acts; the correct
+    /// confirmation revokes exactly once; a duplicate is harmless; and the
+    /// `/v1` route is unchanged.
+    #[tokio::test]
+    async fn token_revocation_is_reviewed_then_confirmed_on_postgres() {
+        let Ok(url) = std::env::var("MUNARIUM_TEST_DATABASE_URL") else {
+            eprintln!("console U4 PostgreSQL test NOT RUN: MUNARIUM_TEST_DATABASE_URL unset");
+            return;
+        };
+        let tenant = format!("console-u4-{}", uuid::Uuid::new_v4().simple());
+        let other = format!("{tenant}-other");
+        let mut cfg = test_config(AuthMode::Static(vec![
+            ("m".into(), tenant.clone(), "mgmt".into()),
+            ("m2".into(), tenant.clone(), "mgmt".into()),
+            ("w".into(), tenant.clone(), "rw".into()),
+            ("mo".into(), other.clone(), "mgmt".into()),
+        ]));
+        cfg.store = StoreKind::Postgres;
+        cfg.database_url = Some(url);
+        let state = AppState::new(cfg).await.expect("state");
+        let csrf = csrf_for(&state, "m");
+        let jti = issue(&state, &tenant, "alice").await;
+        let review = format!("/admin/tokens/{jti}/revoke");
+        let confirm = format!("{review}/confirm");
+
+        // The list links to the review; the review states the target and the
+        // consequence and carries a plan. Refreshing it acts on nothing.
+        let body = body_string(get(&state, "/admin/tokens", Some("m"), false).await).await;
+        assert!(body.contains(&format!(r#"action="{review}""#)), "{body}");
+        let resp = get(&state, &review, Some("m"), false).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_string(resp).await;
+        assert!(body.contains(&jti) && body.contains("alice"), "{body}");
+        assert!(body.contains("NOT enforced at verify time"), "{body}");
+        let plan = plan_in(&body).expect("confirmation offered");
+        let again = body_string(get(&state, &review, Some("m"), false).await).await;
+        assert_eq!(plan_in(&again).as_deref(), Some(plan.as_str()));
+        // The v1.4 POST is now a preview too.
+        let body =
+            body_string(post_form(&state, &review, "m", &format!("_csrf={csrf}")).await).await;
+        assert!(plan_in(&body).is_some(), "{body}");
+        assert_eq!(revoked_at(&state, &tenant, &jti).await, None);
+
+        let good = format!("_csrf={csrf}&plan={plan}&confirm={jti}");
+        // Wrong identifier: the review again, with the refusal.
+        let resp = post_form(
+            &state,
+            &confirm,
+            "m",
+            &format!("_csrf={csrf}&plan={plan}&confirm=tok-wrong"),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(body_string(resp).await.contains("does not match"));
+        // Missing CSRF, and another credential's CSRF token.
+        for form in [
+            format!("plan={plan}&confirm={jti}"),
+            format!("_csrf={}&plan={plan}&confirm={jti}", csrf_for(&state, "m2")),
+        ] {
+            let body = body_string(post_form(&state, &confirm, "m", &form).await).await;
+            assert!(body.contains("stale form"), "{body}");
+        }
+        // Wrong role.
+        let resp = post_form(&state, &confirm, "w", &good).await;
+        assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+        assert_eq!(resp.headers()["location"], "/admin/login");
+        // View-only.
+        let body = body_string(post_form_view_only(&state, &confirm, "m", &good).await).await;
+        assert!(body.contains("view-only passthrough"), "{body}");
+        // Another operator presenting this operator's plan, with its own
+        // valid CSRF token: the plan is bound to the reviewer.
+        let resp = post_form(
+            &state,
+            &confirm,
+            "m2",
+            &format!("_csrf={}&plan={plan}&confirm={jti}", csrf_for(&state, "m2")),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        // A forged plan.
+        let resp = post_form(
+            &state,
+            &confirm,
+            "m",
+            &format!("_csrf={csrf}&plan={}&confirm={jti}", "0".repeat(64)),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        // Another tenant's operator cannot even see the target.
+        let resp = get(&state, &review, Some("mo"), false).await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        let resp = post_form(
+            &state,
+            &confirm,
+            "mo",
+            &format!("_csrf={}&plan={plan}&confirm={jti}", csrf_for(&state, "mo")),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        assert_eq!(revoked_at(&state, &tenant, &jti).await, None);
+
+        // The correct confirmation revokes, once.
+        let resp = post_form(&state, &confirm, "m", &good).await;
+        assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+        assert_eq!(resp.headers()["location"], "/admin/tokens");
+        let first = revoked_at(&state, &tenant, &jti).await.expect("revoked");
+        // A duplicate submission (a double click, a refresh of the POST)
+        // changes nothing and says so.
+        let resp = post_form(&state, &confirm, "m", &good).await;
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        assert!(body_string(resp).await.contains("already revoked"));
+        assert_eq!(revoked_at(&state, &tenant, &jti).await, Some(first));
+        // An empty plan offers no confirmation.
+        let body = body_string(get(&state, &review, Some("m"), false).await).await;
+        assert!(body.contains("nothing to confirm"), "{body}");
+        assert!(plan_in(&body).is_none(), "{body}");
+
+        // A target changed between preview and confirmation.
+        let changed = issue(&state, &tenant, "bob").await;
+        let body = body_string(
+            get(
+                &state,
+                &format!("/admin/tokens/{changed}/revoke"),
+                Some("m"),
+                false,
+            )
+            .await,
+        )
+        .await;
+        let plan = plan_in(&body).expect("plan");
+        sqlx::query(
+            "UPDATE access_tokens SET expires_at = expires_at + interval '1 hour'
+              WHERE tenant_id = $1 AND jti = $2",
+        )
+        .bind(&tenant)
+        .bind(&changed)
+        .execute(state.pg_pool().expect("pool"))
+        .await
+        .expect("update");
+        let resp = post_form(
+            &state,
+            &format!("/admin/tokens/{changed}/revoke/confirm"),
+            "m",
+            &format!("_csrf={csrf}&plan={plan}&confirm={changed}"),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        assert!(body_string(resp).await.contains("no longer matches"));
+        assert_eq!(revoked_at(&state, &tenant, &changed).await, None);
+
+        // Revoked through /v1 after review: the confirmation does not act,
+        // and the /v1 route keeps its v1.4 behaviour (200, idempotent).
+        let body = body_string(
+            get(
+                &state,
+                &format!("/admin/tokens/{changed}/revoke"),
+                Some("m"),
+                false,
+            )
+            .await,
+        )
+        .await;
+        let plan = plan_in(&body).expect("plan");
+        for _ in 0..2 {
+            let resp = crate::rest::router(state.clone())
+                .oneshot(
+                    axum::http::Request::post(format!("/v1/access-tokens/{changed}/revoke"))
+                        .header("authorization", "Bearer m")
+                        .body(axum::body::Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+            assert!(body_string(resp).await.contains(r#""revoked":true"#));
+        }
+        let v1_time = revoked_at(&state, &tenant, &changed)
+            .await
+            .expect("revoked");
+        let resp = post_form(
+            &state,
+            &format!("/admin/tokens/{changed}/revoke/confirm"),
+            "m",
+            &format!("_csrf={csrf}&plan={plan}&confirm={changed}"),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        assert_eq!(revoked_at(&state, &tenant, &changed).await, Some(v1_time));
     }
 
     const SHAPE: &str = "apiVersion: munarium.ioka.io/v1\nkind: Shape\n\

@@ -1105,6 +1105,77 @@ pub async fn op_revoke_token(
     })
 }
 
+/// One issued token's audit row, for the console's revocation review
+/// (ClearView U4). Tenant-scoped; an unknown jti is NotFound.
+#[allow(clippy::type_complexity)]
+pub async fn op_get_token(
+    state: &AppState,
+    tenant: &str,
+    jti: &str,
+) -> std::result::Result<dto::TokenInfoDto, KernelError> {
+    let row: Option<(
+        String,
+        String,
+        i32,
+        Vec<String>,
+        Vec<String>,
+        Option<Vec<String>>,
+        String,
+        String,
+        String,
+        Option<String>,
+    )> = sqlx::query_as(
+        "SELECT jti, uid, access_level, compartments, scopes, runbook_refs,
+                issued_by, issued_at::text, expires_at::text, revoked_at::text
+           FROM access_tokens
+          WHERE tenant_id = $1 AND jti = $2",
+    )
+    .bind(tenant)
+    .bind(jti)
+    .fetch_optional(pool(state)?)
+    .await
+    .map_err(|e| KernelError::Storage(e.to_string()))?;
+    let (jti, uid, lvl, cmp, scopes, rb, issued_by, issued_at, expires_at, revoked_at) = row
+        .ok_or_else(|| KernelError::NotFound {
+            kind: "token",
+            id: jti.to_string(),
+        })?;
+    Ok(dto::TokenInfoDto {
+        jti,
+        uid,
+        access_level: lvl,
+        compartments: cmp,
+        scopes,
+        runbook_refs: rb,
+        issued_by,
+        issued_at,
+        expires_at,
+        revoked_at,
+    })
+}
+
+/// The console's confirmed revocation (ClearView U4): revokes only a token
+/// that is not revoked yet, and says whether THIS call revoked it. Two
+/// confirmations racing each other therefore act once; the loser reads
+/// `false` and reports that nothing changed. The `/v1` route keeps its own
+/// idempotent `op_revoke_token`.
+pub async fn op_revoke_token_if_unrevoked(
+    state: &AppState,
+    tenant: &str,
+    jti: &str,
+) -> std::result::Result<bool, KernelError> {
+    let updated = sqlx::query(
+        "UPDATE access_tokens SET revoked_at = now()
+          WHERE tenant_id = $1 AND jti = $2 AND revoked_at IS NULL",
+    )
+    .bind(tenant)
+    .bind(jti)
+    .execute(pool(state)?)
+    .await
+    .map_err(|e| KernelError::Storage(e.to_string()))?;
+    Ok(updated.rows_affected() == 1)
+}
+
 // ---------------------------------------------------------------------------
 // The evidence hierarchy and the Matrix plane
 // ---------------------------------------------------------------------------
