@@ -395,7 +395,7 @@ async fn harness(url: String, enabled: bool) -> Harness {
         ),
         (
             "survey.txt",
-            &b"A survey of fictional nebula maps and their orchid colours."[..],
+            &b"A study of fictional nebula maps and their orchid colours."[..],
         ),
         (
             "tables.txt",
