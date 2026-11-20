@@ -35,11 +35,76 @@ struct Observer {
     provider: String,
     model: String,
     estimate: u64,
+    /// ClearView A8/A9: the MCP call this completion serves and the attempt
+    /// bound, when it runs under an MCP tool dispatch. `None` for native
+    /// traffic and for embeddings, which this changes nothing for.
+    mcp: Option<(Arc<crate::mcp_generation::CallContext>, u64)>,
+    mcp_attempts:
+        tokio::sync::Mutex<std::collections::HashMap<String, crate::mcp_generation::Attempt>>,
+    pool: Option<sqlx::PgPool>,
 }
 
 #[async_trait::async_trait]
 impl AttemptObserver for Observer {
     async fn begin(&self, route: &str) -> Result<String> {
+        // MCP allowances first (A8/A9): a refusal here sends nothing and
+        // reserves nothing, natively or for MCP. Each HTTP attempt, retries
+        // included, is its own reservation.
+        let mcp_attempt = match &self.mcp {
+            Some((ctx, bound)) => Some(
+                crate::mcp_generation::admit_attempt(
+                    self.pool.as_ref(),
+                    ctx,
+                    &self.config,
+                    &self.model,
+                    *bound,
+                )
+                .await?,
+            ),
+            None => None,
+        };
+        let id = match self.begin_native(route).await {
+            Ok(id) => id,
+            Err(e) => {
+                if let Some(a) = &mcp_attempt {
+                    crate::mcp_generation::release(self.pool.as_ref(), a).await;
+                }
+                return Err(e);
+            }
+        };
+        if let Some(a) = mcp_attempt {
+            self.mcp_attempts.lock().await.insert(id.clone(), a);
+        }
+        Ok(id)
+    }
+    async fn finish(&self, attempt: &str, usage: MoneyUsage) -> Result<()> {
+        let mcp_attempt = self.mcp_attempts.lock().await.remove(attempt);
+        if let (Some((ctx, _)), Some(a)) = (&self.mcp, mcp_attempt) {
+            // Settle once against reliable usage: both counts reported and no
+            // unknown categories. Anything else keeps the full reservation.
+            let observed = match (usage.input, usage.output) {
+                (Some(i), Some(o)) if !usage.unknown_categories => i.checked_add(o),
+                _ => None,
+            };
+            if let Err(e) = crate::mcp_generation::settle(
+                self.pool.as_ref(),
+                ctx,
+                &self.config,
+                &self.model,
+                &a,
+                observed,
+            )
+            .await
+            {
+                tracing::warn!(error = %e, "MCP attempt settle failed; the reservation stands");
+            }
+        }
+        self.finish_native(attempt, usage).await
+    }
+}
+
+impl Observer {
+    async fn begin_native(&self, route: &str) -> Result<String> {
         // This runs before EACH HTTP send, including retries. A cancelled or
         // failed attempt stays held; the janitor settles its estimate, never
         // refunds possibly executed work. The reserved scope cannot be a tier.
@@ -104,7 +169,7 @@ impl AttemptObserver for Observer {
             }
         }
     }
-    async fn finish(&self, attempt: &str, usage: MoneyUsage) -> Result<()> {
+    async fn finish_native(&self, attempt: &str, usage: MoneyUsage) -> Result<()> {
         if let Some(r) = self.reservations.lock().await.remove(attempt) {
             let evidence = UsageEvidence {
                 input_tokens: usage.input,
@@ -170,12 +235,14 @@ pub(crate) async fn capture<T>(
     entry: &crate::providers_api::ProviderEntry,
     model: &str,
     estimate: u64,
+    mcp_bound: Option<u64>,
     work: impl std::future::Future<Output = T>,
 ) -> (T, bool) {
     // The serving share of the daily cap: the whole cap unless a shadow
     // allocation (ClearView I2) is set aside from it.
     let limit = entry.doc.spec.budgets.serving_daily_limit();
-    if state.pg_pool().is_none() && limit.is_none() {
+    let mcp = mcp_bound.and_then(|bound| crate::mcp_generation::current().map(|c| (c, bound)));
+    if state.pg_pool().is_none() && limit.is_none() && mcp.is_none() {
         return (work.await, true);
     }
     // For opt-in admission, tell the logical tier ledger when no attempt was
@@ -193,6 +260,9 @@ pub(crate) async fn capture<T>(
         provider: entry.doc.spec.provider.clone(),
         model: model.into(),
         estimate,
+        mcp,
+        mcp_attempts: Default::default(),
+        pool: state.pg_pool().cloned(),
     };
     let result = CONTEXT
         .scope(

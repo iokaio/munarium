@@ -225,6 +225,10 @@ pub struct AppState {
     /// `MUNARIUM_CONSOLE_SESSIONS=enabled`, revocable sessions in the shared
     /// `console_sessions` table (in process on the memory store).
     pub console: crate::console_sessions::ConsoleSessions,
+    /// The opt-in MCP endpoint (ClearView A1-A9): settings, the per-replica
+    /// concurrency bound and, in tests, admission fault injection. With
+    /// `MUNARIUM_MCP` unset nothing reads it beyond the router's switch.
+    pub mcp: crate::mcp::McpRuntime,
 }
 
 pub struct IdemRecord {
@@ -387,7 +391,39 @@ impl AppState {
         // read here so `Config` literals in tests keep the v1.4 default.
         let console = crate::console_sessions::ConsoleSessionSettings::from_env()
             .map_err(KernelError::InvalidInput)?;
-        Self::build(config, admission, console).await
+        // The MCP endpoint (ClearView A1-A9), validated by main the same way.
+        let mcp = crate::mcp::McpSettings::from_env().map_err(KernelError::InvalidInput)?;
+        Self::build(config, admission, console, mcp).await
+    }
+
+    /// Builds the state with explicit MCP settings (tests: replicas with the
+    /// endpoint on and off in one process).
+    #[cfg(test)]
+    pub async fn new_with_mcp(config: Config, mcp: crate::mcp::McpSettings) -> Result<Arc<Self>> {
+        let admission = crate::admission::AdmissionConfig::legacy(config.max_concurrency);
+        Self::build(
+            config,
+            admission,
+            crate::console_sessions::ConsoleSessionSettings::default(),
+            mcp,
+        )
+        .await
+    }
+
+    /// `new_with_mcp` with explicit admission classes (R7 saturation tests).
+    #[cfg(test)]
+    pub async fn new_with_mcp_admission(
+        config: Config,
+        admission: crate::admission::AdmissionConfig,
+        mcp: crate::mcp::McpSettings,
+    ) -> Result<Arc<Self>> {
+        Self::build(
+            config,
+            admission,
+            crate::console_sessions::ConsoleSessionSettings::default(),
+            mcp,
+        )
+        .await
     }
 
     /// Builds the state with explicit console-login settings (tests: one
@@ -398,19 +434,29 @@ impl AppState {
         console: crate::console_sessions::ConsoleSessionSettings,
     ) -> Result<Arc<Self>> {
         let admission = crate::admission::AdmissionConfig::legacy(config.max_concurrency);
-        Self::build(config, admission, console).await
+        Self::build(
+            config,
+            admission,
+            console,
+            crate::mcp::McpSettings::default(),
+        )
+        .await
     }
 
     async fn build(
         config: Config,
         admission: crate::admission::AdmissionConfig,
         console: crate::console_sessions::ConsoleSessionSettings,
+        mcp: crate::mcp::McpSettings,
     ) -> Result<Arc<Self>> {
         if admission.ceiling != config.max_concurrency {
             return Err(KernelError::InvalidInput(
                 "admission ceiling must equal MUNARIUM_MAX_CONCURRENCY".into(),
             ));
         }
+        mcp.check_compatible(&config)
+            .map_err(KernelError::InvalidInput)?;
+        let mcp = crate::mcp::McpRuntime::new(mcp, admission.ordinary());
         let stores = match config.store {
             StoreKind::Memory => StoreRegistry::Mem(RwLock::new(HashMap::new())),
             StoreKind::Postgres => {
@@ -689,6 +735,7 @@ impl AppState {
             inference,
             draining: std::sync::atomic::AtomicBool::new(false),
             console: crate::console_sessions::ConsoleSessions::new(console),
+            mcp,
             chrono_rules_mem: Mutex::new(HashMap::new()),
             // Two v4 UUIDs = 256 bits of CSPRNG-backed entropy.
             boot_secret: format!(
@@ -818,6 +865,32 @@ impl AppState {
                     tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
                 }
             });
+        }
+        // MCP operation-key janitor (ClearView §5.3): only on an enabled
+        // endpoint with the durable store. Deletes keys a day past their
+        // immutable expiry, judged on the database clock; an expired key is
+        // refused whether or not its row remains, so pruning reopens nothing.
+        if state.mcp.settings.enabled {
+            if let Some(pool) = state.pg_pool().cloned() {
+                let jitter =
+                    std::time::Duration::from_secs((uuid::Uuid::now_v7().as_u128() % 300) as u64);
+                tokio::spawn(async move {
+                    tokio::time::sleep(jitter).await;
+                    loop {
+                        match crate::mcp_store::prune_keys(&pool, 86_400).await {
+                            Ok(0) => {}
+                            Ok(n) => tracing::info!(pruned = n, "MCP operation-key janitor"),
+                            Err(e) => tracing::warn!(error = %e, "MCP operation-key sweep failed"),
+                        }
+                        tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+                    }
+                });
+            } else {
+                tracing::warn!(
+                    "MUNARIUM_MCP=enabled on the memory store: discovery and listing work, \
+                     but every tool call is refused (no durable audit store, A6)"
+                );
+            }
         }
         Ok(state)
     }

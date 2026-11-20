@@ -44,7 +44,10 @@ pub(crate) fn retry_hint(slug: &str) -> Option<(bool, &'static str)> {
         | "daily-cap-reached"
         | "run-locked"
         | "datastore-unavailable"
-        | "inference-stage-unavailable" => Some((false, "retry_later")),
+        | "inference-stage-unavailable"
+        | "mcp-audit-unavailable"
+        | "mcp-allowance-exhausted"
+        | "mcp-accounting-unavailable" => Some((false, "retry_later")),
         "head-conflict" | "inference-not-qualified" => Some((false, "reread")),
         "command-unresolved" => Some((false, "inspect_outcome")),
         _ => None,
@@ -393,6 +396,68 @@ impl CustomError {
         }
     }
 
+    /// MCP (A6): the durable admission record was not confirmed, so the
+    /// tool did not run. Content-free on purpose.
+    pub fn mcp_audit_unavailable() -> Self {
+        Self {
+            slug: "mcp-audit-unavailable",
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            code: tonic::Code::Unavailable,
+            title: "MCP audit admission unavailable",
+            detail: "the durable audit admission for this tool call was not confirmed, so the \
+                     tool did not run; a keyed call may be recovered with the same key"
+                .into(),
+        }
+    }
+
+    /// MCP: the tool or argument form is not offered to this caller on this
+    /// deployment (paid tools disabled, recovery-only mode).
+    pub fn mcp_tool_unavailable(detail: &str) -> Self {
+        Self {
+            slug: "mcp-tool-unavailable",
+            status: StatusCode::FORBIDDEN,
+            code: tonic::Code::PermissionDenied,
+            title: "MCP tool form unavailable",
+            detail: detail.into(),
+        }
+    }
+
+    /// MCP §5.3: the operation key was already used for different arguments.
+    pub fn mcp_operation_conflict() -> Self {
+        Self {
+            slug: "mcp-operation-conflict",
+            status: StatusCode::CONFLICT,
+            code: tonic::Code::FailedPrecondition,
+            title: "operation key reused with different arguments",
+            detail: "this operation key already identifies a call with different arguments; \
+                     recover it with the key alone, or choose a new key for new work"
+                .into(),
+        }
+    }
+
+    /// MCP §5.3: the operation key cannot admit new work (expired, beyond the
+    /// validity window, or too short for the work deadline).
+    pub fn mcp_operation_key_invalid(detail: &str) -> Self {
+        Self {
+            slug: "mcp-operation-key-invalid",
+            status: StatusCode::BAD_REQUEST,
+            code: tonic::Code::InvalidArgument,
+            title: "operation key cannot admit work",
+            detail: detail.into(),
+        }
+    }
+
+    /// MCP: a tool result over `MUNARIUM_MCP_RESULT_MAX_BYTES`.
+    pub fn mcp_result_too_large(detail: String) -> Self {
+        Self {
+            slug: "result-too-large",
+            status: StatusCode::PAYLOAD_TOO_LARGE,
+            code: tonic::Code::ResourceExhausted,
+            title: "result too large",
+            detail,
+        }
+    }
+
     /// 503 load shed: the instance is at MUNARIUM_MAX_CONCURRENCY. Registered
     /// in errors.md since the milestone as "reserved: not yet emitted" — emitted for
     /// real since 2026-08-17. REST responses also carry `Retry-After: 1`.
@@ -462,6 +527,36 @@ fn command_unresolved(e: &KernelError) -> Option<CustomError> {
         title: "command outcome is unresolved",
         detail: message.strip_prefix(COMMAND_UNRESOLVED_PREFIX)?.into(),
     })
+}
+
+/// The MCP generation sentinels (ClearView A2/A8, `mcp_generation`): raised
+/// only under an MCP tool dispatch, promoted here like `daily-cap`.
+fn mcp_generation_error(e: &KernelError) -> Option<CustomError> {
+    use crate::mcp_generation::{ACCOUNTING_PREFIX, ALLOWANCE_PREFIX, NOT_AUTHORIZED_PREFIX};
+    match e {
+        KernelError::Forbidden(m) => Some(CustomError {
+            slug: "mcp-generation-not-authorized",
+            status: StatusCode::FORBIDDEN,
+            code: tonic::Code::PermissionDenied,
+            title: "MCP generation is not authorized",
+            detail: m.strip_prefix(NOT_AUTHORIZED_PREFIX)?.into(),
+        }),
+        KernelError::RateLimited(m) => Some(CustomError {
+            slug: "mcp-allowance-exhausted",
+            status: StatusCode::TOO_MANY_REQUESTS,
+            code: tonic::Code::ResourceExhausted,
+            title: "MCP token allowance exhausted",
+            detail: m.strip_prefix(ALLOWANCE_PREFIX)?.into(),
+        }),
+        KernelError::Storage(m) => Some(CustomError {
+            slug: "mcp-accounting-unavailable",
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            code: tonic::Code::Unavailable,
+            title: "MCP generation accounting unavailable",
+            detail: m.strip_prefix(ACCOUNTING_PREFIX)?.into(),
+        }),
+        _ => None,
+    }
 }
 
 fn source_denied(e: &KernelError) -> Option<CustomError> {
@@ -583,6 +678,9 @@ pub fn slug(e: &KernelError) -> &'static str {
 }
 
 pub fn to_problem(e: &KernelError) -> (StatusCode, Problem) {
+    if let Some(error) = mcp_generation_error(e) {
+        return error.to_problem();
+    }
     if let Some(error) = command_unresolved(e) {
         return error.to_problem();
     }
@@ -735,6 +833,9 @@ impl std::fmt::Display for ApiError {
 }
 
 pub fn to_status(e: &KernelError) -> tonic::Status {
+    if let Some(error) = mcp_generation_error(e) {
+        return error.to_status();
+    }
     if let Some(error) = source_denied(e) {
         return error.to_status();
     }

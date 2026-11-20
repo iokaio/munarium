@@ -36,6 +36,31 @@ pub const BUCKETS: [f64; 12] = [
 /// the polled gauges, which always exist).
 const METRICS_META: &[(&str, &str, &str)] = &[
     (
+        "munarium_mcp_requests_total",
+        "counter",
+        "MCP endpoint requests by JSON-RPC method (bounded set) and outcome.",
+    ),
+    (
+        "munarium_mcp_tool_calls_total",
+        "counter",
+        "MCP tool calls by tool and outcome (completed, refused, receipt, audit-refused, ...).",
+    ),
+    (
+        "munarium_mcp_admissions_total",
+        "counter",
+        "Confirmed durable MCP admissions (A6) by tool and form.",
+    ),
+    (
+        "munarium_mcp_audit_refusals_total",
+        "counter",
+        "MCP tool calls refused because the durable admission was not confirmed, by reason.",
+    ),
+    (
+        "munarium_mcp_dispatches_total",
+        "counter",
+        "MCP tool handlers started after a confirmed admission, by tool.",
+    ),
+    (
         "munarium_build_info",
         "gauge",
         "Build metadata; value is always 1.",
@@ -257,6 +282,16 @@ fn write<T>(lock: &RwLock<T>) -> RwLockWriteGuard<'_, T> {
 }
 
 impl Metrics {
+    /// The sum of a counter's series whose label text contains `needle`
+    /// (empty matches every series). Read by the console's MCP page.
+    pub fn counter_sum(&self, metric: &str, needle: &str) -> u64 {
+        read(&self.counters)
+            .iter()
+            .filter(|((m, l), _)| *m == metric && l.contains(needle))
+            .map(|(_, c)| c.load(Ordering::Relaxed))
+            .sum()
+    }
+
     pub fn inc(&self, metric: &'static str, labels: String) {
         self.inc_by(metric, labels, 1);
     }

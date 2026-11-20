@@ -96,6 +96,18 @@ mints an HS256 JWT with claims:
   on a read, *and* refused when it tries to SEAL above its own clearance —
   otherwise a low-clearance service could mint high-clearance evidence that
   every later reader would trust.
+
+  Two additive scopes (ClearView, experimental). **`mcp`** is a transport-entry
+  scope for the opt-in MCP endpoint: it admits authenticated discovery and a
+  scope-filtered tool listing, and nothing else. Each MCP tool also needs its
+  ordinary scope, and `mcp` grants nothing on any native route, so adding it
+  never widens a token and a deployment that never enables MCP never honours
+  it. **`evidence_read`** is the read-only evidence capability: it opens the
+  manifest and row reads (`GET /v1/evidence/{id}`, `/rows`) natively and the
+  two MCP evidence readers, with the same per-artifact domination, retention
+  and access audit as `evidence`, and it can never seal, upload or commit.
+  Neither scope is carried by a static token. See [MCP endpoint
+  authority](#mcp-endpoint-clearview-experimental).
 - `rb` — optional runbook-name allowlist.
 - `exp` — short TTL (default `MUNARIUM_TOKEN_TTL_SECS=3600`, hard cap 24 h).
 
@@ -174,6 +186,50 @@ while making the audit trail ambiguous about who decided what. The server
 therefore does the one thing only it can do — enforce data compartments and
 record the evidence — and refuses to pretend it knows who a human is.
 
+### MCP endpoint (ClearView, experimental)
+
+`POST /mcp` exists only with `MUNARIUM_MCP=enabled` ([operator guide](ops/mcp.md)).
+Its security properties, each covered by a named test in `mcp_tests.rs`:
+
+- **Entry.** Only a valid, unrevoked, tenant-bound capability JWT carrying
+  `mcp`; static role tokens are refused even with full native authority. 401
+  answers carry `WWW-Authenticate: Bearer`; an asserted uid must equal the
+  token subject. Requests with a non-allowlisted `Origin` get 403.
+- **Authority is the intersection.** Every tool needs its own operation scope
+  (`query`, or `evidence_read` for the two evidence readers) on the listing
+  and on a direct call, and the native handler then runs with the caller's own
+  bearer and applies tenant, clearance, compartment, resource, runbook and
+  retention checks. The two listing tools filter by the same rules before
+  ordering, counting and paging. Session tools also require that the live
+  token still owns and covers the session's recorded clearance (stricter than
+  native). A v1.4 `evidence` token does not open the MCP evidence readers.
+- **Closed table.** Eleven tools, each compiled to one fixed native route or
+  dedicated read; the caller supplies no route, method or query. No tool
+  reaches index lifecycle, ingestion, providers, budgets, tokens, evidence
+  writes, governed memory, reports or platform operations.
+- **Audit before execution.** A content-free admission row (`mcp_invocations`:
+  invocation id, tool, tenant, uid, token id, request id, time) is committed and
+  its acknowledgment confirmed before any tool reads data; otherwise the call is
+  refused and nothing runs. A memory-only deployment refuses every tool call.
+  Interaction rows on the `mcp` plane carry no arguments or results.
+- **Spend.** No MCP call reaches a model without `MUNARIUM_MCP_PAID_TOOLS=enabled`
+  and a trusted policy naming a budget owner and request and UTC-day token
+  allowances for every contributing collection. Each physical attempt,
+  including adapter retries, is reserved before it is sent; tool arguments
+  cannot choose the policy or payer.
+- **Recovery without replay.** Operation keys are bound to tenant, uid and
+  tool; duplicates and recovery reads are admitted separately, recheck current
+  authority before revealing anything, never re-execute, and treat absent and
+  inaccessible keys alike. Receipts hold no bodies, transcripts, answers or
+  evidence.
+- **Residual risks.** `mcp` is not a confinement: the same token's `query`
+  scope works on native routes. Revocation applies to MCP only with
+  `MUNARIUM_TOKEN_REVOCATION_CHECK=true`. Tool results are untrusted content
+  for the agent's model; prompt-injection resistance belongs to the client.
+  The generation policy file is trusted configuration; protect it like other
+  deployment secrets' configuration. Real-client interoperability is not yet
+  qualified ([pending receipts](ops/mcp-client-qualification.md)).
+
 ## 5. Static token roles
 
 `MUNARIUM_STATIC_TOKENS="token:tenant:role"` with role ∈ `rw | ro | mgmt`:
@@ -242,4 +298,5 @@ enabling it anywhere new.
 - [ ] Network policy: :8080/:50051 reachable only from the manager; :9090 ops reachable only from the platform.
 - [ ] `MUNARIUM_TOKEN_TTL_SECS` tuned to the manager's session length (shorter is better).
 - [ ] Decide `MUNARIUM_TOKEN_REVOCATION_CHECK` per compliance posture.
+- [ ] Leave `MUNARIUM_MCP` unset unless agents need the endpoint; if enabled, set `MUNARIUM_TOKEN_REVOCATION_CHECK=true`, restrict `MUNARIUM_MCP_ALLOWED_ORIGINS`, and have the broker issue `mcp` only with the narrowest data-plane scopes ([operator guide](ops/mcp.md)).
 - [ ] Postgres credentials distinct from any app secret; the DBA deletion runbook (`docs/ops/index-deletion-runbook.md`) gated by change control.

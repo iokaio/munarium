@@ -1424,7 +1424,7 @@ pub struct TimeseriesResponse {
     pub window: String,
     /// Bucket width the window resolved to.
     pub bucket_seconds: i64,
-    /// rest | grpc when the query filtered by plane.
+    /// rest | grpc | mcp when the query filtered by plane.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plane: Option<String>,
     pub buckets: Vec<TimeseriesBucket>,

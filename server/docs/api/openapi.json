@@ -14273,7 +14273,7 @@
               "string",
               "null"
             ],
-            "description": "rest | grpc when the query filtered by plane."
+            "description": "rest | grpc | mcp when the query filtered by plane."
           },
           "window": {
             "type": "string",

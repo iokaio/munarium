@@ -488,9 +488,22 @@ async fn complete_guarded(
             }
         }
     }
+    // ClearView A8/A9: under an MCP tool dispatch, every physical attempt of
+    // this completion is reserved against the MCP allowances by the attempt
+    // observer, sized by this bound. Native traffic computes nothing here.
+    let mcp_bound = match crate::mcp_generation::current() {
+        Some(_) => Some(crate::mcp_generation::bound_for(&input, schema.as_ref())?),
+        None => None,
+    };
     let started = std::time::Instant::now();
-    let (result, admitted) =
-        crate::money_api::capture(state, tenant, &entry, &model, estimated_units, async {
+    let (result, admitted) = crate::money_api::capture(
+        state,
+        tenant,
+        &entry,
+        &model,
+        estimated_units,
+        mcp_bound,
+        async {
             match schema {
                 Some(schema) => {
                     entry
@@ -500,8 +513,9 @@ async fn complete_guarded(
                 }
                 None => entry.provider.complete_detailed(input).await,
             }
-        })
-        .await;
+        },
+    )
+    .await;
     if !admitted {
         if let Some(r) = cap_reservation.take() {
             if state.budgets().release(&r).await.is_err() {
@@ -648,6 +662,7 @@ pub async fn op_embed(
                 &entry,
                 &model,
                 est,
+                None,
                 entry.provider.embed(EmbeddingRequest {
                     model: model.clone(),
                     inputs,

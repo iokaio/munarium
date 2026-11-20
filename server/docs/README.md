@@ -85,6 +85,8 @@ and API references when applying them to a new deployment.
 | [ops/retention-inventory.md](ops/retention-inventory.md) | Declared retention by schema and artifact, removal modes, derived content and tested limits |
 | [ops/source-retention.md](ops/source-retention.md) | Explicit source denial, bounded original cleanup, holds and restore replay |
 | [ops/command-recovery.md](ops/command-recovery.md) | Guarded command activation, unresolved outcomes and compatible rollback |
+| [ops/mcp.md](ops/mcp.md) | The opt-in MCP endpoint (experimental): enabling it, authority, generation policy, operation keys, console and rollback |
+| [ops/mcp-client-qualification.md](ops/mcp-client-qualification.md) | Procedure for the pending real-client MCP transcripts (A3-T2, A3-T3) |
 | [ops/clustering.md](ops/clustering.md) | Running N instances on one PostgreSQL (2026-08-17): shared-vs-per-instance inventory, pool math, rolling restarts, orphaned-run diagnosis, partition-overflow recovery |
 | [ops/deployment-runbook.md](ops/deployment-runbook.md) | Deploying with what ships: gate → build and push the image → install or upgrade the Helm chart (or the example AKS module) → verify the rollout, not the hostname → roll back → backups |
 | [ops/artifact-damage.md](ops/artifact-damage.md) | Opt-in durable artifact damage: enabling it, reading a fleet block, preauthorizing a repair workflow and rolling back safely |

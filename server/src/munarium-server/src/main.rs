@@ -70,6 +70,10 @@ mod interactions;
 #[cfg(test)]
 mod json_persistence_tests;
 mod max_tokens_api;
+mod mcp;
+mod mcp_generation;
+mod mcp_store;
+mod mcp_tools;
 mod metrics;
 mod middleware;
 mod models;
@@ -179,6 +183,22 @@ async fn serve() {
             max_secs = s.max_secs,
             secure_cookie = s.secure_cookie,
             "console sessions enabled (MUNARIUM_CONSOLE_SESSIONS=enabled)"
+        ),
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("config error: {e}");
+            std::process::exit(2);
+        }
+    }
+    // The MCP endpoint (ClearView A1-A9). Off unless MUNARIUM_MCP=enabled;
+    // every MCP setting is validated either way, and an enabled endpoint is
+    // checked against the rest of the configuration before anything binds.
+    match mcp::McpSettings::from_env().and_then(|s| s.check_compatible(&config).map(|_| s)) {
+        Ok(s) if s.enabled => tracing::info!(
+            paid_tools = s.paid_tools,
+            execution = ?s.execution,
+            policies = s.generation.len(),
+            "MCP endpoint enabled (MUNARIUM_MCP=enabled): POST /mcp on the REST listener"
         ),
         Ok(_) => {}
         Err(e) => {

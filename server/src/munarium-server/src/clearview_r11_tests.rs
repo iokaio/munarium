@@ -48,6 +48,13 @@ const CLASSIFIED: &[(&str, Option<(bool, &str)>)] = &[
     ("evidence-grant-invalid", None),
     ("evidence-on-hold", None),
     ("result-too-large", None),
+    ("mcp-audit-unavailable", Some((false, "retry_later"))),
+    ("mcp-tool-unavailable", None),
+    ("mcp-operation-conflict", None),
+    ("mcp-operation-key-invalid", None),
+    ("mcp-generation-not-authorized", None),
+    ("mcp-allowance-exhausted", Some((false, "retry_later"))),
+    ("mcp-accounting-unavailable", Some((false, "retry_later"))),
 ];
 
 fn registered_slugs() -> Vec<String> {

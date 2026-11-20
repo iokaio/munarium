@@ -143,7 +143,7 @@ impl ServerApiSvc {
     }
 }
 
-fn component(value: &str) -> String {
+pub(crate) fn component(value: &str) -> String {
     let mut result = String::new();
     for b in value.bytes() {
         if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {

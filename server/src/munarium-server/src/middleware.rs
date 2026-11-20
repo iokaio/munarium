@@ -164,25 +164,35 @@ pub async fn capture(
     // with an opt-in reserve, authenticates here and takes a reserved slot
     // when the caller passes that route's own role check. Heavy routes also
     // need a heavy token when that bound is configured.
+    //
+    // An in-process dispatch from an admitted MCP tool call (`McpInner`, set
+    // only by crate::mcp_tools, never from the wire) already holds its R7
+    // slot, and its heavy token when the route is heavy, and is recorded once
+    // on the `mcp` plane: it is neither admitted nor recorded again here.
+    let mcp_inner = req.extensions().get::<crate::mcp::McpInner>().is_some();
     let class = crate::admission::rest_class(&http_method, &route);
-    let _permit = match state.admission.rest.admit(&state.metrics, class, |need| {
-        crate::admission::authorized(&state, crate::rest::bearer(req.headers()), need)
-    }) {
-        Some(p) => p,
-        None => {
-            let mut r = ApiError::Custom(CustomError::overloaded()).into_response();
-            r.headers_mut().insert(
-                axum::http::header::RETRY_AFTER,
-                axum::http::HeaderValue::from_static("1"),
-            );
-            record_http_metrics(
-                &state,
-                &route,
-                &http_method,
-                r.status().as_u16(),
-                started.elapsed().as_secs_f64(),
-            );
-            return r;
+    let _permit = if mcp_inner {
+        None
+    } else {
+        match state.admission.rest.admit(&state.metrics, class, |need| {
+            crate::admission::authorized(&state, crate::rest::bearer(req.headers()), need)
+        }) {
+            Some(p) => Some(p),
+            None => {
+                let mut r = ApiError::Custom(CustomError::overloaded()).into_response();
+                r.headers_mut().insert(
+                    axum::http::header::RETRY_AFTER,
+                    axum::http::HeaderValue::from_static("1"),
+                );
+                record_http_metrics(
+                    &state,
+                    &route,
+                    &http_method,
+                    r.status().as_u16(),
+                    started.elapsed().as_secs_f64(),
+                );
+                return r;
+            }
         }
     };
 
@@ -327,7 +337,7 @@ pub async fn capture(
             axum::http::HeaderValue::from_str(&request_id)
                 .unwrap_or(axum::http::HeaderValue::from_static("req-invalid")),
         );
-        let record = InteractionRecord {
+        let record = (!mcp_inner).then(|| InteractionRecord {
             tenant_id,
             uid,
             session_id: None,
@@ -341,11 +351,11 @@ pub async fn capture(
             response: None, // filled at end of stream: streamed marker + byte count
             status: Some(res_parts.status.as_u16() as i32),
             latency_ms: 0, // measured at stream end by the wrapper
-        };
+        });
         let wrapped = Body::new(SseCapture {
             inner: res_body,
             state: state.clone(),
-            record: Some(record),
+            record,
             route,
             http_method,
             started,
@@ -385,6 +395,9 @@ pub async fn capture(
         res_parts.status.as_u16(),
         started.elapsed().as_secs_f64(),
     );
+    if mcp_inner {
+        return axum::response::Response::from_parts(res_parts, Body::from(res_bytes));
+    }
     interactions::record(
         &state,
         InteractionRecord {
@@ -443,7 +456,7 @@ struct SseCapture {
     /// request the server serves — retrieval fan-out, expansion, completion,
     /// corrective retries — and releasing the permit with the head would
     /// leave exactly that work outside `MUNARIUM_MAX_CONCURRENCY`.
-    _permit: crate::admission::AdmissionPermit,
+    _permit: Option<crate::admission::AdmissionPermit>,
 }
 
 impl http_body::Body for SseCapture {

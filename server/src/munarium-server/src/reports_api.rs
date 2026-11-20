@@ -877,9 +877,9 @@ pub async fn op_timeseries(
 ) -> Result<dto::TimeseriesResponse> {
     let (window_secs, bucket_secs) = parse_window(window)?;
     if let Some(p) = plane {
-        if p != "rest" && p != "grpc" {
+        if p != "rest" && p != "grpc" && p != "mcp" {
             return Err(KernelError::InvalidInput(format!(
-                "plane must be rest|grpc, got '{p}'"
+                "plane must be rest|grpc|mcp, got '{p}'"
             )));
         }
     }

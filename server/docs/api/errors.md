@@ -26,7 +26,7 @@ same names (`"true"`/`"false"` and the action string):
 | Slug | `retryable` | `retry_action` | Meaning |
 |---|---|---|---|
 | `overloaded` | `true` | `repeat` | Shed at admission before any handler ran. The identical request may be repeated after `Retry-After`. |
-| `rate-limited`, `daily-cap-reached`, `run-locked`, `datastore-unavailable`, `inference-stage-unavailable` | `false` | `retry_later` | Transient, but the response does not prove the request had no effect. Repeat only a safe read or a request under a documented idempotency key; otherwise decide again later. Existing `Retry-After` headers are unchanged. |
+| `rate-limited`, `daily-cap-reached`, `run-locked`, `datastore-unavailable`, `inference-stage-unavailable`, `mcp-audit-unavailable`, `mcp-allowance-exhausted`, `mcp-accounting-unavailable` | `false` | `retry_later` | Transient, but the response does not prove the request had no effect. Repeat only a safe read or a request under a documented idempotency key; otherwise decide again later. Existing `Retry-After` headers are unchanged. |
 | `head-conflict`, `inference-not-qualified` | `false` | `reread` | Read the current head (or the collection's inference state) and make a fresh decision. Never replay the stale request. |
 | `command-unresolved` | `false` | `inspect_outcome` | The guarded command's outcome is unknown. Inspect it ([guarded command recovery](../ops/command-recovery.md)) before explicitly authorizing a new key. Never replay automatically. |
 
@@ -93,7 +93,29 @@ cannot probe for valid grant ids.
 | `evidence-hash-mismatch` | 409 | `FAILED_PRECONDITION` | the bytes do not match the manifest's `artifact_hash` or `bytes_len`. Fails closed — nothing is stored. |
 | `evidence-grant-invalid` | 403 | `PERMISSION_DENIED` | the upload grant is unknown, expired, already spent, or bound to a different artifact. One slug for all four, on purpose. |
 | `evidence-on-hold` | 409 | `FAILED_PRECONDITION` | the artifact is under legal hold and cannot be purged. Distinct from `evidence-expired`: that one says the bytes are already gone, this one says they are deliberately being kept. A hold blocks deletion and never reading. |
-| `result-too-large` | 413 | `RESOURCE_EXHAUSTED` | the artifact is over the 1 MiB inline cap; the detail names the grant flow to use instead. |
+| `result-too-large` | 413 | `RESOURCE_EXHAUSTED` | the artifact is over the 1 MiB inline cap; the detail names the grant flow to use instead. On the MCP endpoint, also a tool result over `MUNARIUM_MCP_RESULT_MAX_BYTES`; the detail names a smaller limit or cursor, or the recovery read for an operation that ran. |
+
+### MCP endpoint slugs
+
+Experimental (ClearView, [operating the MCP endpoint](../ops/mcp.md)). These
+are returned only by the opt-in `POST /mcp` endpoint, inside a tool result with
+`isError: true` whose structured content is the problem and whose
+`_meta["io.munarium/problem"]` is the slug. The two generation slugs and
+`mcp-accounting-unavailable` are raised only under an MCP tool call; native
+routes never return any of these. Entry refusals (`unauthenticated`,
+`token-expired`, `token-revoked`, `scope-missing`, `uid-mismatch`, `forbidden`)
+keep their registered meanings and HTTP statuses, with a `Bearer` challenge on
+401.
+
+| Slug | HTTP | gRPC code | Meaning |
+|---|---|---|---|
+| `mcp-audit-unavailable` | 503 | `UNAVAILABLE` | the durable admission record for the tool call was not confirmed (no durable store, store error, deadline, or a lost commit acknowledgment), so the tool **did not run**: no read, mutation, reservation or provider call. The problem carries `executed: false`. Content-free. A keyed call can be recovered with the same operation key. |
+| `mcp-tool-unavailable` | 403 | `PERMISSION_DENIED` | the tool or argument form is not offered on this deployment: the execution form of a generating tool with `MUNARIUM_MCP_PAID_TOOLS=disabled`, or any keyed execution with `MUNARIUM_MCP_EXECUTION=recovery-only`. The recovery form (the operation key alone) stays available. |
+| `mcp-operation-conflict` | 409 | `FAILED_PRECONDITION` | the operation key already identifies a call with different arguments. Nothing ran. Recover with the key alone, or choose a new key for new work. |
+| `mcp-operation-key-invalid` | 400 | `INVALID_ARGUMENT` | the operation key cannot admit work: expired, beyond `MUNARIUM_MCP_KEY_MAX_VALIDITY_SECS`, expiring before the work deadline, or expired before dispatch. Nothing ran. A client never extends a key or mints a replacement automatically. |
+| `mcp-generation-not-authorized` | 403 | `PERMISSION_DENIED` | an MCP call reached a model stage that is not authorized: generation disabled, a contributing collection without a budget owner and both allowances, no common budget owner, or a model suspended after usage exceeded its reservation bound. Refused before the provider is contacted. |
+| `mcp-allowance-exhausted` | 429 | `RESOURCE_EXHAUSTED` | the next physical model attempt does not fit the call's request allowance or a contributor's UTC-day allowance. Refused before dispatch with nothing reserved. Earlier stages of the same call may have run and been charged. |
+| `mcp-accounting-unavailable` | 503 | `UNAVAILABLE` | the generation accounting store could not reserve the attempt, so no model call was made. |
 
 ## Idempotency scope
 

@@ -815,6 +815,43 @@
         "restore": "Preserve revocations; never restore a row as live.",
         "coverage": "History fixtures prove their stated invariants, not general retention deadlines."
       }
+    },
+    "mcp": {
+      "retrieval_exclusion": {
+        "read": "Holds no corpus content: tool names, identifiers, status, token counts and digests only; collection exclusion does not apply.",
+        "cleanup": "No physical deletion implied.",
+        "holds": "No hold API; a retained row grants no MCP or native authority.",
+        "restore": "Restored rows grant nothing; a restored operation key can only return a receipt after current authority is rechecked.",
+        "coverage": "Gap: no universal exclusion fixture across all surfaces."
+      },
+      "access_revocation": {
+        "read": "Every MCP request re-verifies the token (revocation with MUNARIUM_TOKEN_REVOCATION_CHECK=true); receipts recheck current resource authority and retention before revealing anything, and absent and inaccessible keys look the same.",
+        "cleanup": "Revocation does not erase audit, receipt or accounting rows.",
+        "holds": "Retention/hold grants no authority.",
+        "restore": "Reconcile the token deny-list before serving a restore.",
+        "coverage": "mcp_tests.rs covers renewal, narrowed authority, other-uid isolation and revoked tokens."
+      },
+      "logical_removal": {
+        "read": "Keyed operations move pending -> completed/refused/withheld, or read unknown past their deadline; nothing is soft-deleted.",
+        "cleanup": "Lifecycle state changes do not imply deletion.",
+        "holds": "No new hold mechanism.",
+        "restore": "An older backup can roll keys back to pending; they read unknown after their deadline and are never replayed.",
+        "coverage": "Gap: no general logical-removal/restore conformance suite."
+      },
+      "physical_erasure": {
+        "read": "No per-row erasure API.",
+        "cleanup": "mcp_operations rows are deleted one day after their immutable expiry by a janitor that runs only while MUNARIUM_MCP=enabled; mcp_invocations, mcp_token_attempts, their scopes and mcp_bound_violations are never pruned by the server, and an operator may delete them directly.",
+        "holds": "No per-row hold.",
+        "restore": "No durable erasure journal/replay contract; restored state cannot claim general erasure compliance.",
+        "coverage": "Gap: no all-copy erasure, partial-failure or backup-restore closure fixture."
+      },
+      "protected_retention": {
+        "read": "Retained as the A6 durable audit of agent tool calls and the A8/A9 token accounting under the mgmt role of the same tenant (console /admin/mcp).",
+        "cleanup": "Operation keys are kept at least through their expiry, across restarts; audit and accounting have no server deadline.",
+        "holds": "Evidence holds are separate; no legal-hold API here.",
+        "restore": "Preserve reservations against their original UTC day; never restore an unknown outcome as completed.",
+        "coverage": "History fixtures prove their stated invariants, not general retention deadlines."
+      }
     }
   },
   "tables": {
@@ -2688,6 +2725,127 @@
         "src/munarium-store-pg/migrations/0080_inference_stages.sql",
         "src/munarium-retrieval/src/inference.rs",
         "src/munarium-server/src/inference.rs"
+      ]
+    },
+    "mcp_invocations": {
+      "columns": {
+        "invocation_id": "text",
+        "tenant_id": "text",
+        "uid": "text",
+        "token_jti": "text",
+        "request_id": "text",
+        "tool": "text",
+        "protocol_version": "text",
+        "form": "text",
+        "original_invocation_id": "text",
+        "instance_id": "text",
+        "admitted_at": "timestamptz",
+        "dispatched_at": "timestamptz",
+        "outcome": "text",
+        "outcome_status": "integer",
+        "outcome_at": "timestamptz"
+      },
+      "content": "The A6 durable admission of each MCP tool call: server invocation id, fixed tool name, tenant, uid, token id, request id, protocol revision, form, admitting replica, admission/dispatch/outcome times, outcome and status, and the original invocation a duplicate or recovery read links to. Never credentials, arguments, retrieved text or evidence.",
+      "json_content": {},
+      "owner": "Tenant operators (mgmt role) and the database operator, who controls retained copies.",
+      "policy": "mcp",
+      "origins": [
+        "src/munarium-store-pg/migrations/0070_mcp_endpoint.sql",
+        "src/munarium-server/src/mcp_store.rs"
+      ]
+    },
+    "mcp_operations": {
+      "columns": {
+        "tenant_id": "text",
+        "uid": "text",
+        "tool": "text",
+        "key_id": "text",
+        "expires_at": "timestamptz",
+        "args_digest": "text",
+        "invocation_id": "text",
+        "state": "text",
+        "deadline_at": "timestamptz",
+        "resources": "jsonb",
+        "http_status": "integer",
+        "problem_type": "text",
+        "session_id": "text",
+        "turn_ordinal": "integer",
+        "result_bytes": "bigint",
+        "result_too_large": "boolean",
+        "created_at": "timestamptz",
+        "outcome_at": "timestamptz"
+      },
+      "content": "Caller-known MCP operation keys bound to tenant, uid and tool: immutable expiry, SHA-256 of the canonical arguments, the original invocation id, state, work deadline and a bounded receipt (status, problem type, session id, turn ordinal, result size). Never request bodies, transcripts, answers or evidence.",
+      "json_content": {
+        "resources": "The resource identifiers a receipt's authority recheck needs: a session id, a runbook name or collection names/ids the call named."
+      },
+      "owner": "The calling user's tenant; the database operator controls retained copies.",
+      "policy": "mcp",
+      "origins": [
+        "src/munarium-store-pg/migrations/0070_mcp_endpoint.sql",
+        "src/munarium-server/src/mcp_store.rs"
+      ]
+    },
+    "mcp_token_attempts": {
+      "columns": {
+        "attempt_id": "text",
+        "invocation_id": "text",
+        "tenant_id": "text",
+        "payer": "text",
+        "day": "date",
+        "provider_config": "text",
+        "model": "text",
+        "request_ceiling": "bigint",
+        "bound_units": "bigint",
+        "settled_units": "bigint",
+        "state": "text",
+        "created_at": "timestamptz",
+        "settled_at": "timestamptz"
+      },
+      "content": "One row per physical MCP generation attempt reserved under the A8/A9 allowances: the invocation it serves, the budget owner charged, the UTC day, provider configuration name and model, the request ceiling, the reservation bound and settled usage. No prompt or completion text.",
+      "json_content": {},
+      "owner": "Tenant operators and the named budget owner; the database operator controls retained copies.",
+      "policy": "mcp",
+      "origins": [
+        "src/munarium-store-pg/migrations/0070_mcp_endpoint.sql",
+        "src/munarium-server/src/mcp_generation.rs"
+      ]
+    },
+    "mcp_token_attempt_scopes": {
+      "columns": {
+        "attempt_id": "text",
+        "tenant_id": "text",
+        "scope_kind": "text",
+        "scope_id": "text",
+        "day": "date"
+      },
+      "content": "The collection and index scopes each MCP generation attempt was charged to, for the UTC-day allowances. Identifiers only.",
+      "json_content": {},
+      "owner": "Tenant operators; the database operator controls retained copies.",
+      "policy": "mcp",
+      "origins": [
+        "src/munarium-store-pg/migrations/0070_mcp_endpoint.sql",
+        "src/munarium-server/src/mcp_generation.rs"
+      ]
+    },
+    "mcp_bound_violations": {
+      "columns": {
+        "attempt_id": "text",
+        "tenant_id": "text",
+        "provider_config": "text",
+        "model": "text",
+        "bound_units": "bigint",
+        "observed_units": "bigint",
+        "recorded_at": "timestamptz",
+        "cleared_at": "timestamptz"
+      },
+      "content": "MCP generation attempts whose provider-reported usage exceeded the reservation bound: the bound, the observed usage and when an operator cleared the suspension. No prompt or completion text.",
+      "json_content": {},
+      "owner": "Tenant operators and the database operator.",
+      "policy": "mcp",
+      "origins": [
+        "src/munarium-store-pg/migrations/0070_mcp_endpoint.sql",
+        "src/munarium-server/src/mcp_generation.rs"
       ]
     }
   },

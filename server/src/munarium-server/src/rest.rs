@@ -1422,8 +1422,20 @@ port-forward with a strict CSP and zero external assets.</p>
     ))
 }
 
+/// The REST router. With `MUNARIUM_MCP=enabled` it also carries `POST /mcp`
+/// (crate::mcp); with the switch unset (the default) no `/mcp` route exists.
 pub fn router(state: Arc<AppState>) -> Router {
-    Router::new()
+    build_router(state, true)
+}
+
+/// The native router without `/mcp`: the MCP endpoint's in-process
+/// dispatch target, so a tool can never reach the endpoint itself.
+pub fn router_without_mcp(state: Arc<AppState>) -> Router {
+    build_router(state, false)
+}
+
+fn build_router(state: Arc<AppState>, with_mcp: bool) -> Router {
+    let routes = Router::new()
         .route(
             "/v1/platform/{tenant}/activation",
             post(crate::platform_activation::platform_activation)
@@ -1861,7 +1873,14 @@ pub fn router(state: Arc<AppState>) -> Router {
         // /admin operator console — dashboards + control-plane viewers and
         // actions (mgmt-auth HTML; outside /v1 and outside the OpenAPI
         // contract, like /docs).
-        .merge(crate::dashboard::routes())
+        .merge(crate::dashboard::routes());
+    // ClearView MCP: registered only when the operator enabled it.
+    let routes = if with_mcp && state.mcp.settings.enabled {
+        crate::mcp::mount(routes, state.clone())
+    } else {
+        routes
+    };
+    routes
         // uid contract + interaction capture over every /v1 route (meta
         // routes pass through untouched inside the middleware).
         .layer(axum::middleware::from_fn_with_state(

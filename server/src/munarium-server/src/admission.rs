@@ -427,6 +427,19 @@ impl PlaneAdmission {
         }
     }
 
+    /// A heavy token alone, for work already holding an ordinary slot: the
+    /// MCP endpoint admits its request as ordinary before reading the body
+    /// and takes the heavy token once it knows the tool's native route is
+    /// heavy (`rest_class`), so the inner dispatch, which the capture
+    /// middleware does not admit again, is bounded exactly like the native
+    /// route. `Some(None)` when no heavy bound is configured.
+    pub fn try_heavy(&self) -> Option<Option<OwnedSemaphorePermit>> {
+        match &self.heavy {
+            None => Some(None),
+            Some(h) => h.clone().try_acquire_owned().ok().map(Some),
+        }
+    }
+
     /// (pool, capacity, in use) for the polled gauges. The reserve and heavy
     /// pools appear only when configured.
     pub fn usage(&self) -> Vec<(&'static str, usize, usize)> {
