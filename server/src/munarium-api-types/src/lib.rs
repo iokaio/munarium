@@ -940,6 +940,28 @@ pub struct SearchStageDto {
     /// Candidates the reranker scored.
     #[serde(default)]
     pub scored: Option<u64>,
+    /// The collection this receipt is for. Present only on a
+    /// multi-collection read (a session turn or `POST /v1.2/query`), whose
+    /// `execution.stages` holds one receipt per enrolled member and stage;
+    /// absent on a single-collection search.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collection: Option<String>,
+}
+
+/// The inference stages of a multi-collection read (ClearView IR-3): one
+/// receipt per enrolled member and configured stage, each naming its
+/// collection. Present only when a member of the read is enrolled, so a read
+/// of unenrolled collections serializes exactly as before.
+///
+/// Reranking on such a read is group reranking (design 8.6): members whose
+/// stages share the reranker, the payer and processing binding, the outage
+/// policy and the caps are scored by one call and reordered only within the
+/// fused positions they held.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct ReadExecutionDto {
+    /// Disclosure format version; currently 1.
+    pub version: u32,
+    pub stages: Vec<SearchStageDto>,
 }
 
 /// One retrieval leg's observations (ClearView R1).
@@ -2020,6 +2042,10 @@ pub struct CoveredTurnResponse {
     pub turn: TurnResponse,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coverage: Option<TurnCoverageDto>,
+    /// ClearView IR-3: the enrolled members' inference stage receipts.
+    /// Present only when a searched member is enrolled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution: Option<ReadExecutionDto>,
 }
 
 /// Split one optional extension member off a v1.4 response object, decoding
@@ -2055,8 +2081,24 @@ impl<'de> Deserialize<'de> for DisclosedSearchResponse {
 
 impl<'de> Deserialize<'de> for CoveredTurnResponse {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let (turn, coverage) = split_extension(deserializer, "coverage")?;
-        Ok(Self { turn, coverage })
+        use serde::de::Error as _;
+        let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+        let mut members: std::collections::BTreeMap<String, &serde_json::value::RawValue> =
+            serde_json::from_str(raw.get()).map_err(D::Error::custom)?;
+        let execution = members
+            .remove("execution")
+            .map(|value| serde_json::from_str::<Option<ReadExecutionDto>>(value.get()))
+            .transpose()
+            .map_err(D::Error::custom)?
+            .flatten();
+        let rest = serde_json::to_string(&members).map_err(D::Error::custom)?;
+        let mut de = serde_json::Deserializer::from_str(&rest);
+        let (turn, coverage) = split_extension(&mut de, "coverage").map_err(D::Error::custom)?;
+        Ok(Self {
+            turn,
+            coverage,
+            execution,
+        })
     }
 }
 

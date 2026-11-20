@@ -38,6 +38,11 @@ pub struct CollectionQueryResponse {
     pub governance_revisions: BTreeMap<String, i64>,
     pub vocabulary_revisions: BTreeMap<String, i64>,
     pub effective_on: String,
+    /// ClearView IR-3: the enrolled members' inference stage receipts, each
+    /// naming its collection id. Present only when an enrolled collection
+    /// was searched, so a query of unenrolled collections is unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution: Option<munarium_api_types::ReadExecutionDto>,
 }
 
 #[derive(Debug, Default, Deserialize, utoipa::IntoParams)]
@@ -362,8 +367,28 @@ pub async fn query_collections(
         )
         .into());
     };
+    // Every pool prepares the request's question; the reranker scores
+    // candidates against that original question.
+    let rerank_query = pools.first().map(|(_, prepared, _)| prepared.clone());
     let mut results = Vec::new();
+    // One multi-collection read (IR-3): enrolled members' plans, one query
+    // embedding per compatible group, and their stage receipts. Inert when
+    // no member is enrolled.
+    let read = munarium_retrieval::inference::FanOutRead::default();
     if !decisions_require_review {
+        let pins: Vec<_> = pools
+            .iter()
+            .flat_map(|(members, prepared, _)| {
+                members.iter().map(move |t| {
+                    (
+                        t.info.id.as_str(),
+                        t.publication.as_ref().map(|p| p.index_version.as_str()),
+                        prepared.as_ref(),
+                    )
+                })
+            })
+            .collect();
+        retrieval.prepare_fan_out(&read, &pins).await;
         for (members, prepared, concurrency) in pools {
             for batch in members.chunks(concurrency.min(query_policy.retrieval_concurrency)) {
                 recheck(&state, &headers, &uid, &snapshots, &[]).await?;
@@ -371,13 +396,14 @@ pub async fn query_collections(
                 for mut target in batch.iter().cloned() {
                     let retrieval = retrieval.clone();
                     let prepared = prepared.clone();
+                    let read = read.clone();
                     tasks.spawn(async move {
                         let pin = target
                             .publication
                             .as_ref()
                             .map(|p| p.index_version.as_str());
                         let (mut result, domain) = retrieval
-                            .search_collection_measured(&target.info.id, &prepared, pin)
+                            .search_fan_out(&read, &target.info.id, &prepared, pin)
                             .await?;
                         // BM25 depends on the corpus statistics of its index;
                         // separate indexes and different expanded queries are
@@ -446,13 +472,30 @@ pub async fn query_collections(
             )
         })
         .collect();
-    let hits = munarium_retrieval::merge::merge_hits_in_domains(
+    let mut hits = munarium_retrieval::merge::merge_hits_in_domains(
         &merged_inputs,
         results.iter().map(|(_, r)| r.hits.len()).sum(),
         60.0,
         &Default::default(),
         &domains,
     );
+    // IR-3: rerank enrolled members in groups, each only within the fused
+    // positions it holds, before passages are packed. A `require` group
+    // whose stage cannot run refuses the query (I1).
+    if let Some(prepared) = rerank_query.as_ref() {
+        let refused = retrieval
+            .rerank_merged(&read, prepared, &mut hits, &|pool: &String| {
+                pool.parse::<usize>()
+                    .ok()
+                    .and_then(|i| results.get(i))
+                    .map(|(t, _)| t.info.id.clone())
+            })
+            .await;
+        if let Some(group) = refused.into_iter().next() {
+            return Err(group.error.into());
+        }
+    }
+    let stages: Vec<_> = read.receipts().iter().map(crate::rest::stage_dto).collect();
     let mut sources = Vec::new();
     let mut references = HashMap::new();
     let mut used = HashSet::new();
@@ -563,5 +606,7 @@ pub async fn query_collections(
             .map(|s| (s.info.id.clone(), s.vocabulary_revision))
             .collect(),
         effective_on: at.to_string(),
+        execution: (!stages.is_empty())
+            .then_some(munarium_api_types::ReadExecutionDto { version: 1, stages }),
     }))
 }

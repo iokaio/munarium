@@ -706,21 +706,34 @@ pub(crate) fn coverage_notice(coverage: &dto::TurnCoverageDto) -> Option<String>
     ))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn search_collections_bounded(
     retrieval: &munarium_retrieval::Retrieval,
+    read: &munarium_retrieval::inference::FanOutRead,
     infos: &[munarium_core::retrieval::CollectionInfo],
     prepared: &munarium_core::retrieval::PreparedSearchQuery,
     params_for: &(dyn Fn(&munarium_core::retrieval::CollectionInfo) -> SearchParams + Sync),
     concurrency: usize,
     mut on_done: impl FnMut(&munarium_core::retrieval::CollectionInfo, &Result<SearchResult>) + Send,
 ) -> Result<Vec<(Result<SearchResult>, std::time::Duration)>> {
+    // IR-3: one query embedding per compatible group of enrolled members,
+    // before the fan-out. A read with no enrolled member does nothing here.
+    let scoped: Vec<_> = infos
+        .iter()
+        .map(|info| scoped_prepared(prepared, &params_for(info)))
+        .collect();
+    let members: Vec<_> = infos
+        .iter()
+        .zip(&scoped)
+        .map(|(info, p)| (info.id.as_str(), None, p))
+        .collect();
+    retrieval.prepare_fan_out(read, &members).await;
     let semaphore = Arc::new(tokio::sync::Semaphore::new(concurrency.max(1)));
     let mut tasks = tokio::task::JoinSet::new();
-    for (index, info) in infos.iter().enumerate() {
+    for ((index, info), prepared) in infos.iter().enumerate().zip(scoped) {
         let retrieval = retrieval.clone();
+        let read = read.clone();
         let collection_id = info.id.clone();
-        let params = params_for(info);
-        let prepared = scoped_prepared(prepared, &params);
         let semaphore = semaphore.clone();
         tasks.spawn(async move {
             let _permit = semaphore.acquire_owned().await;
@@ -728,8 +741,9 @@ async fn search_collections_bounded(
             // reference's real latency rather than a fan-out average.
             let started = std::time::Instant::now();
             let result = retrieval
-                .search_collection_prepared(&collection_id, &prepared, None)
-                .await;
+                .search_fan_out(&read, &collection_id, &prepared, None)
+                .await
+                .map(|(result, _)| result);
             (index, result, started.elapsed())
         });
     }
@@ -771,6 +785,9 @@ pub(crate) struct DocumentRetrieval {
     /// Per-member outcomes (C1). Empty unless the turn selected a
     /// `collection_availability` policy.
     pub members: Vec<dto::CollectionOutcomeDto>,
+    /// Enrolled members' inference stage receipts (IR-3), each naming its
+    /// collection. Empty when no member is enrolled.
+    pub stages: Vec<dto::SearchStageDto>,
 }
 
 pub(crate) async fn retrieve_documents(
@@ -809,6 +826,13 @@ pub(crate) async fn retrieve_documents(
     // over the strongest. No collection names or query vocabulary are
     // compiled into this path.
     let retrieval = state.retrieval_for(tenant)?.with_caller(caller);
+    // One multi-collection read: its members' plans, shared query vectors
+    // and stage receipts (IR-3). Inert when no member is enrolled.
+    let read = munarium_retrieval::inference::FanOutRead::default();
+    let name_to_id: std::collections::HashMap<String, String> = permitted
+        .iter()
+        .map(|info| (info.name.clone(), info.id.clone()))
+        .collect();
     // Number-form normalization (2026-08-30, §13.5 entry 25; the tuning
     // study's class A). A question writing `4,436,097` cannot reach a corpus
     // writing `US4436097`: the parser makes one token of the doc form and
@@ -884,6 +908,7 @@ pub(crate) async fn retrieve_documents(
         let probe_prepared = retrieval.prepare_query(&effective_query, &probe_params);
         let probe_results = search_collections_bounded(
             &retrieval,
+            &read,
             &permitted,
             &probe_prepared,
             &|info| scoped_params(&probe_params, &retrieval_spec, &info.name),
@@ -1061,6 +1086,7 @@ pub(crate) async fn retrieve_documents(
     let deep_prepared = retrieval.prepare_query(&effective_query, &params);
     let deep_results = search_collections_bounded(
         &retrieval,
+        &read,
         &selected,
         &deep_prepared,
         &|info| scoped_params(&params, &retrieval_spec, &info.name),
@@ -1173,12 +1199,41 @@ pub(crate) async fn retrieve_documents(
         probe_collections,
         probe_weight: fusion.unselected_pool_weight,
     };
-    let merged = munarium_retrieval::merge_hits_weighted(
+    let mut merged = munarium_retrieval::merge_hits_weighted(
         &results,
         final_top_k,
         params.rrf_k,
         &merge_weights,
     );
+    // IR-3: rerank enrolled members in groups, each only within the fused
+    // positions it holds. A refused (`require`) group refuses the turn, or,
+    // under an explicit availability policy, withdraws its members' evidence
+    // and reports them unavailable (C1); it never serves an unapproved order.
+    let refused = retrieval
+        .rerank_merged(&read, &deep_prepared, &mut merged, &|name: &String| {
+            name_to_id.get(name).cloned()
+        })
+        .await;
+    let mut withdrawn: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for group in refused {
+        if policy.is_none() {
+            return Err(group.error.into());
+        }
+        for id in &group.collections {
+            if let Some((name, _)) = name_to_id.iter().find(|(_, v)| *v == id) {
+                withdrawn.insert(name.clone());
+                members.insert(
+                    name.clone(),
+                    member_missing(name, "search", "inference_unavailable"),
+                );
+            }
+        }
+    }
+    if !withdrawn.is_empty() {
+        merged.retain(|(name, _)| !withdrawn.contains(name));
+        results.retain(|r| !withdrawn.contains(&r.collection_name));
+        refuse_if_required(policy, &members, &read_order)?;
+    }
     emit(
         progress,
         dto::TurnProgressEvent::Merge {
@@ -1212,6 +1267,21 @@ pub(crate) async fn retrieve_documents(
         .iter()
         .filter_map(|name| members.remove(name))
         .collect();
+    let stages = read
+        .receipts()
+        .iter()
+        .map(|receipt| {
+            let mut stage = crate::rest::stage_dto(receipt);
+            // Turns name collections, as `collections_searched` does.
+            stage.collection = receipt.collection.as_ref().map(|id| {
+                name_to_id
+                    .iter()
+                    .find(|(_, v)| *v == id)
+                    .map_or_else(|| id.clone(), |(name, _)| name.clone())
+            });
+            stage
+        })
+        .collect();
     Ok(DocumentRetrieval {
         merged,
         hits,
@@ -1219,6 +1289,7 @@ pub(crate) async fn retrieve_documents(
         searched,
         skipped,
         members,
+        stages,
     })
 }
 
@@ -1318,6 +1389,7 @@ pub async fn op_turn_covered(
         searched,
         skipped,
         members,
+        stages,
         hierarchy_dto,
         hierarchy_context,
         hierarchy_blocks,
@@ -1330,6 +1402,7 @@ pub async fn op_turn_covered(
                 searched,
                 skipped,
                 members,
+                stages,
             } = retrieve_documents(
                 state,
                 tenant,
@@ -1352,7 +1425,7 @@ pub async fn op_turn_covered(
                 ));
             }
             (
-                merged, hits, envelopes, searched, skipped, members, None, None, None,
+                merged, hits, envelopes, searched, skipped, members, stages, None, None, None,
             )
         }
         Some(profile) => {
@@ -1443,6 +1516,7 @@ pub async fn op_turn_covered(
                 docs.searched,
                 docs.skipped,
                 docs.members,
+                docs.stages,
                 Some(crate::evidence_hierarchy::decision_to_dto(
                     &outcome.decision,
                 )),
@@ -1825,6 +1899,9 @@ pub async fn op_turn_covered(
                 hierarchy: hierarchy_dto,
             },
             coverage,
+            // IR-3: present only when an enrolled member was searched, so a
+            // turn over unenrolled collections is byte-identical to v1.4.
+            execution: (!stages.is_empty()).then_some(dto::ReadExecutionDto { version: 1, stages }),
         },
         meta,
     ))

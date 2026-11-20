@@ -257,11 +257,55 @@ response always carries `execution.stages`, one receipt per configured stage:
 
 `envelope.index_version` names the semantic index and
 `envelope.provider_fingerprint` is `endpoint/sem-…/1024`. Reranking reorders
-the head only, keeps every hit, score and citation identity, and is applied
-on single-collection reads (`POST /v1/search`, v1.2 search and answers). In
-session turns and `POST /v1.2/query`, whose results are merged across
-collections by raw leg scores, the embedding stage applies and reranking is
-reported `not_applicable` (`merged_read`) and never charged.
+the head only and keeps every hit, score and citation identity. On a
+single-collection read (`POST /v1/search`, v1.2 search and answers) it
+reorders the collection's fused head.
+
+### Multi-collection reads
+
+Session turns and `POST /v1.2/query` merge several collections' results
+before anything is reranked. Server then reranks in **groups** (design 8.6):
+
+- **Grouping.** Enrolled members whose reranking stages share the reranking
+  identity (model and instruction), the bound configuration (its name and
+  text, which carry the budgets), the binding's placement requirement, the
+  outage policy, `max_candidates` and `max_document_bytes` form one group.
+  A member whose stage cannot reach its endpoint (for example a placement
+  refusal) is a group of its own.
+- **Positions only.** Each group's first `max_candidates` merged candidates
+  are scored by one call and reordered only within the positions that group
+  held in the merged result. Given `A1, B1, A2, C1`, a reranker preferring
+  `A2` gives `A2, B1, A1, C1`, whatever B's reranker says. Unenrolled
+  members keep their positions, and scores from different groups are never
+  compared. The reply rules are the single-read rules: order only, every
+  index exactly once, ties in merged order, no truncation, returned text
+  ignored.
+- **Outage (I1), per group.** Under `prefer` a failed group keeps its merged
+  order with `fallback: fused_order`, and the other groups still rerank.
+  Under `require` the read is refused with `inference-stage-unavailable`.
+  In a turn with an explicit `collection_availability` policy the refusing
+  group's members are reported unavailable (`inference_unavailable`) and
+  contribute nothing instead, and `require` refuses the turn as for any
+  unavailable member.
+- **One query embedding per compatible group.** Before the fan-out, members
+  whose embedding stages share the configuration, the placement requirement,
+  the semantic space (`sem-…`: endpoint fingerprint, model, dimension,
+  instructions, normalization) and the exact query inputs are embedded by one
+  call. Members with a different binding or space get their own call. Each
+  member still reads its own index, and a member whose active index changed
+  since preparation embeds on its own.
+- **Disclosure.** When a searched member is enrolled, the turn response
+  (REST, SSE `done` and the native bridge) and the `/v1.2/query` response
+  carry `execution: {"version": 1, "stages": [...]}`, one receipt per enrolled
+  member and configured stage, each with a `collection` member (the
+  collection name in a turn, its id in `/v1.2/query`). A rerank receipt's
+  `scored` counts that member's candidates in the group's scored head. A
+  read in which no member is enrolled carries no `execution` and is
+  byte-identical to the v1.4 read. Typed gRPC `TurnResponse` gains no field
+  (REST-first, like the single-read receipts).
+- **Shadow.** A member with `shadow.rerank` and no serving reranker is
+  grouped the same way after the merged order is fixed, and each member
+  records how its group's head would have moved.
 
 Indexes are read in their own space: pinning a historical hash index uses the
 hash embedder with no endpoint call.
@@ -400,6 +444,11 @@ changed) to return to the semantic index.
   purpose (`serving`, `shadow`, `build`, `probe`), the initiating caller (the
   request uid, or the caller who enqueued the build job), the collection, the
   job and the reservation.
+- **Shared calls.** A multi-collection read's group embedding or group
+  rerank is one physical call: it reserves once against the group's shared
+  configuration and its attempt row lists every collection it served in
+  `collection_ids`. Groups never span configurations, so a call is always
+  charged to the budget that every member it served is bound to.
 - **Shadow allocation.** `shadowDailyTokens` is carved out of
   `dailyTotalTokens`: shadow attempts reserve only from it (ledger scope
   `shadow`) and serving, build and probe attempts only from the remainder
@@ -449,9 +498,12 @@ Server matches the Munarium Lens LENS-1 profile.
   measurements.
 - Semantic indexes are served from PostgreSQL only. In `datastore` retrieval
   mode an enrolled semantic read reports `unconfigured` (`engine_unsupported`).
-- Reranking applies to single-collection reads only (see above).
-- A prepared query embedding is not reused across collections of one fan-out;
-  each enrolled collection's read embeds its own query and is charged once.
+- A turn with collection selection searches its probe and its deep search
+  with different query formulations, so each phase has its own query
+  embedding. The receipt disclosed for a member is the one of the result
+  that was merged.
+- `POST /v1.2/query` has no availability policy: a refusing `require` group
+  refuses the query.
 - Server cannot verify model weights behind an endpoint. Give each model
   revision and precision a distinct served name; a change of name is a change
   of identity Server can see.

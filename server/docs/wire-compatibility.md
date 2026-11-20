@@ -185,6 +185,15 @@ produces exactly the v1.4 wire bytes and index ids (COMPAT-T4).
   not a v1.4 response, and an I1 fallback must be disclosed. Typed gRPC
   `HybridSearch` has no collection filter, so it never reads an enrolled
   collection and gains no field.
+- **Multi-collection reads (IR-3).** `CoveredTurnResponse` (REST, SSE
+  `done`, native bridge) and the `/v1.2/query` response gain an optional
+  `execution` member (`ReadExecutionDto`: `version`, `stages`), serialized
+  only when a searched member is enrolled, so a read of unenrolled
+  collections is byte-identical. Its receipts carry an optional
+  `collection` member, which `SearchStageDto` serializes only when set: a
+  single-collection receipt is unchanged. Typed gRPC `TurnResponse` gains no
+  field (REST-first); `/v1.2/query` over `ServerApiService` carries the JSON
+  member as is.
 - **Provider configuration.** `spec.provider: openai-compatible`,
   `spec.models.rerank`, `spec.inference` (`embedDimensions`, `maxBatch`,
   `maxRequestBytes`, `maxAttempts`, `allowTestBackend`) and
@@ -209,7 +218,7 @@ produces exactly the v1.4 wire bytes and index ids (COMPAT-T4).
 | Shadow quota and its allocation | `budgets.shadowDailyTokens` on the bound configuration is carved out of `dailyTotalTokens`: shadow attempts reserve only from it (ledger scope `shadow`), serving, build and probe attempts only from the remainder (scope `all`). Absent authorizes no shadow work. |
 | Wire spelling of the stage policy | `policy: "require" \| "prefer"` per stage on the binding; omitted is `require`. |
 | Refusal types | `inference-stage-unavailable` for a refused read; `inference-not-qualified` for management preconditions. |
-| Stage receipt | `execution.stages[]`: `stage`, `policy`, `policy_revision`, `applied`, `state`, `reason`, `fallback`, `identity`, `scored`. |
+| Stage receipt | `execution.stages[]`: `stage`, `policy`, `policy_revision`, `applied`, `state`, `reason`, `fallback`, `identity`, `scored`, and `collection` on a multi-collection read. |
 
 ### SDK status
 

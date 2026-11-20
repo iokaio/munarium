@@ -622,6 +622,7 @@ fn an_unselected_policy_serializes_the_v14_turn_byte_for_byte() {
     let covered = dto::CoveredTurnResponse {
         turn: turn.clone(),
         coverage: None,
+        execution: None,
     };
     assert_eq!(
         serde_json::to_vec(&covered).unwrap(),

@@ -59,6 +59,11 @@ pub type StageEndpoint = std::result::Result<Arc<dyn InferenceEndpoint>, Inferen
 pub struct EmbeddingStage {
     pub policy: StagePolicy,
     pub endpoint: StageEndpoint,
+    /// The payer and processing identity (bound configuration, its budgets
+    /// and the binding's placement requirement), opaque to the coordinator.
+    /// A multi-collection read shares one query embedding only between
+    /// stages whose bindings, spaces and inputs are all equal.
+    pub binding: String,
     pub model: String,
     /// The semantic space the binding defines. A semantic index is read only
     /// when its recorded identity equals this one.
@@ -72,6 +77,10 @@ pub struct EmbeddingStage {
 pub struct RerankStage {
     pub policy: StagePolicy,
     pub endpoint: StageEndpoint,
+    /// The payer and processing identity, as on [`EmbeddingStage::binding`].
+    /// A multi-collection read reranks members in one group only when their
+    /// bindings are equal.
+    pub binding: String,
     pub model: String,
     /// The candidate cap: at most this many head candidates are scored.
     pub max_candidates: usize,
@@ -202,6 +211,10 @@ pub struct StageReceipt {
     pub identity: Option<String>,
     /// Candidates the reranker scored.
     pub scored: Option<u64>,
+    /// The collection the receipt is for, on a multi-collection read only.
+    /// `None` on a single-collection read, whose response is that
+    /// collection's.
+    pub collection: Option<String>,
 }
 
 fn failed(kind: FailureKind, reason: &'static str) -> InferenceFailure {
@@ -247,10 +260,22 @@ pub async fn embed_query(
     check_deadline(deadline)?;
     let endpoint = stage.endpoint.as_ref().map_err(|f| *f)?;
     let (inputs, weight) = query_inputs(prepared, &stage.query_instruction);
+    embed_inputs(endpoint.as_ref(), stage, &inputs, weight, deadline).await
+}
+
+/// One query embedding call for prepared inputs, blended and normalized.
+async fn embed_inputs(
+    endpoint: &dyn InferenceEndpoint,
+    stage: &EmbeddingStage,
+    inputs: &[String],
+    weight: f32,
+    deadline: Instant,
+) -> std::result::Result<Vec<f32>, InferenceFailure> {
+    check_deadline(deadline)?;
     let reply = endpoint
         .embed(EmbedCall {
             model: &stage.model,
-            inputs: &inputs,
+            inputs,
             dimensions: stage.space.dimensions,
             deadline,
         })
@@ -331,6 +356,7 @@ fn not_applicable(
         fallback: None,
         identity: None,
         scored: None,
+        collection: None,
     }
 }
 
@@ -360,11 +386,25 @@ impl crate::Retrieval {
         prepared: &PreparedSearchQuery,
         index_version: Option<&str>,
         kind: ReadKind,
+        read: Option<&FanOutRead>,
     ) -> Result<(SearchResult, crate::SearchExecution)> {
         let caller = self.caller.as_deref().unwrap_or("unattributed");
-        let plan = match &self.governor {
-            Some(governor) => governor.plan(collection_id, caller).await?,
-            None => None,
+        // A fan-out member keeps the plan (and the deadline) its read
+        // prepared, so the post-merge stage uses the same binding revision.
+        let (plan, deadline) = match read.and_then(|r| r.member(collection_id)) {
+            Some(member) => (member.plan, member.deadline),
+            None => {
+                let plan = match &self.governor {
+                    Some(governor) => governor.plan(collection_id, caller).await?,
+                    None => None,
+                };
+                let deadline =
+                    Instant::now() + plan.as_ref().map(|p| p.timeout).unwrap_or_default();
+                if let Some(read) = read {
+                    read.remember(collection_id, plan.clone(), deadline);
+                }
+                (plan, deadline)
+            }
         };
         let Some(plan) = plan else {
             return self
@@ -374,7 +414,6 @@ impl crate::Retrieval {
         self.pg
             .assert_scope_readable("collection", collection_id)
             .await?;
-        let deadline = Instant::now() + plan.timeout;
         let revision = plan.policy_revision;
         let (index_id, _) = self
             .pg
@@ -417,7 +456,17 @@ impl crate::Retrieval {
                     {
                         Err(failed(FailureKind::Unconfigured, "identity_mismatch"))
                     }
-                    Some(stage) => embed_query(stage, prepared, deadline).await,
+                    Some(stage) => {
+                        // A vector one shared call already produced for this
+                        // member, this index and these exact inputs.
+                        let (inputs, weight) = query_inputs(prepared, &stage.query_instruction);
+                        match read.and_then(|r| {
+                            r.vector(collection_id, &index_id, &inputs_digest(&inputs, weight))
+                        }) {
+                            Some(shared) => shared,
+                            None => embed_query(stage, prepared, deadline).await,
+                        }
+                    }
                 };
                 match embedded {
                     Ok(vector) => {
@@ -439,6 +488,7 @@ impl crate::Retrieval {
                             fallback: None,
                             identity: Some(identity),
                             scored: None,
+                            collection: None,
                         });
                         (result, crate::SearchExecution::postgres(prepared))
                     }
@@ -469,6 +519,7 @@ impl crate::Retrieval {
                             fallback: Some("lexical_only"),
                             identity: Some(identity),
                             scored: None,
+                            collection: None,
                         });
                         (result, crate::SearchExecution::postgres(&lexical))
                     }
@@ -483,7 +534,10 @@ impl crate::Retrieval {
                 .as_ref()
                 .map(|p| p.original.as_str())
                 .unwrap_or_default();
-            if kind == ReadKind::FanOut {
+            if kind == ReadKind::FanOut && read.is_some() {
+                // Reranked after the merge, in its group's fused positions
+                // (`rerank_merged`); the receipt is written there.
+            } else if kind == ReadKind::FanOut {
                 stages.push(not_applicable(
                     Stage::Reranking,
                     stage.policy,
@@ -524,6 +578,7 @@ impl crate::Retrieval {
                             fallback: None,
                             identity: Some(stage.identity()),
                             scored: Some(scored as u64),
+                            collection: None,
                         });
                     }
                     Err(failure) => {
@@ -545,6 +600,7 @@ impl crate::Retrieval {
                             fallback: Some("fused_order"),
                             identity: Some(stage.identity()),
                             scored: None,
+                            collection: None,
                         });
                     }
                 }
@@ -552,6 +608,15 @@ impl crate::Retrieval {
         }
 
         self.spawn_shadow(&plan, collection_id, prepared, &result, kind, reranked);
+        if let Some(read) = read {
+            read.served(collection_id, &result.envelope.index_version);
+            for receipt in &stages {
+                read.record(StageReceipt {
+                    collection: Some(collection_id.to_string()),
+                    ..receipt.clone()
+                });
+            }
+        }
         execution.stages = stages;
         Ok((result, execution))
     }
@@ -786,6 +851,631 @@ impl crate::Retrieval {
     }
 }
 
+// ---------------------------------------------------------------------------
+// multi-collection reads (IR-3, design 8.6 "Multi-collection recommendation")
+// ---------------------------------------------------------------------------
+
+/// One multi-collection read's inference state: each member's plan and
+/// deadline, the query vectors shared calls produced, and the stage receipts
+/// to disclose. Cheap to clone; every clone is the same read.
+///
+/// The read is prepared ([`crate::Retrieval::prepare_fan_out`]), searched
+/// member by member ([`crate::Retrieval::search_fan_out`]), merged by the
+/// caller, then reranked in groups ([`crate::Retrieval::rerank_merged`]).
+/// A read in which no member is enrolled holds no plan and no receipt, and
+/// every step is the v1.4 path.
+#[derive(Clone, Default)]
+pub struct FanOutRead {
+    inner: Arc<FanOutState>,
+}
+
+type SharedVectors = std::collections::HashMap<
+    (String, String, String),
+    std::result::Result<Vec<f32>, InferenceFailure>,
+>;
+
+#[derive(Default)]
+struct FanOutState {
+    members: std::sync::Mutex<std::collections::HashMap<String, Member>>,
+    /// (collection, index, inputs digest) -> the vector of the shared call.
+    vectors: std::sync::Mutex<SharedVectors>,
+    /// One receipt per (collection, stage); a later search of the same
+    /// member (a turn's deep search after its probe) replaces the earlier.
+    receipts: std::sync::Mutex<Vec<StageReceipt>>,
+}
+
+#[derive(Clone)]
+struct Member {
+    plan: Option<CollectionPlan>,
+    deadline: Instant,
+    served_index: Option<String>,
+}
+
+fn locked<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+impl FanOutRead {
+    fn member(&self, collection_id: &str) -> Option<Member> {
+        locked(&self.inner.members).get(collection_id).cloned()
+    }
+
+    fn remember(&self, collection_id: &str, plan: Option<CollectionPlan>, deadline: Instant) {
+        locked(&self.inner.members)
+            .entry(collection_id.to_string())
+            .or_insert(Member {
+                plan,
+                deadline,
+                served_index: None,
+            });
+    }
+
+    fn served(&self, collection_id: &str, index_id: &str) {
+        if let Some(m) = locked(&self.inner.members).get_mut(collection_id) {
+            m.served_index = Some(index_id.to_string());
+        }
+    }
+
+    fn vector(
+        &self,
+        collection_id: &str,
+        index_id: &str,
+        digest: &str,
+    ) -> Option<std::result::Result<Vec<f32>, InferenceFailure>> {
+        locked(&self.inner.vectors)
+            .get(&(
+                collection_id.to_string(),
+                index_id.to_string(),
+                digest.to_string(),
+            ))
+            .cloned()
+    }
+
+    fn record(&self, receipt: StageReceipt) {
+        let mut receipts = locked(&self.inner.receipts);
+        match receipts
+            .iter_mut()
+            .find(|r| r.collection == receipt.collection && r.stage == receipt.stage)
+        {
+            Some(slot) => *slot = receipt,
+            None => receipts.push(receipt),
+        }
+    }
+
+    /// The read's stage receipts, each naming its collection: embedding
+    /// receipts in the order members were searched, then reranking receipts
+    /// group by group. Empty when no member is enrolled.
+    pub fn receipts(&self) -> Vec<StageReceipt> {
+        locked(&self.inner.receipts).clone()
+    }
+}
+
+/// A `require` group whose reranking stage could not run: the typed
+/// refusal, and the collections it covers. The caller refuses the read, or
+/// (under an explicit availability policy) withdraws those members.
+#[derive(Debug)]
+pub struct GroupRefusal {
+    pub collections: Vec<String>,
+    pub error: munarium_core::KernelError,
+}
+
+fn inputs_digest(inputs: &[String], weight: f32) -> String {
+    let mut joined = String::new();
+    for input in inputs {
+        joined.push_str(input);
+        joined.push('\u{0}');
+    }
+    joined.push_str(&weight.to_bits().to_string());
+    fingerprint(&joined)
+}
+
+/// Reorder the items at `head` (ascending fused positions one group held)
+/// by a validated rerank `order` over those items. Only those positions
+/// change; every other position, including other groups' and unenrolled
+/// members', keeps its item. `false` (and nothing changed) when `order` is
+/// not a permutation of the head.
+fn reorder_within<T: Clone>(items: &mut [T], head: &[usize], order: &[usize]) -> bool {
+    if order.len() != head.len() {
+        return false;
+    }
+    let picked: Vec<T> = head.iter().map(|&p| items[p].clone()).collect();
+    match permute_prefix(picked, order) {
+        Some(reordered) => {
+            for (&p, item) in head.iter().zip(reordered) {
+                items[p] = item;
+            }
+            true
+        }
+        None => false,
+    }
+}
+
+/// The grouping key of a member's reranking stage: one compatible reranker
+/// (model and instruction identity), one payer and processing binding, one
+/// outage policy and the same caps. A member whose endpoint cannot be used
+/// is a group of its own, so its failure is its own.
+fn rerank_group_key(collection_id: &str, stage: &RerankStage) -> String {
+    match &stage.endpoint {
+        Ok(_) => format!(
+            "ok\u{0}{}\u{0}{}\u{0}{}\u{0}{}\u{0}{}",
+            stage.binding,
+            stage.identity(),
+            stage.policy.as_str(),
+            stage.max_candidates,
+            stage.max_document_bytes
+        ),
+        Err(_) => format!("solo\u{0}{collection_id}"),
+    }
+}
+
+struct RerankGroup {
+    stage: RerankStage,
+    /// (collection, plan), in fused order of first appearance.
+    members: Vec<(String, CollectionPlan)>,
+    deadline: Instant,
+}
+
+/// Group members by the `select`ed stage, in fused order of first
+/// appearance (members with no fused candidate last, by id).
+fn rerank_groups(
+    members: &[(String, Member)],
+    owners: &[Option<String>],
+    select: fn(&CollectionPlan) -> Option<&RerankStage>,
+) -> Vec<RerankGroup> {
+    let first = |cid: &str| {
+        owners
+            .iter()
+            .position(|o| o.as_deref() == Some(cid))
+            .unwrap_or(usize::MAX)
+    };
+    let mut ranked: Vec<(usize, &String, &CollectionPlan, Instant)> = members
+        .iter()
+        .filter_map(|(cid, m)| {
+            let plan = m.plan.as_ref()?;
+            select(plan)?;
+            Some((first(cid), cid, plan, m.deadline))
+        })
+        .collect();
+    ranked.sort_by(|a, b| (a.0, a.1).cmp(&(b.0, b.1)));
+    let mut groups: Vec<(String, RerankGroup)> = Vec::new();
+    for (_, cid, plan, deadline) in ranked {
+        let Some(stage) = select(plan) else { continue };
+        let key = rerank_group_key(cid, stage);
+        match groups.iter_mut().find(|(k, _)| *k == key) {
+            Some((_, g)) => {
+                g.members.push((cid.clone(), plan.clone()));
+                g.deadline = g.deadline.min(deadline);
+            }
+            None => groups.push((
+                key,
+                RerankGroup {
+                    stage: stage.clone(),
+                    members: vec![(cid.clone(), plan.clone())],
+                    deadline,
+                },
+            )),
+        }
+    }
+    groups.into_iter().map(|(_, g)| g).collect()
+}
+
+/// The group's scored head: the first `max_candidates` fused positions its
+/// members hold.
+fn group_head(group: &RerankGroup, owners: &[Option<String>]) -> Vec<usize> {
+    owners
+        .iter()
+        .enumerate()
+        .filter(|(_, o)| {
+            o.as_deref()
+                .is_some_and(|o| group.members.iter().any(|(c, _)| c == o))
+        })
+        .map(|(i, _)| i)
+        .take(group.stage.max_candidates)
+        .collect()
+}
+
+/// The group's stage with its endpoint attributed to every member: one
+/// physical call, charged once to the group's shared binding.
+fn shared_stage(group: &RerankGroup) -> RerankStage {
+    let mut collections: Vec<String> = group.members.iter().map(|(c, _)| c.clone()).collect();
+    collections.sort();
+    let mut stage = group.stage.clone();
+    if let Ok(endpoint) = &group.stage.endpoint {
+        if let Some(shared) = endpoint.shared_by(&collections) {
+            stage.endpoint = Ok(shared);
+        }
+    }
+    stage
+}
+
+impl crate::Retrieval {
+    /// Prepare a multi-collection read (IR-3): resolve each enrolled
+    /// member's plan, then embed the query once per compatible group:
+    /// members whose embedding stages share the payer and processing
+    /// binding, the semantic space (configuration, endpoint fingerprint,
+    /// model, dimensions, instructions, normalization) and the exact query
+    /// inputs. The call is attributed to every member it served and charged
+    /// once. Members with different bindings get their own call.
+    ///
+    /// Nothing here fails the read: a member whose preparation cannot
+    /// complete is searched (and refused, or falls back) exactly as an
+    /// unprepared member is. Unenrolled members are untouched.
+    pub async fn prepare_fan_out(
+        &self,
+        read: &FanOutRead,
+        members: &[(&str, Option<&str>, &PreparedSearchQuery)],
+    ) {
+        let Some(governor) = &self.governor else {
+            return;
+        };
+        let caller = self.caller.as_deref().unwrap_or("unattributed");
+        struct Group {
+            key: String,
+            stage: EmbeddingStage,
+            endpoint: Arc<dyn InferenceEndpoint>,
+            inputs: Vec<String>,
+            weight: f32,
+            digest: String,
+            deadline: Instant,
+            members: Vec<(String, String)>,
+        }
+        let mut groups: Vec<Group> = Vec::new();
+        for &(collection_id, pin, prepared) in members {
+            let member = match read.member(collection_id) {
+                Some(m) => m,
+                None => {
+                    let Ok(plan) = governor.plan(collection_id, caller).await else {
+                        continue;
+                    };
+                    let deadline =
+                        Instant::now() + plan.as_ref().map(|p| p.timeout).unwrap_or_default();
+                    read.remember(collection_id, plan.clone(), deadline);
+                    Member {
+                        plan,
+                        deadline,
+                        served_index: None,
+                    }
+                }
+            };
+            let Some(stage) = member.plan.as_ref().and_then(|p| p.embedding.as_ref()) else {
+                continue;
+            };
+            let Ok(endpoint) = &stage.endpoint else {
+                continue;
+            };
+            if self.mode == crate::RetrievalMode::Datastore
+                || self
+                    .pg
+                    .assert_scope_readable("collection", collection_id)
+                    .await
+                    .is_err()
+            {
+                continue;
+            }
+            let Ok((index_id, _)) = self.pg.resolve_index_version(collection_id, pin).await else {
+                continue;
+            };
+            let Ok(Some((identity, dims))) = self.pg.semantic_identity(&index_id).await else {
+                continue;
+            };
+            if stage.space.identity != identity || stage.space.dimensions != dims {
+                continue;
+            }
+            let (inputs, weight) = query_inputs(prepared, &stage.query_instruction);
+            let digest = inputs_digest(&inputs, weight);
+            let key = format!(
+                "{}\u{0}{identity}\u{0}{dims}\u{0}{}\u{0}{digest}",
+                stage.binding, stage.model
+            );
+            let entry = (collection_id.to_string(), index_id);
+            match groups.iter_mut().find(|g| g.key == key) {
+                Some(g) => {
+                    g.deadline = g.deadline.min(member.deadline);
+                    g.members.push(entry);
+                }
+                None => groups.push(Group {
+                    key,
+                    stage: stage.clone(),
+                    endpoint: endpoint.clone(),
+                    inputs,
+                    weight,
+                    digest,
+                    deadline: member.deadline,
+                    members: vec![entry],
+                }),
+            }
+        }
+        let mut calls = tokio::task::JoinSet::new();
+        for (i, g) in groups.iter().enumerate() {
+            let mut collections: Vec<String> = g.members.iter().map(|(c, _)| c.clone()).collect();
+            collections.sort();
+            collections.dedup();
+            let endpoint = g
+                .endpoint
+                .shared_by(&collections)
+                .unwrap_or_else(|| g.endpoint.clone());
+            let (stage, inputs, weight, deadline) =
+                (g.stage.clone(), g.inputs.clone(), g.weight, g.deadline);
+            calls.spawn(async move {
+                let vector =
+                    embed_inputs(endpoint.as_ref(), &stage, &inputs, weight, deadline).await;
+                (i, vector)
+            });
+        }
+        while let Some(joined) = calls.join_next().await {
+            // A lost task leaves its members unprepared: they embed on their
+            // own when searched.
+            let Ok((i, vector)) = joined else { continue };
+            let Some(g) = groups.get(i) else { continue };
+            let mut vectors = locked(&read.inner.vectors);
+            for (collection_id, index_id) in &g.members {
+                vectors.insert(
+                    (collection_id.clone(), index_id.clone(), g.digest.clone()),
+                    vector.clone(),
+                );
+            }
+        }
+    }
+
+    /// Search one member of a prepared multi-collection read. The hits are
+    /// the member's own fused result; its reranking waits for the merge.
+    pub async fn search_fan_out(
+        &self,
+        read: &FanOutRead,
+        collection_id: &str,
+        prepared: &PreparedSearchQuery,
+        index_version: Option<&str>,
+    ) -> Result<(SearchResult, &'static str)> {
+        self.search_governed(
+            collection_id,
+            prepared,
+            index_version,
+            ReadKind::FanOut,
+            Some(read),
+        )
+        .await
+        .map(|(result, execution)| (result, execution.lexical_domain))
+    }
+
+    /// Rerank a merged multi-collection result in groups (design 8.6).
+    /// Members whose reranking stages share the reranker identity, the
+    /// payer and processing binding, the outage policy and the caps form
+    /// one group. Each group's first `max_candidates` candidates are scored
+    /// by one call and reordered only within the fused positions that group
+    /// held, so `A1, B1, A2, C1` with a reranker preferring `A2` becomes
+    /// `A2, B1, A1, C1` whatever B's reranker says. Unenrolled members keep
+    /// their positions, and scores are never compared across groups.
+    ///
+    /// Per group, I1 applies: under `prefer` a failed stage keeps the fused
+    /// order with the disclosed `fused_order` fallback; under `require` it
+    /// is returned as a [`GroupRefusal`] for the caller to refuse the read
+    /// (or to withdraw those members under an explicit availability policy).
+    /// Other groups are unaffected. Receipts are recorded in `read`.
+    pub async fn rerank_merged<K: Clone + Send + Sync>(
+        &self,
+        read: &FanOutRead,
+        prepared: &PreparedSearchQuery,
+        merged: &mut [(K, SearchHit)],
+        collection_of: &(dyn Fn(&K) -> Option<String> + Send + Sync),
+    ) -> Vec<GroupRefusal> {
+        let query = prepared
+            .lexical
+            .as_ref()
+            .map(|p| p.original.clone())
+            .unwrap_or_default();
+        let owners: Vec<Option<String>> = merged.iter().map(|(k, _)| collection_of(k)).collect();
+        let mut members: Vec<(String, Member)> = locked(&read.inner.members)
+            .iter()
+            .map(|(c, m)| (c.clone(), m.clone()))
+            .collect();
+        members.sort_by(|a, b| a.0.cmp(&b.0));
+        let groups = rerank_groups(&members, &owners, |p| p.rerank.as_ref());
+
+        let mut calls = tokio::task::JoinSet::new();
+        let mut heads = Vec::with_capacity(groups.len());
+        for (i, group) in groups.iter().enumerate() {
+            let head = group_head(group, &owners);
+            let reason = if query.trim().is_empty() {
+                // An endpoint refuses an empty query; nothing is ranked.
+                Some("empty_query")
+            } else if head.len() < 2 {
+                Some("too_few_candidates")
+            } else {
+                None
+            };
+            if reason.is_none() {
+                let stage = shared_stage(group);
+                let hits: Vec<SearchHit> = head.iter().map(|&p| merged[p].1.clone()).collect();
+                let (query, deadline) = (query.clone(), group.deadline);
+                calls
+                    .spawn(async move { (i, rerank_order(&stage, &query, &hits, deadline).await) });
+            }
+            heads.push((head, reason));
+        }
+        let mut outcomes: Vec<Option<std::result::Result<Vec<usize>, InferenceFailure>>> =
+            (0..groups.len()).map(|_| None).collect();
+        while let Some(joined) = calls.join_next().await {
+            if let Ok((i, outcome)) = joined {
+                if let Some(slot) = outcomes.get_mut(i) {
+                    *slot = Some(outcome);
+                }
+            }
+        }
+
+        let mut refused = Vec::new();
+        for (i, group) in groups.iter().enumerate() {
+            let (head, reason) = &heads[i];
+            let stage = &group.stage;
+            let scored_of = |cid: &str| {
+                head.iter()
+                    .filter(|&&p| owners[p].as_deref() == Some(cid))
+                    .count() as u64
+            };
+            if let Some(reason) = reason {
+                for (cid, plan) in &group.members {
+                    let mut receipt = not_applicable(
+                        Stage::Reranking,
+                        stage.policy,
+                        plan.policy_revision,
+                        reason,
+                    );
+                    receipt.collection = Some(cid.clone());
+                    read.record(receipt);
+                }
+                continue;
+            }
+            let outcome = match outcomes[i].take() {
+                Some(Ok(order)) if reorder_within(merged, head, &order) => Ok(()),
+                Some(Ok(_)) => Err(InferenceFailure::invalid("not_a_permutation")),
+                Some(Err(f)) => Err(f),
+                None => Err(failed(FailureKind::Unavailable, "task_failed")),
+            };
+            match outcome {
+                Ok(()) => {
+                    for (cid, plan) in &group.members {
+                        read.record(StageReceipt {
+                            stage: Stage::Reranking,
+                            policy: stage.policy,
+                            policy_revision: plan.policy_revision,
+                            applied: true,
+                            state: "ready",
+                            reason: None,
+                            fallback: None,
+                            identity: Some(stage.identity()),
+                            scored: Some(scored_of(cid)),
+                            collection: Some(cid.clone()),
+                        });
+                    }
+                }
+                Err(failure) => {
+                    let outcome = match stage.policy {
+                        StagePolicy::Require => "refused",
+                        StagePolicy::Prefer => "fallback",
+                    };
+                    for (cid, plan) in &group.members {
+                        plan.recorder
+                            .stage_event(StageEvent {
+                                collection_id: cid.clone(),
+                                stage: Stage::Reranking,
+                                policy: stage.policy,
+                                policy_revision: plan.policy_revision,
+                                outcome,
+                                failure,
+                            })
+                            .await;
+                        read.record(StageReceipt {
+                            stage: Stage::Reranking,
+                            policy: stage.policy,
+                            policy_revision: plan.policy_revision,
+                            applied: false,
+                            state: failure.kind.state(),
+                            reason: Some(failure.reason),
+                            fallback: (stage.policy == StagePolicy::Prefer)
+                                .then_some("fused_order"),
+                            identity: Some(stage.identity()),
+                            scored: None,
+                            collection: Some(cid.clone()),
+                        });
+                    }
+                    if stage.policy == StagePolicy::Require {
+                        let revision = group
+                            .members
+                            .first()
+                            .map(|(_, p)| p.policy_revision)
+                            .unwrap_or_default();
+                        refused.push(GroupRefusal {
+                            collections: group.members.iter().map(|(c, _)| c.clone()).collect(),
+                            error: refusal(Stage::Reranking, failure, revision),
+                        });
+                    }
+                }
+            }
+        }
+        self.spawn_group_shadow(&members, &owners, merged, &query);
+        refused
+    }
+
+    /// Shadow reranking of a merged read: members whose reranking is not
+    /// serving but whose shadow comparison is authorized are grouped as for
+    /// serving, and each records how its group's head would have moved.
+    /// Metered as shadow work; it can never change the served order.
+    fn spawn_group_shadow<K>(
+        &self,
+        members: &[(String, Member)],
+        owners: &[Option<String>],
+        merged: &[(K, SearchHit)],
+        query: &str,
+    ) {
+        if query.trim().is_empty() {
+            return;
+        }
+        let shadow_only: Vec<(String, Member)> = members
+            .iter()
+            .filter(|(_, m)| m.plan.as_ref().is_some_and(|p| p.rerank.is_none()))
+            .cloned()
+            .collect();
+        for group in rerank_groups(&shadow_only, owners, |p| p.shadow.rerank.as_ref()) {
+            let head = group_head(&group, owners);
+            if head.len() < 2 {
+                continue;
+            }
+            let Some(recorder) = group.members.first().map(|(_, p)| p.recorder.clone()) else {
+                continue;
+            };
+            let stage = shared_stage(&group);
+            let hits: Vec<SearchHit> = head.iter().map(|&p| merged[p].1.clone()).collect();
+            let served: Vec<(String, String)> = group
+                .members
+                .iter()
+                .map(|(c, _)| {
+                    let index = shadow_only
+                        .iter()
+                        .find(|(m, _)| m == c)
+                        .and_then(|(_, m)| m.served_index.clone())
+                        .unwrap_or_default();
+                    (c.clone(), index)
+                })
+                .collect();
+            let timeout = group
+                .members
+                .iter()
+                .map(|(_, p)| p.timeout)
+                .min()
+                .unwrap_or_default();
+            let query = query.to_string();
+            tokio::spawn(async move {
+                let outcome = rerank_order(&stage, &query, &hits, Instant::now() + timeout).await;
+                for (collection_id, served_index_id) in served {
+                    let mut record = ShadowComparison {
+                        collection_id,
+                        kind: "rerank",
+                        query_fingerprint: fingerprint(&query),
+                        served_index_id,
+                        candidate_index_id: None,
+                        outcome: "failed",
+                        reason: None,
+                        k: hits.len() as u32,
+                        overlap_at_k: None,
+                        top1_agrees: None,
+                        moved_positions: None,
+                    };
+                    match &outcome {
+                        Ok(order) => {
+                            record.outcome = "compared";
+                            record.top1_agrees = Some(order.first() == Some(&0));
+                            record.moved_positions =
+                                Some(order.iter().enumerate().filter(|(i, o)| i != *o).count()
+                                    as u32);
+                        }
+                        Err(f) => record.reason = Some(f.reason),
+                    }
+                    recorder.shadow(record).await;
+                }
+            });
+        }
+    }
+}
+
 /// A build's endpoint failure as a kernel error: budget exhaustion is the
 /// daily-cap refusal it is, everything else a content-free provider error.
 fn build_failure(f: InferenceFailure) -> munarium_core::KernelError {
@@ -864,6 +1554,37 @@ mod tests {
         assert_eq!(a, rerank_identity("m", Some("find the passage")));
         // The identity carries a digest, never the instruction text.
         assert!(!a.contains("find"));
+    }
+
+    #[test]
+    fn a_group_reorders_only_within_the_positions_it_held() {
+        // Design 8.6: A1, B1, A2, C1 with a reranker preferring A2 to A1.
+        let mut fused = vec!["A1", "B1", "A2", "C1"];
+        assert!(reorder_within(&mut fused, &[0, 2], &[1, 0]));
+        assert_eq!(fused, vec!["A2", "B1", "A1", "C1"]);
+        // B's own group cannot move B1 out of B's position.
+        assert!(reorder_within(&mut fused, &[1], &[0]));
+        assert_eq!(fused, vec!["A2", "B1", "A1", "C1"]);
+        // Not a permutation of the head: nothing changes.
+        let mut fused = vec!["A1", "B1", "A2", "C1"];
+        assert!(!reorder_within(&mut fused, &[0, 2], &[0, 0]));
+        assert!(!reorder_within(&mut fused, &[0, 2], &[0]));
+        assert_eq!(fused, vec!["A1", "B1", "A2", "C1"]);
+    }
+
+    #[test]
+    fn shared_inputs_digest_separates_inputs_and_weights() {
+        let a = inputs_digest(&["Q: a".into()], 0.0);
+        assert_eq!(a, inputs_digest(&["Q: a".into()], 0.0));
+        assert_ne!(a, inputs_digest(&["Q:a".into()], 0.0));
+        assert_ne!(
+            inputs_digest(&["a".into(), "a b".into()], 0.25),
+            inputs_digest(&["a".into(), "a b".into()], 0.5)
+        );
+        assert_ne!(
+            inputs_digest(&["ab".into()], 0.0),
+            inputs_digest(&["a".into(), "b".into()], 0.0)
+        );
     }
 
     #[test]

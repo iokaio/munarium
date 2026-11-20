@@ -575,6 +575,7 @@ where
                 accumulated.searched.extend(out.searched);
                 accumulated.skipped.extend(out.skipped);
                 accumulated.members.extend(out.members);
+                accumulated.stages.extend(out.stages);
                 if required_gap {
                     // Names no source: the layer is the runbook author's word.
                     EvidenceBlock::Refusal(munarium_core::hierarchy::EvidenceRefusal {

@@ -1234,21 +1234,24 @@ pub(crate) fn execution_dto(e: &munarium_retrieval::SearchExecution) -> dto::Sea
                 exhausted: l.exhausted,
             })
             .collect(),
-        stages: e
-            .stages
-            .iter()
-            .map(|s| dto::SearchStageDto {
-                stage: s.stage.as_str().to_string(),
-                policy: s.policy.as_str().to_string(),
-                policy_revision: s.policy_revision,
-                applied: s.applied,
-                state: s.state.to_string(),
-                reason: s.reason.map(str::to_string),
-                fallback: s.fallback.map(str::to_string),
-                identity: s.identity.clone(),
-                scored: s.scored,
-            })
-            .collect(),
+        stages: e.stages.iter().map(stage_dto).collect(),
+    }
+}
+
+/// One stage receipt on the wire. `collection` is set only on a
+/// multi-collection read's receipts.
+pub(crate) fn stage_dto(s: &munarium_retrieval::inference::StageReceipt) -> dto::SearchStageDto {
+    dto::SearchStageDto {
+        stage: s.stage.as_str().to_string(),
+        policy: s.policy.as_str().to_string(),
+        policy_revision: s.policy_revision,
+        applied: s.applied,
+        state: s.state.to_string(),
+        reason: s.reason.map(str::to_string),
+        fallback: s.fallback.map(str::to_string),
+        identity: s.identity.clone(),
+        scored: s.scored,
+        collection: s.collection.clone(),
     }
 }
 

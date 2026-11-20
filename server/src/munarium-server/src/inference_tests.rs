@@ -1712,3 +1712,6 @@ async fn reverting_a_configuration_needs_a_fresh_probe() {
     let (status, body) = search(&h, "orchid nebula").await;
     assert_eq!(status, 200, "{body}");
 }
+
+#[path = "inference_fanout_tests.rs"]
+mod fanout;

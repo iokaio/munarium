@@ -235,6 +235,17 @@ pub struct RerankReply {
 pub trait InferenceEndpoint: Send + Sync {
     async fn embed(&self, call: EmbedCall<'_>) -> Result<EmbedReply, InferenceFailure>;
     async fn rerank(&self, call: RerankCall<'_>) -> Result<RerankReply, InferenceFailure>;
+
+    /// The same endpoint, payer, purpose and caller, with every attempt
+    /// attributed to all of `collections`: one physical call serving a
+    /// compatible group of a multi-collection read (I2: "charge a shared
+    /// physical call once and retain which collections it served").
+    ///
+    /// `None` (the default) means the endpoint keeps no per-collection
+    /// attribution, and the coordinator uses it unchanged.
+    fn shared_by(&self, _collections: &[String]) -> Option<std::sync::Arc<dyn InferenceEndpoint>> {
+        None
+    }
 }
 
 /// Validate raw embedding rows `(index, values)` against the request.

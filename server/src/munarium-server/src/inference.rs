@@ -783,6 +783,24 @@ impl InferenceEndpoint for Metered {
         )
         .await
     }
+
+    /// One physical call for a compatible fan-out group: the same payer
+    /// (tenant, configuration, budgets), purpose and caller, with the attempt
+    /// row naming every collection it served.
+    fn shared_by(&self, collections: &[String]) -> Option<Arc<dyn InferenceEndpoint>> {
+        Some(Arc::new(Metered {
+            runtime: self.runtime.clone(),
+            tenant: self.tenant.clone(),
+            config: self.config.clone(),
+            budgets: self.budgets.clone(),
+            max_attempts: self.max_attempts,
+            purpose: self.purpose,
+            caller: self.caller.clone(),
+            collection_ids: collections.to_vec(),
+            job_id: self.job_id.clone(),
+            inner: self.inner.clone(),
+        }))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -993,6 +1011,23 @@ struct StagePieces {
     resolution: Resolution,
 }
 
+/// The payer and processing identity of a binding's stages: the bound
+/// configuration (name and the hash of its text, which carries the budgets)
+/// and the binding's SC2 placement requirement. A multi-collection read
+/// shares one physical call only between stages whose identities are equal
+/// (design 8.6, I2).
+fn stage_binding(config: Option<&LoadedConfig>, b: &Binding) -> String {
+    let placement = b
+        .placement
+        .as_ref()
+        .and_then(|p| serde_json::to_string(p).ok())
+        .unwrap_or_default();
+    match config {
+        Some(c) => format!("{}#{}#{placement}", c.doc.metadata.name, c.hash),
+        None => format!("{}#unresolved#{placement}", b.provider_config),
+    }
+}
+
 impl StagePieces {
     fn endpoint(
         &self,
@@ -1046,6 +1081,7 @@ impl StagePieces {
         Some(EmbeddingStage {
             policy: policy_of(&settings.policy),
             endpoint,
+            binding: stage_binding(self.resolution.config.as_ref(), b),
             model: settings.model.clone(),
             space,
             query_instruction: settings.query_instruction.clone().unwrap_or_default(),
@@ -1076,6 +1112,7 @@ impl StagePieces {
         Some(RerankStage {
             policy: policy_of(&settings.policy),
             endpoint,
+            binding: stage_binding(self.resolution.config.as_ref(), b),
             model: settings.model.clone(),
             max_candidates: settings.max_candidates.unwrap_or(DEFAULT_MAX_CANDIDATES) as usize,
             max_document_bytes: settings
@@ -1916,6 +1953,7 @@ pub async fn run_semantic_job(
             Some(collection),
             Some(&job.job_id),
         )),
+        binding: stage_binding(Some(&config), &b),
         model: settings.model.clone(),
         space: space.clone(),
         query_instruction: settings.query_instruction.clone().unwrap_or_default(),

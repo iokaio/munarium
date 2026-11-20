@@ -434,6 +434,7 @@ impl Retrieval {
             prepared,
             index_version,
             inference::ReadKind::FanOut,
+            None,
         )
         .await
         .map(|(result, execution)| (result, execution.lexical_domain))
@@ -460,6 +461,7 @@ impl Retrieval {
             prepared,
             index_version,
             inference::ReadKind::Single,
+            None,
         )
         .await
     }

@@ -8683,6 +8683,17 @@
               "effective_on": {
                 "type": "string"
               },
+              "execution": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReadExecutionDto",
+                    "description": "ClearView IR-3: the enrolled members' inference stage receipts, each\nnaming its collection id. Present only when an enrolled collection\nwas searched, so a query of unenrolled collections is unchanged."
+                  }
+                ]
+              },
               "governance_revisions": {
                 "type": "object",
                 "additionalProperties": {
@@ -9042,6 +9053,17 @@
                   },
                   {
                     "$ref": "#/components/schemas/TurnCoverageDto"
+                  }
+                ]
+              },
+              "execution": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ReadExecutionDto",
+                    "description": "ClearView IR-3: the enrolled members' inference stage receipts.\nPresent only when a searched member is enrolled."
                   }
                 ]
               }
@@ -12902,6 +12924,28 @@
         },
         "additionalProperties": false
       },
+      "ReadExecutionDto": {
+        "type": "object",
+        "description": "The inference stages of a multi-collection read (ClearView IR-3): one\nreceipt per enrolled member and configured stage, each naming its\ncollection. Present only when a member of the read is enrolled, so a read\nof unenrolled collections serializes exactly as before.\n\nReranking on such a read is group reranking (design 8.6): members whose\nstages share the reranker, the payer and processing binding, the outage\npolicy and the caps are scored by one call and reordered only within the\nfused positions they held.",
+        "required": [
+          "version",
+          "stages"
+        ],
+        "properties": {
+          "stages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchStageDto"
+            }
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Disclosure format version; currently 1.",
+            "minimum": 0
+          }
+        }
+      },
       "RecordCountsRequest": {
         "type": "object",
         "required": [
@@ -13828,6 +13872,13 @@
           "applied": {
             "type": "boolean",
             "description": "True only when the stage's output shaped the served result."
+          },
+          "collection": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The collection this receipt is for. Present only on a\nmulti-collection read (a session turn or `POST /v1.2/query`), whose\n`execution.stages` holds one receipt per enrolled member and stage;\nabsent on a single-collection search."
           },
           "fallback": {
             "type": [
