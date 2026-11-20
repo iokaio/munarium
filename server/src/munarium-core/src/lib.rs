@@ -42,6 +42,7 @@ pub mod evidence;
 pub mod gates;
 pub mod governance;
 pub mod hierarchy;
+pub mod inference;
 pub mod ledger;
 pub mod matrix_pin;
 pub mod model_evidence;

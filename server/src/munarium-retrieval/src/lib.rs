@@ -55,6 +55,7 @@ pub mod config;
 pub mod damage;
 pub mod direct;
 pub mod executor;
+pub mod inference;
 pub mod merge;
 pub mod mirror;
 pub mod routing;
@@ -94,6 +95,10 @@ pub use munarium_retrieval_pg::required::{RequiredReason, RequiredVersionsPolicy
 
 /// The embedding width the built-in embedder produces.
 pub use munarium_retrieval_pg::EMBED_DIMS;
+
+/// The semantic index vocabulary (ClearView IR-2), re-exported so Server
+/// names one retrieval crate.
+pub use munarium_retrieval_pg::semantic::{SemanticCoverage, SemanticSpace, SEMANTIC_DIMS};
 
 /// Which engine serves user traffic. Parsed from `MUNARIUM_RETRIEVAL_MODE`.
 ///
@@ -154,6 +159,9 @@ pub struct SearchExecution {
     pub lexical_domain: &'static str,
     /// The legs the engine ran, lexical first.
     pub legs: Vec<LegExecution>,
+    /// The configured inference stages of an enrolled collection and what
+    /// each did (ClearView IR-0). Empty for every unenrolled read.
+    pub stages: Vec<inference::StageReceipt>,
 }
 
 /// One retrieval leg's observations.
@@ -190,6 +198,7 @@ impl SearchExecution {
             engine: "postgresql",
             lexical_domain: merge::PG_LEXICAL_DOMAIN,
             legs,
+            stages: Vec::new(),
         }
     }
 
@@ -206,6 +215,7 @@ impl SearchExecution {
             engine: "postgresql",
             lexical_domain: merge::PG_LEXICAL_DOMAIN,
             legs: vec![leg("lexical"), leg("vector")],
+            stages: Vec::new(),
         }
     }
 
@@ -229,6 +239,7 @@ impl SearchExecution {
             engine: "datastore",
             lexical_domain: DATASTORE_LEXICAL_DOMAIN,
             legs,
+            stages: Vec::new(),
         }
     }
 }
@@ -250,6 +261,11 @@ pub struct Retrieval {
     /// UNSELECTED scope does in datastore mode; the difference is that a
     /// selected scope with no plane fails rather than falling back.
     serving: Option<std::sync::Arc<serving::ServingPlane>>,
+    /// Supplies enrolled collections' inference plans (ClearView IR-0).
+    /// Absent, every collection search is the v1.4 path.
+    governor: Option<std::sync::Arc<dyn inference::InferenceGovernor>>,
+    /// The initiating caller endpoint attempts are attributed to (I2).
+    caller: Option<std::sync::Arc<str>>,
 }
 
 impl Retrieval {
@@ -259,6 +275,8 @@ impl Retrieval {
             pg,
             mode,
             serving: None,
+            governor: None,
+            caller: None,
         }
     }
 
@@ -411,9 +429,14 @@ impl Retrieval {
         prepared: &PreparedSearchQuery,
         index_version: Option<&str>,
     ) -> Result<(SearchResult, &'static str)> {
-        self.search_collection_disclosed(collection_id, prepared, index_version)
-            .await
-            .map(|(result, execution)| (result, execution.lexical_domain))
+        self.search_governed(
+            collection_id,
+            prepared,
+            index_version,
+            inference::ReadKind::FanOut,
+        )
+        .await
+        .map(|(result, execution)| (result, execution.lexical_domain))
     }
 
     /// Search one collection and report what actually executed (R1).
@@ -423,7 +446,26 @@ impl Retrieval {
     /// them, the legs it ran and what each leg observed. A count or an
     /// exhaustion state the engine did not measure is `None` (unknown), never
     /// a guessed zero or `false`.
+    ///
+    /// This is a single-collection read: an enrolled collection's reranking
+    /// stage applies here, and its stage receipts are in the execution.
     pub async fn search_collection_disclosed(
+        &self,
+        collection_id: &str,
+        prepared: &PreparedSearchQuery,
+        index_version: Option<&str>,
+    ) -> Result<(SearchResult, SearchExecution)> {
+        self.search_governed(
+            collection_id,
+            prepared,
+            index_version,
+            inference::ReadKind::Single,
+        )
+        .await
+    }
+
+    /// The v1.4 engine dispatch for one collection, with no inference stage.
+    pub(crate) async fn search_collection_dispatch(
         &self,
         collection_id: &str,
         prepared: &PreparedSearchQuery,
@@ -495,8 +537,9 @@ impl Retrieval {
         index_version: Option<&str>,
     ) -> Result<SearchResult> {
         let prepared = self.prepare_query(query, &params);
-        self.search_collection_prepared(collection_id, &prepared, index_version)
+        self.search_collection_disclosed(collection_id, &prepared, index_version)
             .await
+            .map(|(result, _)| result)
     }
 
     /// The legacy shape-scoped hybrid search, via `RetrievalBackend`.

@@ -48,6 +48,7 @@ pub mod direct;
 pub mod export;
 pub mod provenance;
 pub mod required;
+pub mod semantic;
 pub use collections::{
     expand_query, merge_hits, merge_hits_weighted, number_query_digits, pairs_tsquery,
     select_collection_indices, tsquery_lexemes,

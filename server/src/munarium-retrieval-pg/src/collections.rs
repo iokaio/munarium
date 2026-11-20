@@ -821,6 +821,26 @@ impl PgRetrieval {
         watermark_seq: u64,
         activate: bool,
     ) -> Result<munarium_core::retrieval::IndexVersion> {
+        self.build_collection_index_with(collection_id, max_chars, watermark_seq, activate, None)
+            .await
+    }
+
+    /// The build, optionally as a semantic index (ClearView IR-2).
+    ///
+    /// `None` is the v1.4 build: the identity string and manifest are exactly
+    /// what they always were, so a hash-only deployment keeps its index ids.
+    /// `Some` appends the semantic space to the identity, so the semantic
+    /// index is a NEW index version beside the existing one, and records it
+    /// in the manifest. Its chunks are the same chunks; the semantic vectors
+    /// live in the companion table and are filled by the caller.
+    pub(crate) async fn build_collection_index_with(
+        &self,
+        collection_id: &str,
+        max_chars: usize,
+        watermark_seq: u64,
+        activate: bool,
+        semantic: Option<&crate::semantic::SemanticSpace>,
+    ) -> Result<munarium_core::retrieval::IndexVersion> {
         self.assert_scope_readable("collection", collection_id)
             .await?;
         let watermark_seq = crate::pg_watermark(watermark_seq)?;
@@ -864,18 +884,22 @@ impl PgRetrieval {
         // The extractor version joins the identity: improving DOCX/PDF/OCR
         // extraction changes the TEXT for the same bytes, so it must produce
         // a new index rather than silently serving the old chunks.
-        let identity = format!(
+        let mut identity = format!(
             "{collection_id}|{}|{CHUNKER_VERSION}|{LOCAL_EMBEDDER}|{}|{}",
             info.shape_ref,
             self.extractors.version(),
             source_set.join(",")
         );
+        if let Some(space) = semantic {
+            identity.push_str("|semantic:");
+            identity.push_str(&space.identity);
+        }
         let index_id = format!(
             "idx-{}",
             &hex::encode(sha2::Sha256::digest(identity.as_bytes()))[..16]
         );
 
-        let manifest = serde_json::json!({
+        let mut manifest = serde_json::json!({
             "collection_id": collection_id,
             "collection_name": info.name,
             "shape_ref": info.shape_ref,
@@ -885,6 +909,9 @@ impl PgRetrieval {
             "source_set": source_hashes,
             "max_chars": max_chars,
         });
+        if let (Some(space), Some(object)) = (semantic, manifest.as_object_mut()) {
+            object.insert("semantic".into(), space.manifest());
+        }
 
         let exists =
             sqlx::query("SELECT 1 AS one FROM index_versions WHERE tenant_id = $1 AND id = $2")
@@ -1089,6 +1116,12 @@ impl PgRetrieval {
              WHERE tenant_id = $1 AND collection_id = $2 AND index_version_id IN (
                 SELECT id FROM index_versions
                  WHERE tenant_id = $1 AND collection_id = $2 AND NOT active
+                   AND id NOT IN (
+                       -- ClearView IR-4: the enrolled semantic index and the
+                       -- prior approved index rollback restores are kept.
+                       SELECT p FROM collection_inference_bindings b,
+                              unnest(ARRAY[b.prior_index_id, b.semantic_index_id]) AS p
+                        WHERE b.tenant_id = $1 AND b.collection_id = $2 AND p IS NOT NULL)
                  ORDER BY built_at DESC OFFSET $3
              )
             "#,
@@ -1106,6 +1139,35 @@ impl PgRetrieval {
              WHERE tenant_id = $1 AND collection_id = $2 AND index_version_id IN (
                 SELECT id FROM index_versions
                  WHERE tenant_id = $1 AND collection_id = $2 AND NOT active
+                   AND id NOT IN (
+                       -- ClearView IR-4: the enrolled semantic index and the
+                       -- prior approved index rollback restores are kept.
+                       SELECT p FROM collection_inference_bindings b,
+                              unnest(ARRAY[b.prior_index_id, b.semantic_index_id]) AS p
+                        WHERE b.tenant_id = $1 AND b.collection_id = $2 AND p IS NOT NULL)
+                 ORDER BY built_at DESC OFFSET $3
+             )
+            "#,
+        )
+        .bind(&self.tenant_id)
+        .bind(collection_id)
+        .bind(keep as i64)
+        .execute(&self.pool)
+        .await
+        .map_err(storage_err)?;
+        // A retired semantic index's companion vectors go with its chunks.
+        sqlx::query(
+            r#"
+            DELETE FROM semantic_chunk_vectors
+             WHERE tenant_id = $1 AND collection_id = $2 AND index_version_id IN (
+                SELECT id FROM index_versions
+                 WHERE tenant_id = $1 AND collection_id = $2 AND NOT active
+                   AND id NOT IN (
+                       -- ClearView IR-4: the enrolled semantic index and the
+                       -- prior approved index rollback restores are kept.
+                       SELECT p FROM collection_inference_bindings b,
+                              unnest(ARRAY[b.prior_index_id, b.semantic_index_id]) AS p
+                        WHERE b.tenant_id = $1 AND b.collection_id = $2 AND p IS NOT NULL)
                  ORDER BY built_at DESC OFFSET $3
              )
             "#,
@@ -1122,6 +1184,12 @@ impl PgRetrieval {
              WHERE tenant_id = $1 AND collection_id = $2 AND index_version_id IN (
                 SELECT id FROM index_versions
                  WHERE tenant_id = $1 AND collection_id = $2 AND NOT active
+                   AND id NOT IN (
+                       -- ClearView IR-4: the enrolled semantic index and the
+                       -- prior approved index rollback restores are kept.
+                       SELECT p FROM collection_inference_bindings b,
+                              unnest(ARRAY[b.prior_index_id, b.semantic_index_id]) AS p
+                        WHERE b.tenant_id = $1 AND b.collection_id = $2 AND p IS NOT NULL)
                  ORDER BY built_at DESC OFFSET $3
              )
             "#,
@@ -1249,6 +1317,21 @@ impl PgRetrieval {
         collection_id: &str,
         prepared: &PreparedSearchQuery,
         index_version: Option<&str>,
+    ) -> Result<SearchResult> {
+        self.search_collection_leg(collection_id, prepared, index_version, None)
+            .await
+    }
+
+    /// The collection search, with the vector leg drawn either from the
+    /// built-in hash vectors (`semantic = None`, the v1.4 path, unchanged) or
+    /// from a semantic index's companion vectors (ClearView IR-2). The
+    /// lexical leg, fusion and envelope are the same code either way.
+    pub(crate) async fn search_collection_leg(
+        &self,
+        collection_id: &str,
+        prepared: &PreparedSearchQuery,
+        index_version: Option<&str>,
+        semantic: Option<&crate::semantic::SemanticQuery>,
     ) -> Result<SearchResult> {
         // A prepared query with no lexical plan still has to name the text it
         // came from; an empty plan is the caller asking for the vector leg
@@ -1402,9 +1485,19 @@ impl PgRetrieval {
         // `embedding <=> NULL` is NULL, so an ORDER BY over it returns rows in
         // arbitrary order, which would look like a working vector leg while
         // being noise. Absent is absent.
-        let vector = match qvec {
-            None => Vec::new(),
-            Some(qvec) => {
+        let vector = match (semantic, qvec) {
+            (Some(semantic), _) => {
+                self.semantic_vector_leg(
+                    collection_id,
+                    &index_id,
+                    semantic,
+                    prepared.vector_candidates,
+                    &demotions_json,
+                )
+                .await?
+            }
+            (None, None) => Vec::new(),
+            (None, Some(qvec)) => {
                 let ef_search = prepared.vector_candidates.clamp(40, 1000);
                 let mut tx = self.pool.begin().await.map_err(storage_err)?;
                 sqlx::query("SELECT set_config('hnsw.ef_search', $1, true)")
@@ -1488,9 +1581,14 @@ impl PgRetrieval {
             prepared.top_k
         });
 
-        let envelope = self
+        let mut envelope = self
             .envelope_for(&mut hits, index_id, crate::read_watermark(watermark)?)
             .await?;
+        if let Some(semantic) = semantic {
+            // The vector leg that ran is the semantic one; the envelope names
+            // its identity instead of the hash embedder's.
+            envelope.provider_fingerprint = Some(semantic.fingerprint.clone());
+        }
         self.assert_sources_readable(&envelope.source_ids).await?;
         Ok(SearchResult { hits, envelope })
     }
