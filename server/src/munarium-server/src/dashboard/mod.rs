@@ -134,33 +134,153 @@ fn rw_credential(state: &AppState, admin: &AdminCtx, token: &str) -> Result<Tena
 // page chrome
 // ---------------------------------------------------------------------------
 
-const NAV: &[(&str, &str)] = &[
-    ("/admin", "overview"),
-    ("/admin/traffic", "traffic"),
-    ("/admin/endpoints", "endpoints"),
-    ("/admin/usage", "usage"),
-    ("/admin/providers", "providers"),
-    ("/admin/runbooks", "runbooks"),
-    ("/admin/collections", "collections"),
-    ("/admin/storage", "storage"),
-    ("/admin/sessions", "sessions"),
-    ("/admin/tokens", "tokens"),
-    ("/admin/audit", "audit"),
-    ("/admin/findings", "findings"),
-    ("/admin/matrix", "matrix"),
-    ("/admin/health", "health"),
+/// One console page: its URL, its nav name (the `active` key handlers pass
+/// to `render`), and the one-sentence purpose shown under its title.
+pub(crate) struct NavPage {
+    pub href: &'static str,
+    pub name: &'static str,
+    pub purpose: &'static str,
+}
+
+/// A navigation group: one top-level link (to its first page) and, when the
+/// group has more than one page, a row of sub-tabs (ClearView U1). Grouped
+/// by operator task; every v1.4 URL is still a destination.
+pub(crate) struct NavGroup {
+    pub label: &'static str,
+    pub pages: &'static [NavPage],
+}
+
+const fn nav_page(href: &'static str, name: &'static str, purpose: &'static str) -> NavPage {
+    NavPage {
+        href,
+        name,
+        purpose,
+    }
+}
+
+pub(crate) const NAV: &[NavGroup] = &[
+    NavGroup {
+        label: "overview",
+        pages: &[nav_page(
+            "/admin",
+            "overview",
+            "Whether anything needs attention, and the size of what is deployed.",
+        )],
+    },
+    NavGroup {
+        label: "traffic",
+        pages: &[
+            nav_page(
+                "/admin/traffic",
+                "traffic",
+                "Request rate, errors and latency across the API over a time window.",
+            ),
+            nav_page(
+                "/admin/endpoints",
+                "endpoints",
+                "Request volume, errors and latency for each route.",
+            ),
+            nav_page(
+                "/admin/usage",
+                "usage",
+                "API usage over time, grouped by the dimension you choose.",
+            ),
+        ],
+    },
+    NavGroup {
+        label: "retrieval",
+        pages: &[
+            nav_page(
+                "/admin/collections",
+                "collections",
+                "Collections, their access controls and index versions, and recent bulk uploads.",
+            ),
+            nav_page(
+                "/admin/storage",
+                "storage",
+                "Where collection data lives across the storage tiers and nodes.",
+            ),
+            nav_page(
+                "/admin/sessions",
+                "sessions",
+                "Conversation sessions: activity over time and each session turn by turn.",
+            ),
+        ],
+    },
+    NavGroup {
+        label: "runbooks",
+        pages: &[nav_page(
+            "/admin/runbooks",
+            "runbooks",
+            "Deployed runbooks, shapes and runs, including runs waiting for gate approval.",
+        )],
+    },
+    NavGroup {
+        label: "access and audit",
+        pages: &[
+            nav_page(
+                "/admin/tokens",
+                "tokens",
+                "Capability tokens issued to end users: review, issue and revoke them.",
+            ),
+            nav_page(
+                "/admin/audit",
+                "audit",
+                "Every /v1 request, newest first, attributed to its uid.",
+            ),
+            nav_page(
+                "/admin/findings",
+                "findings",
+                "Gate findings recorded at write time and by Matrix reconciliation, newest first.",
+            ),
+        ],
+    },
+    NavGroup {
+        label: "platform",
+        pages: &[
+            nav_page(
+                "/admin/providers",
+                "providers",
+                "Configured model providers, whether their credentials resolve, and token spend.",
+            ),
+            nav_page(
+                "/admin/health",
+                "health",
+                "This instance's process state and effective non-secret configuration.",
+            ),
+            nav_page(
+                "/admin/matrix",
+                "matrix",
+                "Whether the structured-evidence plane is reachable, and which evidence layer refuses.",
+            ),
+        ],
+    },
 ];
 
+/// The page registered under nav name `active`, if any.
+pub(crate) fn nav_lookup(active: &str) -> Option<(&'static NavGroup, &'static NavPage)> {
+    NAV.iter()
+        .find_map(|g| g.pages.iter().find(|p| p.name == active).map(|p| (g, p)))
+}
+
+/// Six top-level links, then the active group's sub-tabs. The current page
+/// carries `aria-current="page"` (and the `active` class for styling); its
+/// group's top-level link carries `active` too. Detail pages (a session, a
+/// shape) mark the list page they belong to.
 fn nav(active: &str, view_only: bool) -> String {
-    let links: String = NAV
+    let current = nav_lookup(active);
+    let current_group = current.map(|(g, _)| g.label);
+    let groups: String = NAV
         .iter()
-        .map(|(href, name)| {
-            let class = if *name == active {
-                " class=\"active\""
-            } else {
-                ""
+        .map(|g| {
+            let first = &g.pages[0];
+            let in_group = current_group == Some(g.label);
+            let attrs = match (in_group, g.pages.len() == 1) {
+                (true, true) => r#" class="active" aria-current="page""#,
+                (true, false) => r#" class="active""#,
+                _ => "",
             };
-            format!(r#"<a href="{href}"{class}>{name}</a>"#)
+            format!(r#"<a href="{}"{attrs}>{}</a>"#, first.href, g.label)
         })
         .collect();
     let badge = if view_only {
@@ -168,7 +288,30 @@ fn nav(active: &str, view_only: bool) -> String {
     } else {
         ""
     };
-    format!(r#"<nav><span class="brand">munarium admin{badge}</span>{links}</nav>"#)
+    let subnav = match current {
+        Some((g, _)) if g.pages.len() > 1 => {
+            let tabs: String = g
+                .pages
+                .iter()
+                .map(|p| {
+                    let attrs = if p.name == active {
+                        r#" class="active" aria-current="page""#
+                    } else {
+                        ""
+                    };
+                    format!(r#"<a href="{}"{attrs}>{}</a>"#, p.href, p.name)
+                })
+                .collect();
+            format!(
+                r#"<nav class="subnav" aria-label="{} pages">{tabs}</nav>"#,
+                g.label
+            )
+        }
+        _ => String::new(),
+    };
+    format!(
+        r#"<nav aria-label="console"><span class="brand">munarium admin{badge}</span>{groups}</nav>{subnav}"#
+    )
 }
 
 fn page(active: &str, view_only: bool, title: &str, body: &str) -> Html<String> {
@@ -639,14 +782,85 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         let body = body_string(resp).await;
         assert!(!body.contains("authoring"), "{body}");
-        for name in ["runbooks", "collections", "tokens", "audit", "findings"] {
+        // Grouped navigation (U1): every group is a top-level link on every
+        // page, and each control-plane page is reachable and marked current
+        // within its group.
+        for group in NAV {
             assert!(
-                body.contains(&format!(">{name}</a>")),
+                body.contains(&format!(r#"href="{}""#, group.pages[0].href)),
+                "nav lacks group {}: {body}",
+                group.label
+            );
+        }
+        for name in ["runbooks", "collections", "tokens", "audit", "findings"] {
+            let (_, page) = nav_lookup(name).expect("registered");
+            let body = body_string(get(&state, page.href, Some("m"), false).await).await;
+            assert!(
+                body.contains(&format!(r#"aria-current="page">{name}</a>"#)),
                 "nav lacks {name}: {body}"
             );
         }
         let resp = get(&state, "/admin/authoring", Some("m"), false).await;
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// The v1.4 console URLs. Bookmarks to any of them must keep working
+    /// through the navigation reorganization (COMPAT-T5).
+    const V14_PAGES: &[&str] = &[
+        "/admin",
+        "/admin/traffic",
+        "/admin/endpoints",
+        "/admin/usage",
+        "/admin/providers",
+        "/admin/runbooks",
+        "/admin/collections",
+        "/admin/storage",
+        "/admin/sessions",
+        "/admin/tokens",
+        "/admin/audit",
+        "/admin/findings",
+        "/admin/matrix",
+        "/admin/health",
+    ];
+
+    #[tokio::test]
+    async fn every_nav_link_is_a_served_route_and_v14_urls_still_serve() {
+        let state = state(static_auth()).await;
+        let mut hrefs = Vec::new();
+        for group in NAV {
+            assert!(!group.pages.is_empty(), "{}", group.label);
+            for page in group.pages {
+                hrefs.push(page.href);
+                let resp = get(&state, page.href, Some("m"), false).await;
+                assert_eq!(resp.status(), StatusCode::OK, "{}", page.href);
+                let body = body_string(resp).await;
+                // Exactly one current page, and it is this one.
+                assert_eq!(
+                    body.matches(r#"aria-current="page""#).count(),
+                    1,
+                    "{}: {body}",
+                    page.href
+                );
+                assert!(
+                    body.contains(&format!(
+                        r#"href="{}" class="active" aria-current="page""#,
+                        page.href
+                    )),
+                    "{}: {body}",
+                    page.href
+                );
+            }
+        }
+        assert_eq!(NAV.len(), 6, "six top-level destinations");
+        // Every v1.4 page is still in the navigation, and still served.
+        for url in V14_PAGES {
+            assert!(hrefs.contains(url), "{url} dropped from the nav");
+            let resp = get(&state, url, Some("m"), false).await;
+            assert_eq!(resp.status(), StatusCode::OK, "{url}");
+        }
+        assert_eq!(hrefs.len(), V14_PAGES.len(), "nav pages: {hrefs:?}");
+        let resp = get(&state, "/admin/login", None, false).await;
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 
     #[tokio::test]

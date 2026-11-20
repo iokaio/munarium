@@ -93,6 +93,8 @@ nav { display: flex; gap: 14px; flex-wrap: wrap; align-items: baseline;
       padding: 12px 20px; border-bottom: 1px solid var(--grid); background: var(--surface); }
 nav .brand { font-weight: 600; color: var(--ink); margin-right: 8px; }
 nav a.active { color: var(--ink); font-weight: 600; }
+nav.subnav { padding: 6px 20px 6px 36px; gap: 12px; font-size: 13px; }
+nav a[aria-current=page] { text-decoration: underline; text-underline-offset: 4px; }
 main { max-width: 1080px; margin: 0 auto; padding: 20px; }
 h1 { font-size: 19px; margin: 6px 0 14px; }
 h2 { font-size: 15px; margin: 22px 0 8px; color: var(--ink-2); }
