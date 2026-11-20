@@ -895,3 +895,406 @@ async fn budgets_gate_dispatch_and_shadow_is_metered_separately() {
         .contains("state=probe_failed"));
     assert_eq!(stub.calls().all(), before);
 }
+
+// ---------------------------------------------------------------------------
+// SC2: shared and dedicated placement
+// ---------------------------------------------------------------------------
+
+/// A configuration like [`config_yaml`] with a declared placement.
+fn placed_yaml(base: &str, placement: &str) -> String {
+    config_yaml(base, 1_000_000, Some(50_000)).replace(
+        "allowTestBackend: true}",
+        &format!("allowTestBackend: true, placement: {placement}}}"),
+    )
+}
+
+async fn bind_placed(h: &Harness, expected: u64, placement: Option<Value>) -> (u16, Value) {
+    let mut body = json!({"expected_revision": expected, "provider_config": "lens",
+        "embedding": {"model": EMBED_MODEL, "query_instruction": "Query: "},
+        "rerank": {"model": RERANK_MODEL, "max_candidates": 10}});
+    if let Some(p) = placement {
+        body["placement"] = p;
+    }
+    call(
+        &h.router,
+        "PUT",
+        "/v1/collections/alpha/inference",
+        MGMT,
+        Some(body),
+    )
+    .await
+}
+
+async fn probe(h: &Harness) -> (u16, Value) {
+    call(
+        &h.router,
+        "POST",
+        "/v1/providers/lens/inference-probe",
+        MGMT,
+        None,
+    )
+    .await
+}
+
+async fn describe_stage_reasons(h: &Harness) -> Vec<Value> {
+    let (_, described) = call(
+        &h.router,
+        "GET",
+        "/v1/collections/alpha/inference",
+        MGMT,
+        None,
+    )
+    .await;
+    described["stages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| json!([s["state"], s["reason"]]))
+        .collect()
+}
+
+fn refused_for(body: &Value, reason: &str) -> bool {
+    body["detail"].as_str().is_some_and(|d| d.contains(reason))
+}
+
+/// SC2 rule, unit level: coverage, undeclared, dedicated and processing.
+#[test]
+fn sc2_placement_check_rules() {
+    use munarium_api_types::inference::InferencePlacementRequirement as Req;
+    use munarium_providers::openai_compatible::{Placement, PlacementMode};
+    let rules = |pairs: &[(&str, &str)]| {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect::<std::collections::BTreeMap<_, _>>()
+    };
+    let shared = Placement {
+        mode: PlacementMode::Shared,
+        tenants: vec!["t-a".into(), "t-b".into()],
+        processing: rules(&[("location", "eu"), ("retention", "none")]),
+    };
+    let dedicated = Placement {
+        mode: PlacementMode::Dedicated,
+        tenants: vec![],
+        processing: rules(&[("location", "eu")]),
+    };
+    let req = |isolation: &str, pairs: &[(&str, &str)]| Req {
+        isolation: isolation.into(),
+        processing: rules(pairs),
+    };
+    let check = crate::inference::placement_check;
+    // Phase 6: nothing declared, nothing required.
+    assert_eq!(check("t-a", None, None), Ok(()));
+    // Coverage applies with or without a requirement.
+    assert_eq!(check("t-a", Some(&shared), None), Ok(()));
+    assert_eq!(
+        check("t-c", Some(&shared), None),
+        Err("placement_tenant_not_covered")
+    );
+    assert_eq!(
+        check("t-c", Some(&shared), Some(&req("shared", &[]))),
+        Err("placement_tenant_not_covered")
+    );
+    assert_eq!(check("t-c", Some(&dedicated), None), Ok(()));
+    assert_eq!(
+        check("t-a", None, Some(&req("shared", &[]))),
+        Err("placement_undeclared")
+    );
+    assert_eq!(
+        check("t-a", Some(&shared), Some(&req("dedicated", &[]))),
+        Err("placement_dedicated_required")
+    );
+    assert_eq!(
+        check(
+            "t-a",
+            Some(&dedicated),
+            Some(&req("dedicated", &[("location", "eu")]))
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        check("t-a", Some(&dedicated), Some(&req("shared", &[]))),
+        Ok(()),
+        "a dedicated pool satisfies a collection that permits sharing"
+    );
+    assert_eq!(
+        check(
+            "t-a",
+            Some(&shared),
+            Some(&req("shared", &[("location", "eu")]))
+        ),
+        Ok(())
+    );
+    for incompatible in [
+        &[("location", "us")][..],
+        &[("retention", "30d")][..],
+        &[("isolation", "process")][..],
+    ] {
+        assert_eq!(
+            check("t-a", Some(&shared), Some(&req("shared", incompatible))),
+            Err("placement_processing_incompatible"),
+            "{incompatible:?}"
+        );
+    }
+}
+
+/// SC2-T2 (local): a shared pool that does not explicitly list the tenant
+/// receives nothing on probe, bind, serving or build paths; listing the
+/// tenant admits it; withdrawing coverage stops it again before any send.
+#[tokio::test]
+async fn sc2_shared_placement_requires_explicit_tenant_coverage() {
+    let Some(url) = db_url("sc2_coverage") else {
+        return;
+    };
+    let h = harness(url, true).await;
+    let stub = start_stub().await;
+    let uncovered = "{mode: shared, tenants: [ir-other-tenant], processing: {location: eu}}";
+    apply_config(&h, &placed_yaml(&stub.base, uncovered)).await;
+    let (status, body) = probe(&h).await;
+    assert_eq!(status, 409, "{body}");
+    assert!(refused_for(&body, "placement_tenant_not_covered"), "{body}");
+    let (status, body) = bind_placed(&h, 0, None).await;
+    assert_eq!(status, 409, "{body}");
+    assert!(refused_for(&body, "placement_tenant_not_covered"), "{body}");
+    assert_eq!(stub.calls().all(), 0, "nothing reaches an uncovered pool");
+
+    let covered = format!(
+        "{{mode: shared, tenants: [ir-other-tenant, {}], processing: {{location: eu}}}}",
+        h.tenant
+    );
+    apply_config(&h, &placed_yaml(&stub.base, &covered)).await;
+    let (status, body) = probe(&h).await;
+    assert_eq!((status, &body["passed"]), (200, &json!(true)), "{body}");
+    let (status, bound) = bind_placed(&h, 0, None).await;
+    assert_eq!(status, 200, "{bound}");
+    assert_eq!(
+        bound["placement"],
+        json!({"isolation": "shared", "processing": {"location": "eu"}}),
+        "a first binding records the declared placement"
+    );
+    assert_eq!(build_semantic(&h).await["complete"], true);
+    let (status, body) = call(
+        &h.router,
+        "POST",
+        "/v1/collections/alpha/inference/enroll",
+        MGMT,
+        Some(json!({"expected_revision": 2})),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    let (status, body) = search(&h, "orchid nebula").await;
+    assert_eq!(status, 200, "{body}");
+
+    // Coverage withdrawn: every stage stops before any client is used.
+    apply_config(&h, &placed_yaml(&stub.base, uncovered)).await;
+    assert_eq!(
+        describe_stage_reasons(&h).await,
+        vec![
+            json!(["unconfigured", "placement_tenant_not_covered"]),
+            json!(["unconfigured", "placement_tenant_not_covered"])
+        ]
+    );
+    let before = stub.calls().all();
+    let (status, body) = search(&h, "orchid nebula").await;
+    assert_eq!(status, 503, "{body}");
+    assert!(refused_for(&body, "placement_tenant_not_covered"), "{body}");
+    let (status, job) = call(
+        &h.router,
+        "POST",
+        "/v1/index-build-jobs",
+        READER,
+        Some(json!({"kind": "semantic", "collection_id": h.collection})),
+    )
+    .await;
+    assert_eq!(status, 200, "{job}");
+    let jobs = munarium_store_pg::jobs::BuildJobs::new(h.state.pg_pool().unwrap().clone());
+    let job = jobs
+        .get(&h.tenant, job["job_id"].as_str().unwrap())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        crate::datastore_jobs::run_one_job(&h.state, &job, None, None)
+            .await
+            .is_err()
+    );
+    assert_eq!(stub.calls().all(), before, "zero sends after coverage ends");
+}
+
+/// SC2-T3 (local): the dedicated pool is lost and the configuration is
+/// repointed at a shared pool that covers the tenant and passes its probe.
+/// The binding recorded `dedicated`, so the stages refuse and the shared
+/// pool receives no content, under `require` and under `prefer` alike; a
+/// rebind that omits the requirement keeps it; only an explicit `shared`
+/// requirement admits the shared pool.
+#[tokio::test]
+async fn sc2_lost_dedicated_capacity_never_falls_over_to_a_shared_pool() {
+    let Some(url) = db_url("sc2_dedicated") else {
+        return;
+    };
+    let h = harness(url, true).await;
+    let dedicated = start_stub().await;
+    let shared = start_stub().await;
+    apply_config(&h, &placed_yaml(&dedicated.base, "{mode: dedicated}")).await;
+    assert_eq!(probe(&h).await.0, 200);
+    let (status, bound) = bind_placed(&h, 0, None).await;
+    assert_eq!(status, 200, "{bound}");
+    assert_eq!(bound["placement"], json!({"isolation": "dedicated"}));
+    assert_eq!(build_semantic(&h).await["complete"], true);
+    let (status, body) = call(
+        &h.router,
+        "POST",
+        "/v1/collections/alpha/inference/enroll",
+        MGMT,
+        Some(json!({"expected_revision": 2})),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    let revision = body["revision"].as_u64().unwrap();
+    assert_eq!(search(&h, "orchid nebula").await.0, 200);
+
+    // Dedicated capacity is lost; the configuration now names a shared pool.
+    dedicated.shut_down();
+    let shared_placement = format!(
+        "{{mode: shared, tenants: [{}], processing: {{location: eu}}}}",
+        h.tenant
+    );
+    apply_config(&h, &placed_yaml(&shared.base, &shared_placement)).await;
+    let (status, body) = probe(&h).await;
+    assert_eq!(status, 200, "{body}");
+    let after_probe = shared.calls().inference();
+    assert_eq!(
+        describe_stage_reasons(&h).await,
+        vec![
+            json!(["unconfigured", "placement_dedicated_required"]),
+            json!(["unconfigured", "placement_dedicated_required"])
+        ]
+    );
+    let (status, body) = search(&h, "orchid nebula").await;
+    assert_eq!(status, 503, "{body}");
+    assert!(refused_for(&body, "placement_dedicated_required"), "{body}");
+
+    // A rebind that omits the requirement keeps `dedicated` and is refused.
+    let (status, body) = bind_placed(&h, revision, None).await;
+    assert_eq!(status, 409, "{body}");
+    assert!(refused_for(&body, "placement_dedicated_required"), "{body}");
+
+    // Under `prefer` the collection's own fallback applies, still with no
+    // dispatch to the shared pool. (Set directly: the bind itself is
+    // refused while the requirement cannot be met.)
+    sqlx::query(
+        "UPDATE collection_inference_bindings
+            SET embedding = embedding || '{\"policy\": \"prefer\"}'::jsonb,
+                rerank = rerank || '{\"policy\": \"prefer\"}'::jsonb
+          WHERE tenant_id = $1",
+    )
+    .bind(&h.tenant)
+    .execute(h.state.pg_pool().unwrap())
+    .await
+    .unwrap();
+    let (status, body) = search(&h, "orchid nebula").await;
+    assert_eq!(status, 200, "{body}");
+    let stages = body["execution"]["stages"].as_array().unwrap();
+    assert_eq!(stages[0]["fallback"], "lexical_only", "{body}");
+    assert_eq!(stages[0]["reason"], "placement_dedicated_required");
+    assert_eq!(stages[1]["fallback"], "fused_order");
+    assert_eq!(
+        shared.calls().inference(),
+        after_probe,
+        "no content reached the shared pool"
+    );
+
+    // Only an explicit operator decision admits the shared pool.
+    let (status, body) = bind_placed(&h, revision, Some(json!({"isolation": "shared"}))).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["placement"], json!({"isolation": "shared"}));
+    for stage in describe_stage_reasons(&h).await {
+        assert!(
+            !stage[1].as_str().unwrap_or("").starts_with("placement_"),
+            "{stage}"
+        );
+    }
+}
+
+/// SC2: processing rules must match; a requirement needs a declaration; an
+/// existing Phase 6 configuration and binding are unchanged.
+#[tokio::test]
+async fn sc2_processing_rules_must_be_compatible_and_phase6_is_unchanged() {
+    let Some(url) = db_url("sc2_processing") else {
+        return;
+    };
+    let h = harness(url, true).await;
+    let stub = start_stub().await;
+    apply_config(&h, &config_yaml(&stub.base, 1_000_000, Some(50_000))).await;
+    let (status, bound) = bind_placed(&h, 0, None).await;
+    assert_eq!(status, 200, "{bound}");
+    assert!(bound.get("placement").is_none(), "Phase 6 shape: {bound}");
+    let history: Value = sqlx::query_scalar(
+        "SELECT binding FROM collection_inference_binding_history WHERE tenant_id = $1",
+    )
+    .bind(&h.tenant)
+    .fetch_one(h.state.pg_pool().unwrap())
+    .await
+    .unwrap();
+    assert!(history.get("placement").is_none(), "{history}");
+
+    let (status, body) = bind_placed(&h, 1, Some(json!({"isolation": "shared"}))).await;
+    assert_eq!(status, 409, "{body}");
+    assert!(refused_for(&body, "placement_undeclared"), "{body}");
+    let (status, body) = bind_placed(&h, 1, Some(json!({"isolation": "pooled"}))).await;
+    assert_eq!(status, 400, "{body}");
+
+    let declared = format!(
+        "{{mode: shared, tenants: [{}], processing: {{location: eu, retention: 30d}}}}",
+        h.tenant
+    );
+    apply_config(&h, &placed_yaml(&stub.base, &declared)).await;
+    // The existing Phase 6 binding is not pinned by a later declaration.
+    let (status, body) = bind_placed(&h, 1, None).await;
+    assert_eq!(status, 200, "{body}");
+    assert!(body.get("placement").is_none(), "{body}");
+    for (requirement, reason) in [
+        (
+            json!({"isolation": "shared", "processing": {"location": "eu", "retention": "none"}}),
+            "placement_processing_incompatible",
+        ),
+        (
+            json!({"isolation": "shared", "processing": {"jurisdiction": "eu"}}),
+            "placement_processing_incompatible",
+        ),
+        (
+            json!({"isolation": "dedicated"}),
+            "placement_dedicated_required",
+        ),
+    ] {
+        let (status, body) = bind_placed(&h, 2, Some(requirement.clone())).await;
+        assert_eq!(status, 409, "{requirement}: {body}");
+        assert!(refused_for(&body, reason), "{requirement}: {body}");
+    }
+    let (status, body) = bind_placed(
+        &h,
+        2,
+        Some(json!({"isolation": "shared", "processing": {"location": "eu"}})),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        body["placement"],
+        json!({"isolation": "shared", "processing": {"location": "eu"}})
+    );
+
+    // A later incompatible declaration stops the stages before any send.
+    let moved = format!(
+        "{{mode: shared, tenants: [{}], processing: {{location: us, retention: 30d}}}}",
+        h.tenant
+    );
+    apply_config(&h, &placed_yaml(&stub.base, &moved)).await;
+    assert_eq!(
+        describe_stage_reasons(&h).await,
+        vec![
+            json!(["unconfigured", "placement_processing_incompatible"]),
+            json!(["unconfigured", "placement_processing_incompatible"])
+        ]
+    );
+    assert_eq!(stub.calls().inference(), 0);
+}

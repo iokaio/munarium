@@ -2592,18 +2592,21 @@
         "semantic_index_id": "text",
         "prior_index_id": "text",
         "updated_by": "text",
-        "updated_at": "timestamptz"
+        "updated_at": "timestamptz",
+        "placement": "jsonb"
       },
-      "content": "Current inference binding per collection: state, revision, bound configuration name, stage settings (model names, query/passage instructions, caps, policies), shadow switches, the semantic and prior approved index ids, last actor and time.",
+      "content": "Current inference binding per collection: state, revision, bound configuration name, stage settings (model names, query/passage instructions, caps, policies), shadow switches, the semantic and prior approved index ids, the placement requirement, last actor and time.",
       "json_content": {
         "embedding": "{model, query_instruction, passage_instruction, policy}; instructions are operator-authored text.",
         "rerank": "{model, max_candidates, max_document_bytes, policy}.",
-        "shadow": "{rerank, semantic_index} booleans."
+        "shadow": "{rerank, semantic_index} booleans.",
+        "placement": "SC2 placement requirement {isolation, processing}: dedicated or shared, and operator-chosen processing attribute names and values (for example location, retention). NULL means no placement check (Phase 6)."
       },
       "owner": "Tenant inference operators (mgmt role) for the collection; endpoint scopes govern authority and the database operator controls retained copies.",
       "policy": "retained",
       "origins": [
         "src/munarium-store-pg/migrations/0080_inference_stages.sql",
+        "src/munarium-store-pg/migrations/0081_inference_placement.sql",
         "src/munarium-server/src/inference.rs"
       ]
     },
@@ -2620,7 +2623,7 @@
       },
       "content": "Append-only history of every binding change: revision, action (bind, semantic_index_built, enroll, rollback), resulting state, a snapshot of the binding settings and the actor.",
       "json_content": {
-        "binding": "Snapshot of provider_config, embedding, rerank, shadow, timeout_ms, semantic_index_id and prior_index_id as in collection_inference_bindings."
+        "binding": "Snapshot of provider_config, embedding, rerank, shadow, timeout_ms, semantic_index_id and prior_index_id as in collection_inference_bindings, plus placement when the binding has a placement requirement (SC2)."
       },
       "owner": "Tenant inference operators (mgmt role) for the collection; endpoint scopes govern authority and the database operator controls retained copies.",
       "policy": "retained",

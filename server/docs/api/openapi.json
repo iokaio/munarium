@@ -8496,6 +8496,17 @@
               }
             ]
           },
+          "placement": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/InferencePlacementRequirement",
+                "description": "The binding's placement requirement (ClearView SC2). Absent when no\nplacement applies, as in Phase 6."
+              }
+            ]
+          },
           "prior_index_id": {
             "type": [
               "string",
@@ -10845,6 +10856,17 @@
             "description": "The binding revision this change replaces; 0 creates the binding.",
             "minimum": 0
           },
+          "placement": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/InferencePlacementRequirement",
+                "description": "The collection's placement requirement (ClearView SC2,\nexperimental). Omitted keeps the binding's current requirement, or on\na first binding records the configuration's declared placement; with\nno declaration either, no placement check applies (Phase 6)."
+              }
+            ]
+          },
           "provider_config": {
             "type": "string",
             "description": "An `openai-compatible` provider configuration of this tenant, with\n`budgets.dailyTotalTokens` set. Its budget pays for the collection."
@@ -10912,6 +10934,30 @@
               "null"
             ],
             "description": "Prefixed to every query before embedding. Part of the index identity."
+          }
+        },
+        "additionalProperties": false
+      },
+      "InferencePlacementRequirement": {
+        "type": "object",
+        "description": "Where a collection's inference content may be processed (ClearView SC2,\nexperimental). Checked against the bound configuration's declared\n`inference.placement` before any content is sent, on serving, shadow,\nbuild and retry paths alike.",
+        "required": [
+          "isolation"
+        ],
+        "properties": {
+          "isolation": {
+            "type": "string",
+            "description": "`dedicated`: only an endpoint declared dedicated to this tenant.\n`shared`: a dedicated endpoint, or a shared one whose declaration\nexplicitly lists this tenant."
+          },
+          "processing": {
+            "type": "object",
+            "description": "Processing rules the endpoint must declare with exactly these values\n(for example `location`, `retention`). An undeclared rule is\nincompatible.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
           }
         },
         "additionalProperties": false

@@ -107,6 +107,30 @@ pub struct InferenceBindingRequest {
     /// One deadline for a read's stages (default 5,000; 100 to 60,000).
     #[serde(default)]
     pub timeout_ms: Option<u64>,
+    /// The collection's placement requirement (ClearView SC2,
+    /// experimental). Omitted keeps the binding's current requirement, or on
+    /// a first binding records the configuration's declared placement; with
+    /// no declaration either, no placement check applies (Phase 6).
+    #[serde(default)]
+    pub placement: Option<InferencePlacementRequirement>,
+}
+
+/// Where a collection's inference content may be processed (ClearView SC2,
+/// experimental). Checked against the bound configuration's declared
+/// `inference.placement` before any content is sent, on serving, shadow,
+/// build and retry paths alike.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct InferencePlacementRequirement {
+    /// `dedicated`: only an endpoint declared dedicated to this tenant.
+    /// `shared`: a dedicated endpoint, or a shared one whose declaration
+    /// explicitly lists this tenant.
+    pub isolation: String,
+    /// Processing rules the endpoint must declare with exactly these values
+    /// (for example `location`, `retention`). An undeclared rule is
+    /// incompatible.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub processing: std::collections::BTreeMap<String, String>,
 }
 
 /// `POST .../inference/enroll` and `.../inference/rollback` request.
@@ -178,4 +202,8 @@ pub struct CollectionInferenceDto {
     pub active_index_id: Option<String>,
     pub stages: Vec<InferenceStageStatusDto>,
     pub usage: Vec<InferenceUsageDto>,
+    /// The binding's placement requirement (ClearView SC2). Absent when no
+    /// placement applies, as in Phase 6.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placement: Option<InferencePlacementRequirement>,
 }

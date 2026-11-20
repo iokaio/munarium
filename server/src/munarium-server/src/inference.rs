@@ -35,7 +35,9 @@ use munarium_core::inference::{
     RerankReply, Stage, StagePolicy, Usage,
 };
 use munarium_core::{KernelError, Result};
-use munarium_providers::openai_compatible::{self, check_discovery, OpenAiCompatibleEndpoint};
+use munarium_providers::openai_compatible::{
+    self, check_discovery, OpenAiCompatibleEndpoint, Placement, PlacementMode,
+};
 use munarium_providers::{parse_provider_config, ProviderConfigDoc};
 use munarium_retrieval::inference::{
     CollectionPlan, EmbeddingStage, InferenceGovernor, InferenceRecorder, RerankStage,
@@ -193,7 +195,18 @@ impl InferenceRuntime {
 
     /// The bound configuration, its client, and a current passing probe, or
     /// the stage state that stops it. Never calls the endpoint.
-    async fn resolve(&self, tenant: &str, config_name: &str) -> Result<Resolution> {
+    ///
+    /// SC2: the configuration's declared placement is checked against the
+    /// tenant and the binding's `required` placement first. A refusal is the
+    /// stage state `unconfigured` with a `placement_*` reason, so no client
+    /// is handed out and nothing is sent on any path (serving, shadow, build
+    /// or retry), whatever the probe says.
+    async fn resolve(
+        &self,
+        tenant: &str,
+        config_name: &str,
+        required: Option<&dto::InferencePlacementRequirement>,
+    ) -> Result<Resolution> {
         let config = match load_config(self.pool()?, tenant, config_name).await? {
             Some(c) => c,
             None => {
@@ -207,6 +220,9 @@ impl InferenceRuntime {
             Ok(c) => c,
             Err(reason) => return Ok(Resolution::failed(FailureKind::Unconfigured, reason)),
         };
+        if let Err(reason) = placement_check(tenant, declared_placement(&config), required) {
+            return Ok(Resolution::failed(FailureKind::Unconfigured, reason));
+        }
         let client = match self.client(tenant, &config) {
             Ok(c) => c,
             Err(f) => return Ok(Resolution::failed(f.kind, f.reason)),
@@ -330,6 +346,130 @@ impl Resolution {
             ready: Err(InferenceFailure::new(kind, reason)),
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// placement (SC2)
+// ---------------------------------------------------------------------------
+
+/// The configuration's declared `inference.placement`, if any.
+fn declared_placement(config: &LoadedConfig) -> Option<&Placement> {
+    config
+        .doc
+        .spec
+        .inference
+        .as_ref()
+        .and_then(|p| p.placement.as_ref())
+}
+
+/// SC2: may `tenant`'s content reach the endpoint whose declared placement
+/// is `declared`, under the collection's `required` placement? `Err` names
+/// a fixed reason code.
+///
+/// - A shared pool must list the tenant explicitly
+///   (`placement_tenant_not_covered`), whether or not the binding has a
+///   requirement: sharing is never implied.
+/// - With no requirement, nothing more is checked. With neither a
+///   requirement nor a declaration this is the Phase 6 behavior.
+/// - A requirement cannot be verified against an undeclared endpoint
+///   (`placement_undeclared`).
+/// - `dedicated` refuses a shared pool (`placement_dedicated_required`);
+///   `shared` accepts either.
+/// - Every required processing rule must be declared with the same value
+///   (`placement_processing_incompatible`).
+pub(crate) fn placement_check(
+    tenant: &str,
+    declared: Option<&Placement>,
+    required: Option<&dto::InferencePlacementRequirement>,
+) -> std::result::Result<(), &'static str> {
+    if let Some(d) = declared {
+        if d.mode == PlacementMode::Shared && !d.tenants.iter().any(|t| t == tenant) {
+            return Err("placement_tenant_not_covered");
+        }
+    }
+    let Some(required) = required else {
+        return Ok(());
+    };
+    let Some(declared) = declared else {
+        return Err("placement_undeclared");
+    };
+    if required.isolation == PlacementMode::Dedicated.as_str()
+        && declared.mode != PlacementMode::Dedicated
+    {
+        return Err("placement_dedicated_required");
+    }
+    if required
+        .processing
+        .iter()
+        .any(|(k, v)| declared.processing.get(k) != Some(v))
+    {
+        return Err("placement_processing_incompatible");
+    }
+    Ok(())
+}
+
+/// The operator-facing sentence for a placement reason code.
+fn placement_refusal(reason: &str) -> String {
+    let why = match reason {
+        "placement_tenant_not_covered" => {
+            "the configuration's shared placement does not list this tenant"
+        }
+        "placement_undeclared" => {
+            "the binding requires a placement but the configuration declares none"
+        }
+        "placement_dedicated_required" => {
+            "the binding requires a dedicated endpoint but the configuration's placement is shared"
+        }
+        "placement_processing_incompatible" => {
+            "the configuration's processing rules do not match the binding's placement requirement"
+        }
+        _ => "the placement check failed",
+    };
+    format!("{why} ({reason})")
+}
+
+/// Validate a requested placement requirement and normalize it.
+fn checked_requirement(
+    req: &dto::InferencePlacementRequirement,
+) -> Result<dto::InferencePlacementRequirement> {
+    if req.isolation != PlacementMode::Dedicated.as_str()
+        && req.isolation != PlacementMode::Shared.as_str()
+    {
+        return Err(KernelError::InvalidInput(
+            "placement.isolation must be dedicated or shared".into(),
+        ));
+    }
+    openai_compatible::validate_processing(&req.processing).map_err(KernelError::InvalidInput)?;
+    Ok(req.clone())
+}
+
+/// The requirement a bind records (SC2). An explicit request wins. An
+/// omitted one keeps the binding's current requirement, so a rebind never
+/// loosens placement silently; a first binding records the configuration's
+/// declared placement (mode and processing rules), so a later change of
+/// that declaration, such as a dedicated pool replaced by a shared one, is
+/// refused until the operator binds again with an explicit requirement.
+/// With no declaration and no requirement, `None`: Phase 6.
+fn effective_requirement(
+    requested: Option<&dto::InferencePlacementRequirement>,
+    current: Option<&Binding>,
+    declared: Option<&Placement>,
+) -> Result<Option<dto::InferencePlacementRequirement>> {
+    if let Some(r) = requested {
+        return checked_requirement(r).map(Some);
+    }
+    if let Some(r) = current.and_then(|b| b.placement.clone()) {
+        return Ok(Some(r));
+    }
+    if current.is_some() {
+        // An existing Phase 6 binding stays unpinned until an explicit
+        // requirement is given; the tenant coverage rule still applies.
+        return Ok(None);
+    }
+    Ok(declared.map(|d| dto::InferencePlacementRequirement {
+        isolation: d.mode.as_str().to_string(),
+        processing: d.processing.clone(),
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -627,6 +767,8 @@ struct Binding {
     timeout_ms: u64,
     semantic_index_id: Option<String>,
     prior_index_id: Option<String>,
+    /// SC2: the placement requirement; `None` is Phase 6 (migration 0081).
+    placement: Option<dto::InferencePlacementRequirement>,
 }
 
 fn json_field<T: serde::de::DeserializeOwned>(v: Option<serde_json::Value>) -> Result<Option<T>> {
@@ -650,12 +792,13 @@ fn binding_from_row(row: &sqlx::postgres::PgRow) -> Result<Binding> {
         timeout_ms: row.get::<i32, _>("timeout_ms").max(0) as u64,
         semantic_index_id: row.get("semantic_index_id"),
         prior_index_id: row.get("prior_index_id"),
+        placement: json_field(row.get("placement"))?,
     })
 }
 
 const BINDING_COLUMNS: &str =
     "collection_id, revision, state, provider_config, embedding, rerank, \
-     shadow, timeout_ms, semantic_index_id, prior_index_id";
+     shadow, timeout_ms, semantic_index_id, prior_index_id, placement";
 
 async fn load_binding(
     conn: impl sqlx::PgExecutor<'_>,
@@ -689,18 +832,20 @@ async fn write_binding(
     let embedding = crate::error::to_json(&b.embedding, "embedding settings")?;
     let rerank = crate::error::to_json(&b.rerank, "rerank settings")?;
     let shadow = crate::error::to_json(&b.shadow, "shadow settings")?;
+    let placement = crate::error::to_json(&b.placement, "placement requirement")?;
     sqlx::query(
         "INSERT INTO collection_inference_bindings
              (tenant_id, collection_id, revision, state, provider_config, embedding, rerank,
-              shadow, timeout_ms, semantic_index_id, prior_index_id, updated_by, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now())
+              shadow, timeout_ms, semantic_index_id, prior_index_id, updated_by, updated_at,
+              placement)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, now(), $13)
          ON CONFLICT (tenant_id, collection_id) DO UPDATE SET
              revision = EXCLUDED.revision, state = EXCLUDED.state,
              provider_config = EXCLUDED.provider_config, embedding = EXCLUDED.embedding,
              rerank = EXCLUDED.rerank, shadow = EXCLUDED.shadow,
              timeout_ms = EXCLUDED.timeout_ms, semantic_index_id = EXCLUDED.semantic_index_id,
              prior_index_id = EXCLUDED.prior_index_id, updated_by = EXCLUDED.updated_by,
-             updated_at = now()",
+             updated_at = now(), placement = EXCLUDED.placement",
     )
     .bind(tenant)
     .bind(&b.collection_id)
@@ -714,10 +859,11 @@ async fn write_binding(
     .bind(&b.semantic_index_id)
     .bind(&b.prior_index_id)
     .bind(actor)
+    .bind(&placement)
     .execute(&mut **tx)
     .await
     .map_err(storage)?;
-    let snapshot = serde_json::json!({
+    let mut snapshot = serde_json::json!({
         "provider_config": b.provider_config,
         "embedding": embedding,
         "rerank": rerank,
@@ -726,6 +872,10 @@ async fn write_binding(
         "semantic_index_id": b.semantic_index_id,
         "prior_index_id": b.prior_index_id,
     });
+    // A Phase 6 binding's history snapshot keeps its Phase 6 members.
+    if b.placement.is_some() {
+        snapshot["placement"] = placement;
+    }
     sqlx::query(
         "INSERT INTO collection_inference_binding_history
              (tenant_id, collection_id, revision, action, state, binding, actor)
@@ -916,7 +1066,7 @@ impl InferenceGovernor for Governor {
         let pieces = StagePieces {
             resolution: self
                 .runtime
-                .resolve(&self.tenant, &b.provider_config)
+                .resolve(&self.tenant, &b.provider_config, b.placement.as_ref())
                 .await?,
         };
         let mut shadow = ShadowPlan::default();
@@ -1069,6 +1219,11 @@ pub async fn op_probe(
         }
         Some(Ok(c)) => c,
     };
+    // SC2: a shared pool that does not list this tenant receives nothing,
+    // not even the fixed synthetic probe inputs.
+    if let Err(reason) = placement_check(tenant, declared_placement(&config), None) {
+        return Err(not_qualified(placement_refusal(reason)));
+    }
     let client = runtime
         .client(tenant, &config)
         .map_err(|f| KernelError::InvalidInput(format!("configuration unusable: {f}")))?;
@@ -1293,6 +1448,16 @@ pub async fn op_bind(
             actual,
         });
     }
+    // SC2: refuse an endpoint that does not explicitly cover this tenant or
+    // whose declared placement does not satisfy the requirement.
+    let placement = effective_requirement(
+        req.placement.as_ref(),
+        current.as_ref(),
+        declared_placement(&config),
+    )?;
+    if let Err(reason) = placement_check(tenant, declared_placement(&config), placement.as_ref()) {
+        return Err(not_qualified(placement_refusal(reason)));
+    }
     let same_space = current.as_ref().is_some_and(|c| {
         c.provider_config == req.provider_config
             && c.embedding
@@ -1325,6 +1490,7 @@ pub async fn op_bind(
             .filter(|_| same_space)
             .and_then(|c| c.semantic_index_id.clone()),
         prior_index_id: current.as_ref().and_then(|c| c.prior_index_id.clone()),
+        placement,
     };
     write_binding(&mut tx, tenant, &next, "bind", actor).await?;
     tx.commit().await.map_err(storage)?;
@@ -1355,7 +1521,9 @@ pub async fn op_enroll(
     if b.state == "enrolled" {
         return Err(not_qualified("the collection is already enrolled"));
     }
-    let resolution = runtime.resolve(tenant, &b.provider_config).await?;
+    let resolution = runtime
+        .resolve(tenant, &b.provider_config, b.placement.as_ref())
+        .await?;
     if let Err(f) = &resolution.ready {
         return Err(not_qualified(format!(
             "the bound configuration is not ready: {}",
@@ -1507,9 +1675,12 @@ pub async fn describe(
             active_index_id: active,
             stages: vec![],
             usage: vec![],
+            placement: None,
         });
     };
-    let resolution = runtime.resolve(tenant, &b.provider_config).await?;
+    let resolution = runtime
+        .resolve(tenant, &b.provider_config, b.placement.as_ref())
+        .await?;
     let state_of = |space: Option<std::result::Result<SemanticSpace, InferenceFailure>>| {
         let failure = match (&resolution.ready, space) {
             (Err(f), _) => Some(*f),
@@ -1594,6 +1765,7 @@ pub async fn describe(
         active_index_id: active,
         stages,
         usage,
+        placement: b.placement.clone(),
     })
 }
 
@@ -1638,7 +1810,9 @@ pub async fn run_semantic_job(
     let settings = b.embedding.clone().ok_or_else(|| {
         KernelError::InvalidInput("the collection's binding has no embedding stage".into())
     })?;
-    let resolution = runtime.resolve(tenant, &b.provider_config).await?;
+    let resolution = runtime
+        .resolve(tenant, &b.provider_config, b.placement.as_ref())
+        .await?;
     let (config, client, fingerprint) = match (
         &resolution.ready,
         &resolution.config,

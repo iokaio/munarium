@@ -1,6 +1,6 @@
 # Semantic indexing and reranking through an inference endpoint
 
-**Experimental (ClearView IR-0 to IR-4, I1, I2).** Server can send an enrolled
+**Experimental (ClearView IR-0 to IR-4, I1, I2, SC2).** Server can send an enrolled
 collection's query and passage embeddings, and the reranking of its fused
 candidates, to a self-hosted inference endpoint. Munarium Lens is the
 reference endpoint. Any server implementing the same routes and passing the
@@ -22,15 +22,17 @@ below.
 6. [Compare in shadow](#compare-in-shadow)
 7. [Enroll and verify](#enroll-and-verify)
 8. [Outage policy](#outage-policy)
-9. [Roll back](#roll-back)
-10. [Budgets, attribution and shadow allocation](#budgets-attribution-and-shadow-allocation)
-11. [The endpoint protocol Server speaks](#the-endpoint-protocol-server-speaks)
-12. [Limitations](#limitations)
+9. [Shared and dedicated placement](#shared-and-dedicated-placement)
+10. [Roll back](#roll-back)
+11. [Budgets, attribution and shadow allocation](#budgets-attribution-and-shadow-allocation)
+12. [The endpoint protocol Server speaks](#the-endpoint-protocol-server-speaks)
+13. [Limitations](#limitations)
 
 ## What you need
 
 - The PostgreSQL store. Bindings, probes, attempts and semantic vectors are
-  tables (migration `0080_inference_stages.sql`).
+  tables (migration `0080_inference_stages.sql`; the binding's placement
+  requirement is migration `0081_inference_placement.sql`).
 - An endpoint serving an embedding model at **1,024 dimensions** (the one
   semantic dimension this release stores), a reranking model, or both.
 - A management (`mgmt`) token for the operations below and an `rw` token for
@@ -217,6 +219,89 @@ To change the policy, bind again with the current revision and the same
 stages. Changing the configuration, the embedding space or which stages are
 configured requires a rollback first.
 
+## Shared and dedicated placement
+
+**Experimental (ClearView SC2, Proposed hub ADR 0024).** A configuration can
+declare where its endpoint's pool runs work and for whom, and a binding can
+require a placement. Server checks both before it sends any content: on
+serving, shadow, build and every retry, because each of them obtains its
+client through the same check. With neither a declaration nor a requirement,
+nothing is checked, exactly as before.
+
+Declare the pool in the configuration's `inference` block:
+
+```yaml
+  inference:
+    embedDimensions: 1024
+    placement:
+      mode: shared                   # or dedicated
+      tenants: [tenant-a, tenant-b]  # shared only: every covered tenant, this one included
+      processing:                    # the pool's processing rules
+        location: eu-west
+        retention: none
+```
+
+- `dedicated` is a pool approved for this tenant alone. It lists no tenants;
+  `processing` is optional.
+- `shared` must list every tenant whose work the pool may receive and must
+  declare at least one processing rule. Up to 256 tenants and 16 rules.
+  Rule names are 1-64 lowercase letters, digits, `_`, `-` or `.`; values
+  are 1-200 characters, compared exactly.
+- A shared pool that does not list the configuring tenant receives nothing
+  from it: the probe and the bind are refused (`inference-not-qualified`,
+  409), and the stages of an existing binding report `unconfigured` with
+  reason `placement_tenant_not_covered`. Sharing is never implied by
+  omission, and this rule applies even to a binding without a requirement.
+
+Require a placement on the binding with `placement`:
+
+```json
+"placement": {"isolation": "dedicated", "processing": {"location": "eu-west"}}
+```
+
+| Rule | Refusal reason |
+|---|---|
+| The configuration is shared and does not list the tenant | `placement_tenant_not_covered` |
+| The binding has a requirement and the configuration declares no placement | `placement_undeclared` |
+| `isolation: dedicated` and the configuration is `shared` | `placement_dedicated_required` |
+| A required processing rule is not declared with the same value | `placement_processing_incompatible` |
+
+`isolation: shared` accepts a dedicated or a shared pool. A refused bind is a
+409 `inference-not-qualified` whose detail names the reason. Once bound, a
+later change of the configuration that breaks the requirement turns every
+stage `unconfigured` with the same reason, before any client is used: under
+`require` the read is refused (503 `inference-stage-unavailable`), and under
+`prefer` it takes the collection's disclosed fallback (`lexical_only`,
+`fused_order`), which sends nothing.
+
+**What a bind records.** An explicit `placement` is validated and stored. When
+the request omits it, an existing binding keeps its current requirement, so a
+rebind never loosens placement. A first binding to a configuration that
+declares a placement records that declaration (mode and processing rules) as
+its requirement. A first binding to an undeclared configuration, and an
+existing Phase 6 binding rebound without `placement`, record none. The
+requirement appears as `placement` in the binding response and history only
+when it is set, so Phase 6 bindings keep their response shape.
+
+**Loss of dedicated capacity.** Server never chooses another endpoint: a
+binding names one configuration, and its stage policy decides what happens
+when that endpoint is unavailable. If an operator repoints a configuration
+whose bindings recorded `dedicated` at a shared pool, even one that covers
+the tenant and passes its probe, those stages refuse with
+`placement_dedicated_required` and the shared pool receives no content. Using
+the shared pool requires an explicit rebind with
+`"placement": {"isolation": "shared"}`, which the binding history records.
+
+**What Server cannot check.** Server compares declarations; it cannot see
+which workers stand behind an endpoint URL. A load balancer that sends a
+dedicated configuration's traffic to shared workers defeats the check, so
+give each pool its own endpoint and disable gateway fallbacks between pools.
+Each tenant's configuration is checked on its own: Server does not compare
+the tenant lists that different tenants declare for one pool, so every
+participating tenant must list the same set. Lens result caches remain the
+Lens deployment's responsibility under SC2. The representation is experimental
+and is not yet exported through the contract process.
+
 ## Roll back
 
 ```console
@@ -299,5 +384,9 @@ Server matches the Munarium Lens LENS-1 profile.
 - Server cannot verify model weights behind an endpoint. Give each model
   revision and precision a distinct served name; a change of name is a change
   of identity Server can see.
-- The wire shapes of the stage receipt, the binding API and the two problem
+- The wire shapes of the stage receipt, the binding API (including
+  `placement`), the configuration's `inference.placement` and the two problem
   types are experimental until exported through the contract process.
+- Placement is checked against declarations. Qualification against real
+  shared and dedicated Lens pools (SC2-T1 to SC2-T3) needs a cluster; see the
+  [cluster qualification plan](../design/cluster-qualification-plan.md#plan-sc2).

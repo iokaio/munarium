@@ -91,6 +91,122 @@ pub struct InferenceProfile {
         skip_serializing_if = "std::ops::Not::not"
     )]
     pub allow_test_backend: bool,
+    /// Where the endpoint's pool runs work and for which tenants (ClearView
+    /// SC2). Omitted keeps the Phase 6 behavior: no placement check.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placement: Option<Placement>,
+}
+
+/// Where an endpoint runs work, and for whom (ClearView SC2, experimental).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PlacementMode {
+    /// A pool approved for this configuration's tenant alone.
+    Dedicated,
+    /// A pool that several tenants' work may reach.
+    Shared,
+}
+
+impl PlacementMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Dedicated => "dedicated",
+            Self::Shared => "shared",
+        }
+    }
+}
+
+/// `spec.inference.placement` (ClearView SC2, experimental): the pool's
+/// placement as the configuring tenant approved it. Omitted keeps the
+/// Phase 6 behavior: the endpoint is not checked for placement.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Placement {
+    /// `dedicated` or `shared`.
+    pub mode: PlacementMode,
+    /// `shared` only, and then required: every tenant whose work the pool
+    /// may receive, the configuring tenant included. A tenant not listed is
+    /// not covered, and nothing of its work is sent.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tenants: Vec<String>,
+    /// The pool's processing rules as attribute and value (for example
+    /// `location`, `retention`, `isolation`). Required for `shared`. A
+    /// binding's required rule matches only an identical declared value.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub processing: std::collections::BTreeMap<String, String>,
+}
+
+/// Most attributes one placement declares or requires.
+pub const MAX_PLACEMENT_ATTRIBUTES: usize = 16;
+/// Most tenants one shared placement covers.
+pub const MAX_PLACEMENT_TENANTS: usize = 256;
+
+/// The syntax of a processing attribute name and value, shared with the
+/// binding's requirement so the two compare exactly.
+pub fn validate_processing(
+    processing: &std::collections::BTreeMap<String, String>,
+) -> std::result::Result<(), String> {
+    if processing.len() > MAX_PLACEMENT_ATTRIBUTES {
+        return Err(format!(
+            "placement.processing has at most {MAX_PLACEMENT_ATTRIBUTES} attributes"
+        ));
+    }
+    for (k, v) in processing {
+        let key_ok = (1..=64).contains(&k.len())
+            && k.starts_with(|c: char| c.is_ascii_lowercase())
+            && k.chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "_-.".contains(c));
+        if !key_ok {
+            return Err(
+                "placement.processing attribute names are 1-64 lowercase letters, digits, '_', '-' or '.', starting with a letter"
+                    .into(),
+            );
+        }
+        if v.is_empty() || v.len() > 200 || v.trim() != v || v.chars().any(char::is_control) {
+            return Err(
+                "placement.processing values are 1-200 characters without control characters or surrounding space"
+                    .into(),
+            );
+        }
+    }
+    Ok(())
+}
+
+fn validate_placement(p: &Placement) -> std::result::Result<(), String> {
+    validate_processing(&p.processing)?;
+    match p.mode {
+        PlacementMode::Dedicated => {
+            if !p.tenants.is_empty() {
+                return Err(
+                    "a dedicated placement serves its own tenant only; list tenants on a shared placement"
+                        .into(),
+                );
+            }
+        }
+        PlacementMode::Shared => {
+            if p.tenants.is_empty() {
+                return Err("a shared placement lists every tenant it covers".into());
+            }
+            if p.processing.is_empty() {
+                return Err("a shared placement declares its processing rules".into());
+            }
+        }
+    }
+    if p.tenants.len() > MAX_PLACEMENT_TENANTS {
+        return Err(format!(
+            "a shared placement covers at most {MAX_PLACEMENT_TENANTS} tenants"
+        ));
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for t in &p.tenants {
+        if t.is_empty() || t.len() > 200 || t.chars().any(|c| c.is_whitespace() || c.is_control()) {
+            return Err("placement tenants are 1-200 characters without whitespace".into());
+        }
+        if !seen.insert(t.as_str()) {
+            return Err("placement tenants are listed once each".into());
+        }
+    }
+    Ok(())
 }
 
 impl InferenceProfile {
@@ -150,6 +266,9 @@ pub(crate) fn validate(spec: &ProviderSpec) -> std::result::Result<(), String> {
     }
     if !(1..=3).contains(&profile.max_attempts()) {
         return Err("inference.maxAttempts must be 1-3".into());
+    }
+    if let Some(p) = &profile.placement {
+        validate_placement(p).map_err(|e| format!("inference.placement: {e}"))?;
     }
     Ok(())
 }
@@ -719,5 +838,65 @@ mod tests {
             check_discovery(&models, "plain", "reranking", None, false),
             Ok(())
         );
+    }
+
+    /// ClearView SC2: the placement declaration parses, round-trips and is
+    /// validated; omission keeps the Phase 6 profile unchanged.
+    #[test]
+    fn placement_declarations_are_validated() {
+        let doc = |placement: &str| {
+            crate::parse_provider_config(&format!(
+                "apiVersion: munarium.ioka.io/v1
+kind: ProviderConfig
+metadata: {{name: lens}}
+spec:
+  provider: openai-compatible
+  endpoint: http://lens.invalid/v1
+  models:
+    rerank: [r]
+  inference:
+    maxBatch: 8
+{placement}"
+            ))
+        };
+        let legacy = doc("").unwrap();
+        assert_eq!(legacy.spec.inference.unwrap().placement, None);
+        let dedicated = doc("    placement: {mode: dedicated}
+")
+        .unwrap();
+        let p = dedicated.spec.inference.unwrap().placement.unwrap();
+        assert_eq!((p.mode, p.tenants.len()), (PlacementMode::Dedicated, 0));
+        let shared = doc("    placement:
+      mode: shared
+      tenants: [t-a, t-b]
+      processing: {location: eu-west, retention: none}
+")
+        .unwrap();
+        let p = shared.spec.inference.unwrap().placement.unwrap();
+        assert_eq!(p.mode, PlacementMode::Shared);
+        assert_eq!(p.tenants, vec!["t-a".to_string(), "t-b".to_string()]);
+        assert_eq!(p.processing["location"], "eu-west");
+        for bad in [
+            "    placement: {mode: pooled}
+",
+            "    placement: {mode: shared, processing: {location: eu}}
+",
+            "    placement: {mode: shared, tenants: [t-a]}
+",
+            "    placement: {mode: shared, tenants: [t-a, t-a], processing: {location: eu}}
+",
+            "    placement: {mode: shared, tenants: [\"t a\"], processing: {location: eu}}
+",
+            "    placement: {mode: dedicated, tenants: [t-a]}
+",
+            "    placement: {mode: dedicated, processing: {Location: eu}}
+",
+            "    placement: {mode: dedicated, processing: {location: \" eu\"}}
+",
+            "    placement: {mode: dedicated, region: eu}
+",
+        ] {
+            assert!(doc(bad).is_err(), "{bad}");
+        }
     }
 }

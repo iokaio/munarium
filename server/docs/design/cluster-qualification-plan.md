@@ -405,7 +405,7 @@ Hours come from the local rehearsal timings plus the provisioning and teardown t
 
 **Purpose.** Route approved tenants through a shared worker, refuse forbidden placement, and handle loss of a dedicated pool. [SC2](repository-handoffs.md#sc2) · [SC2-T1](repository-handoffs.md#sc2-t1) · [SC2-T2](repository-handoffs.md#sc2-t2) · [SC2-T3](repository-handoffs.md#sc2-t3)
 
-**Prerequisites.** Ledger row SC2 (planned; hub record pending for the shared placement contract), I1, I2, LENS-1. Three synthetic tenants: two approved for sharing, one dedicated-only. A per-worker request recorder (Lens access log without content, or a sidecar counter).
+**Prerequisites.** Server-side placement enforcement (configuration `inference.placement` and the binding's `placement` requirement, checked before any send; [inference guide](../guides/inference-endpoints.md#shared-and-dedicated-placement)), implemented with local stub tests against Proposed hub ADR 0024; I1, I2, LENS-1. Three synthetic tenants: two approved for sharing, one dedicated-only. A per-worker request recorder (Lens access log without content, or a sidecar counter).
 
 **Topology.** C2 GPU pool split: 1 worker `pool=shared`, 1 worker `pool=dedicated`. Server 2 replicas. Runs in the same window as SC1-T2/T3, after them.
 
