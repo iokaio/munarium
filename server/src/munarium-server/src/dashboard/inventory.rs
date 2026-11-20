@@ -65,7 +65,7 @@ fn pager(shown: usize, total: i64, newest: Option<String>, older: Option<String>
 // ---------------------------------------------------------------------------
 
 pub(super) async fn providers(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -329,7 +329,7 @@ pub(super) async fn collections(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -414,7 +414,7 @@ pub(super) async fn collection(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -557,7 +557,7 @@ pub(super) async fn sessions(
     Query(q): Query<SessionsParams>,
     headers: HeaderMap,
 ) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -718,7 +718,7 @@ pub(super) async fn session(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -860,6 +860,8 @@ pub(super) fn issue_form_for_test() -> String {
         },
         view_only: false,
         csrf: "c".into(),
+        binding: "b".into(),
+        session: None,
         instance: "i".into(),
         store: "memory",
     };
@@ -871,7 +873,7 @@ pub(super) async fn tokens(
     Query(q): Query<TokensParams>,
     headers: HeaderMap,
 ) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -989,7 +991,7 @@ pub(super) async fn token_issue_page(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -1043,7 +1045,7 @@ pub(super) async fn token_issue(
     headers: HeaderMap,
     Form(form): Form<IssueForm>,
 ) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -1183,7 +1185,6 @@ fn revoke_review(
                 esc(&token_path(&t.jti)),
                 csrf_field(admin),
                 esc(&super::action_plan(
-                    state,
                     admin,
                     REVOKE_ACTION,
                     &t.jti,
@@ -1233,7 +1234,7 @@ pub(super) async fn token_revoke_review(
     Path(jti): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -1250,7 +1251,7 @@ pub(super) async fn token_revoke(
     headers: HeaderMap,
     Form(form): Form<CsrfOnlyForm>,
 ) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -1292,7 +1293,7 @@ pub(super) async fn token_revoke_confirm(
     headers: HeaderMap,
     Form(form): Form<ConfirmForm>,
 ) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -1343,14 +1344,7 @@ pub(super) async fn token_revoke_confirm(
             "This token was already revoked at {at}. Nothing changed."
         ));
     }
-    if !super::plan_ok(
-        &state,
-        &admin,
-        REVOKE_ACTION,
-        &jti,
-        &token_revision(&t),
-        &form.plan,
-    ) {
+    if !super::plan_ok(&admin, REVOKE_ACTION, &jti, &token_revision(&t), &form.plan) {
         return conflict(
             "This confirmation no longer matches the token, operator or server it was reviewed against (the token changed, another credential is submitting it, or the server restarted). Nothing was revoked; review it again."
                 .into(),
@@ -1396,7 +1390,7 @@ pub(super) async fn audit(
     Query(q): Query<AuditParams>,
     headers: HeaderMap,
 ) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -1547,7 +1541,7 @@ pub(super) async fn findings(
     Query(q): Query<FindingsParams>,
     headers: HeaderMap,
 ) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -1672,7 +1666,7 @@ pub(super) fn matrix_admin_href(config: &crate::config::Config) -> Option<String
 /// still returns 200, so the answers get thinner while every dashboard stays
 /// green.
 pub(super) async fn matrix(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };

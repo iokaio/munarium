@@ -76,7 +76,7 @@ pub(super) async fn hub(
     Query(q): Query<WindowParam>,
     headers: HeaderMap,
 ) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -213,7 +213,7 @@ pub(super) async fn runbook(
     Path(name): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -500,7 +500,7 @@ pub(super) async fn shape(
     Path(shape_ref): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -632,7 +632,7 @@ pub(super) async fn chronology(
     Path(name): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -690,7 +690,7 @@ pub(super) async fn run(
     Path(run_id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -820,7 +820,6 @@ fn approve_title(run_id: &str, ordinal: usize) -> String {
 /// and the rw credential field. `problem` is a refusal from a previous
 /// confirmation attempt.
 fn approve_review(
-    state: &AppState,
     admin: &super::AdminCtx,
     run: &munarium_api_types::RunStatusResponse,
     ordinal: usize,
@@ -877,7 +876,6 @@ fn approve_review(
                 esc(&approve_path(&run.run_id, ordinal)),
                 csrf_field(admin),
                 esc(&super::action_plan(
-                    state,
                     admin,
                     APPROVE_ACTION,
                     &approve_target(&run.run_id, ordinal),
@@ -921,7 +919,7 @@ async fn render_approve_review(
                 admin,
                 "runbooks",
                 &title,
-                &approve_review(state, admin, &run, ordinal, problem),
+                &approve_review(admin, &run, ordinal, problem),
             ),
         )
             .into_response(),
@@ -936,7 +934,7 @@ pub(super) async fn approve_review_page(
     Path((run_id, ordinal)): Path<(String, usize)>,
     headers: HeaderMap,
 ) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -954,7 +952,7 @@ pub(super) async fn approve(
     headers: HeaderMap,
     Form(form): Form<CsrfOnlyForm>,
 ) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -1024,7 +1022,7 @@ pub(super) async fn approve_confirm(
     headers: HeaderMap,
     Form(form): Form<ApproveConfirmForm>,
 ) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -1093,7 +1091,6 @@ pub(super) async fn approve_confirm(
         None => return conflict("This run has no such step. Nothing changed."),
     }
     if !super::plan_ok(
-        &state,
         &admin,
         APPROVE_ACTION,
         &approve_target(&run_id, ordinal),

@@ -203,7 +203,7 @@ fn tile_link(href: &str, label: &str, value: &str, sub: &str) -> String {
 }
 
 pub(super) async fn overview(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -377,7 +377,7 @@ pub(super) async fn traffic(
     Query(q): Query<WindowParam>,
     headers: HeaderMap,
 ) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -468,7 +468,7 @@ pub(super) async fn endpoints(
     Query(q): Query<WindowParam>,
     headers: HeaderMap,
 ) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -539,7 +539,7 @@ pub(super) async fn usage(
     Query(q): Query<WindowParam>,
     headers: HeaderMap,
 ) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -603,7 +603,7 @@ pub(super) async fn usage(
 }
 
 pub(super) async fn health(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -654,6 +654,10 @@ pub(super) async fn health(State(state): State<Arc<AppState>>, headers: HeaderMa
         ),
         ("token ttl (default)", format!("{} s", cfg.token_ttl_secs)),
         ("token revocation check", yes_no(cfg.token_revocation_check)),
+        (
+            "console login",
+            charts::esc(&state.console.settings.describe()),
+        ),
         ("require uid", yes_no(cfg.require_uid)),
         ("store", store.into()),
         ("source bytes store", state.source_backend_id().into()),

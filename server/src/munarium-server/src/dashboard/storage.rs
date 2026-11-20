@@ -34,7 +34,7 @@ use crate::state::AppState;
 use crate::storage_api::{self, SettingsView, StorageSnapshot, STALE_AFTER_SECS};
 
 pub(super) async fn storage(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    let admin = match admin_auth(&state, &headers) {
+    let admin = match admin_auth(&state, &headers).await {
         Ok(c) => c,
         Err(r) => return r,
     };

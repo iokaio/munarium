@@ -778,6 +778,43 @@
         "restore": "The independent checkpoint records deployment, tenant, epoch, minimum head, retirement and revision plus pending transition intent. Preserve it separately from database restores; it does not independently fence the decision-ledger head.",
         "coverage": "Authority and platform store fixtures cover their stated atomicity, immutability and replay invariants; they do not establish regulatory retention or recovery of every external copy."
       }
+    },
+    "console_sessions": {
+      "retrieval_exclusion": {
+        "read": "Holds no corpus content; collection exclusion does not apply.",
+        "cleanup": "No physical deletion implied.",
+        "holds": "No hold API; a hold grants no console authority.",
+        "restore": "A restored row can only be honoured if it is unrevoked and unexpired; revoke restored sessions before serving.",
+        "coverage": "Gap: no universal exclusion fixture across all surfaces."
+      },
+      "access_revocation": {
+        "read": "Sign-out and console revocation set revoked_at; every replica sharing the database refuses the handle from its next request. Each request re-resolves the bound static credential, so a removed or re-roled token ends its sessions.",
+        "cleanup": "Revocation and expiry do not delete the row before pruning.",
+        "holds": "Retention/hold grants no authority.",
+        "restore": "An older backup can predate a revocation; revoke all console sessions after restore (docs/design/console-sessions.md#rollback).",
+        "coverage": "Router tests and PostgreSQL two-replica tests cover sign-out, revocation, idle/absolute expiry, forged handles and credential rotation."
+      },
+      "logical_removal": {
+        "read": "Revoked, signed-out and expired rows are never live again; the console lists them until pruning.",
+        "cleanup": "Lifecycle state changes do not imply deletion.",
+        "holds": "No new hold mechanism.",
+        "restore": "Older backups can resurrect live rows; revoke them before serving.",
+        "coverage": "Gap: no general logical-removal/restore conformance suite."
+      },
+      "physical_erasure": {
+        "read": "No per-session erasure API.",
+        "cleanup": "A console sign-in deletes rows seven days past expires_at; with sessions off (legacy) nothing prunes, and an operator may delete rows directly.",
+        "holds": "No per-row hold.",
+        "restore": "No durable erasure journal/replay contract; restored state cannot claim general erasure compliance.",
+        "coverage": "Gap: no all-copy erasure, partial-failure or backup-restore closure fixture."
+      },
+      "protected_retention": {
+        "read": "Retained for console audit (who signed in, from which replica, when it ended) under the mgmt role of the same tenant.",
+        "cleanup": "No retention beyond seven days after absolute expiry.",
+        "holds": "Evidence holds are separate; no legal-hold API here.",
+        "restore": "Preserve revocations; never restore a row as live.",
+        "coverage": "History fixtures prove their stated invariants, not general retention deadlines."
+      }
     }
   },
   "tables": {
@@ -2449,6 +2486,31 @@
       "policy": "catalog",
       "origins": [
         "src/munarium-store-pg/migrations/0060_artifact_damage.sql"
+      ]
+    },
+    "console_sessions": {
+      "columns": {
+        "handle_digest": "text",
+        "session_id": "text",
+        "tenant_id": "text",
+        "role": "text",
+        "credential_digest": "text",
+        "binding_secret": "text",
+        "created_by": "text",
+        "created_at": "timestamptz",
+        "last_seen_at": "timestamptz",
+        "idle_secs": "bigint",
+        "expires_at": "timestamptz",
+        "revoked_at": "timestamptz",
+        "revoked_reason": "text"
+      },
+      "content": "Console sign-in records: digest of the opaque handle (never the handle), public session id, tenant and role, a session-salted digest of the static credential (never the token), a server-side CSRF/plan binding secret, the signing-in replica, times, recorded idle/absolute expiry and revocation reason.",
+      "json_content": {},
+      "owner": "Tenant console operators (mgmt role) and the database operator, who controls retained copies and the fleet-wide rollback revocation.",
+      "policy": "console_sessions",
+      "origins": [
+        "src/munarium-store-pg/migrations/0050_console_sessions.sql",
+        "src/munarium-server/src/console_sessions.rs"
       ]
     }
   },

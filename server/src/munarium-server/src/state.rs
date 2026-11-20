@@ -217,6 +217,10 @@ pub struct AppState {
     /// invalidates in-flight forms, which re-render — an accepted caveat
     /// documented in docs/security-posture.md.
     pub boot_secret: String,
+    /// The console login (ClearView U10): `legacy` by default; under
+    /// `MUNARIUM_CONSOLE_SESSIONS=enabled`, revocable sessions in the shared
+    /// `console_sessions` table (in process on the memory store).
+    pub console: crate::console_sessions::ConsoleSessions,
 }
 
 pub struct IdemRecord {
@@ -374,6 +378,29 @@ impl AppState {
     pub async fn new_with_admission(
         config: Config,
         admission: crate::admission::AdmissionConfig,
+    ) -> Result<Arc<Self>> {
+        // Validated by main beside `Config::from_env`, like the PDF profile;
+        // read here so `Config` literals in tests keep the v1.4 default.
+        let console = crate::console_sessions::ConsoleSessionSettings::from_env()
+            .map_err(KernelError::InvalidInput)?;
+        Self::build(config, admission, console).await
+    }
+
+    /// Builds the state with explicit console-login settings (tests: one
+    /// process can then hold replicas in different modes).
+    #[cfg(test)]
+    pub async fn new_with_console(
+        config: Config,
+        console: crate::console_sessions::ConsoleSessionSettings,
+    ) -> Result<Arc<Self>> {
+        let admission = crate::admission::AdmissionConfig::legacy(config.max_concurrency);
+        Self::build(config, admission, console).await
+    }
+
+    async fn build(
+        config: Config,
+        admission: crate::admission::AdmissionConfig,
+        console: crate::console_sessions::ConsoleSessionSettings,
     ) -> Result<Arc<Self>> {
         if admission.ceiling != config.max_concurrency {
             return Err(KernelError::InvalidInput(
@@ -648,6 +675,7 @@ impl AppState {
             metrics,
             admission,
             draining: std::sync::atomic::AtomicBool::new(false),
+            console: crate::console_sessions::ConsoleSessions::new(console),
             chrono_rules_mem: Mutex::new(HashMap::new()),
             // Two v4 UUIDs = 256 bits of CSPRNG-backed entropy.
             boot_secret: format!(

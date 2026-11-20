@@ -9,12 +9,15 @@
 //!
 //! Auth: every page requires the mgmt role. Two credential paths:
 //! - `Authorization: Bearer <mgmt token>` (curl, scripts, the demo BFF), or
-//! - the `__munarium_admin` cookie set by POST /admin/login (browsers). The
-//!   cookie holds the static mgmt token itself — acceptable for the demo
-//!   posture and documented in docs/security-posture.md; HttpOnly +
-//!   SameSite=Strict. No Secure attribute because the demo serves plain
-//!   http on loopback; deployed environments front this with TLS at the
-//!   gateway/ingress.
+//! - a cookie set by POST /admin/login (browsers). Which cookie depends on
+//!   `MUNARIUM_CONSOLE_SESSIONS` (ClearView U10, crate::console_sessions):
+//!   - `legacy` (the v1.4 default): `__munarium_admin` holds the static mgmt
+//!     token itself — acceptable for the demo posture and documented in
+//!     docs/security-posture.md; HttpOnly + SameSite=Strict. No Secure
+//!     attribute because the demo serves plain http on loopback; deployed
+//!     environments front this with TLS at the gateway/ingress.
+//!   - `enabled`: the cookie carries only an opaque, revocable session
+//!     handle; the v1.4 cookie is ignored. POST /admin/logout signs out.
 //!
 //! Actions (the control-plane half) keep the role invariant the security
 //! posture states — a leaked mgmt token cannot write the ledger:
@@ -40,6 +43,7 @@
 //! "needs the postgres store" note wherever a table is the source; the
 //! registries (shapes, providers, chronology rules) render on both stores.
 
+mod console_sessions;
 #[cfg(test)]
 mod html_checks;
 mod inventory;
@@ -56,7 +60,7 @@ use axum::Router;
 use munarium_core::KernelError;
 use std::sync::Arc;
 
-const COOKIE: &str = "__munarium_admin";
+const COOKIE: &str = crate::console_sessions::LEGACY_COOKIE;
 
 /// Sent by a trusted view-only proxy (the demo BFF's GET-only passthrough):
 /// action forms render as notes, so a page that cannot POST through the
@@ -69,6 +73,12 @@ pub(crate) struct AdminCtx {
     pub view_only: bool,
     /// The CSRF synchronizer token bound to this request's credential.
     pub csrf: String,
+    /// The secret the CSRF token and review plans derive from: the per-boot
+    /// secret for a bearer or v1.4 cookie request, the session's own secret
+    /// (shared by every replica) for a console session.
+    pub binding: String,
+    /// The console session this request authenticated with, if any.
+    pub session: Option<String>,
     /// The replica that rendered the page (U2 header context): replicas can
     /// disagree about process-local state such as gauges.
     pub instance: String,
@@ -76,12 +86,20 @@ pub(crate) struct AdminCtx {
     pub store: &'static str,
 }
 
+fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
+    headers
+        .get_all(axum::http::header::COOKIE)
+        .iter()
+        .filter_map(|h| h.to_str().ok())
+        .flat_map(|raw| raw.split(';'))
+        .find_map(|part| {
+            let (k, v) = part.trim().split_once('=')?;
+            (k == name && !v.is_empty()).then(|| v.to_string())
+        })
+}
+
 fn cookie_token(headers: &HeaderMap) -> Option<String> {
-    let raw = headers.get(axum::http::header::COOKIE)?.to_str().ok()?;
-    raw.split(';').find_map(|part| {
-        let (k, v) = part.trim().split_once('=')?;
-        (k == COOKIE && !v.is_empty()).then(|| v.to_string())
-    })
+    cookie_value(headers, COOKIE)
 }
 
 /// `X-Munarium-Admin-View-Only` is on for any value except an explicit
@@ -108,23 +126,72 @@ fn admin_credential(headers: &HeaderMap) -> String {
 /// mgmt-or-bust: bearer wins, cookie is the browser fallback. Failures
 /// redirect to the login form (browsers) — curl callers with a bad token get
 /// the same redirect and can read the Location header.
-fn admin_auth(state: &AppState, headers: &HeaderMap) -> Result<AdminCtx, Response> {
-    let token = crate::rest::bearer(headers)
-        .map(String::from)
-        .or_else(|| cookie_token(headers));
-    match state.authenticate(token.as_deref()) {
-        Ok(ctx) if ctx.role == "mgmt" || ctx.disabled_mode => Ok(AdminCtx {
-            csrf: csrf_token(state, headers),
+///
+/// Under `MUNARIUM_CONSOLE_SESSIONS=enabled` the browser fallback is the
+/// session cookie only: its handle must resolve to a live session that the
+/// replica's current configuration still authorizes (crate::console_sessions).
+/// The v1.4 cookie is then ignored. Under `legacy` the session cookie is
+/// never read. A bearer header behaves the same in both modes.
+async fn admin_auth(state: &AppState, headers: &HeaderMap) -> Result<AdminCtx, Response> {
+    let store = if state.pg_pool().is_some() {
+        "postgres"
+    } else {
+        "memory"
+    };
+    let bearer = crate::rest::bearer(headers);
+    let settings = &state.console.settings;
+    if bearer.is_some() || !settings.sessions() {
+        let token = bearer.map(String::from).or_else(|| cookie_token(headers));
+        return match state.authenticate(token.as_deref()) {
+            Ok(ctx) if ctx.role == "mgmt" || ctx.disabled_mode => Ok(AdminCtx {
+                csrf: csrf_token(state, headers),
+                binding: state.boot_secret.clone(),
+                session: None,
+                view_only: view_only_requested(headers),
+                tenant: ctx,
+                instance: state.config.instance_id.clone(),
+                store,
+            }),
+            _ => Err(Redirect::to("/admin/login").into_response()),
+        };
+    }
+    let handle = cookie_value(headers, settings.cookie_name());
+    let live = match &handle {
+        Some(h) => crate::console_sessions::resolve(state, h).await,
+        None => Ok(None),
+    };
+    match live {
+        Ok(Some(s)) => Ok(AdminCtx {
+            csrf: derive_token(&s.binding_secret, &format!("session:{}", s.session_id)),
+            binding: s.binding_secret,
+            session: Some(s.session_id),
             view_only: view_only_requested(headers),
-            tenant: ctx,
+            tenant: s.tenant,
             instance: state.config.instance_id.clone(),
-            store: if state.pg_pool().is_some() {
-                "postgres"
-            } else {
-                "memory"
-            },
+            store,
         }),
-        _ => Err(Redirect::to("/admin/login").into_response()),
+        Ok(None) => Err(to_login(state, handle.is_some())),
+        Err(e) => {
+            // Fail closed: a store that cannot answer authorizes nothing.
+            tracing::warn!(error = %e, "console session lookup failed; refusing");
+            Err(to_login(state, false))
+        }
+    }
+}
+
+/// The redirect to the login form; `clear` also removes a session cookie
+/// that no longer names a live session.
+fn to_login(state: &AppState, clear: bool) -> Response {
+    let mut resp = Redirect::to("/admin/login").into_response();
+    if clear {
+        append_cookie(&mut resp, &state.console.settings.clear_cookie());
+    }
+    resp
+}
+
+fn append_cookie(resp: &mut Response, cookie: &str) {
+    if let Ok(v) = axum::http::HeaderValue::from_str(cookie) {
+        resp.headers_mut().append(axum::http::header::SET_COOKIE, v);
     }
 }
 
@@ -253,6 +320,10 @@ pub(crate) const NAV: &[NavGroup] = &[
                 "/admin/findings",
                 "findings",
                 "Gate findings recorded at write time and by Matrix reconciliation, newest first.", &["observability.md", "api/rest.md"]),
+            nav_page(
+                "/admin/console-sessions",
+                "console sessions",
+                "Signed-in console sessions for this tenant: when each started and was last used, and revoking them.", &["design/console-sessions.md", "security-posture.md"]),
         ],
     },
     NavGroup {
@@ -284,7 +355,8 @@ pub(crate) fn nav_lookup(active: &str) -> Option<(&'static NavGroup, &'static Na
 /// carries `aria-current="page"` (and the `active` class for styling); its
 /// group's top-level link carries `active` too. Detail pages (a session, a
 /// shape) mark the list page they belong to.
-fn nav(active: &str, view_only: bool) -> String {
+fn nav(active: &str, admin: &AdminCtx) -> String {
+    let view_only = admin.view_only;
     let current = nav_lookup(active);
     let current_group = current.map(|(g, _)| g.label);
     let groups: String = NAV
@@ -326,8 +398,17 @@ fn nav(active: &str, view_only: bool) -> String {
         }
         _ => String::new(),
     };
+    // Sign-out is offered to a console session only: a bearer request has
+    // nothing to sign out, and the v1.4 pages stay as they were.
+    let signout = match &admin.session {
+        Some(_) if !view_only => format!(
+            r#"<form class="action" method="post" action="/admin/logout">{}<button type="submit" class="secondary">sign out</button></form>"#,
+            csrf_field(admin)
+        ),
+        _ => String::new(),
+    };
     format!(
-        r#"<nav aria-label="console"><span class="brand">munarium admin{badge}</span>{groups}</nav>{subnav}"#
+        r#"<nav aria-label="console"><span class="brand">munarium admin{badge}</span>{groups}{signout}</nav>{subnav}"#
     )
 }
 
@@ -382,7 +463,7 @@ fn page(admin: &AdminCtx, active: &str, title: &str, actions: &str, body: &str) 
         r##"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{} — munarium admin</title>{}</head><body><a class="skip" href="#main">skip to content</a>{}<main id="main">{}{body}</main></body></html>"##,
         charts::esc(title),
         charts::STYLE,
-        nav(active, admin.view_only),
+        nav(active, admin),
         page_header(admin, active, title, actions),
     ))
 }
@@ -670,11 +751,17 @@ pub(crate) fn action(admin: &AdminCtx, form: String) -> String {
 /// dependency; the per-boot secret means a restart invalidates in-flight
 /// forms (they re-render — accepted caveat).
 fn csrf_token(state: &AppState, headers: &HeaderMap) -> String {
+    derive_token(&state.boot_secret, &admin_credential(headers))
+}
+
+/// `hex(sha256(secret || sha256(secret || ":" || material)))`: the CSRF token
+/// over the request's credential (or, for a console session, its id), and
+/// the review plan over its fields.
+fn derive_token(secret: &str, material: &str) -> String {
     use sha2::Digest as _;
-    let cred = admin_credential(headers);
-    let inner = sha2::Sha256::digest(format!("{}:{cred}", state.boot_secret).as_bytes());
+    let inner = sha2::Sha256::digest(format!("{secret}:{material}").as_bytes());
     hex::encode(sha2::Sha256::digest(
-        [state.boot_secret.as_bytes(), &inner[..]].concat(),
+        [secret.as_bytes(), &inner[..]].concat(),
     ))
 }
 
@@ -704,19 +791,15 @@ fn ct_eq(expected: &str, provided: &str) -> bool {
 /// - the target's current revision (`revision`: a digest of the row the
 ///   review showed), so a target that changed after review no longer
 ///   matches;
-/// - the boot secret, so a restart expires every outstanding review, like
-///   the CSRF token.
+/// - the request's binding secret (`admin.binding`): the boot secret for a
+///   bearer or v1.4 cookie request, so a restart expires every outstanding
+///   review like the CSRF token; a console session's own secret otherwise,
+///   so a review on one replica confirms on another and dies with the
+///   session.
 ///
 /// Stateless, like the CSRF token: nothing is stored between review and
 /// confirmation. The nested hash is the same construction as `csrf_token`.
-pub(crate) fn action_plan(
-    state: &AppState,
-    admin: &AdminCtx,
-    action: &str,
-    target: &str,
-    revision: &str,
-) -> String {
-    use sha2::Digest as _;
+pub(crate) fn action_plan(admin: &AdminCtx, action: &str, target: &str, revision: &str) -> String {
     let fields = [
         "plan",
         admin.csrf.as_str(),
@@ -730,25 +813,18 @@ pub(crate) fn action_plan(
     for f in fields {
         material.push_str(&format!("{}:{f};", f.len()));
     }
-    let inner = sha2::Sha256::digest(format!("{}:{material}", state.boot_secret).as_bytes());
-    hex::encode(sha2::Sha256::digest(
-        [state.boot_secret.as_bytes(), &inner[..]].concat(),
-    ))
+    derive_token(&admin.binding, &material)
 }
 
 /// Whether a submitted plan is the one `action_plan` computes now.
 pub(crate) fn plan_ok(
-    state: &AppState,
     admin: &AdminCtx,
     action: &str,
     target: &str,
     revision: &str,
     provided: &str,
 ) -> bool {
-    ct_eq(
-        &action_plan(state, admin, action, target, revision),
-        provided,
-    )
+    ct_eq(&action_plan(admin, action, target, revision), provided)
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -787,11 +863,39 @@ pub struct LoginForm {
     token: String,
 }
 
+/// `POST /admin/login`. Under the default `legacy` login this is v1.4: the
+/// cookie holds the token. Under `MUNARIUM_CONSOLE_SESSIONS=enabled` it
+/// starts a revocable session, sets the cookie to its opaque handle and
+/// removes any v1.4 cookie, so the static token no longer sits in the
+/// browser. The token check is the same in both modes.
 async fn login_submit(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
     axum::extract::Form(form): axum::extract::Form<LoginForm>,
 ) -> Response {
-    match state.authenticate(Some(form.token.trim())) {
+    let token = form.token.trim();
+    match state.authenticate(Some(token)) {
+        Ok(ctx)
+            if (ctx.role == "mgmt" || ctx.disabled_mode) && state.console.settings.sessions() =>
+        {
+            match crate::console_sessions::create(&state, &ctx, token).await {
+                Ok(handle) => {
+                    let mut resp = Redirect::to("/admin").into_response();
+                    append_cookie(&mut resp, &state.console.settings.set_cookie(&handle));
+                    append_cookie(&mut resp, &crate::console_sessions::clear_legacy_cookie());
+                    resp
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "console session could not be created");
+                    (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        login_page(Some(
+                            "the console session could not be started (session store unavailable); try again",
+                        )),
+                    )
+                        .into_response()
+                }
+            }
+        }
         Ok(ctx) if ctx.role == "mgmt" || ctx.disabled_mode => {
             let cookie = format!(
                 "{COOKIE}={}; HttpOnly; SameSite=Strict; Path=/admin",
@@ -808,6 +912,45 @@ async fn login_submit(
         Ok(_) => login_page(Some("that token is not a management (mgmt) token")).into_response(),
         Err(_) => login_page(Some("invalid token")).into_response(),
     }
+}
+
+/// `POST /admin/logout` — sign-out (ClearView U10). CSRF-protected like
+/// every console form. A console session is revoked in the shared store, so
+/// every replica refuses its handle from the next request, and its cookie is
+/// cleared; a v1.4 cookie is just cleared. If the store cannot record the
+/// sign-out, the response says so and the session stays as it was.
+async fn logout(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    headers: HeaderMap,
+    axum::extract::Form(form): axum::extract::Form<CsrfOnlyForm>,
+) -> Response {
+    let admin = match admin_auth(&state, &headers).await {
+        Ok(c) => c,
+        Err(r) => return r,
+    };
+    if !csrf_ok(&admin, &form._csrf) {
+        return stale_form(&admin, "overview", "Sign out");
+    }
+    let mut resp = Redirect::to("/admin/login").into_response();
+    if admin.session.is_some() {
+        let settings = &state.console.settings;
+        if let Some(handle) = cookie_value(&headers, settings.cookie_name()) {
+            if let Err(e) = crate::console_sessions::sign_out(&state, &handle).await {
+                let mut failed = notice(
+                    &admin,
+                    "overview",
+                    "Sign out",
+                    &format!("sign-out was not recorded, so the session is still active: {e}"),
+                );
+                *failed.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
+                return failed;
+            }
+        }
+        append_cookie(&mut resp, &settings.clear_cookie());
+    } else if crate::rest::bearer(&headers).is_none() {
+        append_cookie(&mut resp, &crate::console_sessions::clear_legacy_cookie());
+    }
+    resp
 }
 
 /// Merged into the REST router BEFORE with_state — the shared capture
@@ -864,7 +1007,17 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/admin/audit", get(inventory::audit))
         .route("/admin/findings", get(inventory::findings))
         .route("/admin/matrix", get(inventory::matrix))
+        .route("/admin/console-sessions", get(console_sessions::list))
+        .route(
+            "/admin/console-sessions/{session_id}/revoke",
+            get(console_sessions::revoke_review_page),
+        )
+        .route(
+            "/admin/console-sessions/{session_id}/revoke/confirm",
+            post(console_sessions::revoke_confirm),
+        )
         .route("/admin/login", get(login_form).post(login_submit))
+        .route("/admin/logout", post(logout))
 }
 
 #[cfg(test)]
@@ -1053,6 +1206,9 @@ mod tests {
         "/admin/health",
     ];
 
+    /// Navigation pages added after v1.4 (ClearView U10).
+    const NEW_PAGES: &[&str] = &["/admin/console-sessions"];
+
     /// U2: every page has one `h1`, its purpose line, and the read context
     /// (tenant, instance, store mode, read time).
     #[tokio::test]
@@ -1128,7 +1284,16 @@ mod tests {
             let resp = get(&state, url, Some("m"), false).await;
             assert_eq!(resp.status(), StatusCode::OK, "{url}");
         }
-        assert_eq!(hrefs.len(), V14_PAGES.len(), "nav pages: {hrefs:?}");
+        // Every other nav page is new since v1.4 and listed here.
+        for url in NEW_PAGES {
+            assert!(hrefs.contains(url), "{url} missing from the nav");
+            assert!(!V14_PAGES.contains(url));
+        }
+        assert_eq!(
+            hrefs.len(),
+            V14_PAGES.len() + NEW_PAGES.len(),
+            "nav pages: {hrefs:?}"
+        );
         let resp = get(&state, "/admin/login", None, false).await;
         assert_eq!(resp.status(), StatusCode::OK);
     }
@@ -3007,5 +3172,825 @@ mod tests {
         assert!(!body.contains("test-secret-for-the-admin-tests"), "{body}");
         // Static tokens never render either.
         assert!(!body.contains(">w2<"), "{body}");
+    }
+
+    // -----------------------------------------------------------------------
+    // U10 / LOGIN1: revocable console sessions
+    // -----------------------------------------------------------------------
+
+    use crate::console_sessions::{ConsoleSessionSettings, SESSION_COOKIE};
+
+    async fn sessions_state(auth: AuthMode, settings: ConsoleSessionSettings) -> Arc<AppState> {
+        AppState::new_with_console(test_config(auth), settings)
+            .await
+            .expect("state")
+    }
+
+    async fn send(state: &Arc<AppState>, req: axum::http::Request<axum::body::Body>) -> Response {
+        crate::rest::router(state.clone())
+            .oneshot(req)
+            .await
+            .unwrap()
+    }
+
+    async fn login(state: &Arc<AppState>, token: &str) -> Response {
+        send(
+            state,
+            axum::http::Request::post("/admin/login")
+                .header("content-type", "application/x-www-form-urlencoded")
+                .body(axum::body::Body::from(format!("token={token}")))
+                .unwrap(),
+        )
+        .await
+    }
+
+    fn set_cookies(resp: &Response) -> Vec<String> {
+        resp.headers()
+            .get_all("set-cookie")
+            .iter()
+            .map(|v| v.to_str().unwrap().to_string())
+            .collect()
+    }
+
+    /// The value a response sets for cookie `name`, if any.
+    fn cookie_set(resp: &Response, name: &str) -> Option<String> {
+        set_cookies(resp).iter().find_map(|c| {
+            let v = c.strip_prefix(&format!("{name}="))?;
+            Some(v.split(';').next().unwrap_or_default().to_string())
+        })
+    }
+
+    /// Signs in through `state` and returns the session handle.
+    async fn sign_in(state: &Arc<AppState>, token: &str) -> String {
+        let resp = login(state, token).await;
+        assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+        assert_eq!(resp.headers()["location"], "/admin");
+        let handle = cookie_set(&resp, SESSION_COOKIE).expect("session cookie");
+        assert!(crate::console_sessions::well_formed(&handle), "{handle}");
+        handle
+    }
+
+    async fn get_with_cookie(state: &Arc<AppState>, path: &str, cookie: &str) -> Response {
+        send(
+            state,
+            axum::http::Request::get(path)
+                .header("cookie", cookie)
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+    }
+
+    async fn post_with_cookie(
+        state: &Arc<AppState>,
+        path: &str,
+        cookie: &str,
+        form: &str,
+    ) -> Response {
+        send(
+            state,
+            axum::http::Request::post(path)
+                .header("cookie", cookie)
+                .header("content-type", "application/x-www-form-urlencoded")
+                .body(axum::body::Body::from(form.to_string()))
+                .unwrap(),
+        )
+        .await
+    }
+
+    fn session_cookie(handle: &str) -> String {
+        format!("{SESSION_COOKIE}={handle}")
+    }
+
+    /// Whether `handle` opens the console on `state`.
+    async fn admitted(state: &Arc<AppState>, handle: &str) -> bool {
+        let resp = get_with_cookie(state, "/admin", &session_cookie(handle)).await;
+        match resp.status() {
+            StatusCode::OK => true,
+            StatusCode::SEE_OTHER => {
+                assert_eq!(resp.headers()["location"], "/admin/login");
+                false
+            }
+            other => panic!("unexpected {other}"),
+        }
+    }
+
+    fn csrf_in(body: &str) -> Option<String> {
+        let start = body.find(r#"name="_csrf" value=""#)? + r#"name="_csrf" value=""#.len();
+        let len = body[start..].find('"')?;
+        Some(body[start..start + len].to_string())
+    }
+
+    /// A page rendered for `handle`, with its CSRF token.
+    async fn page_csrf(state: &Arc<AppState>, path: &str, handle: &str) -> (String, String) {
+        let body = body_string(get_with_cookie(state, path, &session_cookie(handle)).await).await;
+        let csrf = csrf_in(&body).unwrap_or_else(|| panic!("no csrf on {path}: {body}"));
+        (body, csrf)
+    }
+
+    /// The default is the v1.4 login, unchanged: the cookie holds the token,
+    /// a session cookie is never read, no sign-out is offered, and the
+    /// sessions page says the replica uses the v1.4 login.
+    #[tokio::test]
+    async fn the_v1_4_login_stays_the_default() {
+        let state = state(static_auth()).await;
+        assert_eq!(state.console.settings, ConsoleSessionSettings::default());
+        let resp = login(&state, "m").await;
+        assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+        assert_eq!(
+            set_cookies(&resp),
+            vec!["__munarium_admin=m; HttpOnly; SameSite=Strict; Path=/admin".to_string()]
+        );
+        let resp = get_with_cookie(&state, "/admin", "__munarium_admin=m").await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_string(resp).await;
+        assert!(!body.contains("/admin/logout"), "{body}");
+        // Non-mgmt and unknown tokens are refused as in v1.4.
+        let body = body_string(login(&state, "w").await).await;
+        assert!(body.contains("not a management (mgmt) token"), "{body}");
+        let body = body_string(login(&state, "nope").await).await;
+        assert!(body.contains("invalid token"), "{body}");
+        // A session handle means nothing to a legacy replica.
+        let fake = format!("mcs1_{}", "a".repeat(64));
+        assert!(!admitted(&state, &fake).await);
+        let body =
+            body_string(get(&state, "/admin/console-sessions", Some("m"), false).await).await;
+        assert!(body.contains("MUNARIUM_CONSOLE_SESSIONS=legacy"), "{body}");
+        assert!(body.contains(r#"<div class="empty">none</div>"#), "{body}");
+        // The v1.4 cookie can still be cleared through the new sign-out
+        // route, which keeps its CSRF check.
+        let csrf = csrf_for(&state, "m");
+        let resp = post_with_cookie(
+            &state,
+            "/admin/logout",
+            "__munarium_admin=m",
+            &format!("_csrf={}", "0".repeat(64)),
+        )
+        .await;
+        assert!(body_string(resp).await.contains("stale form"));
+        let mut headers = HeaderMap::new();
+        headers.insert("cookie", "__munarium_admin=m".parse().unwrap());
+        let cookie_csrf = csrf_token(&state, &headers);
+        assert_eq!(cookie_csrf, csrf, "the v1.4 token binds to the credential");
+        let resp = post_with_cookie(
+            &state,
+            "/admin/logout",
+            "__munarium_admin=m",
+            &format!("_csrf={csrf}"),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+        assert!(set_cookies(&resp)[0].starts_with("__munarium_admin=; Max-Age=0;"));
+    }
+
+    /// Enabled: the cookie carries only an opaque handle and the v1.4
+    /// cookie is removed and ignored; bearer callers are unaffected; the
+    /// session's CSRF token protects actions; sign-out ends the session.
+    #[tokio::test]
+    async fn session_login_issues_an_opaque_handle_and_signs_out() {
+        let state = sessions_state(static_auth(), ConsoleSessionSettings::enabled()).await;
+        let resp = login(&state, "m").await;
+        let cookies = set_cookies(&resp);
+        assert_eq!(cookies.len(), 2, "{cookies:?}");
+        assert!(
+            cookies[0].starts_with("__munarium_console=mcs1_"),
+            "{cookies:?}"
+        );
+        assert!(cookies[0].ends_with("; HttpOnly; SameSite=Strict; Path=/admin"));
+        assert!(
+            cookies[1].starts_with("__munarium_admin=; Max-Age=0;"),
+            "{cookies:?}"
+        );
+        let handle = cookie_set(&resp, SESSION_COOKIE).unwrap();
+        assert_ne!(handle, "m");
+        // The roles the v1.4 login refuses are still refused.
+        assert!(cookie_set(&login(&state, "w").await, SESSION_COOKIE).is_none());
+        assert!(cookie_set(&login(&state, "nope").await, SESSION_COOKIE).is_none());
+
+        assert!(admitted(&state, &handle).await);
+        // The v1.4 cookie is ignored once sessions are on.
+        let resp = get_with_cookie(&state, "/admin", "__munarium_admin=m").await;
+        assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+        // Bearer callers (scripts, the view-only proxy) are unchanged.
+        let resp = get(&state, "/admin/health", Some("m"), false).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = body_string(resp).await;
+        assert!(body.contains("console login"), "{body}");
+        assert!(
+            body.contains("sessions (opaque handle; idle 1800 s"),
+            "{body}"
+        );
+        assert!(!body.contains("/admin/logout"), "bearer: {body}");
+
+        // The session's pages offer sign-out and pass the U14 checks.
+        let (body, csrf) = page_csrf(&state, "/admin/tokens/issue", &handle).await;
+        assert!(body.contains(r#"action="/admin/logout""#), "{body}");
+        for path in ["/admin", "/admin/tokens/issue", "/admin/console-sessions"] {
+            let body =
+                body_string(get_with_cookie(&state, path, &session_cookie(&handle)).await).await;
+            html_checks::assert_operable(path, &body);
+            assert_classes_styled(path, &body);
+            assert_status_cues_have_text(path, &body);
+        }
+        assert_ne!(
+            csrf,
+            csrf_for(&state, "m"),
+            "bound to the session, not the token"
+        );
+        // A CSRF-protected action with the session's token, and without it.
+        let form = "uid=alice&access_level=1&scope_query=1";
+        let resp = post_with_cookie(
+            &state,
+            "/admin/tokens/issue",
+            &session_cookie(&handle),
+            &format!("_csrf={}&{form}", csrf_for(&state, "m")),
+        )
+        .await;
+        assert!(body_string(resp).await.contains("stale form"));
+        let resp = post_with_cookie(
+            &state,
+            "/admin/tokens/issue",
+            &session_cookie(&handle),
+            &format!("_csrf={csrf}&{form}"),
+        )
+        .await;
+        assert!(body_string(resp).await.contains("token minted"));
+
+        // Sign-out needs the CSRF token, then ends the session and clears
+        // the cookie.
+        let resp =
+            post_with_cookie(&state, "/admin/logout", &session_cookie(&handle), "_csrf=x").await;
+        assert!(body_string(resp).await.contains("stale form"));
+        assert!(admitted(&state, &handle).await);
+        let resp = post_with_cookie(
+            &state,
+            "/admin/logout",
+            &session_cookie(&handle),
+            &format!("_csrf={csrf}"),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+        assert_eq!(resp.headers()["location"], "/admin/login");
+        assert!(set_cookies(&resp)[0].starts_with("__munarium_console=; Max-Age=0;"));
+        let resp = get_with_cookie(&state, "/admin", &session_cookie(&handle)).await;
+        assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+        assert!(
+            set_cookies(&resp)[0].starts_with("__munarium_console=; Max-Age=0;"),
+            "a dead handle's cookie is cleared"
+        );
+        // A form rendered for the ended session is dead too.
+        let resp = post_with_cookie(
+            &state,
+            "/admin/tokens/issue",
+            &session_cookie(&handle),
+            &format!("_csrf={csrf}&{form}"),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+    }
+
+    /// With `MUNARIUM_CONSOLE_COOKIE_SECURE=true` the cookie satisfies the
+    /// `__Host-` prefix, and only that cookie name is read.
+    #[tokio::test]
+    async fn the_secure_cookie_uses_the_host_prefix() {
+        let settings = ConsoleSessionSettings {
+            secure_cookie: true,
+            ..ConsoleSessionSettings::enabled()
+        };
+        let state = sessions_state(static_auth(), settings).await;
+        let resp = login(&state, "m").await;
+        let handle = cookie_set(&resp, crate::console_sessions::SECURE_SESSION_COOKIE).unwrap();
+        assert!(set_cookies(&resp)[0].ends_with("; HttpOnly; SameSite=Strict; Secure; Path=/"));
+        let resp = get_with_cookie(
+            &state,
+            "/admin",
+            &format!("__Host-munarium_console={handle}"),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(
+            !admitted(&state, &handle).await,
+            "the plain name is not read"
+        );
+    }
+
+    /// Forged, tampered and malformed handles open nothing, and neither does
+    /// a static token presented as a handle.
+    #[tokio::test]
+    async fn forged_and_tampered_handles_are_refused() {
+        let state = sessions_state(static_auth(), ConsoleSessionSettings::enabled()).await;
+        let handle = sign_in(&state, "m").await;
+        assert!(admitted(&state, &handle).await);
+        let last = handle.chars().last().unwrap();
+        let flipped = format!(
+            "{}{}",
+            &handle[..handle.len() - 1],
+            if last == '0' { '1' } else { '0' }
+        );
+        for bad in [
+            flipped,
+            format!("mcs1_{}", "0".repeat(64)),
+            handle[..handle.len() - 1].to_string(),
+            handle.to_uppercase(),
+            "m".to_string(),
+            crate::console_sessions::handle_digest(&handle),
+        ] {
+            assert!(!admitted(&state, &bad).await, "{bad}");
+        }
+        assert!(
+            admitted(&state, &handle).await,
+            "the real handle still works"
+        );
+    }
+
+    /// Idle and absolute expiry on the memory store (an injected clock).
+    #[tokio::test]
+    async fn idle_and_absolute_expiry_on_the_memory_store() {
+        let settings = ConsoleSessionSettings {
+            idle_secs: 600,
+            max_secs: 3600,
+            ..ConsoleSessionSettings::enabled()
+        };
+        let state = sessions_state(static_auth(), settings).await;
+        // Idle: each request restarts the idle clock; a gap ends it.
+        let idle = sign_in(&state, "m").await;
+        state.console.advance_clock(599);
+        assert!(admitted(&state, &idle).await);
+        state.console.advance_clock(599);
+        assert!(admitted(&state, &idle).await);
+        state.console.advance_clock(600);
+        assert!(!admitted(&state, &idle).await);
+        // Absolute: busy all the way, still ends at the lifetime.
+        let busy = sign_in(&state, "m").await;
+        for _ in 0..7 {
+            state.console.advance_clock(500);
+            assert!(admitted(&state, &busy).await);
+        }
+        state.console.advance_clock(100);
+        assert!(!admitted(&state, &busy).await, "3600 s after sign-in");
+        // The list shows both as expired, not live.
+        let body =
+            body_string(get(&state, "/admin/console-sessions", Some("m"), false).await).await;
+        assert_eq!(body.matches(">expired</span>").count(), 2, "{body}");
+    }
+
+    /// Console revocation behind review and typed confirmation (U4), on the
+    /// memory store: another session is ended, refusals act on nothing, and
+    /// a duplicate changes nothing. Another tenant cannot see the session.
+    #[tokio::test]
+    async fn session_revocation_is_reviewed_then_confirmed() {
+        let auth = AuthMode::Static(vec![
+            ("m".into(), "t".into(), "mgmt".into()),
+            ("m2".into(), "t".into(), "mgmt".into()),
+            ("mo".into(), "t2".into(), "mgmt".into()),
+        ]);
+        let state = sessions_state(auth, ConsoleSessionSettings::enabled()).await;
+        let mine = sign_in(&state, "m").await;
+        state.console.advance_clock(1);
+        let theirs = sign_in(&state, "m2").await;
+        let records = crate::console_sessions::list(&state, "t").await.unwrap();
+        assert_eq!(records.len(), 2);
+        let target = records
+            .iter()
+            .find(|r| r.created_at == records.iter().map(|r| r.created_at).max().unwrap())
+            .unwrap()
+            .session_id
+            .clone();
+        let (body, csrf) = page_csrf(&state, "/admin/console-sessions", &mine).await;
+        assert!(body.contains(">this session</span>"), "{body}");
+        assert!(
+            body.contains(&format!(
+                r#"aria-label="review revoking console session {target}""#
+            )),
+            "{body}"
+        );
+        let review = format!("/admin/console-sessions/{target}/revoke");
+        let confirm = format!("{review}/confirm");
+        let body =
+            body_string(get_with_cookie(&state, &review, &session_cookie(&mine)).await).await;
+        html_checks::assert_operable(&review, &body);
+        assert_classes_styled(&review, &body);
+        let plan = plan_in(&body).expect("plan");
+        // The review is a read.
+        assert!(admitted(&state, &theirs).await);
+        let cookie = session_cookie(&mine);
+        // Wrong typed id, missing CSRF, forged plan, view-only.
+        let resp = post_with_cookie(
+            &state,
+            &confirm,
+            &cookie,
+            &format!("_csrf={csrf}&plan={plan}&confirm=cs-x"),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let resp = post_with_cookie(
+            &state,
+            &confirm,
+            &cookie,
+            &format!("plan={plan}&confirm={target}"),
+        )
+        .await;
+        assert!(body_string(resp).await.contains("stale form"));
+        let resp = post_with_cookie(
+            &state,
+            &confirm,
+            &cookie,
+            &format!("_csrf={csrf}&plan={}&confirm={target}", "0".repeat(64)),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        let resp = send(
+            &state,
+            axum::http::Request::post(&confirm)
+                .header("cookie", &cookie)
+                .header(VIEW_ONLY_HEADER, "1")
+                .header("content-type", "application/x-www-form-urlencoded")
+                .body(axum::body::Body::from(format!(
+                    "_csrf={csrf}&plan={plan}&confirm={target}"
+                )))
+                .unwrap(),
+        )
+        .await;
+        assert!(body_string(resp).await.contains("view-only passthrough"));
+        // The plan is bound to the reviewing operator: the bearer's own
+        // CSRF token and the session's plan do not match.
+        let resp = post_form(
+            &state,
+            &confirm,
+            "m",
+            &format!(
+                "_csrf={}&plan={plan}&confirm={target}",
+                csrf_for(&state, "m")
+            ),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        // Another tenant sees nothing.
+        let resp = get(&state, &review, Some("mo"), false).await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        let body =
+            body_string(get(&state, "/admin/console-sessions", Some("mo"), false).await).await;
+        assert!(!body.contains(&target), "{body}");
+        assert!(admitted(&state, &theirs).await);
+
+        let good = format!("_csrf={csrf}&plan={plan}&confirm={target}");
+        let resp = post_with_cookie(&state, &confirm, &cookie, &good).await;
+        assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+        assert_eq!(resp.headers()["location"], "/admin/console-sessions");
+        assert!(!admitted(&state, &theirs).await);
+        assert!(admitted(&state, &mine).await);
+        let resp = post_with_cookie(&state, &confirm, &cookie, &good).await;
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        assert!(body_string(resp).await.contains("already ended"));
+        let body = body_string(get_with_cookie(&state, &review, &cookie).await).await;
+        assert!(
+            body.contains("nothing to confirm") && plan_in(&body).is_none(),
+            "{body}"
+        );
+        let body =
+            body_string(get_with_cookie(&state, "/admin/console-sessions", &cookie).await).await;
+        assert!(body.contains(">revoked</span>"), "{body}");
+    }
+
+    // -- PostgreSQL: two replicas over one database -------------------------
+
+    async fn pg_replica(
+        url: &str,
+        tokens: Vec<(String, String, String)>,
+        settings: ConsoleSessionSettings,
+    ) -> Arc<AppState> {
+        let mut cfg = test_config(AuthMode::Static(tokens));
+        cfg.store = StoreKind::Postgres;
+        cfg.database_url = Some(url.to_string());
+        AppState::new_with_console(cfg, settings)
+            .await
+            .expect("state")
+    }
+
+    async fn session_id_of(state: &AppState, tenant: &str, before: &[String]) -> String {
+        crate::console_sessions::list(state, tenant)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|r| r.session_id)
+            .find(|id| !before.contains(id))
+            .expect("new session")
+    }
+
+    async fn session_ids(state: &AppState, tenant: &str) -> Vec<String> {
+        crate::console_sessions::list(state, tenant)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|r| r.session_id)
+            .collect()
+    }
+
+    /// LOGIN1-T2 in one process: two replicas (two `AppState`s, two pools)
+    /// over one database. A session signed in on one replica works on the
+    /// other, including a CSRF-protected action and a U4 review confirmed
+    /// across replicas; sign-out and revocation on either are honoured by
+    /// both; idle and absolute expiry hold on both, with the stricter
+    /// replica setting winning; forged and tampered handles fail; another
+    /// tenant sees nothing; and a rotated credential ends its sessions.
+    #[tokio::test]
+    async fn console_sessions_are_shared_and_revocable_across_replicas_on_postgres() {
+        let Ok(url) = std::env::var("MUNARIUM_TEST_DATABASE_URL") else {
+            eprintln!("console sessions PostgreSQL test NOT RUN: MUNARIUM_TEST_DATABASE_URL unset");
+            return;
+        };
+        let tenant = format!("console-u10-{}", uuid::Uuid::new_v4().simple());
+        let other = format!("{tenant}-other");
+        let tok = |t: &str, ten: &str, r: &str| (t.to_string(), ten.to_string(), r.to_string());
+        let m = format!("m-{tenant}");
+        let m2 = format!("m2-{tenant}");
+        let mo = format!("mo-{tenant}");
+        let tokens = vec![
+            tok(&m, &tenant, "mgmt"),
+            tok(&m2, &tenant, "mgmt"),
+            tok(&mo, &other, "mgmt"),
+        ];
+        let enabled = ConsoleSessionSettings::enabled();
+        let a = pg_replica(&url, tokens.clone(), enabled).await;
+        let b = pg_replica(&url, tokens.clone(), enabled).await;
+        assert_ne!(a.boot_secret, b.boot_secret, "two independent replicas");
+
+        // Signed in on A, used on B.
+        let h = sign_in(&a, &m).await;
+        assert!(admitted(&b, &h).await);
+        let (_, csrf) = page_csrf(&a, "/admin/tokens/issue", &h).await;
+        let resp = post_with_cookie(
+            &b,
+            "/admin/tokens/issue",
+            &session_cookie(&h),
+            &format!("_csrf={csrf}&uid=alice&access_level=1&scope_query=1"),
+        )
+        .await;
+        let body = body_string(resp).await;
+        assert!(
+            body.contains("token minted"),
+            "CSRF across replicas: {body}"
+        );
+        // A U4 review rendered on A confirms on B.
+        let jti = issue(&a, &tenant, "bob").await;
+        let review = format!("/admin/tokens/{jti}/revoke");
+        let body = body_string(get_with_cookie(&a, &review, &session_cookie(&h)).await).await;
+        let plan = plan_in(&body).expect("plan");
+        let resp = post_with_cookie(
+            &b,
+            &format!("{review}/confirm"),
+            &session_cookie(&h),
+            &format!("_csrf={csrf}&plan={plan}&confirm={jti}"),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::SEE_OTHER, "plan across replicas");
+        assert!(revoked_at(&a, &tenant, &jti).await.is_some());
+
+        // Sign-out on A is refused on B.
+        let resp = post_with_cookie(
+            &a,
+            "/admin/logout",
+            &session_cookie(&h),
+            &format!("_csrf={csrf}"),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+        assert!(!admitted(&b, &h).await);
+        assert!(!admitted(&a, &h).await);
+        let reason: Option<String> = sqlx::query_scalar(
+            "SELECT revoked_reason FROM console_sessions WHERE tenant_id = $1 AND revoked_at IS NOT NULL",
+        )
+        .bind(&tenant)
+        .fetch_one(a.pg_pool().unwrap())
+        .await
+        .unwrap();
+        assert_eq!(reason.as_deref(), Some("sign-out"));
+
+        // Revocation on B is refused on A; the revoking session is unharmed.
+        let before = session_ids(&a, &tenant).await;
+        let victim = sign_in(&a, &m2).await;
+        let victim_id = session_id_of(&a, &tenant, &before).await;
+        let operator = sign_in(&b, &m).await;
+        assert!(admitted(&a, &victim).await && admitted(&b, &operator).await);
+        let review = format!("/admin/console-sessions/{victim_id}/revoke");
+        let (body, csrf) = page_csrf(&b, &review, &operator).await;
+        let plan = plan_in(&body).expect("plan");
+        // Another tenant cannot see or revoke it.
+        assert_eq!(
+            get(&a, &review, Some(&mo), false).await.status(),
+            StatusCode::NOT_FOUND
+        );
+        let resp = post_with_cookie(
+            &b,
+            &format!("{review}/confirm"),
+            &session_cookie(&operator),
+            &format!("_csrf={csrf}&plan={plan}&confirm={victim_id}"),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+        assert!(!admitted(&a, &victim).await);
+        assert!(!admitted(&b, &victim).await);
+        assert!(admitted(&a, &operator).await);
+
+        // Forged and tampered handles.
+        let mut tampered = operator.clone();
+        let flip = if tampered.ends_with('0') { "1" } else { "0" };
+        tampered.replace_range(tampered.len() - 1.., flip);
+        for bad in [tampered, format!("mcs1_{}", "f".repeat(64)), m.clone()] {
+            assert!(!admitted(&a, &bad).await, "{bad}");
+            assert!(!admitted(&b, &bad).await, "{bad}");
+        }
+
+        let pool = a.pg_pool().unwrap().clone();
+        let age = |column: &'static str, secs: i64, handle: String| {
+            let pool = pool.clone();
+            async move {
+                sqlx::query(&format!(
+                    "UPDATE console_sessions SET {column} = {column} - make_interval(secs => $1::double precision)
+                      WHERE handle_digest = $2"
+                ))
+                .bind(secs as f64)
+                .bind(crate::console_sessions::handle_digest(&handle))
+                .execute(&pool)
+                .await
+                .unwrap();
+            }
+        };
+        // Idle expiry, on both replicas.
+        let idle = sign_in(&a, &m).await;
+        age("last_seen_at", 1_790, idle.clone()).await;
+        assert!(admitted(&b, &idle).await, "within the idle bound");
+        age("last_seen_at", 1_801, idle.clone()).await;
+        assert!(!admitted(&b, &idle).await);
+        assert!(!admitted(&a, &idle).await);
+        // Recorded absolute expiry, on both replicas, even when busy.
+        let busy = sign_in(&b, &m).await;
+        age("expires_at", 28_801, busy.clone()).await;
+        assert!(!admitted(&a, &busy).await);
+        assert!(!admitted(&b, &busy).await);
+        // The stricter replica setting wins: a replica with a 600 s idle
+        // bound and 900 s lifetime refuses what the default replicas accept.
+        let strict = pg_replica(
+            &url,
+            tokens.clone(),
+            ConsoleSessionSettings {
+                idle_secs: 600,
+                max_secs: 900,
+                ..enabled
+            },
+        )
+        .await;
+        let s1 = sign_in(&a, &m).await;
+        age("last_seen_at", 700, s1.clone()).await;
+        assert!(!admitted(&strict, &s1).await, "stricter idle");
+        assert!(admitted(&a, &s1).await);
+        let s2 = sign_in(&a, &m).await;
+        age("created_at", 1_000, s2.clone()).await;
+        assert!(!admitted(&strict, &s2).await, "stricter lifetime");
+        assert!(admitted(&a, &s2).await);
+
+        // Bound to the credential: a replica whose configuration no longer
+        // has the token refuses its sessions; one that moved it to another
+        // tenant or role does too.
+        let rotated = pg_replica(&url, vec![tok(&m2, &tenant, "mgmt")], enabled).await;
+        assert!(!admitted(&rotated, &s1).await);
+        let moved = pg_replica(&url, vec![tok(&m, &other, "mgmt")], enabled).await;
+        assert!(!admitted(&moved, &s1).await);
+        let demoted = pg_replica(&url, vec![tok(&m, &tenant, "rw")], enabled).await;
+        assert!(!admitted(&demoted, &s1).await);
+        assert!(admitted(&a, &s1).await);
+
+        // The handle is stored only as its digest.
+        let stored: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM console_sessions WHERE handle_digest = $1 OR handle_digest = $2",
+        )
+        .bind(&s1)
+        .bind(crate::console_sessions::handle_digest(&s1))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(stored, 1);
+        let leaked: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM console_sessions
+              WHERE tenant_id = $1 AND (credential_digest = $2 OR binding_secret LIKE '%' || $2 || '%')",
+        )
+        .bind(&tenant)
+        .bind(&m)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(leaked, 0, "the token is never stored");
+    }
+
+    /// LOGIN1 with the feature off and after it was on: the v1.4 login works
+    /// beside the table; a legacy replica ignores live handles (rollback),
+    /// can still list and revoke them, and the documented fleet-wide
+    /// rollback revocation keeps a re-enabled fleet from honouring them.
+    /// Rows a week past expiry are pruned at the next sign-in.
+    #[tokio::test]
+    async fn the_v1_4_login_and_rollback_work_beside_sessions_on_postgres() {
+        let Ok(url) = std::env::var("MUNARIUM_TEST_DATABASE_URL") else {
+            eprintln!("console rollback PostgreSQL test NOT RUN: MUNARIUM_TEST_DATABASE_URL unset");
+            return;
+        };
+        let tenant = format!("console-login1-{}", uuid::Uuid::new_v4().simple());
+        let m = format!("m-{tenant}");
+        let tokens = vec![(m.clone(), tenant.clone(), "mgmt".to_string())];
+        let enabled = pg_replica(&url, tokens.clone(), ConsoleSessionSettings::enabled()).await;
+        let legacy = pg_replica(&url, tokens.clone(), ConsoleSessionSettings::default()).await;
+
+        // Off: the v1.4 login, cookie and all.
+        let resp = login(&legacy, &m).await;
+        assert_eq!(
+            set_cookies(&resp),
+            vec![format!(
+                "__munarium_admin={m}; HttpOnly; SameSite=Strict; Path=/admin"
+            )]
+        );
+        let v14 = format!("__munarium_admin={m}");
+        assert_eq!(
+            get_with_cookie(&legacy, "/admin", &v14).await.status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            session_ids(&legacy, &tenant).await.len(),
+            0,
+            "no row for a v1.4 login"
+        );
+        // The enabled replica does not honour the v1.4 cookie.
+        assert_eq!(
+            get_with_cookie(&enabled, "/admin", &v14).await.status(),
+            StatusCode::SEE_OTHER
+        );
+
+        // On, then switched off: the legacy replica ignores live handles.
+        let first = sign_in(&enabled, &m).await;
+        let second = sign_in(&enabled, &m).await;
+        assert!(admitted(&enabled, &first).await);
+        assert!(!admitted(&legacy, &first).await);
+        assert_eq!(
+            get_with_cookie(&legacy, "/admin", &v14).await.status(),
+            StatusCode::OK
+        );
+        // The legacy replica lists them and can revoke one (per tenant).
+        let ids = session_ids(&legacy, &tenant).await;
+        assert_eq!(ids.len(), 2);
+        let body =
+            body_string(get(&legacy, "/admin/console-sessions", Some(&m), false).await).await;
+        assert!(ids.iter().all(|id| body.contains(id.as_str())), "{body}");
+        assert_eq!(body.matches(">live</span>").count(), 2, "{body}");
+        let first_id = crate::console_sessions::list(&legacy, &tenant)
+            .await
+            .unwrap()
+            .into_iter()
+            .last()
+            .unwrap()
+            .session_id;
+        let review = format!("/admin/console-sessions/{first_id}/revoke");
+        let plan = plan_in(&body_string(get(&legacy, &review, Some(&m), false).await).await)
+            .expect("plan");
+        let resp = post_form(
+            &legacy,
+            &format!("{review}/confirm"),
+            &m,
+            &format!(
+                "_csrf={}&plan={plan}&confirm={first_id}",
+                csrf_for(&legacy, &m)
+            ),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+        // Switched on again: the revoked handle stays dead; an unrevoked one
+        // would be honoured again, which is why rollback ends with the
+        // fleet-wide revocation (docs/design/console-sessions.md#rollback).
+        let again = pg_replica(&url, tokens.clone(), ConsoleSessionSettings::enabled()).await;
+        assert!(!admitted(&again, &first).await);
+        assert!(admitted(&again, &second).await);
+        sqlx::query(
+            "UPDATE console_sessions SET revoked_at = now(), revoked_reason = 'revoked'
+              WHERE revoked_at IS NULL AND tenant_id = $1",
+        )
+        .bind(&tenant)
+        .execute(again.pg_pool().unwrap())
+        .await
+        .unwrap();
+        assert!(!admitted(&again, &second).await);
+
+        // Pruning: a row more than seven days past its expiry is deleted at
+        // the next sign-in; a recent one is kept.
+        sqlx::query(
+            "UPDATE console_sessions SET expires_at = now() - interval '8 days',
+                    created_at = now() - interval '9 days'
+              WHERE tenant_id = $1 AND session_id = $2",
+        )
+        .bind(&tenant)
+        .bind(&first_id)
+        .execute(again.pg_pool().unwrap())
+        .await
+        .unwrap();
+        let _ = sign_in(&again, &m).await;
+        let ids = session_ids(&again, &tenant).await;
+        assert!(!ids.contains(&first_id), "pruned");
+        assert_eq!(ids.len(), 2);
     }
 }

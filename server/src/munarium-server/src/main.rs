@@ -39,6 +39,7 @@ mod chronology_api;
 mod collections_api;
 mod command_recovery;
 mod config;
+mod console_sessions;
 #[cfg(test)]
 mod crash_recovery;
 mod dashboard;
@@ -166,6 +167,21 @@ async fn serve() {
     if let Err(e) = config::pdf_extraction_from_env() {
         eprintln!("config error: {e}");
         std::process::exit(2);
+    }
+    // The console login (ClearView U10). `legacy` is the v1.4 default; the
+    // switch is an explicit operator decision (docs/design/console-sessions.md).
+    match console_sessions::ConsoleSessionSettings::from_env() {
+        Ok(s) if s.sessions() => tracing::info!(
+            idle_secs = s.idle_secs,
+            max_secs = s.max_secs,
+            secure_cookie = s.secure_cookie,
+            "console sessions enabled (MUNARIUM_CONSOLE_SESSIONS=enabled)"
+        ),
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("config error: {e}");
+            std::process::exit(2);
+        }
     }
     tracing::info!(?config.store, http = %config.http_addr, grpc = ?config.grpc_addr, instance = %config.instance_id, "starting");
 
