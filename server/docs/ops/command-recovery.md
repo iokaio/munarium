@@ -41,7 +41,7 @@ historical hash binding; activation cannot retroactively add missing evidence.
 A duplicate pending call, cancellation, handler failure or crash before receipt
 commit returns `command-unresolved` on a subsequent identical request: HTTP 409,
 gRPC `FAILED_PRECONDITION`. This error is **not** a retryable head conflict.
-The problem (and the gRPC `ErrorInfo` metadata) carries the experimental
+The problem (and the gRPC `ErrorInfo` metadata) carries the
 typed guidance `retryable: false` and `retry_action: inspect_outcome`; see
 [retry guidance](../api/errors.md#retry-guidance). Clients must not replay
 automatically on that action, nor on any absent or unrecognized action.

@@ -137,39 +137,39 @@ For the full corpus, let `F` be the number of authorized content-bearing files a
 
 ## Decision register
 
-The following product choices were recorded on **19 November 2026**. The linked section owns the detailed behavior and acceptance cases. For every shared contract row, the hub record is **pending** until its owner links the numbered decision and exported revision here. Local behavior and measurement rows use their component review and release receipts. Formal contract acceptance and scheduling have their own records.
+The following product choices were recorded on **19 November 2026**. The linked section owns the detailed behavior and acceptance cases. Hub decision records 0020–0028, which hold the shared contract rows, were **accepted as written on 20 November 2026**; each row's contract export remains pending until its owner links the exported revision here. Local behavior and measurement rows use their component review and release receipts. Formal contract acceptance and scheduling have their own records.
 
 Earlier planning notes used `L1/L2` for `LENS-D1/LENS-D2`, `S1` for `REL1`, `UI1` for `LOGIN1`, and `D1/D2` for `ART1/ART2`. R, IR and U identify engineering work. SCALE-1–3 identify deployment work, and SC1–2 identify scaling and placement decisions. In the Datastore guide L0/L1/L2 refer to cache and storage tiers.
 
 | Decision and owner | v1.5 outcome | Record |
 |---|---|---|
-| [M1 · Matrix handoff](repository-handoffs.md#m1) | Move Matrix-owned code and docs after parity. Retain the v1.4 consumer names and minimal generated record. | Hub record pending |
+| [M1 · Matrix handoff](repository-handoffs.md#m1) | Move Matrix-owned code and docs after parity. Retain the v1.4 consumer names and minimal generated record. | Hub ADR 0020 accepted; export pending |
 | [LENS-D1 · Lens delivery](repository-handoffs.md#lens-d1) | A completed Lens is a Server release requirement and remains optional for installations. | Component plan |
 | [LENS-D2 · Lens qualification](repository-handoffs.md#lens-d2) | Build, query, verify citations and roll back across the documents and code of all 16 workspace repositories. | Component plan |
 | [REL1 · Release engineering](#rel1) | Both the new login and fleet artifact protection must qualify. | Component plan |
-| [C1 · Retrieval](airk-analysis.md#c1) | Explicit partial reads return verified, authorized results with visible gaps and withhold unsupported claims. | Hub record pending |
-| [C2 · Build jobs](airk-analysis.md#c2) | Historical unclassified failures retain a generic `error` and omit `error_code`. | Hub record pending |
+| [C1 · Retrieval](airk-analysis.md#c1) | Explicit partial reads return verified, authorized results with visible gaps and withhold unsupported claims. | Hub ADR 0021 accepted; export pending |
+| [C2 · Build jobs](airk-analysis.md#c2) | Historical unclassified failures retain a generic `error` and omit `error_code`. | Hub ADR 0022 accepted; export pending |
 | [B1 · Build queue](airk-analysis.md#b1) | Opt-in fair scheduling gives eligible tenants equal turns and starts their oldest eligible jobs first. | Component plan |
 | [B2 · Build events](airk-analysis.md#b2) | Retain recent events by count per tenant and indicate pruned history. | Component plan |
 | [B3 · Admission](airk-analysis.md#b3) | Reserve authenticated control capacity within the configured hard ceiling. | Component plan |
 | [B4 · PDF qualification](airk-analysis.md#b4) | Measure bounds for the opt-in extraction profile. Numeric limits remain open. | Measurement pending |
 | [SC1 · Fleet operations](scale-out.md#sc1) | Qualify operator-controlled scale-up and scale-down of both Server and Lens. | Component plan |
-| [SC2 · Lens placement](repository-handoffs.md#sc2) | Sharing requires explicit coverage of every participating tenant and compatible processing rules. | Hub record pending |
-| [A1 · MCP authority](mcp-analysis.md#a1) | Require MCP entry scope plus the underlying operation's permission. | Hub record pending |
-| [A2 · Generative opt-in](mcp-analysis.md#a2) | Require explicit enablement and a named budget owner before generation. | Hub record pending |
+| [SC2 · Lens placement](repository-handoffs.md#sc2) | Sharing requires explicit coverage of every participating tenant and compatible processing rules. | Hub ADR 0024 accepted; export pending |
+| [A1 · MCP authority](mcp-analysis.md#a1) | Require MCP entry scope plus the underlying operation's permission. | Hub ADR 0025 accepted; export pending |
+| [A2 · Generative opt-in](mcp-analysis.md#a2) | Require explicit enablement and a named budget owner before generation. | Hub ADR 0026 accepted; export pending |
 | [A3 · Interoperability](mcp-analysis.md#a3) | Qualify 2026-07-28 discovery and the 2025-11-25 handshake with real clients. | Component plan |
-| [A4 · Evidence](mcp-analysis.md#a4) | Require both sealed-evidence readers and tested read-only access. | Hub record pending |
+| [A4 · Evidence](mcp-analysis.md#a4) | Require both sealed-evidence readers and tested read-only access. | Hub ADR 0025 accepted; export pending |
 | [A5 · MCP release gate](mcp-analysis.md#a5) | Hold Server v1.5 until the complete eleven-tool endpoint qualifies. | Component plan |
-| [A6 · Audit](mcp-analysis.md#a6) | A confirmed durable audit record precedes every tool execution. | Hub record pending |
+| [A6 · Audit](mcp-analysis.md#a6) | A confirmed durable audit record precedes every tool execution. | Hub ADR 0027 accepted; export pending |
 | [A7 · Credentials](mcp-analysis.md#a7) | Deployment-operated renewal uses the configurable native lifetime, one hour by default. | Component plan |
-| [A8 · Token allowances](mcp-analysis.md#a8) | Configure request and UTC-day token allowances per collection or index and account across stages and retries. | Hub record pending |
-| [A9 · Shared generation](mcp-analysis.md#a9) | The largest contributing request allowance covers the whole shared invocation, including retries. Each contributor's daily balance covers the full attempt and the common authorized payer is charged once. | Hub record pending |
-| [I1 · Inference outage](airk-analysis.md#i1) | Enrolled reads default to a typed refusal. A disclosed fallback requires explicit operator policy. | Hub record pending |
-| [I2 · Retrieval budgets](airk-analysis.md#i2) | Charge the collection's tenant-owned budget, retain caller attribution and meter authorized shadow work separately. | Hub record pending |
+| [A8 · Token allowances](mcp-analysis.md#a8) | Configure request and UTC-day token allowances per collection or index and account across stages and retries. | Hub ADR 0026 accepted; export pending |
+| [A9 · Shared generation](mcp-analysis.md#a9) | The largest contributing request allowance covers the whole shared invocation, including retries. Each contributor's daily balance covers the full attempt and the common authorized payer is charged once. | Hub ADR 0026 accepted; export pending |
+| [I1 · Inference outage](airk-analysis.md#i1) | Enrolled reads default to a typed refusal. A disclosed fallback requires explicit operator policy. | Hub ADR 0023 accepted; export pending |
+| [I2 · Retrieval budgets](airk-analysis.md#i2) | Charge the collection's tenant-owned budget, retain caller attribution and meter authorized shadow work separately. | Hub ADR 0023 accepted; export pending |
 | [I3 · Profile approval](airk-analysis.md#i3) | Documentation and code each pass their predeclared quality and latency thresholds. | Component plan |
 | [LOGIN1 · Console cutover](airk-analysis.md#login1) | Keep v1.4 login until all serving replicas support revocable sessions and an operator switches. | Component plan |
-| [ART1 · Artifact verification](airk-analysis.md#art1) | Isolate a bad copy locally. Two independent authoritative mismatches on the same pin block fleet serving. | Hub record pending |
-| [ART2 · Repair](airk-analysis.md#art2) | A preauthorized workflow clears the current block after two fresh independent digest matches and records the clearance. | Hub record pending |
+| [ART1 · Artifact verification](airk-analysis.md#art1) | Isolate a bad copy locally. Two independent authoritative mismatches on the same pin block fleet serving. | Hub ADR 0028 accepted; export pending |
+| [ART2 · Repair](airk-analysis.md#art2) | A preauthorized workflow clears the current block after two fresh independent digest matches and records the clearance. | Hub ADR 0028 accepted; export pending |
 
 ## Open items
 

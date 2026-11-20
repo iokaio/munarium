@@ -545,7 +545,7 @@ _(no fields)_
 | 3 | top_k | uint32 | default 10 |
 | 4 | filter_json | string | shape-defined metadata filters |
 | 5 | index_version | string | empty = active index |
-| 6 | disclose_execution | bool | Experimental (ClearView R1): true adds `execution` to the response. False (the proto3 default, and every older client) = the v1.4 response. |
+| 6 | disclose_execution | bool | ClearView R1: true adds `execution` to the response. False (the proto3 default, and every older client) = the v1.4 response. |
 
 ### message SearchLegExecution
 
@@ -561,7 +561,7 @@ by the serving engine: unknown, never zero or false.
 
 ### message SearchExecution
 
-How one search actually executed (ClearView R1, experimental).
+How one search actually executed (ClearView R1).
 
 | # | Field | Type | Notes |
 |---|---|---|---|
@@ -1098,7 +1098,7 @@ models.allowOverrides policy. Empty strings mean "not set".
 | 4 | complete | bool | run the runbook's completion step |
 | 5 | model_override | SessionModelOverride |  |
 | 6 | research_profile | string | Run this turn through a named research profile (an evidence hierarchy). Empty = the legacy single-layer document path, byte-identical. |
-| 7 | collection_availability | string | Experimental (ClearView C1): "report" \| "require". Empty = v1.4: a member with no active index is listed in `skipped` and any other member failure fails the turn. Any other value is INVALID_ARGUMENT. |
+| 7 | collection_availability | string | ClearView C1: "report" \| "require". Empty = v1.4: a member with no active index is listed in `skipped` and any other member failure fails the turn. Any other value is INVALID_ARGUMENT. |
 
 ### message TurnHit
 
@@ -1161,7 +1161,7 @@ completion.verification.
 
 ### message CollectionOutcome
 
-One visible member of a multi-collection read (ClearView C1, experimental).
+One visible member of a multi-collection read (ClearView C1).
 A collection the session cannot see never appears.
 
 | # | Field | Type | Notes |
@@ -1175,7 +1175,7 @@ A collection the session cannot see never appears.
 
 ### message TurnCoverage
 
-What a multi-collection read covered (ClearView C1, experimental).
+What a multi-collection read covered (ClearView C1).
 
 | # | Field | Type | Notes |
 |---|---|---|---|

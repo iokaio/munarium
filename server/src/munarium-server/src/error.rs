@@ -20,7 +20,7 @@ use tonic_types::{ErrorDetails, StatusExt};
 
 const BASE: &str = "https://munarium.ioka.io/problems";
 
-/// ClearView R11 (experimental): typed retry guidance, keyed by problem slug
+/// ClearView R11: typed retry guidance, keyed by problem slug
 /// and carried identically as the REST `retryable`/`retry_action` members and
 /// the gRPC `ErrorInfo` metadata keys of the same names.
 ///

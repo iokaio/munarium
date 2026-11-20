@@ -28,7 +28,7 @@ JSON bodies and handlers as REST. See the
 
 Server reflection is enabled (tonic-reflection), so `grpcurl` needs no local protos.
 
-**Experimental ClearView fields (Server v1.5 candidate).** Fresh tags only; no
+**ClearView fields (Server 1.5, release ready).** Fresh tags only; no
 existing tag, type or default changes, and an older client's request selects
 the v1.4 behavior:
 

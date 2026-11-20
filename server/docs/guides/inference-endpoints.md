@@ -1,6 +1,6 @@
 # Semantic indexing and reranking through an inference endpoint
 
-**Experimental (ClearView IR-0 to IR-4, I1, I2, SC2).** Server can send an enrolled
+**ClearView IR-0 to IR-4, I1, I2, SC2 (Server 1.5).** Server can send an enrolled
 collection's query and passage embeddings, and the reranking of its fused
 candidates, to a self-hosted inference endpoint. Munarium Lens is the
 reference endpoint. Any server implementing the same routes and passing the
@@ -221,7 +221,7 @@ configured requires a rollback first.
 
 ## Shared and dedicated placement
 
-**Experimental (ClearView SC2, Proposed hub ADR 0024).** A configuration can
+**ClearView SC2 (hub ADR 0024, accepted).** A configuration can
 declare where its endpoint's pool runs work and for whom, and a binding can
 require a placement. Server checks both before it sends any content: on
 serving, shadow, build and every retry, because each of them obtains its
@@ -299,8 +299,8 @@ give each pool its own endpoint and disable gateway fallbacks between pools.
 Each tenant's configuration is checked on its own: Server does not compare
 the tenant lists that different tenants declare for one pool, so every
 participating tenant must list the same set. Lens result caches remain the
-Lens deployment's responsibility under SC2. The representation is experimental
-and is not yet exported through the contract process.
+Lens deployment's responsibility under SC2. The representation is release
+ready but is not yet exported through the contract process.
 
 ## Roll back
 
@@ -386,7 +386,7 @@ Server matches the Munarium Lens LENS-1 profile.
   of identity Server can see.
 - The wire shapes of the stage receipt, the binding API (including
   `placement`), the configuration's `inference.placement` and the two problem
-  types are experimental until exported through the contract process.
+  types are release ready but not yet exported through the contract process.
 - Placement is checked against declarations. Qualification against real
   shared and dedicated Lens pools (SC2-T1 to SC2-T3) needs a cluster; see the
   [cluster qualification plan](../design/cluster-qualification-plan.md#plan-sc2).

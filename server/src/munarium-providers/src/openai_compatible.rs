@@ -97,7 +97,7 @@ pub struct InferenceProfile {
     pub placement: Option<Placement>,
 }
 
-/// Where an endpoint runs work, and for whom (ClearView SC2, experimental).
+/// Where an endpoint runs work, and for whom (ClearView SC2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PlacementMode {
@@ -116,7 +116,7 @@ impl PlacementMode {
     }
 }
 
-/// `spec.inference.placement` (ClearView SC2, experimental): the pool's
+/// `spec.inference.placement` (ClearView SC2): the pool's
 /// placement as the configuring tenant approved it. Omitted keeps the
 /// Phase 6 behavior: the endpoint is not checked for placement.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

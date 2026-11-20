@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! ClearView IR-1 to IR-4 (experimental): the optional inference endpoint's
+//! ClearView IR-1 to IR-4: the optional inference endpoint's
 //! management surface. Probe a provider configuration, bind a collection to
 //! it, enroll the collection and roll it back.
 //!
@@ -107,16 +107,16 @@ pub struct InferenceBindingRequest {
     /// One deadline for a read's stages (default 5,000; 100 to 60,000).
     #[serde(default)]
     pub timeout_ms: Option<u64>,
-    /// The collection's placement requirement (ClearView SC2,
-    /// experimental). Omitted keeps the binding's current requirement, or on
+    /// The collection's placement requirement (ClearView SC2).
+    /// Omitted keeps the binding's current requirement, or on
     /// a first binding records the configuration's declared placement; with
     /// no declaration either, no placement check applies (Phase 6).
     #[serde(default)]
     pub placement: Option<InferencePlacementRequirement>,
 }
 
-/// Where a collection's inference content may be processed (ClearView SC2,
-/// experimental). Checked against the bound configuration's declared
+/// Where a collection's inference content may be processed (ClearView SC2).
+/// Checked against the bound configuration's declared
 /// `inference.placement` before any content is sent, on serving, shadow,
 /// build and retry paths alike.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]

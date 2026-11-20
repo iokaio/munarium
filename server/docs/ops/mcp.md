@@ -1,15 +1,14 @@
 # Operating the MCP endpoint
 
-**Experimental (ClearView, Server v1.5 candidate).** Server can serve an opt-in
+**ClearView (Server 1.5).** Server can serve an opt-in
 [Model Context Protocol](https://modelcontextprotocol.io/) endpoint, `POST /mcp`,
 for agents acting on behalf of one user. It is **off by default**: with
 `MUNARIUM_MCP` unset there is no `/mcp` route, no background task, no outbound
 call and no read or write of the MCP tables. This guide covers enabling it,
 its authority model, the generation policy, interrupted-call recovery, the
 console view and rollback. The design and its decisions A1–A9 are in
-[MCP analysis](../design/mcp-analysis.md); the shared semantics are proposed in
-hub decision records 0025, 0026 and 0027 (Proposed: experimental
-implementation only, no contract acceptance).
+[MCP analysis](../design/mcp-analysis.md); the shared semantics are in
+hub decision records 0025, 0026 and 0027, accepted on 20 November 2026.
 
 ## What the endpoint serves
 

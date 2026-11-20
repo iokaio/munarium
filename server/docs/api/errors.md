@@ -19,7 +19,7 @@ English message text.
 
 ## Retry guidance
 
-**Experimental (ClearView R11).** Some problems carry two optional members,
+**ClearView R11.** Some problems carry two optional members,
 identical in REST problem+json and as gRPC `ErrorInfo.metadata` keys of the
 same names (`"true"`/`"false"` and the action string):
 
@@ -48,7 +48,7 @@ official clients regardless of these members.
 | `source-denied` | 410 | `FAILED_PRECONDITION` | source or bound scope is unavailable under durable tenant retention policy, including retained pins and public session copies. See [source retention](../ops/source-retention.md). |
 | `overloaded` | 503 | `RESOURCE_EXHAUSTED` | load shed: the instance is at `MUNARIUM_MAX_CONCURRENCY` in-flight /v1 (REST) or /mmp.v1 (gRPC) requests. REST responses carry `Retry-After: 1`. Health/meta routes never shed. Emitted since 2026-08-17. With the opt-in [admission classes](../ops/admission.md) it is also returned when a heavy request meets a full `MUNARIUM_HEAVY_CONCURRENCY`, or when a control request finds no ordinary slot and cannot use the reserve (the reserve is full or the caller lacks the route's role). |
 | `session-not-open` | 409 | `FAILED_PRECONDITION` | a turn (or lifecycle action) against a session that is closed or expired; the detail names the actual state. Added 2026-08-17 with `POST /v1/sessions/{id}/close`. |
-| `required-evidence-unavailable` | 424 | `FAILED_PRECONDITION` | a REQUIRED layer of the turn's research profile produced no evidence, so the turn refuses rather than answering from an incomplete hierarchy. The detail names the **layer** and its refusal code, never the layer's sources — a caller who cannot see a source must not learn it exists from the shape of a refusal. With an explicit (experimental) `collection_availability` policy it is also returned when the answer requires a member collection that could not be searched: any unavailable member under `require`, no completed member under `report`, or a required layer missing a member (refusal code `collection_unavailable`). A collection named in that detail is one the session can see; hidden collections are never searched or named. |
+| `required-evidence-unavailable` | 424 | `FAILED_PRECONDITION` | a REQUIRED layer of the turn's research profile produced no evidence, so the turn refuses rather than answering from an incomplete hierarchy. The detail names the **layer** and its refusal code, never the layer's sources — a caller who cannot see a source must not learn it exists from the shape of a refusal. With an explicit `collection_availability` policy it is also returned when the answer requires a member collection that could not be searched: any unavailable member under `require`, no completed member under `report`, or a required layer missing a member (refusal code `collection_unavailable`). A collection named in that detail is one the session can see; hidden collections are never searched or named. |
 | `unknown-research-profile` | 400 | `INVALID_ARGUMENT` | the turn named a `research_profile` the session's pinned runbook does not declare. Fails closed rather than falling back to the document path: silently answering a different question than the one asked is the worse failure. |
 | `run-locked` | 409 | `ABORTED` | this runbook run is already executing on another instance (the cross-instance advisory lock, 2026-08-17). Poll `GET /v1/runs/{run_id}` and retry when it settles. |
 | `not-found` | 404 | `NOT_FOUND` | extensions: `kind`, `id`. |
@@ -60,8 +60,8 @@ official clients regardless of these members.
 | `provider-error` | 502 | `UNAVAILABLE` | upstream LLM failure, refused/malformed/unsupported completion, or session token exhaustion after its single bounded retry; extensions: `provider`, `endpoint_fingerprint` (never key material). Dispatched calls retain their accounted usage even when no answer is returned. |
 | `storage-error` | 500 | `INTERNAL` | backend failure. |
 | `datastore-unavailable` | 503 | `UNAVAILABLE` | a scope selected to serve from the datastore could not be served from its artifacts. There is deliberately **no fallback past selection**: a replica that agreed to serve a scope from the datastore leaves the traffic pool rather than silently answering from PostgreSQL, so the two engines can never be confused for each other. Recovery is an operator action, never a request-path one — `PUT /v1/retrieval-rollout` with `serving: postgres` (the rollback, never gated) or `mmctl datastore rollout set <collection|shape> <id> postgres` per scope for a whole corpus. |
-| `inference-stage-unavailable` | 503 | `UNAVAILABLE` | **Experimental (ClearView I1).** A read of an inference-enrolled collection whose configured stage could not run under the `require` policy (the default). The detail is content-free: `stage=<embedding\|reranking> state=<disabled\|unconfigured\|probe_failed\|unavailable\|budget_exhausted> reason=<code> policy=require policy_revision=<n>`. No partial or fallback result is returned. Recovery is an operator action: restore the endpoint or budget, re-probe after a configuration change, explicitly select `prefer`, or roll the collection back. See [inference endpoints](../guides/inference-endpoints.md#outage-policy). |
-| `inference-not-qualified` | 409 | `FAILED_PRECONDITION` | **Experimental (ClearView IR-1 to IR-4).** An inference management operation whose precondition is not met: inference disabled on the deployment, no `dailyTotalTokens` or `shadowDailyTokens` for what was asked, no current passing probe, an incomplete or mismatched semantic index, a change that requires rollback first, a state that does not permit the transition, or (SC2) a placement the configuration does not satisfy, with a `placement_*` reason. The detail names the unmet condition. |
+| `inference-stage-unavailable` | 503 | `UNAVAILABLE` | **ClearView I1.** A read of an inference-enrolled collection whose configured stage could not run under the `require` policy (the default). The detail is content-free: `stage=<embedding\|reranking> state=<disabled\|unconfigured\|probe_failed\|unavailable\|budget_exhausted> reason=<code> policy=require policy_revision=<n>`. No partial or fallback result is returned. Recovery is an operator action: restore the endpoint or budget, re-probe after a configuration change, explicitly select `prefer`, or roll the collection back. See [inference endpoints](../guides/inference-endpoints.md#outage-policy). |
+| `inference-not-qualified` | 409 | `FAILED_PRECONDITION` | **ClearView IR-1 to IR-4.** An inference management operation whose precondition is not met: inference disabled on the deployment, no `dailyTotalTokens` or `shadowDailyTokens` for what was asked, no current passing probe, an incomplete or mismatched semantic index, a change that requires rollback first, a state that does not permit the transition, or (SC2) a placement the configuration does not satisfy, with a `placement_*` reason. The detail names the unmet condition. |
 
 ### platform identity/token slugs (emitted by the server layer, not the kernel)
 
@@ -97,7 +97,7 @@ cannot probe for valid grant ids.
 
 ### MCP endpoint slugs
 
-Experimental (ClearView, [operating the MCP endpoint](../ops/mcp.md)). These
+ClearView ([operating the MCP endpoint](../ops/mcp.md)). These
 are returned only by the opt-in `POST /mcp` endpoint, inside a tool result with
 `isError: true` whose structured content is the problem and whose
 `_meta["io.munarium/problem"]` is the slug. The two generation slugs and

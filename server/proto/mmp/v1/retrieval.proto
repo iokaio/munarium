@@ -13,7 +13,7 @@ message HybridSearchRequest {
   uint32 top_k = 3;            // default 10
   string filter_json = 4;      // shape-defined metadata filters
   string index_version = 5;    // empty = active index
-  // Experimental (ClearView R1): true adds `execution` to the response.
+  // ClearView R1: true adds `execution` to the response.
   // False (the proto3 default, and every older client) = the v1.4 response.
   bool disclose_execution = 6;
 }
@@ -27,7 +27,7 @@ message SearchLegExecution {
   optional bool exhausted = 4;          // eligible set exhausted
 }
 
-// How one search actually executed (ClearView R1, experimental).
+// How one search actually executed (ClearView R1).
 message SearchExecution {
   uint32 version = 1;                   // disclosure format; currently 1
   string engine = 2;                    // postgresql | datastore

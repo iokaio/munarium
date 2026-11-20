@@ -8301,7 +8301,7 @@
       },
       "CollectionAvailabilityDto": {
         "type": "string",
-        "description": "Availability policy for a multi-collection read (ClearView C1, experimental).",
+        "description": "Availability policy for a multi-collection read (ClearView C1).",
         "enum": [
           "report",
           "require"
@@ -8598,7 +8598,7 @@
       },
       "CollectionOutcomeDto": {
         "type": "object",
-        "description": "One member of a multi-collection read, within the caller's visible scope\n(ClearView C1, experimental). A collection the session cannot see never\nappears: no outcome, name, count or diagnostic.",
+        "description": "One member of a multi-collection read, within the caller's visible scope\n(ClearView C1). A collection the session cannot see never\nappears: no outcome, name, count or diagnostic.",
         "required": [
           "collection",
           "stage",
@@ -9048,7 +9048,7 @@
             }
           }
         ],
-        "description": "The turn response on REST, SSE `done` and the native bridge: the v1.4\n[`TurnResponse`] members, plus `coverage` only when the request selected a\n`collection_availability` policy (ClearView C1, experimental). Without\none the bytes are exactly the v1.4 response's. Deserialized from JSON\ntext, like [`DisclosedSearchResponse`]."
+        "description": "The turn response on REST, SSE `done` and the native bridge: the v1.4\n[`TurnResponse`] members, plus `coverage` only when the request selected a\n`collection_availability` policy (ClearView C1). Without\none the bytes are exactly the v1.4 response's. Deserialized from JSON\ntext, like [`DisclosedSearchResponse`]."
       },
       "CreateCollectionRequest": {
         "type": "object",
@@ -10863,7 +10863,7 @@
               },
               {
                 "$ref": "#/components/schemas/InferencePlacementRequirement",
-                "description": "The collection's placement requirement (ClearView SC2,\nexperimental). Omitted keeps the binding's current requirement, or on\na first binding records the configuration's declared placement; with\nno declaration either, no placement check applies (Phase 6)."
+                "description": "The collection's placement requirement (ClearView SC2).\nOmitted keeps the binding's current requirement, or on\na first binding records the configuration's declared placement; with\nno declaration either, no placement check applies (Phase 6)."
               }
             ]
           },
@@ -10940,7 +10940,7 @@
       },
       "InferencePlacementRequirement": {
         "type": "object",
-        "description": "Where a collection's inference content may be processed (ClearView SC2,\nexperimental). Checked against the bound configuration's declared\n`inference.placement` before any content is sent, on serving, shadow,\nbuild and retry paths alike.",
+        "description": "Where a collection's inference content may be processed (ClearView SC2).\nChecked against the bound configuration's declared\n`inference.placement` before any content is sent, on serving, shadow,\nbuild and retry paths alike.",
         "required": [
           "isolation"
         ],
@@ -12313,14 +12313,14 @@
               "string",
               "null"
             ],
-            "description": "Experimental (ClearView R11): `repeat`, `retry_later`, `reread` or\n`inspect_outcome`. Absent or unrecognized authorizes no automated replay."
+            "description": "ClearView R11: `repeat`, `retry_later`, `reread` or\n`inspect_outcome`. Absent or unrecognized authorizes no automated replay."
           },
           "retryable": {
             "type": [
               "boolean",
               "null"
             ],
-            "description": "Experimental (ClearView R11): `true` only when the server has evidence\nthe request was rejected before execution, so the identical request may\nbe repeated (after any `Retry-After`). Absent: no guidance."
+            "description": "ClearView R11: `true` only when the server has evidence\nthe request was rejected before execution, so the identical request may\nbe repeated (after any `Retry-After`). Absent: no guidance."
           },
           "shape_ref": {
             "type": [
@@ -13593,7 +13593,7 @@
       },
       "SearchExecutionDto": {
         "type": "object",
-        "description": "How one search actually executed (ClearView R1, experimental). Returned\nonly when the request sets `disclose_execution: true`.\n\nThe envelope says what the index was; this says how the query ran. A\nmember that is `null` was not measured by the serving engine: unknown,\nnever zero or `false`, even on an empty result.",
+        "description": "How one search actually executed (ClearView R1). Returned\nonly when the request sets `disclose_execution: true`.\n\nThe envelope says what the index was; this says how the query ran. A\nmember that is `null` was not measured by the serving engine: unknown,\nnever zero or `false`, even on an empty result.",
         "required": [
           "version",
           "engine",
@@ -13621,7 +13621,7 @@
             "items": {
               "$ref": "#/components/schemas/SearchStageDto"
             },
-            "description": "ClearView IR-0 (experimental): the configured inference stages of an\nenrolled collection and what each did. Absent for every unenrolled\nread, so an R1 disclosure of a v1.4 collection is unchanged. An\nenrolled collection's response always carries `execution` with this\nmember, whether or not disclosure was requested."
+            "description": "ClearView IR-0: the configured inference stages of an\nenrolled collection and what each did. Absent for every unenrolled\nread, so an R1 disclosure of a v1.4 collection is unchanged. An\nenrolled collection's response always carries `execution` with this\nmember, whether or not disclosure was requested."
           },
           "version": {
             "type": "integer",
@@ -13706,7 +13706,7 @@
       },
       "SearchLegDto": {
         "type": "object",
-        "description": "One retrieval leg's observations (ClearView R1, experimental).",
+        "description": "One retrieval leg's observations (ClearView R1).",
         "required": [
           "leg"
         ],
@@ -13750,7 +13750,7 @@
               "boolean",
               "null"
             ],
-            "description": "Experimental (ClearView R1): `true` adds an `execution` object to the\nresponse. Omitted or `false` returns exactly the v1.4 response."
+            "description": "ClearView R1: `true` adds an `execution` object to the\nresponse. Omitted or `false` returns exactly the v1.4 response."
           },
           "filter": {
             "type": [
@@ -13809,7 +13809,7 @@
       },
       "SearchStageDto": {
         "type": "object",
-        "description": "One inference stage's receipt on one enrolled read (ClearView IR-0/I1,\nexperimental). Content-free: no query, passage or endpoint detail.",
+        "description": "One inference stage's receipt on one enrolled read (ClearView IR-0/I1).\nContent-free: no query, passage or endpoint detail.",
         "required": [
           "stage",
           "policy",
@@ -14453,7 +14453,7 @@
       },
       "TurnCoverageDto": {
         "type": "object",
-        "description": "What a multi-collection read covered, and which claims it cannot support\n(ClearView C1, experimental). Present only when the turn selected an\navailability policy.",
+        "description": "What a multi-collection read covered, and which claims it cannot support\n(ClearView C1). Present only when the turn selected an\navailability policy.",
         "required": [
           "policy",
           "complete",
@@ -14548,7 +14548,7 @@
                   "string",
                   "null"
                 ],
-                "description": "`complete` | `empty` | `unavailable`, only when the turn selected a\n`collection_availability` policy (ClearView C1, experimental)."
+                "description": "`complete` | `empty` | `unavailable`, only when the turn selected a\n`collection_availability` policy (ClearView C1)."
               },
               "reason": {
                 "type": [
@@ -14669,7 +14669,7 @@
                   "string",
                   "null"
                 ],
-                "description": "`complete` | `empty` | `unavailable`, only when the turn selected a\n`collection_availability` policy (ClearView C1, experimental)."
+                "description": "`complete` | `empty` | `unavailable`, only when the turn selected a\n`collection_availability` policy (ClearView C1)."
               },
               "reason": {
                 "type": [
@@ -15033,7 +15033,7 @@
               },
               {
                 "$ref": "#/components/schemas/CollectionAvailabilityDto",
-                "description": "Experimental (ClearView C1): how this multi-collection read treats a\nmember collection that cannot be searched. Omitted keeps v1.4 behavior:\na member with no active index is listed in `skipped`, and any other\nmember failure fails the whole turn. `report` returns the verified,\nauthorized results of the other members with a `coverage` object;\n`require` refuses the turn when any member is unavailable."
+                "description": "ClearView C1: how this multi-collection read treats a\nmember collection that cannot be searched. Omitted keeps v1.4 behavior:\na member with no active index is listed in `skipped`, and any other\nmember failure fails the whole turn. `report` returns the verified,\nauthorized results of the other members with a `coverage` object;\n`require` refuses the turn when any member is unavailable."
               }
             ]
           },

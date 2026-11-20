@@ -38,7 +38,7 @@ message TurnRequest {
   // Run this turn through a named research profile (an evidence
   // hierarchy). Empty = the legacy single-layer document path, byte-identical.
   string research_profile = 6;
-  // Experimental (ClearView C1): "report" | "require". Empty = v1.4: a member
+  // ClearView C1: "report" | "require". Empty = v1.4: a member
   // with no active index is listed in `skipped` and any other member failure
   // fails the turn. Any other value is INVALID_ARGUMENT.
   string collection_availability = 7;
@@ -94,7 +94,7 @@ message TurnResponse {
   TurnCoverage coverage = 9;
 }
 
-// One visible member of a multi-collection read (ClearView C1, experimental).
+// One visible member of a multi-collection read (ClearView C1).
 // A collection the session cannot see never appears.
 message CollectionOutcome {
   string collection = 1;
@@ -105,7 +105,7 @@ message CollectionOutcome {
   string reason = 6;                  // no_active_index | engine_unavailable | search_failed; empty otherwise
 }
 
-// What a multi-collection read covered (ClearView C1, experimental).
+// What a multi-collection read covered (ClearView C1).
 message TurnCoverage {
   string policy = 1;                  // report | require
   bool complete = 2;                  // every visible member completed

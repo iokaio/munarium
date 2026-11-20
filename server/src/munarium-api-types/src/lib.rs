@@ -367,12 +367,12 @@ pub struct Problem {
     pub kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
-    /// Experimental (ClearView R11): `true` only when the server has evidence
+    /// ClearView R11: `true` only when the server has evidence
     /// the request was rejected before execution, so the identical request may
     /// be repeated (after any `Retry-After`). Absent: no guidance.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retryable: Option<bool>,
-    /// Experimental (ClearView R11): `repeat`, `retry_later`, `reread` or
+    /// ClearView R11: `repeat`, `retry_later`, `reread` or
     /// `inspect_outcome`. Absent or unrecognized authorizes no automated replay.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retry_action: Option<String>,
@@ -828,7 +828,7 @@ pub struct SearchRequest {
     #[schema(value_type = Option<Object>)]
     #[serde(deserialize_with = "json::optional")]
     pub filter: Option<serde_json::Value>,
-    /// Experimental (ClearView R1): `true` adds an `execution` object to the
+    /// ClearView R1: `true` adds an `execution` object to the
     /// response. Omitted or `false` returns exactly the v1.4 response.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disclose_execution: Option<bool>,
@@ -886,7 +886,7 @@ pub struct SearchResponse {
     pub envelope: ProvenanceEnvelopeDto,
 }
 
-/// How one search actually executed (ClearView R1, experimental). Returned
+/// How one search actually executed (ClearView R1). Returned
 /// only when the request sets `disclose_execution: true`.
 ///
 /// The envelope says what the index was; this says how the query ran. A
@@ -903,7 +903,7 @@ pub struct SearchExecutionDto {
     pub lexical_domain: String,
     /// The legs the engine ran, lexical first. A leg that did not run is absent.
     pub legs: Vec<SearchLegDto>,
-    /// ClearView IR-0 (experimental): the configured inference stages of an
+    /// ClearView IR-0: the configured inference stages of an
     /// enrolled collection and what each did. Absent for every unenrolled
     /// read, so an R1 disclosure of a v1.4 collection is unchanged. An
     /// enrolled collection's response always carries `execution` with this
@@ -912,8 +912,8 @@ pub struct SearchExecutionDto {
     pub stages: Vec<SearchStageDto>,
 }
 
-/// One inference stage's receipt on one enrolled read (ClearView IR-0/I1,
-/// experimental). Content-free: no query, passage or endpoint detail.
+/// One inference stage's receipt on one enrolled read (ClearView IR-0/I1).
+/// Content-free: no query, passage or endpoint detail.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SearchStageDto {
     /// `embedding` | `reranking`.
@@ -942,7 +942,7 @@ pub struct SearchStageDto {
     pub scored: Option<u64>,
 }
 
-/// One retrieval leg's observations (ClearView R1, experimental).
+/// One retrieval leg's observations (ClearView R1).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct SearchLegDto {
     /// `lexical` | `vector`.
@@ -1815,7 +1815,7 @@ pub struct TurnRequest {
     /// add to a wire contract every existing client already speaks.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub research_profile: Option<String>,
-    /// Experimental (ClearView C1): how this multi-collection read treats a
+    /// ClearView C1: how this multi-collection read treats a
     /// member collection that cannot be searched. Omitted keeps v1.4 behavior:
     /// a member with no active index is listed in `skipped`, and any other
     /// member failure fails the whole turn. `report` returns the verified,
@@ -1825,7 +1825,7 @@ pub struct TurnRequest {
     pub collection_availability: Option<CollectionAvailabilityDto>,
 }
 
-/// Availability policy for a multi-collection read (ClearView C1, experimental).
+/// Availability policy for a multi-collection read (ClearView C1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CollectionAvailabilityDto {
@@ -1854,7 +1854,7 @@ impl CollectionAvailabilityDto {
 }
 
 /// One member of a multi-collection read, within the caller's visible scope
-/// (ClearView C1, experimental). A collection the session cannot see never
+/// (ClearView C1). A collection the session cannot see never
 /// appears: no outcome, name, count or diagnostic.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct CollectionOutcomeDto {
@@ -1880,7 +1880,7 @@ pub struct CollectionOutcomeDto {
 }
 
 /// What a multi-collection read covered, and which claims it cannot support
-/// (ClearView C1, experimental). Present only when the turn selected an
+/// (ClearView C1). Present only when the turn selected an
 /// availability policy.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct TurnCoverageDto {
@@ -2011,7 +2011,7 @@ pub struct TurnResponse {
 
 /// The turn response on REST, SSE `done` and the native bridge: the v1.4
 /// [`TurnResponse`] members, plus `coverage` only when the request selected a
-/// `collection_availability` policy (ClearView C1, experimental). Without
+/// `collection_availability` policy (ClearView C1). Without
 /// one the bytes are exactly the v1.4 response's. Deserialized from JSON
 /// text, like [`DisclosedSearchResponse`].
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -2079,7 +2079,7 @@ pub enum TurnProgressEvent {
         /// True when the collection has no active index and was skipped.
         skipped: bool,
         /// `complete` | `empty` | `unavailable`, only when the turn selected a
-        /// `collection_availability` policy (ClearView C1, experimental).
+        /// `collection_availability` policy (ClearView C1).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         outcome: Option<String>,
         /// Content-free reason for `unavailable`.
@@ -2116,7 +2116,7 @@ pub enum TurnProgressEvent {
         /// True when the collection has no active index and was skipped.
         skipped: bool,
         /// `complete` | `empty` | `unavailable`, only when the turn selected a
-        /// `collection_availability` policy (ClearView C1, experimental).
+        /// `collection_availability` policy (ClearView C1).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         outcome: Option<String>,
         /// Content-free reason for `unavailable`.

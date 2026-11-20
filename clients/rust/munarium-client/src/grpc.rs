@@ -1004,7 +1004,7 @@ impl RetrievalPlane for GrpcTransport {
             top_k: req.top_k.unwrap_or(0),
             filter_json: req.filter.map(|v| v.to_string()).unwrap_or_default(),
             index_version: req.index_version.unwrap_or_default(),
-            // ClearView R1 (experimental): this facade does not return the
+            // ClearView R1: this facade does not return the
             // `execution` disclosure yet, so it always sends the v1.4 value
             // rather than asking the server for data it would drop.
             disclose_execution: false,
@@ -1620,7 +1620,7 @@ impl SessionsPlane for GrpcTransport {
             // profile NAME is not a legal profile, so proto3's zero value
             // and `None` genuinely mean the same thing here.
             research_profile: req.research_profile.unwrap_or_default(),
-            // ClearView C1 (experimental): "" is the v1.4 behavior. This
+            // ClearView C1: "" is the v1.4 behavior. This
             // facade does not return `coverage` yet, so it does not select a
             // partial-read policy it could not report on.
             collection_availability: String::new(),

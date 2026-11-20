@@ -96,7 +96,7 @@ and the [cluster plan](cluster-qualification-plan.md#plan-compat-t3).
 | Item | Accountable role | Affected phase | Next review |
 |---|---|---|---|
 | Binary rollback route for 0043–0080 (COMPAT-T3 wording) | Server release engineering with storage maintainers | 1, 4–8, release | `<YYYY-MM-DD>` |
-| Proposed hub ADRs 0020–0028 (M1, C1, C2, I1+I2, SC2, A1+A4, A2+A8+A9, A6, ART1+ART2): acceptance and contract export | Hub maintainers with each component owner | M, 1, 2, 5, 6, 8, SCALE | `<YYYY-MM-DD>` |
+| Hub ADRs 0020–0028 (M1, C1, C2, I1+I2, SC2, A1+A4, A2+A8+A9, A6, ART1+ART2), accepted 20 November 2026: contract export | Hub maintainers with each component owner | M, 1, 2, 5, 6, 8, SCALE | `<YYYY-MM-DD>` |
 | Matrix consumer switch (M1 step 3) and M1-T2 installed-peer receipt | Matrix release maintainers | M | `<YYYY-MM-DD>` |
 | Lens model runtime decision and I3 measurements | Lens maintainers | L, 6 | `<YYYY-MM-DD>` |
 | B4 PDF containment measurements | Server extraction maintainers | 3 | `<YYYY-MM-DD>` |

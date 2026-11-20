@@ -97,7 +97,7 @@ mints an HS256 JWT with claims:
   otherwise a low-clearance service could mint high-clearance evidence that
   every later reader would trust.
 
-  Two additive scopes (ClearView, experimental). **`mcp`** is a transport-entry
+  Two additive scopes (ClearView). **`mcp`** is a transport-entry
   scope for the opt-in MCP endpoint: it admits authenticated discovery and a
   scope-filtered tool listing, and nothing else. Each MCP tool also needs its
   ordinary scope, and `mcp` grants nothing on any native route, so adding it
@@ -107,7 +107,7 @@ mints an HS256 JWT with claims:
   two MCP evidence readers, with the same per-artifact domination, retention
   and access audit as `evidence`, and it can never seal, upload or commit.
   Neither scope is carried by a static token. See [MCP endpoint
-  authority](#mcp-endpoint-clearview-experimental).
+  authority](#mcp-endpoint-clearview).
 - `rb` — optional runbook-name allowlist.
 - `exp` — short TTL (default `MUNARIUM_TOKEN_TTL_SECS=3600`, hard cap 24 h).
 
@@ -186,7 +186,7 @@ while making the audit trail ambiguous about who decided what. The server
 therefore does the one thing only it can do — enforce data compartments and
 record the evidence — and refuses to pretend it knows who a human is.
 
-### MCP endpoint (ClearView, experimental)
+### MCP endpoint (ClearView)
 
 `POST /mcp` exists only with `MUNARIUM_MCP=enabled` ([operator guide](ops/mcp.md)).
 Its security properties, each covered by a named test in `mcp_tests.rs`:
