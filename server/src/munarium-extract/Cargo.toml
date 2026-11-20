@@ -70,3 +70,11 @@ ocr = ["dep:ocrs", "dep:rten", "dep:image", "dep:tiff", "dep:lopdf"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }
+
+# The isolated PDF child's Linux limits (R3/B4): `setrlimit` through a safe
+# wrapper, so this crate declares no FFI of its own. rlimit 0.11.0 (MIT,
+# Nugine/rlimit, released 2026-02-01) depends only on libc, which std already
+# links and which is in the graph; it works on musl. Exact pin: a change of
+# enforcement mechanism must be a reviewed change.
+[target.'cfg(all(target_os = "linux", target_pointer_width = "64"))'.dependencies]
+rlimit = "=0.11.0"

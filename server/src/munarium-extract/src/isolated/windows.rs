@@ -7,6 +7,16 @@
 //! handle even if the parent never reaches its own kill. The declarations
 //! below are the documented `kernel32` ABI; `std` already links `kernel32`,
 //! so no crate is added.
+//!
+//! **Pending review (20 November 2026).** The maintainer decided to replace
+//! this module's `unsafe` calls with a vetted crate; Linux now uses `rlimit`.
+//! No vetted Windows crate covers these limits yet: `win32job` 2.1.0 offers
+//! working-set, priority, affinity and kill-on-close limits only, and keeps
+//! its limit structure private, so it cannot set the process memory, process
+//! time, active-process or die-on-unhandled-exception limits or read peak
+//! memory; `process-wrap` 10.0.1 offers kill-on-close only; the `windows`
+//! crate's job functions are `unsafe fn`. The calls stay as reviewed until
+//! the maintainer chooses how to proceed.
 
 use super::IsolatedPdfLimits;
 use std::ffi::c_void;

@@ -1,16 +1,16 @@
 # Third-party notices — Munarium Server
 
-Generated 2026-11-19 by `tools/third_party_notices.py` from: `./Cargo.lock` via `cargo metadata` (x86_64-unknown-linux-musl).
+Generated 2026-11-20 by `tools/third_party_notices.py` from: `./Cargo.lock` via `cargo metadata` (x86_64-unknown-linux-musl).
 Runtime dependencies only. Each component is governed by its own license, which takes
 precedence for that component; the texts and copyright statements below are reproduced
 from the components' own license files. Reviewed by: _(name, date)_.
 
-## Summary — 371 components
+## Summary — 372 components
 
 | License | Components |
 |---|---|
 | MIT OR Apache-2.0 | 173 |
-| MIT | 85 |
+| MIT | 86 |
 | Apache-2.0 OR MIT | 28 |
 | Unicode-3.0 | 18 |
 | MIT/Apache-2.0 | 11 |
@@ -286,6 +286,7 @@ from the components' own license files. Reviewed by: _(name, date)_.
 | reqwest | 0.12.28 | MIT OR Apache-2.0 | https://github.com/seanmonstar/reqwest |
 | reqwest | 0.13.4 | MIT OR Apache-2.0 | https://github.com/seanmonstar/reqwest |
 | ring | 0.17.14 | Apache-2.0 AND ISC | https://github.com/briansmith/ring |
+| rlimit | 0.11.0 | MIT | https://github.com/Nugine/rlimit/ |
 | rsa | 0.9.10 | MIT OR Apache-2.0 | https://github.com/RustCrypto/RSA |
 | rust-stemmers | 1.2.0 | MIT/BSD-3-Clause | https://github.com/CurrySoftware/rust-stemmers |
 | rustc-hash | 1.1.0 | Apache-2.0/MIT | https://github.com/rust-lang-nursery/rustc-hash |
@@ -630,6 +631,7 @@ From each component's own license file, where one carries them.
 - **reqwest 0.12.28**: Copyright 2016 Sean McArthur · Copyright (c) 2016-2025 Sean McArthur
 - **reqwest 0.13.4**: Copyright 2016 Sean McArthur · Copyright (c) 2016-2026 Sean McArthur
 - **ring 0.17.14**: Copyright (c) 2009 The Go Authors. All rights reserved. · Copyright 2015 The Chromium Authors. All rights reserved. · Copyright 2015-2025 Brian Smith.
+- **rlimit 0.11.0**: Copyright (c) 2025 Nugine
 - **rust-stemmers 1.2.0**: Copyright (c) 2017 Jakob Demler
 - **rustls 0.23.46**: Copyright (c) 2016, Joseph Birr-Pixton <jpixton@gmail.com · Copyright (c) 2016 Joseph Birr-Pixton <jpixton@gmail.com
 - **rustls-native-certs 0.8.4**: Copyright (c) 2016, Joseph Birr-Pixton <jpixton@gmail.com · Copyright (c) 2016 Joseph Birr-Pixton <jpixton@gmail.com
@@ -1389,9 +1391,9 @@ Apache License
    limitations under the License.
 ```
 
-### Text 69539425723b — 24 component(s)
+### Text 69539425723b — 25 component(s)
 
-Used by: atoi 2.0.0 (LICENSE), axum-core 0.5.6 (LICENSE), crc 3.4.0 (LICENSE-MIT), crc32fast 1.5.0 (LICENSE-MIT), ecb 0.1.2 (LICENSE), email_address 0.2.9 (LICENSE), fluent-uri 0.3.2 (LICENSE), lopdf 0.42.0 (LICENSE), lru 0.12.5 (LICENSE), matchit 0.7.3 (LICENSE), matchit 0.8.4 (LICENSE), miniz_oxide 0.8.9 (LICENSE), miniz_oxide 0.8.9 (LICENSE-MIT.md), outref 0.5.2 (LICENSE), pom 1.1.0 (LICENSE), rust-stemmers 1.2.0 (LICENSE), rustls-platform-verifier 0.7.0 (LICENSE-MIT), simd-adler32 0.3.10 (LICENSE.md), tinyvec_macros 0.1.1 (LICENSE-MIT.md), tokio 1.54.1 (LICENSE), tokio-macros 2.7.2 (LICENSE), tokio-stream 0.1.19 (LICENSE), tokio-util 0.7.19 (LICENSE), whoami 1.6.1 (LICENSE_MIT)
+Used by: atoi 2.0.0 (LICENSE), axum-core 0.5.6 (LICENSE), crc 3.4.0 (LICENSE-MIT), crc32fast 1.5.0 (LICENSE-MIT), ecb 0.1.2 (LICENSE), email_address 0.2.9 (LICENSE), fluent-uri 0.3.2 (LICENSE), lopdf 0.42.0 (LICENSE), lru 0.12.5 (LICENSE), matchit 0.7.3 (LICENSE), matchit 0.8.4 (LICENSE), miniz_oxide 0.8.9 (LICENSE), miniz_oxide 0.8.9 (LICENSE-MIT.md), outref 0.5.2 (LICENSE), pom 1.1.0 (LICENSE), rlimit 0.11.0 (LICENSE), rust-stemmers 1.2.0 (LICENSE), rustls-platform-verifier 0.7.0 (LICENSE-MIT), simd-adler32 0.3.10 (LICENSE.md), tinyvec_macros 0.1.1 (LICENSE-MIT.md), tokio 1.54.1 (LICENSE), tokio-macros 2.7.2 (LICENSE), tokio-stream 0.1.19 (LICENSE), tokio-util 0.7.19 (LICENSE), whoami 1.6.1 (LICENSE_MIT)
 
 ```text
 MIT License
