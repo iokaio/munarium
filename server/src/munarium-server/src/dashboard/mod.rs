@@ -1780,6 +1780,145 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
+    // U3: the attention strip
+    // -----------------------------------------------------------------------
+
+    /// On the memory store the table-backed checks cannot be read: they are
+    /// listed as unavailable, the strip is not an all-clear, and the
+    /// process-state check (datastore admission) is still observed.
+    #[tokio::test]
+    async fn overview_attention_on_the_memory_store_is_not_an_all_clear() {
+        let state = state(static_auth()).await;
+        let body = body_string(get(&state, "/admin", Some("m"), false).await).await;
+        let strip_at = body.find(r#"<section class="attention""#).expect("strip");
+        assert!(
+            strip_at < body.find("<h2>control plane</h2>").unwrap(),
+            "the strip leads the page"
+        );
+        assert!(
+            body.contains("could not be read, so this is not an all-clear"),
+            "{body}"
+        );
+        for what in [
+            "runs awaiting gate approval",
+            "blocking gate findings in the last 24 hours",
+            "index build jobs failed in the last 24 hours",
+            "guarded commands with an unresolved outcome",
+        ] {
+            assert!(
+                body.contains(&format!("unavailable</span> {what}")),
+                "{what}: {body}"
+            );
+        }
+        // Observed (process state) and zero on this replica: not listed.
+        assert!(!body.contains("cannot serve yet"), "{body}");
+        assert!(
+            !body.contains(r#"<span class="badge good">clear</span>"#),
+            "{body}"
+        );
+    }
+
+    /// Against PostgreSQL: each condition is an observed count for this
+    /// tenant, listed with its label and link; rows outside the condition
+    /// (a running run, an old finding, a leased attempt, a completed command)
+    /// do not count; another tenant sees none of them and reads clear.
+    #[tokio::test]
+    async fn overview_attention_counts_observed_state_on_postgres() {
+        let Ok(url) = std::env::var("MUNARIUM_TEST_DATABASE_URL") else {
+            eprintln!("console U3 PostgreSQL test NOT RUN: MUNARIUM_TEST_DATABASE_URL unset");
+            return;
+        };
+        let tenant = format!("console-u3-{}", uuid::Uuid::new_v4().simple());
+        let quiet = format!("{tenant}-quiet");
+        let mut cfg = test_config(AuthMode::Static(vec![
+            ("m".into(), tenant.clone(), "mgmt".into()),
+            ("mq".into(), quiet.clone(), "mgmt".into()),
+        ]));
+        cfg.store = StoreKind::Postgres;
+        cfg.database_url = Some(url);
+        let state = AppState::new(cfg).await.expect("state");
+        let pool = state.pg_pool().expect("pool").clone();
+        for sql in [
+            "INSERT INTO runbook_runs (tenant_id, id, runbook_ref, state) VALUES
+               ($1, 'run-u3-a', 'rb@1', 'awaiting_approval'),
+               ($1, 'run-u3-b', 'rb@1', 'awaiting_approval'),
+               ($1, 'run-u3-c', 'rb@1', 'running')",
+            "INSERT INTO gate_findings
+               (tenant_id, version_id, seq, rule_id, severity, message, recorded_at) VALUES
+               ($1, 'ver-u3', 1, 'gate.u3', 'block', 'm', now()),
+               ($1, 'ver-u3', 2, 'gate.u3', 'block', 'm', now() - interval '2 days')",
+            "INSERT INTO index_build_jobs
+               (tenant_id, job_id, kind, scope_kind, scope_id, state, requested_by, updated_at)
+             VALUES
+               ($1, 'job-u3-a', 'backfill', 'collection', 'col-a', 'failed', 't', now()),
+               ($1, 'job-u3-b', 'backfill', 'collection', 'col-b', 'failed', 't',
+                now() - interval '3 days'),
+               ($1, 'job-u3-c', 'backfill', 'collection', 'col-c', 'pending', 't', now())",
+            "INSERT INTO index_build_attempts
+               (tenant_id, attempt_id, index_version_id, artifact_plan_sha256, mode, state,
+                owner_node_id, lease_expires_at) VALUES
+               ($1, 'att-u3-a', 'iv-a', 'p', 'mirror', 'running', 'n',
+                now() - interval '1 minute'),
+               ($1, 'att-u3-b', 'iv-b', 'p', 'mirror', 'running', 'n',
+                now() + interval '1 hour')",
+            "INSERT INTO command_receipts
+               (tenant_id, key, operation, request_hash, state, response_body, completed_at)
+             VALUES
+               ($1, 'k1', 'op', 'h', 'unresolved', NULL, NULL),
+               ($1, 'k2', 'op', 'h', 'completed', '{}', now())",
+        ] {
+            sqlx::query(sql)
+                .bind(&tenant)
+                .execute(&pool)
+                .await
+                .unwrap_or_else(|e| panic!("{sql}: {e}"));
+        }
+
+        let body = body_string(get(&state, "/admin", Some("m"), false).await).await;
+        let command_doc = format!("{DOCS_BASE}ops/command-recovery.md");
+        for (n, href, what) in [
+            (2, "/admin/runbooks", "runs awaiting gate approval"),
+            (
+                1,
+                "/admin/findings?severity=block",
+                "blocking gate findings in the last 24 hours",
+            ),
+            (
+                1,
+                "/admin/storage",
+                "index build jobs failed in the last 24 hours",
+            ),
+            (
+                1,
+                "/admin/storage",
+                "index build attempts still marked running after their lease expired",
+            ),
+            (
+                1,
+                command_doc.as_str(),
+                "guarded commands with an unresolved outcome (in progress, or lost and to be inspected)",
+            ),
+        ] {
+            assert!(
+                body.contains(&format!(
+                    r#"{n}</span> <a href="{}">{what}</a>"#,
+                    charts::esc(href)
+                )),
+                "{what}: {body}"
+            );
+        }
+        assert!(!body.contains("unavailable</span>"), "{body}");
+
+        // Another tenant sees none of it, and reads clear.
+        let body = body_string(get(&state, "/admin", Some("mq"), false).await).await;
+        assert!(
+            body.contains(r#"<span class="badge good">clear</span>"#),
+            "{body}"
+        );
+        assert!(body.contains("7 of 7 checks read"), "{body}");
+    }
+
+    // -----------------------------------------------------------------------
     // U13: one visual vocabulary
     // -----------------------------------------------------------------------
 

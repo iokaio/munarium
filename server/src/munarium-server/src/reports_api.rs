@@ -721,6 +721,42 @@ pub async fn op_control_plane_counts(state: &AppState, tenant: &str) -> Result<C
     })
 }
 
+/// The table-backed conditions on the overview's attention strip (ClearView
+/// U3), each an observed count for this tenant:
+/// - build jobs that ended `failed` in the last 24 hours, which includes an
+///   expired final claim failed by the builder (R4);
+/// - build attempts still marked `running` whose lease has expired, so no
+///   builder is renewing them;
+/// - guarded commands whose receipt is still `unresolved`: in progress, or
+///   an outcome that was lost and must be inspected before a new key.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct AttentionCounts {
+    pub build_jobs_failed_24h: i64,
+    pub build_attempts_lapsed: i64,
+    pub commands_unresolved: i64,
+}
+
+pub async fn op_attention_counts(state: &AppState, tenant: &str) -> Result<AttentionCounts> {
+    let row: (i64, i64, i64) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM index_build_jobs
+                  WHERE tenant_id = $1 AND state = 'failed'
+                    AND updated_at >= now() - interval '24 hours'),
+                (SELECT count(*) FROM index_build_attempts
+                  WHERE tenant_id = $1 AND state = 'running' AND lease_expires_at <= now()),
+                (SELECT count(*) FROM command_receipts
+                  WHERE tenant_id = $1 AND state = 'unresolved')",
+    )
+    .bind(tenant)
+    .fetch_one(pool(state)?)
+    .await
+    .map_err(|e| KernelError::Storage(e.to_string()))?;
+    Ok(AttentionCounts {
+        build_jobs_failed_24h: row.0,
+        build_attempts_lapsed: row.1,
+        commands_unresolved: row.2,
+    })
+}
+
 // ---------------------------------------------------------------------------
 // dashboard views (2026-08-17): timeseries / endpoints / runbooks / sessions.
 // Ad-hoc aggregates over the audit tables at request time — no rollup

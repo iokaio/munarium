@@ -5,7 +5,8 @@
 //! deployed here" beside "how is it doing".
 
 use super::{
-    admin_auth, error_panel, kv, render, store_note, window_of, window_picker, WindowParam,
+    admin_auth, error_panel, kv, pill, render, store_note, window_of, window_picker, Tone,
+    WindowParam,
 };
 use crate::charts::{self, Series};
 use crate::config::AuthMode;
@@ -26,7 +27,7 @@ struct TileCount {
     note: String,
 }
 
-fn tile_count(what: &str, read: munarium_core::Result<usize>, sub: &str) -> TileCount {
+fn tile_count<E: std::fmt::Display>(what: &str, read: Result<usize, E>, sub: &str) -> TileCount {
     match read {
         Ok(n) => TileCount {
             value: n.to_string(),
@@ -43,6 +44,153 @@ fn tile_count(what: &str, read: munarium_core::Result<usize>, sub: &str) -> Tile
             ),
         },
     }
+}
+
+/// One condition the overview's attention strip checks (ClearView U3):
+/// what the count counts, where the detail lives, how serious a non-zero
+/// count is, and the observed count — or why it could not be read.
+pub(super) struct Check {
+    pub what: &'static str,
+    pub href: String,
+    pub tone: Tone,
+    pub observed: Result<i64, String>,
+}
+
+impl Check {
+    fn new(what: &'static str, href: &str, tone: Tone, observed: Result<i64, String>) -> Self {
+        Check {
+            what,
+            href: href.to_string(),
+            tone,
+            observed,
+        }
+    }
+}
+
+/// The attention strip: only the abnormal, each with its count and a link
+/// to its page. A check whose read failed is listed as unavailable — never
+/// as zero, and never folded into "nothing needs attention".
+pub(super) fn attention_strip(checks: &[Check]) -> String {
+    let mut needs = Vec::new();
+    let mut unavailable = Vec::new();
+    for c in checks {
+        match &c.observed {
+            Ok(n) if *n > 0 => needs.push(format!(
+                r#"<li>{} <a href="{}">{}</a></li>"#,
+                pill(&n.to_string(), c.tone),
+                charts::esc(&c.href),
+                charts::esc(c.what)
+            )),
+            Ok(_) => {}
+            Err(reason) => unavailable.push(format!(
+                r#"<li>{} {}: {}</li>"#,
+                pill("unavailable", Tone::Neutral),
+                charts::esc(c.what),
+                charts::esc(reason)
+            )),
+        }
+    }
+    let read = checks.len() - unavailable.len();
+    let summary = match (needs.is_empty(), unavailable.is_empty()) {
+        (true, true) => format!(
+            r#"<p>{} Nothing observed needs attention: {read} of {} checks read, each zero.</p>"#,
+            pill("clear", Tone::Good),
+            checks.len()
+        ),
+        (true, false) => format!(
+            r#"<p>Nothing observed needs attention, but {} of {} checks could not be read, so this is not an all-clear.</p>"#,
+            unavailable.len(),
+            checks.len()
+        ),
+        (false, _) => String::new(),
+    };
+    let list = |items: &[String]| {
+        if items.is_empty() {
+            String::new()
+        } else {
+            format!("<ul>{}</ul>", items.concat())
+        }
+    };
+    format!(
+        r#"<section class="attention" aria-labelledby="attention-h"><h2 id="attention-h">needs attention</h2>{summary}{}{}</section>"#,
+        list(&needs),
+        list(&unavailable)
+    )
+}
+
+/// The checks the overview runs, in the order the strip lists them.
+async fn attention_checks(
+    state: &AppState,
+    tenant: &str,
+    counts: &munarium_core::Result<reports_api::ControlPlaneCounts>,
+    providers: &munarium_core::Result<Vec<munarium_api_types::ProviderModelsDto>>,
+) -> Vec<Check> {
+    let err = |e: &munarium_core::KernelError| e.to_string();
+    let attention = reports_api::op_attention_counts(state, tenant).await;
+    let table =
+        |f: fn(&reports_api::AttentionCounts) -> i64| attention.as_ref().map(f).map_err(err);
+    // Process state: whether THIS replica admits datastore traffic. Read
+    // without I/O, so it is always observed.
+    let readiness = state.datastore_readiness();
+    let unserved = if readiness.admits() {
+        0
+    } else {
+        readiness.blocking().len().max(1) as i64
+    };
+    vec![
+        Check::new(
+            "runs awaiting gate approval",
+            "/admin/runbooks",
+            Tone::Warn,
+            counts
+                .as_ref()
+                .map(|c| c.runs_awaiting_approval)
+                .map_err(err),
+        ),
+        Check::new(
+            "blocking gate findings in the last 24 hours",
+            "/admin/findings?severity=block",
+            Tone::Bad,
+            counts.as_ref().map(|c| c.findings_block_24h).map_err(err),
+        ),
+        Check::new(
+            "datastore scopes this replica cannot serve yet (it is not admitting datastore traffic)",
+            "/admin/storage",
+            Tone::Bad,
+            Ok(unserved),
+        ),
+        Check::new(
+            "applied provider configs whose credential does not resolve",
+            "/admin/providers",
+            Tone::Warn,
+            providers
+                .as_ref()
+                .map(|list| {
+                    list.iter()
+                        .filter(|p| p.source == "applied" && !p.credential_ok)
+                        .count() as i64
+                })
+                .map_err(err),
+        ),
+        Check::new(
+            "index build jobs failed in the last 24 hours",
+            "/admin/storage",
+            Tone::Bad,
+            table(|a| a.build_jobs_failed_24h),
+        ),
+        Check::new(
+            "index build attempts still marked running after their lease expired",
+            "/admin/storage",
+            Tone::Warn,
+            table(|a| a.build_attempts_lapsed),
+        ),
+        Check::new(
+            "guarded commands with an unresolved outcome (in progress, or lost and to be inspected)",
+            &format!("{}ops/command-recovery.md", super::DOCS_BASE),
+            Tone::Warn,
+            table(|a| a.commands_unresolved),
+        ),
+    ]
 }
 
 /// A stat tile that links to the page holding the detail.
@@ -70,15 +218,17 @@ pub(super) async fn overview(State(state): State<Arc<AppState>>, headers: Header
             .map(|s| s.len()),
         "published",
     );
+    let provider_list = crate::providers_api::op_list_providers(&state, tenant).await;
     let providers = tile_count(
         "providers",
-        crate::providers_api::op_list_providers(&state, tenant)
-            .await
-            .map(|p| p.len()),
+        provider_list.as_ref().map(|p| p.len()),
         "applied + defaults",
     );
     let read_notes = format!("{}{}", shapes.note, providers.note);
-    let inventory = match reports_api::op_control_plane_counts(&state, tenant).await {
+    let counts = reports_api::op_control_plane_counts(&state, tenant).await;
+    let attention =
+        attention_strip(&attention_checks(&state, tenant, &counts, &provider_list).await);
+    let inventory = match counts {
         Ok(c) => format!(
             r#"<div class="tiles">{}{}{}{}{}{}{}{}</div>{read_notes}"#,
             tile_link(
@@ -142,7 +292,7 @@ pub(super) async fn overview(State(state): State<Arc<AppState>>, headers: Header
         Ok(t) => t,
         Err(e) => {
             let body = format!(
-                "<h2>control plane</h2>{inventory}<h2>traffic</h2>{}",
+                "{attention}<h2>control plane</h2>{inventory}<h2>traffic</h2>{}",
                 store_note(&e)
             );
             return render(&admin, "overview", "Overview", &body);
@@ -204,7 +354,7 @@ pub(super) async fn overview(State(state): State<Arc<AppState>>, headers: Header
         ],
     );
     let body = format!(
-        r#"<h2>control plane</h2>{inventory}
+        r#"{attention}<h2>control plane</h2>{inventory}
 <h2>traffic · 24h</h2><div class="tiles">{}{}{}{}{}</div>{}
 <h2>requests (24h)</h2><div class="card">{spark}</div>
 <h2>latency (24h)</h2><div class="card">{lat}</div>"#,
@@ -599,7 +749,7 @@ mod tests {
                     checked += 1;
                 }
                 v if v.starts_with("0 ") => {
-                    let got = tile_count("shapes", Ok(0), "published");
+                    let got = tile_count("shapes", Ok::<_, KernelError>(0), "published");
                     assert_eq!((got.value.as_str(), got.note.as_str()), ("0", ""));
                     assert_eq!(got.sub, "published");
                     checked += 1;
@@ -608,5 +758,56 @@ mod tests {
             }
         }
         assert_eq!(checked, 4, "fixture lost failed-read cases");
+    }
+
+    fn check(what: &'static str, observed: Result<i64, String>) -> Check {
+        Check::new(what, "/admin/x?a=1&b=2", Tone::Warn, observed)
+    }
+
+    /// U3: zero is not listed, a count is listed with its label and link,
+    /// and a failed read is unavailable: never 0, never an all-clear.
+    #[test]
+    fn the_attention_strip_lists_only_the_abnormal_and_never_hides_a_failed_read() {
+        let clear = attention_strip(&[check("runs waiting", Ok(0)), check("findings", Ok(0))]);
+        assert!(
+            clear.contains("Nothing observed needs attention: 2 of 2 checks read"),
+            "{clear}"
+        );
+        assert!(
+            clear.contains(r#"<span class="badge good">clear</span>"#),
+            "{clear}"
+        );
+        assert!(!clear.contains("<li>"), "{clear}");
+
+        let needs = attention_strip(&[check("runs waiting", Ok(3)), check("findings", Ok(0))]);
+        assert!(
+            needs.contains(
+                r#"<li><span class="badge warn">3</span> <a href="/admin/x?a=1&amp;b=2">runs waiting</a></li>"#
+            ),
+            "{needs}"
+        );
+        assert!(
+            !needs.contains("findings"),
+            "a zero is not abnormal: {needs}"
+        );
+        assert!(!needs.contains("Nothing observed"), "{needs}");
+
+        let failed = attention_strip(&[
+            check("runs waiting", Ok(0)),
+            check("findings", Err("needs the postgres store <x>".into())),
+        ]);
+        assert!(
+            failed.contains("unavailable</span> findings: needs the postgres store &lt;x&gt;"),
+            "{failed}"
+        );
+        assert!(
+            failed.contains("1 of 2 checks could not be read, so this is not an all-clear"),
+            "{failed}"
+        );
+        assert!(!failed.contains("badge good"), "{failed}");
+        assert!(
+            !failed.contains(">0<"),
+            "a failed read never reads as zero: {failed}"
+        );
     }
 }

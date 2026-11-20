@@ -106,6 +106,12 @@ header.pagehead .headrow { display: flex; flex-wrap: wrap; gap: 12px; align-item
 header.pagehead h1 { margin: 6px 0 4px; }
 header.pagehead .purpose { margin: 0 0 4px; color: var(--ink-2); }
 header.pagehead .actions { display: flex; gap: 8px; align-items: baseline; }
+section.attention { background: var(--surface); border: 1px solid var(--ring);
+                    border-left: 3px solid var(--s1); border-radius: 6px;
+                    padding: 4px 14px 8px; margin: 0 0 12px; }
+section.attention h2 { margin: 8px 0 4px; }
+section.attention ul { margin: 4px 0; padding-left: 18px; }
+section.attention li { margin: 3px 0; }
 header.pagehead .docs { margin: 0 0 4px; font-size: 12px; color: var(--ink-2); }
 header.pagehead .context { margin: 0; font-size: 12px; color: var(--muted); }
 a.button { display: inline-block; padding: 5px 12px; border-radius: 5px;
