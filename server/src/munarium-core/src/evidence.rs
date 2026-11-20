@@ -11,9 +11,9 @@
 //! `contract/matrix/evidence-manifest.schema.json`, the vendored cross-tree
 //! contract, and this module is its Rust mirror. When the two disagree
 //! the schema wins — `tests/matrix_contract.rs` in `munarium-api-types` keeps
-//! the examples honest, and [`CONTRACT_VERSION`] below is read from the
-//! vendored file at compile time so the server cannot claim to speak a
-//! contract version it was not built against.
+//! the examples honest, and [`CONTRACT_VERSION`] below comes from the
+//! generated Matrix pin ([`crate::matrix_pin`]) so the server cannot claim to
+//! speak a contract version it was not built against.
 //!
 //! # Three ideas worth holding
 //!
@@ -40,15 +40,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::{KernelError, Result};
 
-/// The vendored Matrix contract version this build speaks, read from
-/// `server/contract/matrix/VERSION` at compile time.
+/// The Matrix wire contract version this build speaks.
 ///
-/// Embedding it makes the vendored copy load-bearing rather than decorative:
-/// delete the directory and the server stops compiling, which is a far better
-/// failure than silently accepting manifests written against a contract
-/// nobody checked. (`server/.dockerignore` must therefore keep `contract/` —
-/// the note there says so, and this is the reason.)
-pub const CONTRACT_VERSION: &str = include_str!("../../../contract/matrix/VERSION");
+/// ClearView M1 step 3 replaced the compile-time read of
+/// `server/contract/matrix/VERSION` with the generated pin in
+/// [`crate::matrix_pin`], produced from the Matrix publisher's consumer export
+/// by `server/tools/matrix_pin.py`. The pin records the locked bundle digest,
+/// the verified source and the publisher revision beside the version, and
+/// `tests/matrix_pin.rs` verifies it against the export. v1.4 embedded the
+/// file with its trailing newline; every caller trims, so the value they see
+/// is unchanged.
+pub const CONTRACT_VERSION: &str = crate::matrix_pin::CONTRACT_VERSION;
 
 /// Reserved logical-path prefix for sealed artifact bytes.
 ///

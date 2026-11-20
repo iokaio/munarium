@@ -100,10 +100,23 @@ fn files_under(root: &Path, dir: &Path, out: &mut BTreeSet<String>) {
 /// and the contract version agreeing with the lock.
 #[test]
 fn the_vendored_copy_matches_its_lock() {
+    let problems = lock_problems(&contract_dir());
+    assert!(
+        problems.is_empty(),
+        "the vendored copy does not match contract.lock; it was edited in place, so \
+         re-cut it: rm -r server/contract/matrix && py ../munarium-matrix/contract/publish.py \
+         --out server/contract/matrix\n{}",
+        problems.join("\n")
+    );
+}
+
+/// Every way `dir` differs from its own `contract.lock`: the rule
+/// `publish.py --verify` applies. Empty means the copy is what the publisher cut.
+fn lock_problems(dir: &Path) -> Vec<String> {
     use sha2::{Digest, Sha256};
     use std::collections::BTreeMap;
 
-    let dir = contract_dir();
+    let mut problems = Vec::new();
     let lock = read_json(&dir.join("contract.lock"));
     let listed: BTreeMap<String, String> = lock["files"]
         .as_object()
@@ -111,42 +124,133 @@ fn the_vendored_copy_matches_its_lock() {
         .iter()
         .map(|(k, v)| (k.clone(), v.as_str().expect("sha256 hex").to_string()))
         .collect();
-    assert!(!listed.is_empty(), "contract.lock lists no files");
+    if listed.is_empty() {
+        problems.push("contract.lock lists no files".to_string());
+    }
 
     let mut on_disk = BTreeSet::new();
-    files_under(&dir, &dir, &mut on_disk);
+    files_under(dir, dir, &mut on_disk);
     for (rel, expected) in &listed {
-        let bytes = std::fs::read(dir.join(rel))
-            .unwrap_or_else(|e| panic!("{rel} is listed in contract.lock but missing: {e}"));
-        let actual = hex::encode(Sha256::digest(&bytes));
-        assert_eq!(
-            expected, &actual,
-            "{rel} differs from contract.lock — the vendored copy was edited in place; \
-             re-cut it: rm -r server/contract/matrix && py ../munarium-matrix/contract/publish.py \
-             --out server/contract/matrix"
-        );
+        match std::fs::read(dir.join(rel)) {
+            Err(e) => problems.push(format!("MISSING {rel}: {e}")),
+            Ok(bytes) => {
+                if expected != &hex::encode(Sha256::digest(&bytes)) {
+                    problems.push(format!("MODIFIED {rel}"));
+                }
+            }
+        }
         on_disk.remove(rel);
     }
-    assert!(
-        on_disk.is_empty(),
-        "files under server/contract/matrix that contract.lock does not list: {on_disk:?}"
-    );
+    for rel in on_disk {
+        problems.push(format!("UNLISTED {rel}"));
+    }
 
     let mut listing = String::new();
     for (rel, h) in &listed {
         listing.push_str(&format!("{h}  {rel}\n"));
     }
-    assert_eq!(
-        lock["bundle_digest"].as_str().expect("bundle_digest"),
-        hex::encode(Sha256::digest(listing.as_bytes())),
-        "contract.lock's bundle_digest does not match its own file list"
+    if lock["bundle_digest"].as_str()
+        != Some(hex::encode(Sha256::digest(listing.as_bytes())).as_str())
+    {
+        problems.push("bundle_digest does not match the file list".to_string());
+    }
+    match std::fs::read_to_string(dir.join("VERSION")) {
+        Ok(version) if lock["contract_version"].as_str() == Some(version.trim()) => {}
+        _ => problems.push("contract_version disagrees with VERSION".to_string()),
+    }
+    problems
+}
+
+/// A scratch copy of the vendored contract for the negative controls below.
+struct ScratchCopy(PathBuf);
+
+impl ScratchCopy {
+    fn new(name: &str) -> Self {
+        let dir = std::env::temp_dir().join(format!(
+            "munarium-matrix-contract-{name}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        copy_tree(&contract_dir(), &dir);
+        ScratchCopy(dir)
+    }
+}
+
+impl Drop for ScratchCopy {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+fn copy_tree(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).expect("create scratch dir");
+    for entry in std::fs::read_dir(from).expect("read contract dir") {
+        let path = entry.expect("dir entry").path();
+        let target = to.join(path.file_name().unwrap());
+        if path.is_dir() {
+            copy_tree(&path, &target);
+        } else {
+            std::fs::copy(&path, &target).expect("copy contract file");
+        }
+    }
+}
+
+const VECTOR: &str = "examples/evidence-block.count.json";
+
+#[test]
+fn an_unmodified_copy_passes_the_lock_rule() {
+    let copy = ScratchCopy::new("clean");
+    assert_eq!(lock_problems(&copy.0), Vec::<String>::new());
+}
+
+#[test]
+fn a_tampered_vector_is_refused() {
+    let copy = ScratchCopy::new("tampered");
+    let path = copy.0.join(VECTOR);
+    let mut bytes = std::fs::read(&path).expect("read vector");
+    bytes.push(b' ');
+    std::fs::write(&path, bytes).expect("write vector");
+    assert_eq!(lock_problems(&copy.0), vec![format!("MODIFIED {VECTOR}")]);
+}
+
+#[test]
+fn a_missing_vector_is_refused() {
+    let copy = ScratchCopy::new("missing");
+    std::fs::remove_file(copy.0.join(VECTOR)).expect("remove vector");
+    let problems = lock_problems(&copy.0);
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(
+        problems[0].starts_with(&format!("MISSING {VECTOR}")),
+        "{problems:?}"
     );
-    let version = std::fs::read_to_string(dir.join("VERSION")).expect("VERSION");
+}
+
+#[test]
+fn an_unlisted_file_is_refused() {
+    let copy = ScratchCopy::new("unlisted");
+    std::fs::write(copy.0.join("examples/extra.json"), b"{}\n").expect("write extra");
     assert_eq!(
-        lock["contract_version"].as_str().expect("contract_version"),
-        version.trim(),
-        "contract.lock's contract_version disagrees with VERSION"
+        lock_problems(&copy.0),
+        vec!["UNLISTED examples/extra.json".to_string()]
     );
+}
+
+/// ClearView M1 step 3: the Server compiles against the generated pin of the
+/// Matrix publisher's consumer export (`contract/matrix-consumer/`). Until the
+/// vendored copy is removed in step 4, the two must name the same bundle, so
+/// the pin is proven byte-identical to the v1.4 vendored cut: the lock test above
+/// ties every vendored file to this digest.
+#[test]
+fn the_pinned_export_names_the_vendored_bundle() {
+    let lock = read_json(&contract_dir().join("contract.lock"));
+    let export = read_json(
+        &Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../contract/matrix-consumer/matrix-consumer.json"),
+    );
+    let wire = &export["profile"]["wire_contract"];
+    assert_eq!(wire["contract_version"], lock["contract_version"]);
+    assert_eq!(wire["bundle_digest"], lock["bundle_digest"]);
+    assert_eq!(lock["files"].as_object().map(|f| f.len()), Some(17));
 }
 
 /// Read as bytes and decode UTF-8 explicitly, exactly as the contract README

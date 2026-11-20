@@ -43,6 +43,7 @@ pub mod gates;
 pub mod governance;
 pub mod hierarchy;
 pub mod ledger;
+pub mod matrix_pin;
 pub mod model_evidence;
 pub mod money;
 pub mod platform;

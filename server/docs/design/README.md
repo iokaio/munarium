@@ -20,6 +20,7 @@ ClearView preserves existing clients, indexes, runbooks and operator defaults on
 | [Server retrieval, builds and console](airk-analysis.md) | Runtime work R1–R12, inference integration IR-0–IR-4 and console work U1–U14. AIRK observations give the rationale. |
 | [MCP endpoint](mcp-analysis.md) | The eleven tools, two protocol revisions, budgets, audit and client qualification. |
 | [Matrix and Lens handoffs](repository-handoffs.md) | Matrix reconciliation and removal, Lens repository foundation, corpus inventory, qualification and worker placement. |
+| [Matrix switch receipts](matrix-switch-receipts.md) | M1 step 3: the pinned Matrix consumer export, M1-T1 results, the M1-T2 procedure and the Server CI change still required. |
 | [Scaling Server and Lens](scale-out.md) | Server chart and diagnostics, independently sized worker groups, bottlenecks and controlled scale-out under load. |
 
 The [decision register](#decision-register) links each rule to its normative home. Cite the test ID from that home in a release receipt. The register and phase table are summaries. Product decisions apply to v1.5 implementation. Cross-project wire changes still need the hub decision, contract export and consumer re-vendoring process.

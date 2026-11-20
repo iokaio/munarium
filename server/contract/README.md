@@ -1,6 +1,6 @@
 # Contracts
 
-Three directories. Two are cross-tree — **inbound**: a contract owned by another tree,
+Three directories, plus the generated Matrix consumer pin described below. Two are cross-tree — **inbound**: a contract owned by another tree,
 copied here so the server can build, test and validate against it **without a crate
 dependency on that tree**; **outbound**: the server's own interface, cut into a bundle
 that the public client libraries vendor — and one is **internal**: a contract this
@@ -10,6 +10,7 @@ load-bearing in the same way.
 | Directory | Direction | Source of truth | Owner |
 |---|---|---|---|
 | [`matrix/`](matrix/) | inbound | [`iokaio/munarium-matrix/contract`](https://github.com/iokaio/munarium-matrix/tree/main/contract), pinned by the vendored `contract.lock` | Munarium Matrix |
+| [`matrix-consumer/`](matrix-consumer/) | inbound, generated | the Matrix publisher's `--consumer-out` export at a pinned publisher revision, recorded with the generated `munarium-core/src/matrix_pin.rs` | Munarium Matrix (export); Munarium Server (pin) |
 | [`mmp/`](mmp/) | outbound | this tree (`proto/`, `docs/api/`, two crates, `conformance/SCENARIOS.md`) | Munarium Server |
 | [`datastore/`](datastore/) | internal | this directory: the `artifact@1` schemas, the Python reference implementation and the identity vectors | Munarium Server (`munarium-datastore`) |
 
@@ -63,6 +64,37 @@ and produces drift that is invisible when you read two files side by side. The
 publisher's normalization is what makes the bytes the same on every platform, and
 `server/contract/**` is pinned `eol=lf` so a checkout cannot undo it.
 
+## The Matrix consumer pin (ClearView M1 step 3)
+
+The Server no longer reads `matrix/VERSION` at compile time. It compiles against
+`src/munarium-core/src/matrix_pin.rs`, which `tools/matrix_pin.py` generates together
+with `matrix-consumer/matrix-consumer.json`, the Matrix publisher's `--consumer-out`
+export copied byte for byte. The pin records the supported wire version, the locked
+bundle digest, the Matrix revision the publisher verified against the released bundle,
+the publisher revision that produced the export and its review status, the export's
+sha256 and its `profile_digest`. Neither file is edited by hand.
+
+```bash
+# from server/, with the reviewed Matrix revision checked out (beside this repository
+# or at MUNARIUM_MATRIX_ROOT)
+py tools/matrix_pin.py --write --review "<review status of that revision>"
+py tools/matrix_pin.py --check
+```
+
+`--check` requires the Matrix checkout to be the pinned publisher revision with a clean
+`contract/` tree. It runs the publisher's self-test, cuts and verifies the wire bundle,
+checks the vendored `matrix/` copy against that cut file by file, exports and checks the
+consumer profile, recomputes its `profile_digest` and compares both generated files
+with the tracked ones. Without a Matrix checkout, `munarium-core`'s `matrix_pin` test
+verifies the constants against the tracked export, and `munarium-api-types`'
+`matrix_contract` test checks that the export names the vendored bundle's digest.
+
+The current pin is a **candidate**: Matrix `feat/clearview` at `79aa8c5`, which has not
+been reviewed or merged. The vendored `matrix/` copy and `tools/check_matrix_contract.py`
+stay until the replacement gate validates the standalone inputs (M1 step 4). The plan
+and the remaining receipts are in
+[the Matrix switch receipts](../docs/design/matrix-switch-receipts.md).
+
 ## Changing the contract
 
 Edit `contract/` in `iokaio/munarium-matrix` and move `VERSION` according to the
@@ -90,7 +122,9 @@ drift check buys the same safety with no edge.
 
 ## What reads this at build time
 
-Nothing yet, but keep the constraint in mind: `server/.dockerignore` must not
+The Server's compiled code reads nothing here: the Matrix wire version comes from the
+generated `munarium-core/src/matrix_pin.rs`. Tests do read it, including
+`evidence_providers.rs`, which embeds three Matrix examples. Keep the constraint in mind: `server/.dockerignore` must not
 exclude `contract/`. If a crate ever `include_str!`s a schema from here, an
 excluded directory breaks the image build outright — which is how a stray
 `runbooks/` exclusion was once found, as 26 "couldn't read" errors.

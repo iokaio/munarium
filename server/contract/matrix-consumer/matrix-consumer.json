@@ -1,0 +1,69 @@
+{
+  "profile": {
+    "format_version": 1,
+    "mmctl_matrix": {
+      "baseline_server_commit": "25012c22087fbaa8ce29ddd68d2880d6e9499b1c",
+      "commands": {
+        "apply": {
+          "method": "POST",
+          "path": "/v1/assets",
+          "yaml_flag": "-f"
+        },
+        "introspect": {
+          "method": "POST",
+          "operand": "source",
+          "path": "/v1/datasources/{name}/introspect"
+        },
+        "journal": {
+          "default_limit": "50",
+          "limit_flag": "--limit",
+          "method": "GET",
+          "path": "/v1/journal"
+        },
+        "probe": {
+          "method": "POST",
+          "operand": "source",
+          "path": "/v1/datasources/{name}/probe"
+        },
+        "reconcile": {
+          "method": "POST",
+          "operand": "mapping",
+          "path": "/v1/mappings/{name}/run"
+        },
+        "sync": {
+          "method": "POST",
+          "operand": "source",
+          "path": "/v1/datasources/{name}/sync"
+        },
+        "validate": {
+          "method": "POST",
+          "path": "/v1/assets/validate",
+          "yaml_flag": "-f"
+        },
+        "verify": {
+          "method": "POST",
+          "operand": "contract",
+          "path": "/v1/contracts/{name}/verify",
+          "verification": "failed_or_questions"
+        },
+        "verify-view": {
+          "fallback_404": "/v1/dataviews/{name}/verify",
+          "method": "POST",
+          "operand": "view",
+          "path": "/v1/metricviews/{name}/verify",
+          "verification": "failed"
+        },
+        "version": {
+          "method": "GET",
+          "path": "/version"
+        }
+      }
+    },
+    "wire_contract": {
+      "bundle_digest": "2f35a515db4501a0320f51335e3d212796f757f06af6f309f8b3f639305ced96",
+      "contract_version": "0.1.0",
+      "verified_source_commit": "643863fcb4433c8236f3ab22ca812f17c354f34c"
+    }
+  },
+  "profile_digest": "52721cddbaff3415d932ed59d2f8a01fdda5c9be0a20ccd75c977f0005da782d"
+}
