@@ -166,7 +166,7 @@ pub(super) async fn hub(
                 .iter()
                 .map(|r| {
                     charts::tile(
-                        &r.state,
+                        &format!("runs {}", r.state),
                         &r.runs.to_string(),
                         &r.avg_wall_ms
                             .map_or(String::new(), |w| format!("avg {:.1}s wall", w / 1000.0)),
@@ -177,7 +177,7 @@ pub(super) async fn hub(
                 &report
                     .steps
                     .iter()
-                    .map(|s| (s.state.clone(), s.steps as f64, String::new()))
+                    .map(|s| (s.state.clone(), s.steps as f64, "steps".to_string()))
                     .collect::<Vec<_>>(),
             );
             // A failed read is a notice, never an empty table (ClearView U5).

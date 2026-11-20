@@ -185,6 +185,7 @@ summary:focus-visible { outline: 2px solid var(--s1); outline-offset: 2px; }
 .skip:focus { left: 12px; background: var(--surface); color: var(--ink); padding: 6px 10px;
               border: 1px solid var(--ring); border-radius: 5px; z-index: 10; }
 .viewonly { color: var(--muted); font-size: 12px; }
+.muted { color: var(--muted); }
 form.action.confirm { display: block; margin: 12px 0; }
 .pager { margin: 8px 0 0; }
 a.tilelink { color: inherit; display: block; }

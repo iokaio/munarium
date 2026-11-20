@@ -1919,6 +1919,115 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
+    // U6: separate facts stay separate
+    // -----------------------------------------------------------------------
+
+    /// Against PostgreSQL: the collections list and a collection's page show
+    /// status, active index version, serving engine, residency on this
+    /// replica and build jobs as separate values read from the tables.
+    #[tokio::test]
+    async fn collection_facts_render_separately_on_postgres() {
+        let Ok(url) = std::env::var("MUNARIUM_TEST_DATABASE_URL") else {
+            eprintln!("console U6 PostgreSQL test NOT RUN: MUNARIUM_TEST_DATABASE_URL unset");
+            return;
+        };
+        let tenant = format!("console-u6-{}", uuid::Uuid::new_v4().simple());
+        let mut cfg = test_config(AuthMode::Static(vec![(
+            "m".into(),
+            tenant.clone(),
+            "mgmt".into(),
+        )]));
+        cfg.store = StoreKind::Postgres;
+        cfg.database_url = Some(url);
+        let state = AppState::new(cfg).await.expect("state");
+        let pool = state.pg_pool().expect("pool").clone();
+        let col = format!("col-u6-{}", uuid::Uuid::new_v4().simple());
+        let bare = format!("{col}-bare");
+        let version = format!("iv-u6-{}", uuid::Uuid::new_v4().simple());
+        let seeds: [(&str, Vec<&str>); 4] = [
+            (
+                "INSERT INTO collections (tenant_id, id, name, shape_ref) VALUES
+                   ($1, $2, 'served', 's@1'), ($1, $3, 'bare', 's@1')",
+                vec![&tenant, &col, &bare],
+            ),
+            (
+                "INSERT INTO index_versions
+                   (tenant_id, id, shape_ref, manifest, active, collection_id)
+                 VALUES ($1, $2, 's@1', '{}'::jsonb, true, $3)",
+                vec![&tenant, &version, &col],
+            ),
+            (
+                "INSERT INTO retrieval_rollout
+                   (tenant_id, scope_kind, scope_id, serving, changed_by)
+                 VALUES ($1, 'collection', $2, 'datastore', 'test')",
+                vec![&tenant, &col],
+            ),
+            (
+                "INSERT INTO index_build_jobs
+                   (tenant_id, job_id, kind, scope_kind, scope_id, state, requested_by)
+                 VALUES ($1, 'job-u6-a', 'backfill', 'collection', $2, 'pending', 't'),
+                        ($1, 'job-u6-b', 'backfill', 'collection', $3, 'succeeded', 't')",
+                vec![&tenant, &col, &bare],
+            ),
+        ];
+        for (sql, params) in seeds {
+            let mut q = sqlx::query(sql);
+            for p in params {
+                q = q.bind(p);
+            }
+            q.execute(&pool)
+                .await
+                .unwrap_or_else(|e| panic!("{sql}: {e}"));
+        }
+        let body = body_string(get(&state, "/admin/collections", Some("m"), false).await).await;
+        for header in [
+            "<th>collection status</th>",
+            "<th>active index version</th>",
+            "<th>serving engine</th>",
+            "<th>serving artifact on this replica</th>",
+            "<th>build jobs</th>",
+        ] {
+            assert!(body.contains(header), "{header}: {body}");
+        }
+        // The served collection: four facts, four cells.
+        assert!(
+            body.contains(&format!(
+                r#"<td><span class="badge good">active</span></td><td><span class="badge good">exists</span> <code>{}</code></td><td><span class="badge">datastore</span></td><td><span class="muted">no serving artifact bound</span></td><td>0 running · 1 queued</td>"#,
+                charts::esc(&short(&version, 16))
+            )),
+            "{body}"
+        );
+        // The bare one: active, but no version, default engine, no builds
+        // (a finished job is not one).
+        assert!(
+            body.contains(
+                r#"<td><span class="badge good">active</span></td><td><span class="badge warn">none</span> searches find nothing until a cutover</td><td><span class="badge">postgres</span> <span class="muted">default: no rollout row</span></td><td><span class="muted">no active version</span></td><td>0 running · 0 queued</td>"#
+            ),
+            "{body}"
+        );
+        assert!(!body.contains("unavailable"), "{body}");
+
+        let body = body_string(
+            get(
+                &state,
+                &format!("/admin/collections/{col}"),
+                Some("m"),
+                false,
+            )
+            .await,
+        )
+        .await;
+        assert!(body.contains("<h2>operational state</h2>"), "{body}");
+        assert!(
+            body.contains(r#"(instance <code>test-instance</code>)"#),
+            "{body}"
+        );
+        assert!(body.contains("0 running · 1 queued"), "{body}");
+        assert_classes_styled("/admin/collections/{id}", &body);
+        assert_status_cues_have_text("/admin/collections/{id}", &body);
+    }
+
+    // -----------------------------------------------------------------------
     // U13: one visual vocabulary
     // -----------------------------------------------------------------------
 

@@ -757,6 +757,87 @@ pub async fn op_attention_counts(state: &AppState, tenant: &str) -> Result<Atten
     })
 }
 
+/// The operational facts of one collection that the console shows
+/// separately (ClearView U6), read in one round trip. Each is its own
+/// column, because none implies another: an active collection may have no
+/// active index version, an active version may be served by PostgreSQL or
+/// the datastore, and a build may run for either.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CollectionOps {
+    pub collection_id: String,
+    /// The active index version row, if one exists.
+    pub active_version: Option<String>,
+    /// The rollout selector's engine; `None` when the scope has no row, which
+    /// means PostgreSQL serves it.
+    pub serving_engine: Option<String>,
+    /// The artifact in the active version's `serving` binding, if bound.
+    pub serving_artifact: Option<String>,
+    /// Build jobs for this collection or one of its versions, by state.
+    pub builds_running: i64,
+    pub builds_pending: i64,
+}
+
+/// [`CollectionOps`] for every collection of the tenant, or for one.
+pub async fn op_collection_ops(
+    state: &AppState,
+    tenant: &str,
+    only: Option<&str>,
+) -> Result<Vec<CollectionOps>> {
+    #[allow(clippy::type_complexity)]
+    let rows: Vec<(
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        i64,
+        i64,
+    )> = sqlx::query_as(
+        "SELECT c.id, av.id, r.serving, b.artifact_id,
+                    (SELECT count(*) FROM index_build_jobs j
+                      WHERE j.tenant_id = $1 AND j.state = 'running'
+                        AND ((j.scope_kind = 'collection' AND j.scope_id = c.id)
+                             OR j.index_version_id IN (SELECT v.id FROM index_versions v
+                                                        WHERE v.tenant_id = $1
+                                                          AND v.collection_id = c.id))),
+                    (SELECT count(*) FROM index_build_jobs j
+                      WHERE j.tenant_id = $1 AND j.state = 'pending'
+                        AND ((j.scope_kind = 'collection' AND j.scope_id = c.id)
+                             OR j.index_version_id IN (SELECT v.id FROM index_versions v
+                                                        WHERE v.tenant_id = $1
+                                                          AND v.collection_id = c.id)))
+               FROM collections c
+               LEFT JOIN LATERAL (SELECT v.id FROM index_versions v
+                                   WHERE v.tenant_id = $1 AND v.collection_id = c.id
+                                     AND v.active
+                                   ORDER BY v.built_at DESC LIMIT 1) av ON true
+               LEFT JOIN retrieval_rollout r
+                      ON r.tenant_id = $1 AND r.scope_kind = 'collection' AND r.scope_id = c.id
+               LEFT JOIN index_artifact_bindings b
+                      ON b.tenant_id = $1 AND b.index_version_id = av.id AND b.slot = 'serving'
+              WHERE c.tenant_id = $1 AND ($2::text IS NULL OR c.id = $2)",
+    )
+    .bind(tenant)
+    .bind(only)
+    .fetch_all(pool(state)?)
+    .await
+    .map_err(|e| KernelError::Storage(e.to_string()))?;
+    Ok(rows
+        .into_iter()
+        .map(
+            |(collection_id, active_version, serving_engine, serving_artifact, run, pend)| {
+                CollectionOps {
+                    collection_id,
+                    active_version,
+                    serving_engine,
+                    serving_artifact,
+                    builds_running: run,
+                    builds_pending: pend,
+                }
+            },
+        )
+        .collect())
+}
+
 // ---------------------------------------------------------------------------
 // dashboard views (2026-08-17): timeseries / endpoints / runbooks / sessions.
 // Ad-hoc aggregates over the audit tables at request time — no rollup

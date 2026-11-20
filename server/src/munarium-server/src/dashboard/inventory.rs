@@ -8,8 +8,8 @@
 
 use super::{
     action, admin_auth, csrf_field, csrf_ok, error_panel, html_table, json_block, kv, link, notice,
-    opt, pre, render, render_with_actions, severity_badge, short, stale_form, store_note,
-    window_of, CsrfOnlyForm,
+    opt, pill, pre, render, render_with_actions, severity_badge, short, stale_form, store_note,
+    window_of, CsrfOnlyForm, Tone,
 };
 use crate::charts::{self, esc};
 use crate::reports_api;
@@ -158,19 +158,154 @@ pub(super) async fn providers(State(state): State<Arc<AppState>>, headers: Heade
 // collections
 // ---------------------------------------------------------------------------
 
-fn collection_row(c: &dto::CollectionDto) -> Vec<String> {
+// ---------------------------------------------------------------------------
+// collection facts (ClearView U6)
+// ---------------------------------------------------------------------------
+
+/// The independent operational facts of one collection, each rendered on
+/// its own (ClearView U6). One badge cannot carry them: an active
+/// collection can have no active index version, an active version can be
+/// served by either engine, the serving artifact can be resident on one
+/// replica and not another, and a build can run in any of those states.
+pub(super) struct CollectionFacts {
+    /// Whether the collection itself is active or retired.
+    pub status: String,
+    /// Whether an active index version exists, and which.
+    pub active_index: String,
+    /// Which engine the rollout selector routes this collection to.
+    pub engine: String,
+    /// Whether the active version's serving artifact is in this replica's
+    /// local cache.
+    pub residency: String,
+    /// Build jobs for the collection, running and queued, each labeled.
+    pub builds: String,
+}
+
+/// Whether this replica's local (L1) cache holds an artifact. Process state,
+/// read without I/O; `Err` says why this replica does not track residency.
+fn resident_here(
+    state: &AppState,
+    tenant: &str,
+    version: &str,
+    artifact: &str,
+) -> Result<bool, String> {
+    let Some(parts) = state.datastore_parts() else {
+        return Err(format!(
+            "not tracked: this replica runs {} mode with no datastore cache",
+            state.retrieval_mode_str()
+        ));
+    };
+    Ok(parts
+        .cache
+        .resident(&munarium_datastore::ArtifactCacheKey::new(
+            crate::datastore_builds::tenant_path_hash(tenant),
+            version,
+            artifact,
+        ))
+        .is_some())
+}
+
+fn unavailable(reason: &str) -> String {
+    format!(
+        r#"{} <span class="muted">{}</span>"#,
+        pill("unavailable", Tone::Neutral),
+        esc(reason)
+    )
+}
+
+/// Render the facts. `ops` is the table-backed read (or why it failed);
+/// `resident` answers residency for (version, artifact) on this replica.
+pub(super) fn collection_facts(
+    c: &dto::CollectionDto,
+    ops: Result<&reports_api::CollectionOps, &str>,
+    resident: &dyn Fn(&str, &str) -> Result<bool, String>,
+) -> CollectionFacts {
+    let status = pill(
+        &c.status,
+        if c.status == "active" {
+            Tone::Good
+        } else {
+            Tone::Warn
+        },
+    );
+    let active_index = match (&c.active_index, &ops) {
+        (Some(_), Ok(o)) if o.active_version.is_none() => format!(
+            "{} named, but no active version row exists",
+            pill("missing", Tone::Bad)
+        ),
+        (Some(id), _) => format!(
+            r#"{} <code>{}</code>"#,
+            pill("exists", Tone::Good),
+            esc(&short(id, 16))
+        ),
+        (None, _) => format!(
+            "{} searches find nothing until a cutover",
+            pill("none", Tone::Warn)
+        ),
+    };
+    let (engine, residency, builds) = match ops {
+        Err(reason) => (
+            unavailable(reason),
+            unavailable(reason),
+            unavailable(reason),
+        ),
+        Ok(o) => {
+            let datastore = o.serving_engine.as_deref() == Some("datastore");
+            let engine = match &o.serving_engine {
+                None => format!(
+                    r#"{} <span class="muted">default: no rollout row</span>"#,
+                    pill("postgres", Tone::Neutral)
+                ),
+                Some(e) => pill(e, Tone::Neutral),
+            };
+            let residency = match (&o.active_version, &o.serving_artifact) {
+                (None, _) => r#"<span class="muted">no active version</span>"#.to_string(),
+                (Some(_), None) => {
+                    r#"<span class="muted">no serving artifact bound</span>"#.to_string()
+                }
+                (Some(v), Some(a)) => match resident(v, a) {
+                    Ok(true) => pill("resident", Tone::Good),
+                    Ok(false) => pill(
+                        "not resident",
+                        if datastore { Tone::Warn } else { Tone::Neutral },
+                    ),
+                    Err(why) => format!(r#"<span class="muted">{}</span>"#, esc(&why)),
+                },
+            };
+            let builds = format!(
+                "{} running · {} queued",
+                if o.builds_running > 0 {
+                    pill(&o.builds_running.to_string(), Tone::Warn)
+                } else {
+                    "0".to_string()
+                },
+                o.builds_pending
+            );
+            (engine, residency, builds)
+        }
+    };
+    CollectionFacts {
+        status,
+        active_index,
+        engine,
+        residency,
+        builds,
+    }
+}
+
+fn collection_row(c: &dto::CollectionDto, f: CollectionFacts) -> Vec<String> {
     vec![
         link(&format!("/admin/collections/{}", c.id), &c.name),
         format!("<code>{}</code>", esc(&c.id)),
         link(&format!("/admin/shapes/{}", c.shape_ref), &c.shape_ref),
         c.access_level.to_string(),
         list_or_dash(&c.compartments),
-        esc(&c.status),
         c.source_count.to_string(),
-        c.active_index
-            .as_deref()
-            .map(|i| format!("<code>{}</code>", esc(&short(i, 16))))
-            .unwrap_or_else(|| "none".into()),
+        f.status,
+        f.active_index,
+        f.engine,
+        f.residency,
+        f.builds,
         esc(&c.created_at),
     ]
 }
@@ -181,9 +316,12 @@ const COLLECTION_HEADERS: &[&str] = &[
     "shape",
     "level",
     "compartments",
-    "status",
-    "sources",
-    "active index",
+    "bound sources",
+    "collection status",
+    "active index version",
+    "serving engine",
+    "serving artifact on this replica",
+    "build jobs",
     "created",
 ];
 
@@ -196,11 +334,34 @@ pub(super) async fn collections(
         Err(r) => return r,
     };
     let tenant = admin.tenant.tenant_id.as_str();
+    let ops = reports_api::op_collection_ops(&state, tenant, None)
+        .await
+        .map_err(|e| e.to_string());
+    let resident = |v: &str, a: &str| resident_here(&state, tenant, v, a);
     let table = match crate::collections_api::op_list_collections(&state, tenant).await {
-        Ok(list) => html_table(
-            COLLECTION_HEADERS,
-            &list.iter().map(collection_row).collect::<Vec<_>>(),
-        ),
+        Ok(list) => {
+            let rows: Vec<Vec<String>> = list
+                .iter()
+                .map(|c| {
+                    let o = match &ops {
+                        Ok(all) => all
+                            .iter()
+                            .find(|o| o.collection_id == c.id)
+                            .ok_or("no operational row for this collection"),
+                        Err(e) => Err(e.as_str()),
+                    };
+                    collection_row(c, collection_facts(c, o, &resident))
+                })
+                .collect();
+            let note = match &ops {
+                Err(e) if !rows.is_empty() => format!(
+                    r#"<div class="notice">serving engine, residency and build jobs unavailable: {}</div>"#,
+                    esc(e)
+                ),
+                _ => String::new(),
+            };
+            format!("{}{note}", html_table(COLLECTION_HEADERS, &rows))
+        }
         Err(e) => store_note(&e),
     };
     let bulk = match crate::ingest_api::op_recent_bulk_uploads(&state, tenant, 20).await {
@@ -209,10 +370,10 @@ pub(super) async fn collections(
                 "bulk session",
                 "label",
                 "status",
-                "declared",
-                "stored",
-                "failed",
-                "pending",
+                "files declared",
+                "files stored",
+                "files failed",
+                "files pending",
                 "opened by",
                 "opened",
                 "expires",
@@ -242,6 +403,7 @@ pub(super) async fn collections(
     let body = format!(
         r#"<h2>collections</h2><div class="card">{table}</div>
 <div class="legend">level = the access level a capability token must dominate; compartments = the need-to-know tags it must carry (all of them). Physical index data is never deleted by any API — retirement is soft.</div>
+<div class="legend">Each operational fact is its own column: whether the collection is active, whether an active index version exists, which engine serves it, whether the serving artifact is in this replica's cache (replicas differ), and its build jobs.</div>
 <h2>recent bulk upload sessions</h2><div class="card">{bulk}</div>"#
     );
     render(&admin, "collections", "Collections", &body)
@@ -313,8 +475,20 @@ pub(super) async fn collection(
         }
         Err(e) => store_note(&e),
     };
+    let ops = reports_api::op_collection_ops(&state, tenant, Some(&c.id))
+        .await
+        .map_err(|e| e.to_string());
+    let facts = collection_facts(
+        &c,
+        match &ops {
+            Ok(rows) => rows.first().ok_or("no operational row for this collection"),
+            Err(e) => Err(e.as_str()),
+        },
+        &|v: &str, a: &str| resident_here(&state, tenant, v, a),
+    );
     let body = format!(
         r#"<div class="card">{}</div>
+<h2>operational state</h2><div class="card">{}</div>
 <h2>index versions</h2><div class="card">{indexes}</div>
 <h2>runbooks reaching this collection</h2><div class="card">{runbooks}</div>"#,
         kv(&[
@@ -326,17 +500,23 @@ pub(super) async fn collection(
             ),
             ("access level", c.access_level.to_string()),
             ("compartments", list_or_dash(&c.compartments)),
-            ("status", esc(&c.status)),
             ("description", opt(&c.description)),
             ("bound sources", c.source_count.to_string()),
-            (
-                "active index",
-                c.active_index
-                    .as_deref()
-                    .map(|i| format!("<code>{}</code>", esc(i)))
-                    .unwrap_or_else(|| "none — searches find nothing until a cutover".into()),
-            ),
             ("created", esc(&c.created_at)),
+        ]),
+        kv(&[
+            ("collection status", facts.status),
+            ("active index version", facts.active_index),
+            ("serving engine", facts.engine),
+            (
+                "serving artifact on this replica",
+                format!(
+                    r#"{} <span class="muted">(instance <code>{}</code>)</span>"#,
+                    facts.residency,
+                    esc(&admin.instance)
+                ),
+            ),
+            ("build jobs", facts.builds),
         ])
     );
     render(
@@ -1623,4 +1803,128 @@ pub(super) async fn matrix(State(state): State<Arc<AppState>>, headers: HeaderMa
 <div class="notice">The circuit breaker is <strong>per instance</strong>, not per tenant, so this reading is about this replica and carries no tenant label anywhere — a shared breaker reported per tenant would let one tenant's scrape reveal another's traffic. A layer flagged red refuses on at least half its turns: those turns still return 200, so the answers are thinner than the runbook claims while nothing else goes red. Machine-readable: <code>GET /v1/reports/matrix</code> and <code>GET /v1/reports/evidence</code>.</div>"#
     );
     render(&admin, "matrix", "Matrix", &body)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn collection(status: &str, active: Option<&str>) -> dto::CollectionDto {
+        dto::CollectionDto {
+            id: "col-1".into(),
+            name: "contracts".into(),
+            shape_ref: "s@1".into(),
+            access_level: 0,
+            compartments: Vec::new(),
+            status: status.into(),
+            description: None,
+            created_at: "2026-01-01".into(),
+            source_count: 3,
+            active_index: active.map(String::from),
+        }
+    }
+
+    fn ops(
+        version: Option<&str>,
+        engine: Option<&str>,
+        artifact: Option<&str>,
+    ) -> reports_api::CollectionOps {
+        reports_api::CollectionOps {
+            collection_id: "col-1".into(),
+            active_version: version.map(String::from),
+            serving_engine: engine.map(String::from),
+            serving_artifact: artifact.map(String::from),
+            builds_running: 1,
+            builds_pending: 2,
+        }
+    }
+
+    fn never(_: &str, _: &str) -> Result<bool, String> {
+        panic!("residency must not be asked without a serving artifact")
+    }
+
+    /// U6: every fact is its own value. Active with no index version, an
+    /// engine from the selector (or the PostgreSQL default), residency on
+    /// this replica, and labeled build counts never merge into one badge.
+    #[test]
+    fn collection_facts_keep_each_fact_separate() {
+        // Active, no index version yet, PostgreSQL by default, a build.
+        let o = ops(None, None, None);
+        let f = collection_facts(&collection("active", None), Ok(&o), &never);
+        assert_eq!(f.status, r#"<span class="badge good">active</span>"#);
+        assert!(
+            f.active_index.contains(">none</span>"),
+            "{}",
+            f.active_index
+        );
+        assert!(f.engine.contains(">postgres</span>"), "{}", f.engine);
+        assert!(f.engine.contains("no rollout row"), "{}", f.engine);
+        assert!(f.residency.contains("no active version"), "{}", f.residency);
+        assert_eq!(
+            f.builds,
+            r#"<span class="badge warn">1</span> running · 2 queued"#
+        );
+
+        // Retired, yet its active version exists and the datastore serves
+        // it, resident here: four facts, four values.
+        let o = ops(Some("iv-1"), Some("datastore"), Some("art-1"));
+        let here = |v: &str, a: &str| Ok(v == "iv-1" && a == "art-1");
+        let f = collection_facts(&collection("retired", Some("iv-1")), Ok(&o), &here);
+        assert_eq!(f.status, r#"<span class="badge warn">retired</span>"#);
+        assert!(f.active_index.contains(">exists</span> <code>iv-1</code>"));
+        assert_eq!(f.engine, r#"<span class="badge">datastore</span>"#);
+        assert_eq!(f.residency, r#"<span class="badge good">resident</span>"#);
+        // Not resident on a datastore-served scope is a warning; on a
+        // PostgreSQL-served one it is a plain fact.
+        let away = |_: &str, _: &str| Ok(false);
+        let f = collection_facts(&collection("active", Some("iv-1")), Ok(&o), &away);
+        assert_eq!(
+            f.residency,
+            r#"<span class="badge warn">not resident</span>"#
+        );
+        let o = ops(Some("iv-1"), Some("postgres"), Some("art-1"));
+        let f = collection_facts(&collection("active", Some("iv-1")), Ok(&o), &away);
+        assert_eq!(f.residency, r#"<span class="badge">not resident</span>"#);
+        // A replica that does not track residency says so.
+        let untracked = |_: &str, _: &str| Err("not tracked: postgres mode".to_string());
+        let f = collection_facts(&collection("active", Some("iv-1")), Ok(&o), &untracked);
+        assert!(
+            f.residency.contains("not tracked: postgres mode"),
+            "{}",
+            f.residency
+        );
+        // Bound to nothing.
+        let o = ops(Some("iv-1"), None, None);
+        let f = collection_facts(&collection("active", Some("iv-1")), Ok(&o), &never);
+        assert!(f.residency.contains("no serving artifact bound"));
+        // The collection names a version no row backs.
+        let o = ops(None, None, None);
+        let f = collection_facts(&collection("active", Some("iv-9")), Ok(&o), &never);
+        assert!(
+            f.active_index.contains(">missing</span>"),
+            "{}",
+            f.active_index
+        );
+    }
+
+    /// A failed operational read is unavailable in every derived column —
+    /// never "postgres", "0 running" or "none".
+    #[test]
+    fn a_failed_operational_read_is_unavailable_not_a_default() {
+        let f = collection_facts(
+            &collection("active", Some("iv-1")),
+            Err("needs the postgres store <x>"),
+            &never,
+        );
+        for v in [&f.engine, &f.residency, &f.builds] {
+            assert!(v.contains(">unavailable</span>"), "{v}");
+            assert!(v.contains("needs the postgres store &lt;x&gt;"), "{v}");
+            assert!(
+                !v.contains("postgres</span>") && !v.contains("0 running"),
+                "{v}"
+            );
+        }
+        // The DTO-backed facts are still shown.
+        assert!(f.active_index.contains(">exists</span>"));
+    }
 }
