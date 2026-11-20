@@ -132,15 +132,19 @@ Use the same executable in the distroless image. The Linux prototype can apply O
 
 In both, a slow first attempt can complete over the second.
 
-**v1.5 plan.** `claim_any` increments `attempts` in its transaction but reads the returned job after commit. Capture the claimed row and generation with `UPDATE ... RETURNING` inside that transaction. This prevents a delayed read from picking up a later claimant's generation. Carry the captured value through the builder loop and require matching tenant, job, running state, owner and attempt number on heartbeat, progress and completion. An old claimant receives a stale/no-op outcome. R4 uses the existing counter and needs no migration. [Builder loop](../../src/munarium-server/src/datastore_jobs.rs)
+**v1.5 plan.** `claim_any` increments `attempts` in its transaction but reads the returned job after commit. Capture the claimed row and generation with `UPDATE ... RETURNING` inside that transaction. This prevents a delayed read from picking up a later claimant's generation. Carry the captured value through the builder loop and require matching tenant, job, running state, owner and attempt number on heartbeat, progress and completion. An old claimant receives a stale/no-op outcome. The existing `attempts` column supplies the job-row fence. [Builder loop](../../src/munarium-server/src/datastore_jobs.rs)
 
-Drain builders running v1.4 before relying on the new fence. Their UPDATE statements still check only node and state. Artifact attempts have a separate lifecycle. A reclaim expires the old running row and generates a fresh `att-` UUID. Heartbeats and transitions target the attempt ID within the tenant.
+Phase 1 also fences publication for queued builds. Serialize each PostgreSQL version commit and each decision to publish an external manifest with retirement of the job generation, using the same job-row lock. Commit a direct build's logical version and its tenant, job and generation attribution together. When the builder acquires an artifact attempt, durably link its ID to that version and generation before artifact publication. While the generation is current, commit a publication intent naming one immutable manifest key and digest. After retirement, a worker or sealed-attempt reconciler may finish that exact intent and record the observed result. It cannot authorize another publication or change the replacement's catalog or binding. Verify any existing object at that key before recording success. The linkage and intent require additive storage compatible with v1.4 rows. Synchronous build entry points retain their existing artifact-attempt authority. [Direct build](../../src/munarium-retrieval/src/direct.rs) · [Mirror publication and recovery](../../src/munarium-retrieval/src/mirror.rs)
+
+An expired final claim currently stays `running` and occupies the open-target index. On each builder poll, process a bounded batch of expired final claims, including when the queue has no runnable jobs. Under row locks recheck the lease, generation and ceiling, move each eligible row to the existing `failed` state, and release its target in the same transaction. Record exhaustion as a typed cause under C2. Keep any committed build effects available to recovery under R6. Cleanup consumes no scheduling turn. [Job store](../../src/munarium-store-pg/src/jobs.rs) · [Open-target index](../../src/munarium-store-pg/migrations/0027_index_build_jobs.sql)
+
+Record that every v1.4 builder has stopped claiming and its active work, including sealed-attempt recovery, has drained before enabling fenced builds. An artifact reclaim expires the old running attempt and creates a fresh tenant-scoped `att-` UUID. Before returning a v1.4 builder to service, stop new claims, drain current workers, reconcile outstanding cancellations and publication intents, and disable fair claiming and fenced progress. Resume legacy claiming only after checking that no retired holder can write and no active job requires the new fence.
 
 **Acceptance criteria**
 
 <a id="r4-t1"></a>
 
-**R4-T1.** Exercise both a same-node job reclaim and a distinct attempt ID in PostgreSQL, including sealed-attempt reconciliation. A passing job-row test alone says nothing about artifact publication. [Artifact attempts](../../src/munarium-store-pg/src/attempts.rs)
+**R4-T1.** Reclaim a job on the same node name with a new generation and a distinct artifact attempt ID. Pause the original worker before it takes the publication lock, then reclaim and resume the old worker and its sealed-attempt reconciler. Require zero old-generation publication. Repeat with the intent committed before reclaim. Only its recorded manifest and digest may finish. Verify neither stale path can renew the job lease, update progress, complete the job or modify the replacement's catalog or binding. Crash the final holder, run two cleanup pollers with no other work, and verify one transition to `failed`, one replacement enqueue, and rejection of late writes. Race cleanup against a valid lease renewal and verify that only the winning transition takes effect. Exercise the builder drain and rollback sequence with a v1.4 worker. [Artifact attempts](../../src/munarium-store-pg/src/attempts.rs)
 
 <a id="r5"></a>
 
@@ -160,7 +164,7 @@ Leave historical rows intact. The read path must never infer a code by parsing o
 
 <a id="c2-t1"></a>
 
-**C2-T1.** Exercise both list and get with a seeded historical failure, a v1.4 writer's failure during rollout, a new typed failure and a successful job. Check exact member presence, safe text, the documented code for the classified case, and the existing omission of failure fields on success. Document the change in displayed text and check the typed mappings against the error registry. [Error registry](../api/errors.md) · [Registry checks](../../src/munarium-server/src/docs_coverage.rs)
+**C2-T1.** Exercise both list and get with a seeded historical failure, a v1.4 writer's failure during rollout, a new typed failure, an expired final claim and a successful job. For exhaustion, require `failed`, a safe message and the proposed C2 code `attempts_exhausted` once recorded in the hub and error registry. Check exact member presence, the documented code for each classified case, and the existing omission of failure fields on success. Document the change in displayed text and check the typed mappings against the error registry. [Error registry](../api/errors.md) · [Registry checks](../../src/munarium-server/src/docs_coverage.rs)
 
 <a id="r6"></a>
 
@@ -170,13 +174,24 @@ Leave historical rows intact. The read path must never infer a code by parsing o
 
 **Server baseline.** `BuildJobs::cancel` sets `state = 'cancelled'` for pending and running jobs. For a running job, the next heartbeat returns `false`, the heartbeat task logs and stops, and nothing else happens: `run_one_job` is not signalled and runs to the end, after which `complete` is a no-op. The doc comment on `cancel` describes this accurately ("cancellation stops the JOB from being re-offered"). An operator who cancels a long direct build to free a builder gets the builder back only when the build would have finished anyway.
 
-**v1.5 plan.** A cancellation token created per claimed job, cancelled by the heartbeat task when it observes a lost or cancelled lease, and checked at the build's natural boundaries: between sources during extraction, between embedding batches, before seal, before upload. The mirror build already has a strict ordering in [`mirror.rs`](../../src/munarium-retrieval/src/mirror.rs) in which the manifest is written last, so stopping before that point leaves nothing advertised.
+**v1.5 plan.** Cancel commits the immediate `cancelled` job state and revokes the generation's authority to start further shared writes. The same tenant can re-enqueue the target as soon as cancel commits, even if the old worker dies without acknowledging it. Signal a worker-local token on confirmed lease loss or cancellation. Check it between sources, embedding batches, seal and upload, then release the builder slot at the next safe boundary. A failed heartbeat leaves the lease uncertain. Revalidate it before any shared write. Kill and reap the opt-in R3 PDF subprocess. A legacy in-process parse can still occupy its builder slot until it returns. On return it must pass the fence before it can commit anything. Direct builds extract and commit a PostgreSQL index before they acquire the artifact attempt lease. [Direct build](../../src/munarium-retrieval/src/direct.rs)
+
+Cancel takes the same job-row lock as Phase 1 publication. For a queued direct build, recovery can identify a committed logical version from its job and generation even if cancellation preceded acquisition of the artifact attempt. For a queued mirror or backfill, recovery follows the linked artifact attempt and any committed manifest intent. Verify the exact object after an uncertain write acknowledgment. Keep component staging private to its attempt or immutable and verified on collision. A delayed writer must never replace the next job's bytes or alter its catalog or binding. Preserve the manifest-last and verification-before-binding order. [Mirror publication](../../src/munarium-retrieval/src/mirror.rs)
+
+Retain the set of versions selected for a queued backfill before starting the first version. Expose each job's durable per-version outcomes through an additive, tenant-authorized, paginated read that preserves the v1.4 job list, get and cancel contracts. For a historical job without recorded outcomes, report that history is unavailable. An empty page must never imply that it published nothing. Distinguish a committed logical version, an acknowledged or recovered manifest, catalog verification and a staged binding. Report reused versions separately and leave unresolved effects explicitly unknown until reconciliation. A cancelled backfill can have a published first version and an untouched second version. A direct build can have a committed PostgreSQL version and no manifest. Neither case activates an index. The job keeps its terminal state throughout recovery. [Backfill](../../src/munarium-retrieval/src/backfill.rs)
 
 **Acceptance criteria**
 
 <a id="r6-t1"></a>
 
-**R6-T1.** Preserve the cancel response and the immediate `cancelled` state visible to v1.4 readers. A fenced worker releases its slot after reaching a safe boundary. Exercise cancellation before and after seal, upload and the publication commit. Remove only staging data owned by that attempt. An already-published manifest and its audit history remain available to recovery. A failed heartbeat read is an uncertain lease, and a worker must revalidate its fence before a shared write.
+**R6-T1.** Preserve the cancel response and immediate `cancelled` state visible to v1.4 readers. Pause a worker before and after local seal, component upload, publication intent, manifest write, verification and binding. Cancel, re-enqueue the same target on another builder and resume or kill the former holder. Verify each tenant-scoped recovery record against PostgreSQL and the store, including a lost manifest acknowledgment, a partially published backfill and cancellation after a direct build's PostgreSQL commit but before an artifact attempt exists. Compare the paginated history with a seeded v1.4 job lacking history and verify the latter reports unavailable. If cancel wins before publication intent, the old worker cannot publish. If the intent wins, only its recorded immutable object can finish, and recovery preserves the observed result and audit history. Repeat with an uncertain heartbeat and a replacement using the old node name. Verify the replacement progresses without the old worker's acknowledgment, stale completion and progress writes are refused, and cleanup removes only staging owned by the attempt.
+
+| Order of commits for one job | v1.4 cancel response and job state | What recovery must establish |
+|---|---|---|
+| Cancel wins before claim | `ok: true`, `cancelled` | The job acquired no worker and started no version. |
+| Cancel wins after claim and before a version's manifest intent | `ok: true`, `cancelled` | No manifest from this job generation for that version. Report any earlier logical-version commit and any other versions already published. |
+| Manifest intent wins, then cancel wins before job completion | `ok: true`, `cancelled` | Identify the authorized object and confirm what reached storage. A missing acknowledgment alone leaves its outcome unknown. |
+| Terminal job completion wins before cancel, or cancel is repeated | `ok: false`, existing terminal state | Keep the recorded outcome. A repeated cancel creates no new publication or recovery operation. |
 
 <a id="r7"></a>
 
@@ -217,7 +232,7 @@ Reserve eligibility requires the route's existing authentication and authorizati
 
 **v1.5 plan.** Under B1, keep the v1.4 global FIFO policy unless an operator explicitly enables tenant-fair scheduling. In fair mode, give each tenant with eligible work an equal turn. A turn is one successfully committed job claim. Within the selected tenant, take the oldest eligible job and use a stable job-ID tie-break. Different build durations can produce different shares of worker time even when claim counts are equal.
 
-Advance the tenant's last-served position and the R4 claim generation in the claim transaction. A failed or rolled-back claim leaves the turn available. Retain the current eligibility rules for pending jobs and expired leases, the reclaim attempt ceiling and stale-worker fences.
+Advance the tenant's last-served position and the R4 claim generation in the claim transaction. A failed or rolled-back claim leaves the turn available. Both scheduling modes claim pending jobs and reclaim expired leases with attempts remaining. R4 retires expired final claims without advancing the tenant's last-served position.
 
 **Acceptance criteria**
 
@@ -264,17 +279,15 @@ Under B2, retain the newest bounded count of build events independently for each
 
 **AIRK observation.** Detected damage is written to an `IntegrityObservation` receipt holding at most 32 `KnownDamage` entries. When full, a new record is refused with "repair required" instead of evicting an old one. The receipt's `PhysicalAudit` type has a single variant, `Unknown`: the absence of recorded damage is never presented as a clean audit (`crates/airk-store/src/service/collection/integrity.rs`). Verification detects and records; it never authorises an automatic repair.
 
-**Server baseline.** [`hydrate.rs`](../../src/munarium-datastore/src/hydrate.rs) quarantines a corrupt cache key in `CacheState.quarantined`, an in-memory set, keyed correctly by the full `ArtifactCacheKey` so one tenant's corruption does not affect another's identical content. No quarantine state appears in `munarium-store-pg`. So:
+**Server baseline.** Hydration quarantines the full `ArtifactCacheKey` in process memory. The serving warmer also upserts `quarantined` into PostgreSQL's `index_artifact_residency_snapshots` on an integrity error. This best-effort, per-node observation carries no fleet enforcement authority. Startup discards leftover cache entries and a later hydration verifies a fresh fetch. The executor reads the tenant's catalog state before starting its blocking search and returns that search's outcome without another catalog read. A reader already past the check can finish after a catalog change. [Cache lifecycle](../../src/munarium-datastore/src/hydrate.rs) · [Warmer and residency snapshots](../../src/munarium-server/src/datastore_serving.rs) · [Executor](../../src/munarium-retrieval/src/executor.rs)
 
-- A restart forgets the quarantine. The replica hydrates the same bytes again, verifies them again and fails again.
-- Each replica discovers the damage independently. The catalog continues to show the artifact as `verified`, and other replicas keep routing to it.
-- The executor does recheck `ArtifactState::Verified` on every query ([`executor.rs`](../../src/munarium-retrieval/src/executor.rs)), so a catalog state change would take effect everywhere at once. Nothing currently makes that change when a replica finds corruption.
+**v1.5 plan.** Give each tenant-scoped artifact pin a durable catalog block and a generation that changes on block and clearance. Record the component, trusted object identity and expected digest alongside the verifier identities, independent authoritative fetch times and observed digests. Commit the active block with its incident identity and the two confirming observations. Bound the observation history separately. A full history must preserve existing findings while leaving capacity to withdraw a newly confirmed pin and recover the evidence for its block. Absence of a finding remains unknown integrity.
 
-**v1.5 plan.** Store the tenant, pinned artifact and component, expected digest and each verifier's identity, fetch time and observed digest. Apply the shared block at the existing verification check once the two observations satisfy ART1. Bound the register and preserve existing findings when it is full. Report the absence of a finding as unknown integrity.
+Readers check the catalog at admission and capture the pin's generation. At result release, serialize a final decision for the completed result with block and clearance on the same pin. A short transaction can lock the catalog row, require the admitted generation to remain current and unblocked, and commit the release authorization for that specific result. Check all contributing pins in a stable order. On refusal or an unavailable check, suppress the affected output. A block that commits first invalidates every outstanding read from the earlier generation, even if clearance follows before the read finishes. A result already authorized for delivery can arrive later. Apply the same cutoff to each outbound stream event carrying artifact-derived content. Preserve data already delivered and its audit history.
 
 <a id="art1"></a>
 
-**ART1.** The first integrity failure immediately isolates the affected local copy. Fleet-wide blocking requires two independent verifiers to fetch the same pinned object directly from the authoritative store. Each must compute a digest that differs from the expected digest for that pin. Count a verifier's observation once. A duplicate report, a retry by the same verifier, a timeout or observations for different pins cannot establish this condition. Implement and qualify the rule before Server v1.5 releases.
+**ART1.** The first integrity failure immediately isolates the affected local copy. Fleet-wide blocking requires two independently authenticated verifier identities, each authorized for the tenant and pin, to fetch the same pinned object directly from the authoritative store. Each must compute a digest that differs from the expected digest for that pin. Count a verifier's observation once. Replaying the same fetch under two names, retrying with the same verifier, timing out or comparing different pins cannot establish this condition. Record verifier identity and independence criteria in the ART1 hub decision before qualification. Implement and qualify the rule before Server v1.5 releases.
 
 <a id="art2"></a>
 
@@ -290,7 +303,7 @@ Keep the v1.4 default through a mixed-version upgrade. Activate fleet blocking a
 
 <a id="art1-t2"></a>
 
-**ART1-T2.** Once two independent fetches confirm mismatches for the same pin, all active readers must refuse that artifact, including on a warm cache, after restart and during a concurrent read on another replica. Test tenant isolation and a full register that preserves existing findings and fails closed for the newly confirmed damage.
+**ART1-T2.** After confirmation, require cold, warm and restarted replicas to refuse the pin. Pause a second replica after admission, commit the block, then resume release and require refusal. Reverse that order and verify exactly the already-authorized result may be delivered. On a stream spanning the block, only content-bearing events authorized before it can appear. Also exercise an unavailable final check, a different tenant with identical bytes, and a full observation history that preserves existing findings and durably blocks the new pin.
 
 <a id="art2-t1"></a>
 
@@ -298,7 +311,7 @@ Keep the v1.4 default through a mixed-version upgrade. Activate fleet blocking a
 
 <a id="art2-t2"></a>
 
-**ART2-T2.** Test a concurrent failure, repeated workflow delivery, restart, and a late report from an earlier incident. A new failure after clearance follows ART1 again. Each replica must verify its own quarantined copy before serving it. Exercise verified recovery across every serving reader and rollback with an outstanding block.
+**ART2-T2.** Test a concurrent failure, repeated workflow delivery, restart, and a late report from an earlier incident. A read paused before the block must still fail its release check after clearance. A restarted replica must honor an outstanding block even with good local bytes. After clearance, each replica must discard or reverify its quarantined copy against the trusted pin before admitting it. Verify that a fresh read succeeds with verified bytes and that a fresh mismatch starts a new incident under ART1. Exercise every serving reader and binary rollback with an outstanding block.
 
 <a id="r11"></a>
 
@@ -761,6 +774,8 @@ One helper in `page()` covers every page.
 AIRK's redesigned overview leads with three statements: the service is available, two of two indexes are searchable, one job is active. Server's overview leads with eight counts of equal weight. A count of 12 collections is not a status.
 
 Put an attention strip above the tiles, listing only what is abnormal, each item linking to its page: runs awaiting approval, blocking gate findings in the last day, a datastore scope that a replica cannot serve, a provider whose credential check fails, failed or stuck build jobs, and unresolved guarded commands. When nothing is abnormal the strip says so in one line. The counts stay below it.
+
+An expired final claim reported by R4 appears with failed builds. Its detail gives the safe C2 cause and links to the job's recovered per-version outcomes.
 
 **U4. Review, then confirm, before a destructive action.**
 
