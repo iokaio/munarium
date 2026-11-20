@@ -104,6 +104,30 @@ impl AttemptObserver for Observer {
 }
 
 impl Observer {
+    /// Every MCP attempt that began but was never finished: the provider
+    /// answered with an error, the transport failed, or a retry replaced it.
+    /// The request may have reached the provider, so each one keeps its full
+    /// bound as `uncertain` (the same charge `reserved` already counted, so
+    /// nothing is charged twice) and its receipt reads honestly.
+    async fn settle_unfinished(&self) {
+        let Some((ctx, _)) = &self.mcp else { return };
+        let unfinished: Vec<_> = self.mcp_attempts.lock().await.drain().collect();
+        for (_, attempt) in unfinished {
+            if let Err(e) = crate::mcp_generation::settle(
+                self.pool.as_ref(),
+                ctx,
+                &self.config,
+                &self.model,
+                &attempt,
+                None,
+            )
+            .await
+            {
+                tracing::warn!(error = %e, "MCP attempt not marked uncertain; it stays reserved");
+            }
+        }
+    }
+
     async fn begin_native(&self, route: &str) -> Result<String> {
         // This runs before EACH HTTP send, including retries. A cancelled or
         // failed attempt stays held; the janitor settles its estimate, never
@@ -248,7 +272,7 @@ pub(crate) async fn capture<T>(
     // For opt-in admission, tell the logical tier ledger when no attempt was
     // permitted at all. Legacy configurations retain their settlement rules.
     let admitted = Arc::new(std::sync::atomic::AtomicBool::new(limit.is_none()));
-    let observer = Observer {
+    let observer = Arc::new(Observer {
         store: state.pg_pool().map(|pool| MoneyStore(pool.clone())),
         budgets: state.budgets().clone(),
         config: entry.doc.metadata.name.clone(),
@@ -263,16 +287,16 @@ pub(crate) async fn capture<T>(
         mcp,
         mcp_attempts: Default::default(),
         pool: state.pg_pool().cloned(),
-    };
+    });
     let result = CONTEXT
         .scope(
-            Context::new(
-                Arc::new(observer),
-                entry.doc.spec.openrouter_provider.clone(),
-            ),
+            Context::new(observer.clone(), entry.doc.spec.openrouter_provider.clone()),
             work,
         )
         .await;
+    // A successful attempt was finished inside the provider; whatever is
+    // left began and never finished.
+    observer.settle_unfinished().await;
     (result, admitted.load(std::sync::atomic::Ordering::SeqCst))
 }
 

@@ -840,7 +840,7 @@
       },
       "physical_erasure": {
         "read": "No per-row erasure API.",
-        "cleanup": "mcp_operations rows are deleted one day after their immutable expiry by a janitor that runs only while MUNARIUM_MCP=enabled; mcp_invocations, mcp_token_attempts, their scopes and mcp_bound_violations are never pruned by the server, and an operator may delete them directly.",
+        "cleanup": "mcp_operations rows are deleted one day after their immutable expiry by a janitor that runs only while MUNARIUM_MCP=enabled, which records each deleted key's identity in mcp_operation_tombstones in the same statement; mcp_operation_tombstones, mcp_invocations, mcp_token_attempts, their scopes and mcp_bound_violations are never pruned by the server, and an operator may delete them directly.",
         "holds": "No per-row hold.",
         "restore": "No durable erasure journal/replay contract; restored state cannot claim general erasure compliance.",
         "coverage": "Gap: no all-copy erasure, partial-failure or backup-restore closure fixture."
@@ -1207,14 +1207,16 @@
         "tenant_id": "text",
         "name": "text",
         "yaml": "text",
-        "created_at": "timestamptz"
+        "created_at": "timestamptz",
+        "text_changed_at": "timestamptz"
       },
-      "content": "Complete YAML including routing/budgets and credentialRef names, never intended secret values.",
+      "content": "Complete YAML including routing/budgets and credentialRef names, never intended secret values, and when the text last changed (inference probe validity).",
       "json_content": {},
       "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
       "policy": "retained",
       "origins": [
-        "src/munarium-store-pg/migrations/0008_providers.sql"
+        "src/munarium-store-pg/migrations/0008_providers.sql",
+        "src/munarium-store-pg/migrations/0084_provider_config_changes.sql"
       ]
     },
     "runbooks": {
@@ -2808,6 +2810,24 @@
       "policy": "mcp",
       "origins": [
         "src/munarium-store-pg/migrations/0070_mcp_endpoint.sql",
+        "src/munarium-server/src/mcp_store.rs"
+      ]
+    },
+    "mcp_operation_tombstones": {
+      "columns": {
+        "tenant_id": "text",
+        "uid": "text",
+        "tool": "text",
+        "key_id": "text",
+        "expires_at": "timestamptz",
+        "pruned_at": "timestamptz"
+      },
+      "content": "Minimal identity of each MCP operation key the janitor pruned: tenant, uid, tool, the caller-chosen random key id, its immutable expiry and the prune time. It stops a pruned key from being claimed again with a new expiry. Never arguments, receipts, bodies or results.",
+      "json_content": {},
+      "owner": "The calling user's tenant; the database operator controls retained copies.",
+      "policy": "mcp",
+      "origins": [
+        "src/munarium-store-pg/migrations/0085_mcp_operation_tombstones.sql",
         "src/munarium-server/src/mcp_store.rs"
       ]
     },

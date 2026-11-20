@@ -214,6 +214,11 @@ async fn lock_key(
         .map(|_| ())
 }
 
+/// A presented key whose row the janitor pruned (its tombstone remains).
+pub const KEY_SPENT: &str = "the operation key was already used and has expired; a client never reuses a key id, extends a key or mints a replacement automatically";
+/// A presented key whose `expires_at` differs from the one first presented.
+pub const EXPIRY_CHANGED: &str = "the operation key's expires_at differs from the one this key was first presented with; a key's expiry is immutable";
+
 /// What one admission transaction did, besides committing the record.
 #[derive(Debug)]
 pub enum Admitted {
@@ -286,7 +291,36 @@ pub async fn admit(
                 .await
                 .map_err(st)?
                 .map(|r| Box::new(row_to_operation(&r)));
+                // A key the janitor pruned stays spent: its tombstone outlives
+                // the row, so a new expiry cannot reopen it (migration 0085).
+                let pruned = match existing {
+                    Some(_) => false,
+                    None => sqlx::query_scalar(
+                        "SELECT EXISTS(SELECT 1 FROM mcp_operation_tombstones
+                                        WHERE tenant_id = $1 AND uid = $2 AND tool = $3
+                                          AND key_id = $4)",
+                    )
+                    .bind(&a.tenant_id)
+                    .bind(&a.uid)
+                    .bind(a.tool)
+                    .bind(&k.key.id)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .map_err(st)?,
+                };
                 match (&k.execute, existing) {
+                    (Some(_), None) if pruned => {
+                        insert_admission(&mut tx, a, None).await.map_err(st)?;
+                        Admitted::Execute(Claim::Invalid(KEY_SPENT))
+                    }
+                    // The expiry is immutable: the same id with another
+                    // expiry is not this key, and never a new claim.
+                    (Some(_), Some(row)) if row.expires_at != k.key.expires_at => {
+                        insert_admission(&mut tx, a, Some(&row.invocation_id))
+                            .await
+                            .map_err(st)?;
+                        Admitted::Execute(Claim::Invalid(EXPIRY_CHANGED))
+                    }
                     (Some((digest, resources)), None) => {
                         // Judge validity on the store clock, after the lock.
                         let (live, within, outlives): (bool, bool, bool) = sqlx::query_as(
@@ -542,12 +576,20 @@ pub async fn spend(
 }
 
 /// Delete operation keys past their expiry by more than `grace_secs`, on the
-/// store clock. Expiry is immutable and a late request on an expired key is
-/// refused whether or not its row still exists, so pruning cannot reopen a
-/// key. Audit rows and generation reservations are never pruned here.
+/// store clock, and record each deleted key's identity (tenant, uid, tool,
+/// key id, expiry) as a tombstone in the same statement. A late request on
+/// the same key id is refused whatever expiry it now presents, so pruning
+/// cannot reopen a key. Tombstones, audit rows and generation reservations
+/// are never pruned here.
 pub async fn prune_keys(pool: &sqlx::PgPool, grace_secs: u64) -> Result<u64> {
     Ok(sqlx::query(
-        "DELETE FROM mcp_operations WHERE expires_at < now() - make_interval(secs => $1)",
+        "WITH gone AS (
+             DELETE FROM mcp_operations
+              WHERE expires_at < now() - make_interval(secs => $1)
+          RETURNING tenant_id, uid, tool, key_id, expires_at)
+         INSERT INTO mcp_operation_tombstones (tenant_id, uid, tool, key_id, expires_at)
+         SELECT tenant_id, uid, tool, key_id, expires_at FROM gone
+         ON CONFLICT (tenant_id, uid, tool, key_id) DO NOTHING",
     )
     .bind(grace_secs as f64)
     .execute(pool)

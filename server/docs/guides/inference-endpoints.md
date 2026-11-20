@@ -73,13 +73,29 @@ spec:
     maxAttempts: 2             # physical attempts per call within one deadline (1-3)
     allowTestBackend: false    # true accepts "retrieval_model": false (test doubles only)
   budgets:
-    dailyTotalTokens: 2000000  # required to bind: the tenant budget that pays
+    dailyTotalTokens: 2000000  # required: the tenant budget that pays
     shadowDailyTokens: 100000  # optional: the shadow allocation inside that cap
 ```
 
 The kind requires an explicit HTTP(S) endpoint with no credentials, query or
-fragment. It serves embed and rerank models only, is never chosen by default
+fragment, and `budgets.dailyTotalTokens`: a configuration without the daily
+cap is refused when applied, because every inference attempt reserves against
+it. It serves embed and rerank models only, is never chosen by default
 provider selection, and needs a credential only when the endpoint requires one.
+
+An `openai-compatible` configuration is reachable **only through the governed
+inference path** described in this guide: the probe, collection bindings,
+semantic builds and enrolled reads, behind the deployment switch, the
+placement check, a current probe and the daily cap. The generic provider
+routes `POST /v1/providers/{name}/embed`, `POST /v1/providers/{name}/complete`
+and `GET /v1/providers/{name}/health` (and their `ProviderService` RPCs)
+refuse such a configuration with `inference-not-qualified` (409) before any
+network call, whatever the switch, placement or budget. The paid `/healthai`
+diagnostics never select it (it serves no completion tier).
+`GET /v1/providers` and `GET /v1/providers/{name}/diagnostics` make no
+provider call and list it as before. The probe and the inference stages also
+refuse a stored configuration without a daily cap (one applied before the
+rule): the probe with `inference-not-qualified`, the stages as `unconfigured`.
 
 Probe it:
 
@@ -92,10 +108,12 @@ The probe checks discovery (`GET /v1/models` lists each configured model for
 the right stage, at the declared dimension, and as a retrieval model unless
 `allowTestBackend` is set), one embedding of two fixed synthetic passages, and
 one rerank of three. It records the result with the endpoint fingerprint and
-the hash of the configuration text. **A probe is valid only for that text**:
-any later change to the configuration is drift, and the stages report
-`probe_failed` (`no_current_probe`) until a new probe passes. A failed probe
-changes nothing else.
+the hash of the configuration text, timed at the probe's start on the
+database clock. **A probe is valid only for that text, and only when it
+started after the text's latest change**: any change to the configuration is
+drift, including a revert to an earlier text, and the stages report
+`probe_failed` (`no_current_probe`) until a new probe passes. Re-applying
+identical text is not a change. A failed probe changes nothing else.
 
 ## Bind a collection
 
@@ -115,8 +133,8 @@ curl -X PUT -H "Authorization: Bearer $MGMT" -H "Content-Type: application/json"
 
 - `expected_revision` is compare-and-set: 0 creates the binding, a stale
   value is `head-conflict`. Every change appends a history row.
-- The configuration must set `dailyTotalTokens`; shadow switches need
-  `shadowDailyTokens`.
+- The configuration must set `dailyTotalTokens` (it cannot be applied
+  without it); shadow switches need `shadowDailyTokens`.
 - The embedding model, instructions, configuration name, endpoint
   fingerprint, dimension, L2 normalization and no-truncation rule together
   are the **semantic space**. Its digest (`sem-…`) is part of the semantic

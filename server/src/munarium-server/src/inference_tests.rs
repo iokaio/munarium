@@ -1523,3 +1523,192 @@ async fn qwen3_embedding_query_instruction_is_the_card_format() {
         b"<Instruct>: Given a web search query, retrieve relevant passages that answer the query\n<Query>: orchid nebula survey"
     );
 }
+
+// ---------------------------------------------------------------------------
+// the governed path is the only path
+// ---------------------------------------------------------------------------
+
+/// `POST /v1/providers` with a YAML body, as the tenant's rw caller.
+async fn apply_rest(h: &Harness, yaml: &str) -> (u16, Value) {
+    let response = h
+        .router
+        .clone()
+        .oneshot(
+            axum::http::Request::builder()
+                .method("POST")
+                .uri("/v1/providers")
+                .header("authorization", format!("Bearer {READER}"))
+                .header("x-munarium-uid", "ir-operator")
+                .header("content-type", "text/yaml")
+                .body(Body::from(yaml.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status().as_u16();
+    let bytes = to_bytes(response.into_body(), 1_000_000).await.unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+
+/// The generic provider routes (`embed`, `complete`, `health`) refuse an
+/// `openai-compatible` configuration with a typed problem and send nothing,
+/// whatever the deployment switch, placement, probe or budget would say:
+/// tenant text never reaches an inference endpoint unmetered.
+#[tokio::test]
+async fn generic_provider_routes_never_reach_an_inference_endpoint() {
+    let Some(url) = db_url("generic_routes") else {
+        return;
+    };
+    let h = harness(url, false).await;
+    let stub = start_stub().await;
+    // A shared pool that does not list this tenant.
+    let uncovered = "{mode: shared, tenants: [ir-other-tenant], processing: {location: eu}}";
+    apply_config(&h, &placed_yaml(&stub.base, uncovered)).await;
+    for enabled in [false, true] {
+        h.state.inference.set_enabled(enabled);
+        for (method, uri, token, body) in [
+            (
+                "POST",
+                "/v1/providers/lens/embed",
+                READER,
+                Some(json!({"inputs": ["confidential tenant text"]})),
+            ),
+            (
+                "POST",
+                "/v1/providers/lens/embed",
+                READER,
+                Some(json!({"inputs": ["confidential tenant text"], "model": EMBED_MODEL})),
+            ),
+            (
+                "POST",
+                "/v1/providers/lens/complete",
+                READER,
+                Some(json!({"prompt": "confidential tenant text", "model": EMBED_MODEL})),
+            ),
+            ("GET", "/v1/providers/lens/health", READER, None),
+            ("GET", "/v1/providers/lens/health", MGMT, None),
+        ] {
+            let (status, body) = call(&h.router, method, uri, token, body).await;
+            assert_eq!(status, 409, "{enabled} {method} {uri}: {body}");
+            assert!(
+                body["type"]
+                    .as_str()
+                    .is_some_and(|t| t.ends_with("/inference-not-qualified")),
+                "{uri}: {body}"
+            );
+            assert!(refused_for(&body, "governed inference routes"), "{body}");
+        }
+    }
+    assert_eq!(stub.calls().all(), 0, "no outbound call of any kind");
+    for table in ["token_budget_reservations", "inference_attempts"] {
+        assert_eq!(
+            scalar_i64(
+                &h,
+                &format!("SELECT count(*) FROM {table} WHERE tenant_id = $1")
+            )
+            .await,
+            0,
+            "{table}: nothing was metered because nothing was sent"
+        );
+    }
+}
+
+/// I2: the daily cap is required of an inference configuration at apply,
+/// and a stored configuration without one (written before the rule) is
+/// neither probed nor served: zero outbound calls.
+#[tokio::test]
+async fn an_inference_configuration_without_a_daily_cap_sends_nothing() {
+    let Some(url) = db_url("daily_cap_required") else {
+        return;
+    };
+    let h = harness(url, true).await;
+    let (stub, _) = enrolled(&h, None).await;
+    let capped = config_yaml(&stub.base, 1_000_000, Some(50_000));
+    let uncapped = capped.replace(
+        "  budgets: {dailyTotalTokens: 1000000, shadowDailyTokens: 50000}\n",
+        "",
+    );
+    assert_ne!(capped, uncapped);
+    // A stored uncapped text (as if applied before the rule) with a passing
+    // probe recorded after it: still nothing is probed, built or served.
+    let pool = h.state.pg_pool().unwrap();
+    sqlx::query(
+        "UPDATE provider_configs SET yaml = $3, text_changed_at = now()
+          WHERE tenant_id = $1 AND name = $2",
+    )
+    .bind(&h.tenant)
+    .bind("lens")
+    .bind(&uncapped)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO inference_probes
+             (tenant_id, probe_id, provider_config, config_hash, endpoint_fingerprint,
+              passed, checks, probed_by, probed_at)
+         VALUES ($1, 'forged-probe', 'lens', $2, 'fp', true, '[]'::jsonb, 'test',
+                 now() + interval '1 second')",
+    )
+    .bind(&h.tenant)
+    .bind(crate::state::request_hash(uncapped.as_bytes()))
+    .execute(pool)
+    .await
+    .unwrap();
+    let before = stub.calls().all();
+    let (status, body) = probe(&h).await;
+    assert_eq!(status, 409, "{body}");
+    let (status, body) = search(&h, "orchid nebula").await;
+    assert_eq!(status, 503, "{body}");
+    assert!(refused_for(&body, "state=unconfigured"), "{body}");
+    assert_eq!(
+        stub.calls().all(),
+        before,
+        "an uncapped configuration sends nothing"
+    );
+    // And such a text can no longer be applied.
+    let (status, body) = apply_rest(&h, &uncapped).await;
+    assert_eq!(status, 400, "{body}");
+    assert!(refused_for(&body, "dailyTotalTokens"), "{body}");
+}
+
+/// IR-1: a probe is valid only after the configuration text's latest change.
+/// Re-applying identical text keeps it; a change and a revert to the earlier
+/// text expire it, and the stages refuse with zero calls until a new probe.
+#[tokio::test]
+async fn reverting_a_configuration_needs_a_fresh_probe() {
+    let Some(url) = db_url("probe_revert") else {
+        return;
+    };
+    let h = harness(url, true).await;
+    let (stub, _) = enrolled(&h, None).await;
+    let a = config_yaml(&stub.base, 1_000_000, Some(50_000));
+    let b = config_yaml(&stub.base, 2_000_000, Some(50_000));
+    apply_config(&h, &a).await;
+    assert_eq!(
+        describe_stage_reasons(&h).await,
+        vec![json!(["ready", null]), json!(["ready", null])],
+        "identical text is not drift"
+    );
+    apply_config(&h, &b).await;
+    apply_config(&h, &a).await;
+    assert_eq!(
+        describe_stage_reasons(&h).await,
+        vec![
+            json!(["probe_failed", "no_current_probe"]),
+            json!(["probe_failed", "no_current_probe"])
+        ],
+        "a revert does not revive the earlier probe"
+    );
+    let before = stub.calls().all();
+    let (status, body) = search(&h, "orchid nebula").await;
+    assert_eq!(status, 503, "{body}");
+    assert!(refused_for(&body, "state=probe_failed"), "{body}");
+    assert_eq!(stub.calls().all(), before);
+    let (status, body) = probe(&h).await;
+    assert_eq!((status, &body["passed"]), (200, &json!(true)), "{body}");
+    let (status, body) = search(&h, "orchid nebula").await;
+    assert_eq!(status, 200, "{body}");
+}

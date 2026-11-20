@@ -630,14 +630,15 @@ pub async fn handle(service: Arc<McpService>, req: axum::extract::Request) -> Re
     let (parts, body) = req.into_parts();
     let headers = parts.headers;
 
-    if let Some(origin) = header_str(&headers, "origin") {
-        if !state
-            .mcp
-            .settings
-            .allowed_origins
-            .iter()
-            .any(|o| o == origin)
-        {
+    // Every Origin value must be readable and allowed: an unreadable value
+    // is present, not absent, and a second header is checked like the first.
+    let mut origins = headers.get_all(header::ORIGIN).iter().peekable();
+    if origins.peek().is_some() {
+        let allowed = &state.mcp.settings.allowed_origins;
+        if !origins.all(|v| {
+            v.to_str()
+                .is_ok_and(|origin| allowed.iter().any(|o| o == origin))
+        }) {
             count(&state, "(http)", "origin-refused");
             return rpc_error(
                 StatusCode::FORBIDDEN,

@@ -238,6 +238,14 @@ pub(crate) fn validate(spec: &ProviderSpec) -> std::result::Result<(), String> {
     if spec.models.embed.is_empty() && spec.models.rerank.is_empty() {
         return Err("openai-compatible requires models.embed or models.rerank".into());
     }
+    // Every inference attempt reserves against this cap; without it the work
+    // would run unmetered (ClearView I2).
+    if spec.budgets.daily_total_tokens.is_none() {
+        return Err(
+            "openai-compatible requires budgets.dailyTotalTokens: the tenant budget that pays for its inference"
+                .into(),
+        );
+    }
     let valid_name =
         |m: &String| !m.is_empty() && m.len() <= 200 && !m.chars().any(char::is_whitespace);
     if !spec
@@ -661,24 +669,25 @@ impl InferenceEndpoint for OpenAiCompatibleEndpoint {
     }
 }
 
-/// The `ModelProvider` face of an `openai-compatible` configuration: the
-/// providers API's embed and health operations. Completion is not served by
-/// this kind.
-pub struct OpenAiCompatibleProvider {
-    endpoint: OpenAiCompatibleEndpoint,
-    dimensions: usize,
-}
+/// The `ModelProvider` face of an `openai-compatible` configuration.
+///
+/// An inference endpoint is reachable only through the governed inference
+/// path (the deployment switch, SC2 placement, a current probe and the daily
+/// cap; `munarium-server`'s `inference` module). The generic provider
+/// operations therefore send nothing for this kind: complete, embed and
+/// health all refuse without any network call. The server refuses them
+/// first with a typed problem; this is the second line.
+pub struct OpenAiCompatibleProvider;
+
+/// The refusal for a generic provider operation on this kind.
+pub const GOVERNED_ONLY: &str = "an openai-compatible configuration is an inference endpoint, reachable only through the governed inference routes (POST /v1/providers/{name}/inference-probe and collection inference bindings)";
 
 impl OpenAiCompatibleProvider {
     pub fn new(spec: &ProviderSpec) -> Result<Self> {
-        Ok(Self {
-            endpoint: OpenAiCompatibleEndpoint::new(spec)?,
-            dimensions: spec
-                .inference
-                .as_ref()
-                .and_then(|p| p.embed_dimensions)
-                .unwrap_or(0),
-        })
+        // Validate exactly as the governed client does, so a configuration
+        // either side accepts is one both accept.
+        OpenAiCompatibleEndpoint::new(spec)?;
+        Ok(Self)
     }
 }
 
@@ -689,45 +698,15 @@ impl ModelProvider for OpenAiCompatibleProvider {
     }
 
     async fn complete(&self, _req: CompletionRequest) -> Result<CompletionResponse> {
-        Err(KernelError::InvalidInput(
-            "an openai-compatible configuration serves embed and rerank only".into(),
-        ))
+        Err(KernelError::InvalidInput(GOVERNED_ONLY.into()))
     }
 
-    async fn embed(&self, req: EmbeddingRequest) -> Result<EmbeddingResponse> {
-        let hash = request_hash(
-            &json!({"embed": self.endpoint.fingerprint(), "model": req.model, "input": req.inputs}),
-        );
-        let reply = self
-            .endpoint
-            .embed(EmbedCall {
-                model: &req.model,
-                inputs: &req.inputs,
-                dimensions: self.dimensions,
-                deadline: Instant::now() + PROVIDER_REQUEST_TIMEOUT,
-            })
-            .await
-            .map_err(|f| KernelError::Provider(format!("inference endpoint: {f}")))?;
-        Ok(EmbeddingResponse {
-            vectors: reply.vectors,
-            dimensions: self.dimensions,
-            request_hash: hash,
-        })
+    async fn embed(&self, _req: EmbeddingRequest) -> Result<EmbeddingResponse> {
+        Err(KernelError::InvalidInput(GOVERNED_ONLY.into()))
     }
 
     async fn health(&self) -> Result<ProviderHealth> {
-        let outcome = self
-            .endpoint
-            .models(Instant::now() + PROVIDER_CONNECT_TIMEOUT)
-            .await;
-        Ok(ProviderHealth {
-            healthy: outcome.is_ok(),
-            endpoint_fingerprint: self.endpoint.fingerprint(),
-            detail: match outcome {
-                Ok(models) => format!("GET /v1/models -> {} model(s)", models.len()),
-                Err(f) => format!("GET /v1/models -> {f}"),
-            },
-        })
+        Err(KernelError::InvalidInput(GOVERNED_ONLY.into()))
     }
 }
 
@@ -854,6 +833,7 @@ spec:
   endpoint: http://lens.invalid/v1
   models:
     rerank: [r]
+  budgets: {{dailyTotalTokens: 100000}}
   inference:
     maxBatch: 8
 {placement}"
@@ -898,5 +878,86 @@ spec:
         ] {
             assert!(doc(bad).is_err(), "{bad}");
         }
+    }
+
+    const LENS_YAML: &str = "apiVersion: munarium.ioka.io/v1
+kind: ProviderConfig
+metadata: {name: lens}
+spec:
+  provider: openai-compatible
+  endpoint: ENDPOINT
+  models:
+    embed: [e]
+  inference: {embedDimensions: 4}
+  budgets: {dailyTotalTokens: 1000}
+";
+
+    /// Finding: an inference configuration without a daily cap would run
+    /// every attempt as Unlimited. Applying one is refused.
+    #[test]
+    fn the_daily_total_cap_is_required() {
+        let yaml = LENS_YAML.replace("ENDPOINT", "http://lens.invalid/v1");
+        assert!(crate::parse_provider_config(&yaml).is_ok());
+        let uncapped = yaml.replace(
+            "  budgets: {dailyTotalTokens: 1000}
+",
+            "",
+        );
+        let err = crate::parse_provider_config(&uncapped).unwrap_err();
+        assert!(err.contains("dailyTotalTokens"), "{err}");
+        let tier_only = yaml.replace(
+            "budgets: {dailyTotalTokens: 1000}",
+            "budgets: {rpm: 10, dailyTokens: {fast: 10}}",
+        );
+        assert!(crate::parse_provider_config(&tier_only).is_err());
+    }
+
+    /// Finding: the generic provider operations must never reach an
+    /// inference endpoint. Embed, health and complete refuse with zero
+    /// connections to a listening endpoint.
+    #[tokio::test]
+    async fn generic_operations_send_nothing() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let accepted = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = accepted.clone();
+        let server = tokio::spawn(async move {
+            while let Ok((_socket, _)) = listener.accept().await {
+                counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        });
+        let yaml = LENS_YAML.replace("ENDPOINT", &format!("http://{addr}/v1"));
+        let doc = crate::parse_provider_config(&yaml).unwrap();
+        let provider = crate::build_provider(&doc).unwrap();
+        let embed = provider
+            .embed(EmbeddingRequest {
+                model: "e".into(),
+                inputs: vec!["tenant text".into()],
+            })
+            .await;
+        assert!(
+            matches!(&embed, Err(KernelError::InvalidInput(m)) if m == GOVERNED_ONLY),
+            "{embed:?}"
+        );
+        let health = provider.health().await;
+        assert!(health.is_err(), "health must not probe the endpoint");
+        let complete = provider
+            .complete(CompletionRequest {
+                model: "e".into(),
+                system: None,
+                prompt: "p".into(),
+                max_tokens: 1,
+                temperature: None,
+                tools: None,
+            })
+            .await;
+        assert!(complete.is_err());
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(
+            accepted.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "no connection to the inference endpoint"
+        );
+        server.abort();
     }
 }

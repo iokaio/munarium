@@ -92,7 +92,10 @@ impl ProviderRegistry {
         if let Some(pool) = state.pg_pool() {
             sqlx::query(
                 "INSERT INTO provider_configs (tenant_id, name, yaml) VALUES ($1, $2, $3)
-                 ON CONFLICT (tenant_id, name) DO UPDATE SET yaml = EXCLUDED.yaml",
+                 ON CONFLICT (tenant_id, name) DO UPDATE SET yaml = EXCLUDED.yaml,
+                     text_changed_at = CASE WHEN provider_configs.yaml = EXCLUDED.yaml
+                                            THEN provider_configs.text_changed_at
+                                            ELSE now() END",
             )
             .bind(tenant)
             .bind(&name)
@@ -398,6 +401,7 @@ async fn complete_guarded(
         .providers
         .resolve(state, tenant, name, req.provider.as_deref())
         .await?;
+    crate::inference::refuse_ungoverned(&entry.doc)?;
     // Bind managed-probe policy to the exact resolved entry that will dispatch,
     // even if a configuration was replaced after the diagnostics inventory read.
     if require_daily_total && entry.doc.spec.budgets.daily_total_tokens.is_none() {
@@ -620,6 +624,9 @@ pub async fn op_embed(
         .providers
         .resolve(state, tenant, name, req.provider.as_deref())
         .await?;
+    // Before the cache too: an inference endpoint's vectors are never served
+    // or produced here.
+    crate::inference::refuse_ungoverned(&entry.doc)?;
     if let Some(version_id) = req.version_id.as_deref() {
         store.head(version_id).await?;
     }
@@ -829,6 +836,7 @@ pub async fn op_provider_health(
     name: &str,
 ) -> Result<dto::ProviderHealthResponse> {
     let entry = state.providers.get(state, tenant, name).await?;
+    crate::inference::refuse_ungoverned(&entry.doc)?;
     let health = entry.provider.health().await?;
     Ok(dto::ProviderHealthResponse {
         healthy: health.healthy,

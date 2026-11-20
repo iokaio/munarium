@@ -60,6 +60,22 @@ fn not_qualified(detail: impl std::fmt::Display) -> KernelError {
     KernelError::InvalidInput(format!("{NOT_QUALIFIED_PREFIX}{detail}"))
 }
 
+/// The generic provider routes (`/v1/providers/{name}/complete`, `/embed`,
+/// `/health` and their `ProviderService` twins) refuse an `openai-compatible`
+/// configuration before any network call: an inference endpoint is reachable
+/// only through this module, behind the deployment switch, the SC2 placement
+/// check, a current probe and the daily cap. `Ok` for every other kind,
+/// which keeps its v1.4 behavior exactly.
+pub fn refuse_ungoverned(doc: &ProviderConfigDoc) -> Result<()> {
+    if doc.spec.provider == openai_compatible::KIND {
+        return Err(not_qualified(format!(
+            "provider configuration '{}' is an openai-compatible inference endpoint; it is reachable only through the governed inference routes (POST /v1/providers/{{name}}/inference-probe and collection inference bindings), never the generic provider routes",
+            doc.metadata.name
+        )));
+    }
+    Ok(())
+}
+
 /// Defaults for a binding.
 const DEFAULT_TIMEOUT_MS: u64 = 5_000;
 const DEFAULT_MAX_CANDIDATES: u64 = 20;
@@ -223,6 +239,14 @@ impl InferenceRuntime {
         if let Err(reason) = placement_check(tenant, declared_placement(&config), required) {
             return Ok(Resolution::failed(FailureKind::Unconfigured, reason));
         }
+        // Defense in depth behind config validation: without the daily cap
+        // every attempt would reserve as Unlimited, so nothing is sent.
+        if config.doc.spec.budgets.daily_total_tokens.is_none() {
+            return Ok(Resolution::failed(
+                FailureKind::Unconfigured,
+                "no_daily_cap",
+            ));
+        }
         let client = match self.client(tenant, &config) {
             Ok(c) => c,
             Err(f) => return Ok(Resolution::failed(f.kind, f.reason)),
@@ -234,14 +258,19 @@ impl InferenceRuntime {
                 "deployment_disabled",
             ))
         } else {
+            // A probe counts only for the current text AND only when it
+            // started after that text was last changed: a revert to an
+            // earlier text is drift too and needs a fresh probe.
             let probe: Option<bool> = sqlx::query_scalar(
                 "SELECT passed FROM inference_probes
                   WHERE tenant_id = $1 AND provider_config = $2 AND config_hash = $3
+                    AND probed_at > $4
                   ORDER BY probed_at DESC, probe_id DESC LIMIT 1",
             )
             .bind(tenant)
             .bind(config_name)
             .bind(&config.hash)
+            .bind(config.text_changed_at)
             .fetch_optional(self.pool()?)
             .await
             .map_err(storage)?;
@@ -251,8 +280,9 @@ impl InferenceRuntime {
                     FailureKind::ProbeFailed,
                     "probe_failed",
                 )),
-                // Never probed, or the configuration text changed since:
-                // drift expires the probe.
+                // Never probed, or the configuration text changed since
+                // (including back to an earlier text): drift expires the
+                // probe.
                 None => Err(InferenceFailure::new(
                     FailureKind::ProbeFailed,
                     "no_current_probe",
@@ -299,11 +329,13 @@ fn storage(e: sqlx::Error) -> KernelError {
     KernelError::Storage(e.to_string())
 }
 
-/// A provider configuration row, parsed, with the hash of its text.
+/// A provider configuration row, parsed, with the hash of its text and when
+/// that text last changed (migration 0084).
 #[derive(Clone)]
 struct LoadedConfig {
     doc: ProviderConfigDoc,
     hash: String,
+    text_changed_at: chrono::DateTime<chrono::Utc>,
 }
 
 /// `None`: no such configuration. `Some(Err)`: present but unusable here.
@@ -312,14 +344,15 @@ async fn load_config(
     tenant: &str,
     name: &str,
 ) -> Result<Option<std::result::Result<LoadedConfig, &'static str>>> {
-    let yaml: Option<String> =
-        sqlx::query_scalar("SELECT yaml FROM provider_configs WHERE tenant_id = $1 AND name = $2")
-            .bind(tenant)
-            .bind(name)
-            .fetch_optional(pool)
-            .await
-            .map_err(storage)?;
-    Ok(yaml.map(|yaml| {
+    let row: Option<(String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        "SELECT yaml, text_changed_at FROM provider_configs WHERE tenant_id = $1 AND name = $2",
+    )
+    .bind(tenant)
+    .bind(name)
+    .fetch_optional(pool)
+    .await
+    .map_err(storage)?;
+    Ok(row.map(|(yaml, text_changed_at)| {
         let doc = parse_provider_config(&yaml).map_err(|_| "config_invalid")?;
         if doc.spec.provider != openai_compatible::KIND {
             return Err("config_kind");
@@ -327,6 +360,7 @@ async fn load_config(
         Ok(LoadedConfig {
             doc,
             hash: crate::state::request_hash(yaml.as_bytes()),
+            text_changed_at,
         })
     }))
 }
@@ -1213,13 +1247,25 @@ pub async fn op_probe(
                 id: name.to_string(),
             })
         }
-        Some(Err(_)) => {
+        Some(Err("config_kind")) => {
             return Err(KernelError::InvalidInput(
                 "the inference probe requires an openai-compatible configuration".into(),
             ))
         }
+        Some(Err(_)) => {
+            return Err(not_qualified(
+                "the stored configuration does not validate under the current rules (an openai-compatible configuration requires budgets.dailyTotalTokens); re-apply it",
+            ))
+        }
         Some(Ok(c)) => c,
     };
+    // Defense in depth behind config validation: the probe's own attempts
+    // reserve against the daily cap, so none is sent without one.
+    if config.doc.spec.budgets.daily_total_tokens.is_none() {
+        return Err(not_qualified(
+            "the configuration must set budgets.dailyTotalTokens before it is probed",
+        ));
+    }
     // SC2: a shared pool that does not list this tenant receives nothing,
     // not even the fixed synthetic probe inputs.
     if let Err(reason) = placement_check(tenant, declared_placement(&config), None) {
@@ -1228,6 +1274,12 @@ pub async fn op_probe(
     let client = runtime
         .client(tenant, &config)
         .map_err(|f| KernelError::InvalidInput(format!("configuration unusable: {f}")))?;
+    // The probe's time is when it STARTED, on the store clock: a text change
+    // while it runs leaves it older than that change, so it never counts.
+    let started: chrono::DateTime<chrono::Utc> = sqlx::query_scalar("SELECT now()")
+        .fetch_one(pool)
+        .await
+        .map_err(storage)?;
     let spec = &config.doc.spec;
     let profile = spec.inference.clone().unwrap_or_default();
     let dims = profile.embed_dimensions;
@@ -1315,8 +1367,9 @@ pub async fn op_probe(
     sqlx::query(
         "INSERT INTO inference_probes
              (tenant_id, probe_id, provider_config, config_hash, endpoint_fingerprint,
-              embed_model, rerank_model, embed_dimensions, passed, checks, probed_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+              embed_model, rerank_model, embed_dimensions, passed, checks, probed_by,
+              probed_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
     )
     .bind(tenant)
     .bind(&probe_id)
@@ -1329,6 +1382,7 @@ pub async fn op_probe(
     .bind(passed)
     .bind(crate::error::to_json(&checks, "probe checks")?)
     .bind(caller)
+    .bind(started)
     .execute(pool)
     .await
     .map_err(storage)?;

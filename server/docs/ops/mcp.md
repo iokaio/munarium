@@ -58,7 +58,7 @@ audit store (A6).
 | Setting | Default | Meaning |
 |---|---|---|
 | `MUNARIUM_MCP` | `disabled` | `enabled` registers `POST /mcp`. |
-| `MUNARIUM_MCP_ALLOWED_ORIGINS` | empty | Comma-separated exact origins (`https://agent.example.com`). A request carrying any other `Origin` gets 403. Server-side agents send no `Origin` and are unaffected. With the list empty, every request that carries an `Origin` is refused. |
+| `MUNARIUM_MCP_ALLOWED_ORIGINS` | empty | Comma-separated exact origins (`https://agent.example.com`). A request carrying any other `Origin` gets 403. Every `Origin` header is checked, and one whose value is not visible ASCII counts as present and refused, never as absent. Server-side agents send no `Origin` and are unaffected. With the list empty, every request that carries an `Origin` is refused. |
 | `MUNARIUM_MCP_MAX_CONCURRENCY` | `0` = half the REST ordinary pool, at least 1 | MCP requests in flight per replica. Each MCP request also takes one ordinary REST slot (R7) before its body is read, so MCP can never exceed the REST ceiling or touch the control reserve. **Provisional**: measure against your workload before relying on it. |
 | `MUNARIUM_MCP_PAID_TOOLS` | `disabled` | `enabled` lists the execution forms of the generating tools (`ask_collections`, `ask_session`). Generation still needs the policy below (A2). |
 | `MUNARIUM_MCP_EXECUTION` | `enabled` | `recovery-only` lists only the recovery form of the five keyed tools, so no new keyed work starts; the six bounded reads stay. Use it to drain. |
@@ -248,7 +248,10 @@ reserves nothing anywhere and is a tool error: `mcp-generation-not-authorized`
 (no opt-in, owner, allowance or common payer), `mcp-allowance-exhausted`, or
 `mcp-accounting-unavailable`. Each attempt is settled once from the provider's
 reported input and output counts; missing or unreliable usage keeps the full
-reservation against its original day. Usage above the bound is retained and
+reservation against its original day. An attempt the provider answered with
+an error, whose transport failed, or that a retry replaced may still have
+run: it is settled `uncertain` at its full bound when the model call ends, so
+no attempt is left `reserved` and nothing is charged twice. Usage above the bound is retained and
 suspends MCP generation on that provider configuration and model for the
 tenant until an operator clears it:
 
@@ -277,7 +280,9 @@ clock, at claim time, the expiry must be in the future, within
 `MUNARIUM_MCP_KEY_MAX_VALIDITY_SECS`, and at least
 `MUNARIUM_MCP_CALL_DEADLINE_SECS` away; otherwise `mcp-operation-key-invalid`
 and nothing runs. The key is bound to the tenant, uid and tool, so it survives
-token renewal.
+token renewal. The expiry is part of the key: presenting a known key id with a
+different `expires_at` is `mcp-operation-key-invalid`, never a receipt or a
+new claim.
 
 - **Execution**: the key plus the tool's arguments. The first admission claims
   the key and stores a digest of the canonical arguments; only it dispatches.
@@ -303,7 +308,14 @@ Read a recovered turn with `get_session` and its ordinal. A client must never
 extend a key or mint a new one automatically after an interruption.
 
 Keys are deleted a day after their expiry by a janitor that runs only while
-the endpoint is enabled. Audit rows and reservations are never deleted by it.
+the endpoint is enabled. In the same statement it records each deleted key's
+minimal identity (tenant, uid, tool, key id and expiry) in
+`mcp_operation_tombstones`, and an execution presenting a tombstoned key id is
+`mcp-operation-key-invalid` whatever expiry it now carries, so pruning never
+reopens a key. Tombstones have no server deadline: they are kept until an
+operator deletes them, and a key id whose tombstone is deleted could be
+claimed again, so delete only tombstones whose keys no client can still hold.
+Audit rows and reservations are never deleted by the janitor either.
 
 Known limits: the session or turn link is recorded immediately after the
 native effect commits, not in the same transaction, so a crash in that window

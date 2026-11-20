@@ -725,6 +725,50 @@ async fn a3_protocol_fixtures_for_both_revisions() {
     )
     .await;
     assert_eq!(r.status, 200);
+    // An unreadable Origin is present, not absent; and every Origin header
+    // is checked, not only the first.
+    let with_origins = |origins: Vec<axum::http::HeaderValue>| {
+        let mut b = axum::http::Request::builder()
+            .method("POST")
+            .uri("/mcp")
+            .header("authorization", format!("Bearer {t}"))
+            .header("mcp-protocol-version", MODERN)
+            .header("mcp-method", "server/discover");
+        for (k, v) in JSON_HEADERS {
+            b = b.header(*k, *v);
+        }
+        for o in origins {
+            b = b.header("origin", o);
+        }
+        b.body(axum::body::Body::from(body("server/discover", json!({}))))
+            .unwrap()
+    };
+    let allowed = axum::http::HeaderValue::from_static("https://agent.example");
+    for (origins, expected) in [
+        (
+            vec![axum::http::HeaderValue::from_bytes(b"https://\xe9vil.example").unwrap()],
+            403,
+        ),
+        (
+            vec![
+                allowed.clone(),
+                axum::http::HeaderValue::from_static("https://evil.example"),
+            ],
+            403,
+        ),
+        (
+            vec![
+                allowed.clone(),
+                axum::http::HeaderValue::from_bytes(b"https://agent.example\xff").unwrap(),
+            ],
+            403,
+        ),
+        (vec![allowed.clone(), allowed.clone()], 200),
+    ] {
+        let label = format!("{origins:?}");
+        let r = router.clone().oneshot(with_origins(origins)).await.unwrap();
+        assert_eq!(r.status().as_u16(), expected, "{label}");
+    }
 
     // Legacy: initialize, initialized, ping, list under the legacy header.
     let init = send_raw(
@@ -2309,6 +2353,96 @@ async fn a8_a9_allowances_under_retries_and_concurrency() {
         .contains(crate::mcp_generation::ACCOUNTING_PREFIX));
 }
 
+/// A8-T2: an MCP model call whose provider answers with an error, or whose
+/// transport fails, leaves no attempt `reserved`: each physical attempt is
+/// settled `uncertain` at its full bound (it may have run), charged once.
+#[tokio::test]
+async fn a8_failed_model_calls_settle_uncertain_at_the_full_bound() {
+    let Some(url) = database() else { return };
+    let f = fixture(url, enabled()).await;
+    let pool = f.a.pg_pool().unwrap().clone();
+    let t = &f.tenant;
+    let arrivals = Arc::new(AtomicUsize::new(0));
+    let seen = arrivals.clone();
+    let app = axum::Router::new().route(
+        "/api/chat",
+        axum::routing::post(move || {
+            let seen = seen.clone();
+            async move {
+                seen.fetch_add(1, Ordering::SeqCst);
+                axum::http::StatusCode::BAD_REQUEST
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let refusing = format!("http://{}", listener.local_addr().unwrap());
+    let _server = Abort(tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap()
+    }));
+    // A port with nothing listening: the transport fails.
+    let closed = {
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        format!("http://{}", l.local_addr().unwrap())
+    };
+    apply_named(&f.a, t, "refusing", &refusing).await;
+    apply_named(&f.a, t, "unreachable", &closed).await;
+    let store = f.a.store_for(t).await.unwrap();
+    for (config, invocation) in [("refusing", "inv-error"), ("unreachable", "inv-transport")] {
+        let c = Arc::new(ctx(
+            t,
+            invocation,
+            shared(100_000, &[("collection", invocation, 100_000)]),
+        ));
+        let result = crate::mcp_generation::scope(
+            c,
+            crate::providers_api::op_complete(
+                &f.a,
+                t,
+                store.as_ref(),
+                config,
+                munarium_api_types::CompleteRequest {
+                    model: None,
+                    provider: None,
+                    tier: Some("fast".into()),
+                    system: None,
+                    prompt: Some("orchid?".into()),
+                    max_tokens: Some(16),
+                    temperature: None,
+                    version_id: None,
+                },
+            ),
+        )
+        .await;
+        assert!(result.is_err(), "{config}: the provider call failed");
+        let rows: Vec<(String, Option<i64>, i64)> = sqlx::query_as(
+            "SELECT state, settled_units, bound_units FROM mcp_token_attempts
+              WHERE tenant_id = $1 AND invocation_id = $2",
+        )
+        .bind(t)
+        .bind(invocation)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(rows.len(), 1, "{config}: one physical attempt");
+        let (state, settled, bound) = &rows[0];
+        assert_eq!(state, "uncertain", "{config}: never left reserved");
+        assert_eq!(*settled, None, "{config}: the full bound stays charged");
+        assert_eq!(
+            day_used(&pool, t, "collection", invocation).await,
+            *bound,
+            "{config}: charged exactly once, at the bound"
+        );
+        let spend = crate::mcp_store::spend(&f.a, t, invocation).await.unwrap();
+        assert_eq!(spend["attempts"], 1, "{config}");
+        assert_eq!(spend["outstanding_reserved_tokens"], *bound, "{config}");
+    }
+    assert_eq!(
+        arrivals.load(Ordering::SeqCst),
+        1,
+        "the error reached the stub once"
+    );
+}
+
 /// A8-T1 end to end: a request allowance that covers the expansion stage but
 /// not the answer stage refuses the answer with zero further arrivals; a
 /// daily allowance is exhausted across requests while request capacity
@@ -2756,6 +2890,52 @@ async fn a5_t5_recovery_across_replicas() {
     assert_eq!(problem_slug(&res), "mcp-operation-key-invalid");
     let gone = tool(&rb, &tok, "open_session", json!({"operation_key": late})).await;
     assert_eq!(gone["structuredContent"]["status"], "not_found");
+    assert_eq!(f.sessions_of(uid).await, sessions);
+    // The same pruned key id with a NEW, valid expiry: the tombstone keeps
+    // it spent, so it is refused and nothing runs a second time.
+    let reopened = key(kp["id"].as_str().unwrap(), 3600);
+    let res = tool(
+        &rb,
+        &tok,
+        "open_session",
+        json!({"operation_key": reopened, "runbook": "handbook"}),
+    )
+    .await;
+    assert_eq!(problem_slug(&res), "mcp-operation-key-invalid", "{res}");
+    assert_eq!(
+        f.sessions_of(uid).await,
+        sessions,
+        "a pruned key never reopens"
+    );
+    let tombstones: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM mcp_operation_tombstones WHERE tenant_id = $1 AND key_id = $2",
+    )
+    .bind(&f.tenant)
+    .bind(kp["id"].as_str().unwrap())
+    .fetch_one(f.a.pg_pool().unwrap())
+    .await
+    .unwrap();
+    assert_eq!(tombstones, 1);
+    // A live key presented again with a different expiry is not the same
+    // key: refused, never a receipt or a second claim.
+    let kx = fresh_key();
+    tool(
+        &f.ra,
+        &tok,
+        "open_session",
+        json!({"operation_key": kx.clone(), "runbook": "handbook"}),
+    )
+    .await;
+    let sessions = f.sessions_of(uid).await;
+    let shifted = key(kx["id"].as_str().unwrap(), 7200);
+    let res = tool(
+        &rb,
+        &tok,
+        "open_session",
+        json!({"operation_key": shifted, "runbook": "handbook"}),
+    )
+    .await;
+    assert_eq!(problem_slug(&res), "mcp-operation-key-invalid", "{res}");
     assert_eq!(f.sessions_of(uid).await, sessions);
     let _ = f.beta.clone();
 }
