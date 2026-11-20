@@ -6,15 +6,17 @@ When a task advances, add a dated status, link the PR or implementation revision
 
 ## Next implementation steps
 
-- **Matrix.** Review the [PR checks](https://github.com/iokaio/munarium-matrix/pull/4/checks), resolve the dependency gate, and collect the installed-peer and standalone Server receipts before switching the consumer.
+- **Matrix.** Decide how to handle the three unmaintained-crate advisories still failing `cargo-deny`: chrono, humantime and unsafe-libyaml. Then collect the reviewers' per-path confirmations and the M1-T1 standalone-build and M1-T2 installed-peer receipts before switching the Server consumer.
 - **Lens.** The CPU scaffold has passed its tests. The next milestone is the [working image and Server probes](repository-handoffs.md#lens-d1-t2), which depend on the inference integration.
-- **Server.** Freeze the Phase 1 job and console fixtures and inventory the Phase 3 routes, permits and extractors.
+- **Server.** Continue R4 with publication fencing (job-row lock, artifact-attempt linkage and publication intents) and the v1.4 builder drain procedure. R5 waits for the C2 hub record. Classify the [Phase 3 inventory](phase3-inventory.md) for B3-T2 and start the B4 measurements.
+
+**19 November 2026 · branch `feat/clearview`.** Every change below is on `feat/clearview` in Munarium and Matrix. Both branches are pushed, and no pull request has been opened. Hosted CI runs only for pull requests and pushes to `main`, so it has not run on these commits. The results recorded here are local.
 
 ## Phase 0 · v1.4 baseline and shared decisions
 
 | ID | Task and primary design | Status and next evidence |
 |---|---|---|
-| P0-T1 | [Freeze the v1.4 baseline and maintain the contract worklist](README.md#p0-t1) | Partial. Released source and image are pinned for Matrix. Record the full release artifact and SDK pins, Phase 1 job and console fixtures, expected results, owners, rollback boundaries and next review dates. |
+| P0-T1 | [Freeze the v1.4 baseline and maintain the contract worklist](README.md#p0-t1) | Partial. Released source and image are pinned for Matrix. The Phase 1 [job and console fixtures](../../tests/fixtures/clearview-phase1/README.md) and their expected v1.4 results were frozen in `ff65ad5`, from sources byte-identical to v1.4.0. Still to record: full release artifact and SDK pins, owners, rollback boundaries and next review dates. |
 | Phase 0 | [Prepare qualification environments](README.md#qualification-environments) | Planned. Record named owners, dated availability, access, topology, cost authority and expiry before scheduling each environment. |
 
 <a id="phase-m-matrix-isolation"></a>
@@ -23,14 +25,21 @@ When a task advances, add a dated status, link the PR or implementation revision
 
 | ID | Task and primary design | Status and next evidence |
 |---|---|---|
-| M1 · Step 1 | [Inventory and reconcile the released Matrix surface](repository-handoffs.md#reconcile-the-existing-matrix-repository) | In review. The [transfer inventory](https://github.com/iokaio/munarium-matrix/blob/dfc1f00b273da91e362a15cfe9a95f4a3bca9a15/docs/clearview-transfer.md) pins Server v1.4.0, Server main and Matrix main and records the dispositions. Complete the per-path evidence and owning reviewers' confirmations. |
-| M1 · Step 2 | [Make the Matrix destination verifiable](repository-handoffs.md#transfer-order-and-rollback) | In review. [Matrix PR #4](https://github.com/iokaio/munarium-matrix/pull/4) adds the publisher profile, parity tests and operating instructions. See the dated validation below. |
+| M1 · Step 1 | [Inventory and reconcile the released Matrix surface](repository-handoffs.md#reconcile-the-existing-matrix-repository) | In review. The [transfer inventory](https://github.com/iokaio/munarium-matrix/blob/feat/clearview/docs/clearview-transfer.md#per-path-evidence) now has per-path evidence (Matrix `305ff47`). Each blob was rechecked against v1.4.0 and main, with the evidence collected and the receipt still required before removal. All owning reviewers' confirmations are pending. |
+| M1 · Step 2 | [Make the Matrix destination verifiable](repository-handoffs.md#transfer-order-and-rollback) | In review. [Matrix PR #4](https://github.com/iokaio/munarium-matrix/pull/4) adds the publisher profile, parity tests and operating instructions. Matrix `82cddf4` on `feat/clearview` clears the eight vulnerability and unsoundness advisories. Three unmaintained-crate advisories still fail `cargo-deny`. See the dated validation below. |
+| M1-T1 (partial) | [Reproduce the locked cut and reject bad vectors](repository-handoffs.md#m1-t1) | Contract half passed locally on 19 November 2026: two identical cuts of 17 files, lock verified, and a modified, a missing and an unlisted vector each rejected. The standalone Server build waits for step 3. |
 | M1 · Step 3 | [Switch the Server consumer](repository-handoffs.md#transfer-order-and-rollback) | Pending. Pin the reviewed export and qualify the isolated Server source, packages, container and v1.4 rollback under [M1-T1](repository-handoffs.md#m1-t1) and [M1-T2](repository-handoffs.md#m1-t2). |
 | M1 · Step 4 | [Remove the superseded Server sources](repository-handoffs.md#transfer-order-and-rollback) | Pending. Coordinate the CI gates and require the matching peer, CLI and reviewer evidence for each removal under [M1-T3](repository-handoffs.md#m1-t3). |
 
 **19 November 2026 · Matrix PR head `dfc1f00`.** Matrix's local gates passed with 372 workspace tests and 49 ignored. The 17 locked wire files reproduced and all eight examples validated. The ten CLI verbs matched a Server source build and the exact `mmctl` binary extracted from the published v1.4.0 image. Server passed 5 contract and 16 evidence-provider tests. Matrix passed 11 worker tests against the published Server image with disposable PostgreSQL.
 
 The PR was open at the status check. DCO, hygiene, contract and unit/store/conformance checks passed. The hosted `cargo-deny` step failed on advisories in the unchanged dependency lockfile. Both hosted interoperability jobs and the image-size job were still running. Standalone candidate packaging and Server-to-Matrix installed-peer qualification are pending. [PR and checks](https://github.com/iokaio/munarium-matrix/pull/4/checks) · [Dependency gate](https://github.com/iokaio/munarium-matrix/actions/runs/44658787326/job/136031541977)
+
+**19 November 2026 · PR head `dfc1f00` (later checks) and Matrix `feat/clearview` at `305ff47`.** On the PR head, both hosted interoperability jobs and the image-size job passed. Only `fmt · clippy · deny · boundaries` failed. Its `cargo-deny` step reported RUSTSEC-2026-0346, -0347, -0348, -0349, -0381, -0382, -0383 and -0386, plus chrono unmaintained (RUSTSEC-2026-0543).
+
+`82cddf4` is a lockfile-only update: rustls 0.23.46, rustls-webpki 0.103.17, webpki-roots and webpki-root-certs 1.0.12, and tokio 1.54.1. It clears all eight. The cargo entries in the notices file were updated to the new versions. The generator was not rerun in full, because the .NET and Java project paths it originally read no longer exist and a full run would have dropped those sections. `third_party_notices --check` passes. Locally on that commit, `cargo fmt --check`, clippy with all features and `-D warnings`, and `cargo test --workspace --all-features` (372 passed, 0 failed, 49 ignored) pass. Bans, licenses and sources pass, and so do `check_license`, `doclint`, `private_material_scan` and `git diff --check`.
+
+`cargo deny check advisories` still fails on chrono (RUSTSEC-2026-0543), humantime via object_store (RUSTSEC-2026-0542) and unsafe-libyaml via serde_yaml (RUSTSEC-2024-0449). These are unmaintained-crate advisories with no fixed release. The hosted run listed only chrono. Local cargo-deny 0.20.2 lists all three. No `deny.toml` exception was added. Replacing serde_yaml would follow Server #83 (serde-saphyr). Replacing chrono touches the whole workspace and its wire types. Either replacement, or a reasoned exception, needs a maintainer decision.
 
 <a id="phase-l-lens-delivery"></a>
 
@@ -53,17 +62,27 @@ The PR was open at the status check. DCO, hygiene, contract and unit/store/confo
 
 | Phase | ID | Task and primary design | Status and next evidence |
 |---|---|---|---|
-| 1 | R4 | [Fence worker claims and publication](airk-analysis.md#r4) | Planned. Prepare the v1.4 job fixtures, then qualify reclaim and recovery of a previously authorized write. |
-| 1 | R5 · C2 | [Classify build failures and preserve historical errors](airk-analysis.md#r5) | Planned. Resolve the [C2 wire contract](airk-analysis.md#c2) and verify exhausted-attempt recovery and historical serialization. |
+| 1 | R4 | [Fence worker claims and publication](airk-analysis.md#r4) | In progress. The first slice (`3c0d7c7`) captures the claim's generation with `RETURNING` in the claiming transaction. It requires that generation for builder heartbeat and completion, and fails expired final claims on each poll, releasing their target. PostgreSQL tests cover same-name reclaim, two racing cleaners, late writes, a single replacement enqueue and cleanup racing a renewal. A mutation that removes the generation check fails them. Not yet done: publication fencing (job-row lock, attempt linkage, publication intents), the paused-worker R4-T1 cases and the v1.4 builder drain and rollback procedure. |
+| 1 | R5 · C2 | [Classify build failures and preserve historical errors](airk-analysis.md#r5) | Planned. The fixtures record historical storage-text and v1.4 free-text failures with their exact v1.4 DTOs. R4 cleanup writes a safe message and stores no `error_code`. Resolve the [C2 wire contract](airk-analysis.md#c2) before adding the code. |
 | 2 | R1 | [Disclose search execution on request](airk-analysis.md#r1) | Planned. Record shared response semantics and qualify legacy and opted-in REST and gRPC. |
 | 2 | R2 · C1 | [Report authorized multi-collection outcomes](airk-analysis.md#r2) | Planned. Resolve [C1 partial-read semantics](airk-analysis.md#c1) and verify required evidence gaps and withheld claims. |
 | 2 | R11 | [Provide typed retry and recovery guidance](airk-analysis.md#r11) | Planned. Exercise uncertain outcomes and authorized status recovery. |
-| 3 | R7 · B3 | [Reserve admission capacity for authenticated control](airk-analysis.md#r7) | Planned. Inventory routes and permits, then qualify the [B3 hard ceiling and reserve](airk-analysis.md#b3) under saturation. |
-| 3 | R3 · B4 | [Contain PDF text extraction in a child process](airk-analysis.md#r3) | Planned. Inventory extractors, then measure and pin the [B4 resource limits](airk-analysis.md#b4). |
+| 3 | R7 · B3 | [Reserve admission capacity for authenticated control](airk-analysis.md#r7) | Ready to classify. The [Phase 3 inventory](phase3-inventory.md) (`ed372ef`) lists all 168 registered operations with their admission pool and handler authorization, cross-checked against the 139 OpenAPI operations, and lists candidate control and heavy routes. Next: B3-T2 classification, then qualify the [B3 hard ceiling and reserve](airk-analysis.md#b3) under saturation. |
+| 3 | R3 · B4 | [Contain PDF text extraction in a child process](airk-analysis.md#r3) | Ready to measure. The [inventory](phase3-inventory.md#pdf-and-document-extractors) records `extract@1[docx@1,pdf-text@1]`, the in-process `spawn_blocking` scheduling, the escalation rule and the four call sites. Next: measure and pin the [B4 resource limits](airk-analysis.md#b4). |
 | 4 | R6 | [Cancel running builds cooperatively](airk-analysis.md#r6) | Planned. Depends on R4. Exercise cancellation and recovery after worker death. |
 | 4 | R8 · B1 | [Claim build jobs fairly across tenants](airk-analysis.md#r8) | Planned. Depends on R4. Verify [B1 per-tenant turns](airk-analysis.md#b1) and preserve the v1.4 queue default. |
 | 4 | R9 · B2 | [Record fenced progress and a transactional event ring](airk-analysis.md#r9) | Planned. Depends on R4. Measure and pin [B2 per-tenant event retention](airk-analysis.md#b2). |
 | 4 | R12 | [Validate identifiers at new boundaries](airk-analysis.md#r12) | Planned. Verify that malformed IDs are rejected before work and historical IDs still resolve. |
+
+**19 November 2026 · Munarium `feat/clearview` at `3c0d7c7`.** These checks were run locally from `server/`:
+
+- `python tools/gate_catalog.py runner.regression catalog.regression catalog.equivalence format` exited 0 (23 and 16 tests passed, inventory preserved, guidance identical).
+- `cargo fmt --all --check` and clippy with `-D warnings` on `munarium-server` and `munarium-store-pg` passed.
+- The `munarium-server` binary unit tests passed: 277 passed, 8 ignored.
+- The full `munarium-store-pg` suite passed against a disposable pgvector container (the pinned CI image, loopback only). The job tests were repeated eight times, plus once under a non-UTC database zone.
+- `docs_coverage`, `docs_linkcheck`, `check_license`, `check_compatibility` and `git diff --check` passed.
+
+`private_material_scan` reports 351 pre-existing findings. 350 are in the ignored local `server/scratch/` directory, and one is the tracked raster `images/airk-vs-munarium-server.png` from `8896279`, which has no `.svg` or `.mmd` source beside it. None of them come from this work. The full workspace PostgreSQL tier, cluster and enterprise tiers were not run.
 
 ## Phase 5 · Governed MCP endpoint
 
@@ -112,11 +131,11 @@ The PR was open at the status check. DCO, hygiene, contract and unit/store/confo
 | U2 | [Use a consistent page header](airk-analysis.md#95-recommendations) | Planned. Roll it out with the navigation work. |
 | U3 | [Surface conditions that need attention](airk-analysis.md#95-recommendations) | Planned. Add counts backed by observed state. |
 | U4 | [Review and confirm destructive actions](airk-analysis.md#95-recommendations) | Planned. Start with token revocation. |
-| U5 | [Show failed reads explicitly](airk-analysis.md#95-recommendations) | Planned. Use Phase 1 console fixtures to distinguish a failed read from empty results. |
+| U5 | [Show failed reads explicitly](airk-analysis.md#95-recommendations) | Planned. The console fixture records the three overview reads that render a failure as 0, plus an empty-success control. No automated test covers them yet, because the overview has no seam for a failing read. U5 adds one. |
 | U6 | [Display distinct operational facts separately](airk-analysis.md#95-recommendations) | Planned. Apply as affected pages change. |
 | U7 | [Offer the complete result and equivalent command](airk-analysis.md#95-recommendations) | Planned. Qualify both the summarized and complete views. |
 | U8 | [Give each task its own view and bound lists](airk-analysis.md#95-recommendations) | Planned. Start with token issuance and pagination. |
-| U9 | [Render invisible and direction-changing characters visibly](airk-analysis.md#95-recommendations) | Planned. Exercise untrusted text using Phase 1 console fixtures. |
+| U9 | [Render invisible and direction-changing characters visibly](airk-analysis.md#95-recommendations) | Planned. The console fixture pins v1.4 `charts::esc` output for nine untrusted-text cases and three negative controls. U9 changes the `visible` cases and must keep the controls. |
 | U10 · LOGIN1 | [Ship and qualify revocable console sessions](airk-analysis.md#login1) | Planned. Define the shared store, expiry and revocation, then qualify mixed-replica cutover and rollback. |
 | U11 | [Explain page use and link to documentation](airk-analysis.md#95-recommendations) | Planned. Apply as affected pages change. |
 | U12 | [Show job progress from recorded events](airk-analysis.md#95-recommendations) | Planned. Depends on R9 progress and history. |
