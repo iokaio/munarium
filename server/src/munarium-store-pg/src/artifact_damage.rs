@@ -18,6 +18,14 @@
 //!   fetched after the attempt was authorized. A mismatch during verification
 //!   invalidates the attempt. Clearance, its evidence and the generation
 //!   change are one transaction.
+//! - **Single-replica assurance (amendment, 20 November 2026).** A ledger
+//!   built with [`ArtifactDamageLedger::with_single_replica`] also accepts the
+//!   *same* verifier identity as confirmation, but only from a different run
+//!   and a different fetch whose fetch time is at least the configured
+//!   interval after the first, for a block and for a clearance alike. Such a
+//!   block or clearance is recorded as [`Assurance::SingleReplica`]; every
+//!   other one as [`Assurance::Independent`]. Without that call the rules
+//!   above are unchanged.
 //! - **Release fence.** A reader records the pin generation at admission and
 //!   releases its result only if, under a share lock, the pin is still at that
 //!   generation and unblocked. A block that commits first invalidates every
@@ -51,6 +59,16 @@ pub const MANIFEST_OBJECT: &str = "manifest.json";
 pub const DEFAULT_HISTORY_CAP: i64 = 1024;
 /// How far apart two mismatches' fetch times may be and still confirm.
 pub const DEFAULT_CONFIRM_WINDOW_SECS: i64 = 24 * 60 * 60;
+
+/// The default spacing between the two observations a single-replica
+/// deployment needs. See [`ArtifactDamageLedger::with_single_replica`].
+pub const DEFAULT_SINGLE_REPLICA_INTERVAL_SECS: i64 = 5 * 60;
+/// The shortest single-replica spacing accepted. Migration 0082 enforces the
+/// same floor on every `single_replica` incident row.
+pub const MIN_SINGLE_REPLICA_INTERVAL_SECS: i64 = 60;
+/// The longest single-replica spacing accepted: well inside the 24-hour
+/// confirmation window, so a spaced confirmation can always still count.
+pub const MAX_SINGLE_REPLICA_INTERVAL_SECS: i64 = 60 * 60;
 
 const MAX_ID: usize = 128;
 const MAX_KEY: usize = 512;
@@ -116,6 +134,27 @@ pub struct AuthoritativeObservation {
     pub detail: Option<String>,
 }
 
+/// Which independence rule produced a block or a clearance. Recorded on the
+/// incident (`block_assurance`, `clear_assurance`) so audits can tell them
+/// apart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Assurance {
+    /// Two different verifier identities: the default rule.
+    Independent,
+    /// One verifier identity in a deployment declared single-replica: two
+    /// distinct runs and direct fetches, spaced by the configured interval.
+    SingleReplica,
+}
+
+impl Assurance {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Independent => "independent",
+            Self::SingleReplica => "single_replica",
+        }
+    }
+}
+
 /// What this process is allowed to commit. `observe` mode records and honors
 /// blocks but commits neither a block nor a clearance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,6 +182,10 @@ pub enum Decision {
     },
     /// An independent confirmation exists, but this process may not block.
     BlockWithheld,
+    /// Single-replica mode: the same verifier observed again from a new run
+    /// and fetch, but sooner than the configured interval after its first
+    /// observation (or with a fetch time in the future). Counted once.
+    IntervalNotElapsed,
     /// The first fresh match for a repair attempt.
     RepairMatch,
     /// Two independent fresh matches: the block cleared.
@@ -167,6 +210,7 @@ impl Decision {
             Self::ReplayedFetch => "replayed_fetch",
             Self::Blocked { .. } => "blocked",
             Self::BlockWithheld => "block_withheld",
+            Self::IntervalNotElapsed => "interval_not_elapsed",
             Self::RepairMatch => "repair_match",
             Self::Cleared { .. } => "cleared",
             Self::ClearWithheld => "clear_withheld",
@@ -223,10 +267,14 @@ pub struct Incident {
     pub state: String,
     pub blocked_generation: i64,
     pub confirming_verifiers: [String; 2],
+    /// `independent` or `single_replica`.
+    pub block_assurance: String,
     pub cleared_generation: Option<i64>,
     pub clearing_attempt_id: Option<String>,
     pub clearing_workflow_id: Option<String>,
     pub clearing_verifiers: Option<[String; 2]>,
+    /// `independent` or `single_replica` once cleared.
+    pub clear_assurance: Option<String>,
 }
 
 /// A preauthorized repair attempt.
@@ -243,6 +291,9 @@ pub struct RepairAttempt {
     pub authorized_by: String,
     pub state: String,
     pub first_match_verifier_id: Option<String>,
+    /// When the first match's fetch started. A single-replica verifier waits
+    /// the configured interval after it before verifying again.
+    pub first_match_fetched_at: Option<Timestamp>,
 }
 
 fn bounded(label: &str, value: &str, max: usize) -> Result<()> {
@@ -305,6 +356,8 @@ pub struct ArtifactDamageLedger {
     tenant_id: String,
     history_cap: i64,
     confirm_window_secs: i64,
+    /// `Some(interval)` only in a deployment declared single-replica.
+    single_replica_interval_secs: Option<i64>,
 }
 
 struct PinRow {
@@ -320,7 +373,59 @@ impl ArtifactDamageLedger {
             tenant_id: tenant_id.into(),
             history_cap: DEFAULT_HISTORY_CAP,
             confirm_window_secs: DEFAULT_CONFIRM_WINDOW_SECS,
+            single_replica_interval_secs: None,
         }
+    }
+
+    /// Accept single-replica evidence (the 20 November 2026 amendment).
+    ///
+    /// Besides two different verifiers, a block or a clearance may then be
+    /// confirmed by the *same* verifier identity from a different run and a
+    /// different direct fetch, fetched at least `interval_secs` after the
+    /// first observation and not in the future. Such a decision is recorded
+    /// as [`Assurance::SingleReplica`]. Refuses an interval outside
+    /// [`MIN_SINGLE_REPLICA_INTERVAL_SECS`]..=[`MAX_SINGLE_REPLICA_INTERVAL_SECS`].
+    ///
+    /// Call this only for a deployment that has exactly one serving replica:
+    /// the caller checks the declared replica count.
+    pub fn with_single_replica(mut self, interval_secs: i64) -> Result<Self> {
+        check_single_replica_interval(interval_secs)?;
+        self.single_replica_interval_secs = Some(interval_secs);
+        Ok(self)
+    }
+
+    /// The single-replica interval, when this ledger accepts such evidence.
+    pub fn single_replica_interval_secs(&self) -> Option<i64> {
+        self.single_replica_interval_secs
+    }
+
+    /// Whether a same-verifier observation confirms under single-replica
+    /// assurance: `None` when it does, else the decision that refuses it.
+    /// `first_*` is the earlier observation: the block candidate or the
+    /// repair attempt's first match.
+    async fn single_replica_refusal(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        o: &AuthoritativeObservation,
+        first_run_id: &str,
+        first_fetched_at: DateTime<Utc>,
+    ) -> Result<Option<Decision>> {
+        let Some(interval) = self.single_replica_interval_secs else {
+            return Ok(Some(Decision::SameVerifier));
+        };
+        if first_run_id == o.verifier.run_id {
+            // The same run cannot be its own confirmation.
+            return Ok(Some(Decision::SameVerifier));
+        }
+        let now: DateTime<Utc> = sqlx::query_scalar("SELECT now()")
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(storage_err)?;
+        let spaced = (o.fetched_at - first_fetched_at).num_seconds() >= interval;
+        if o.fetched_at > now || !spaced {
+            return Ok(Some(Decision::IntervalNotElapsed));
+        }
+        Ok(None)
     }
 
     /// Override the history bound (tests and operator sizing).
@@ -763,9 +868,22 @@ impl ArtifactDamageLedger {
         if first.get::<String, _>("fetch_id") == o.fetch_id {
             return Ok(Decision::ReplayedFetch);
         }
-        if first.get::<String, _>("verifier_id") == o.verifier.verifier_id {
-            return Ok(Decision::SameVerifier);
-        }
+        let assurance = if first.get::<String, _>("verifier_id") == o.verifier.verifier_id {
+            if let Some(refused) = self
+                .single_replica_refusal(
+                    tx,
+                    o,
+                    &first.get::<String, _>("verifier_run_id"),
+                    first.get::<DateTime<Utc>, _>("fetched_at"),
+                )
+                .await?
+            {
+                return Ok(refused);
+            }
+            Assurance::SingleReplica
+        } else {
+            Assurance::Independent
+        };
         if !authority.may_block {
             return Ok(Decision::BlockWithheld);
         }
@@ -778,8 +896,9 @@ impl ArtifactDamageLedger {
                   expected_sha256, storage_generation, state, blocked_generation,
                   first_verifier_id, first_run_id, first_fetch_id, first_fetched_at,
                   first_observed_sha256, second_verifier_id, second_run_id, second_fetch_id,
-                  second_fetched_at, second_observed_sha256)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,'blocked',$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)",
+                  second_fetched_at, second_observed_sha256, block_assurance)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,'blocked',$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
+                     $19)",
         )
         .bind(&self.tenant_id)
         .bind(&incident_id)
@@ -799,6 +918,7 @@ impl ArtifactDamageLedger {
         .bind(&o.fetch_id)
         .bind(o.fetched_at)
         .bind(&observed)
+        .bind(assurance.as_str())
         .execute(&mut **tx)
         .await
         .map_err(storage_err)?;
@@ -928,9 +1048,23 @@ impl ArtifactDamageLedger {
         {
             return Ok(Decision::ReplayedFetch);
         }
-        if first_verifier == o.verifier.verifier_id {
-            return Ok(Decision::SameVerifier);
-        }
+        let assurance = if first_verifier == o.verifier.verifier_id {
+            let (Some(first_run), Some(first_fetched_at)) = (
+                a.get::<Option<String>, _>("first_match_run_id"),
+                a.get::<Option<DateTime<Utc>>, _>("first_match_fetched_at"),
+            ) else {
+                return Ok(Decision::SameVerifier);
+            };
+            if let Some(refused) = self
+                .single_replica_refusal(tx, o, &first_run, first_fetched_at)
+                .await?
+            {
+                return Ok(refused);
+            }
+            Assurance::SingleReplica
+        } else {
+            Assurance::Independent
+        };
         if a.get::<Option<String>, _>("first_match_storage_generation")
             .unwrap_or_default()
             != storage_generation
@@ -954,7 +1088,7 @@ impl ArtifactDamageLedger {
                     clear_first_observed_sha256 = $10,
                     clear_second_verifier_id = $11, clear_second_run_id = $12,
                     clear_second_fetch_id = $13, clear_second_fetched_at = $14,
-                    clear_second_observed_sha256 = $15
+                    clear_second_observed_sha256 = $15, clear_assurance = $16
               WHERE tenant_id = $1 AND incident_id = $2 AND state = 'blocked'",
         )
         .bind(&self.tenant_id)
@@ -972,17 +1106,22 @@ impl ArtifactDamageLedger {
         .bind(&o.fetch_id)
         .bind(o.fetched_at)
         .bind(&observed)
+        .bind(assurance.as_str())
         .execute(&mut **tx)
         .await
         .map_err(storage_err)?;
+        let finish_reason = match assurance {
+            Assurance::Independent => "two independent fresh matches",
+            Assurance::SingleReplica => "two spaced fresh matches from one replica",
+        };
         sqlx::query(
             "UPDATE artifact_repair_attempts
-                SET state = 'cleared', finished_at = now(),
-                    finish_reason = 'two independent fresh matches'
+                SET state = 'cleared', finished_at = now(), finish_reason = $3
               WHERE tenant_id = $1 AND attempt_id = $2",
         )
         .bind(&self.tenant_id)
         .bind(attempt_id)
+        .bind(finish_reason)
         .execute(&mut **tx)
         .await
         .map_err(storage_err)?;
@@ -1141,7 +1280,7 @@ impl ArtifactDamageLedger {
         let row = sqlx::query(
             "SELECT a.attempt_id, a.incident_id, a.index_version_id, a.artifact_id,
                     i.object_key, i.expected_sha256, a.workflow_id, a.authorized_by, a.state,
-                    a.first_match_verifier_id
+                    a.first_match_verifier_id, a.first_match_fetched_at
                FROM artifact_repair_attempts a
                JOIN artifact_integrity_incidents i
                  ON i.tenant_id = a.tenant_id AND i.incident_id = a.incident_id
@@ -1195,7 +1334,8 @@ impl ArtifactDamageLedger {
             "SELECT incident_id, index_version_id, artifact_id, object_key, expected_sha256,
                     state, blocked_generation, first_verifier_id, second_verifier_id,
                     cleared_generation, clearing_attempt_id, clearing_workflow_id,
-                    clear_first_verifier_id, clear_second_verifier_id
+                    clear_first_verifier_id, clear_second_verifier_id, block_assurance,
+                    clear_assurance
                FROM artifact_integrity_incidents WHERE tenant_id = $1
               ORDER BY blocked_at DESC, incident_id
               LIMIT 500",
@@ -1215,6 +1355,7 @@ impl ArtifactDamageLedger {
                 state: r.get("state"),
                 blocked_generation: r.get("blocked_generation"),
                 confirming_verifiers: [r.get("first_verifier_id"), r.get("second_verifier_id")],
+                block_assurance: r.get("block_assurance"),
                 cleared_generation: r.get("cleared_generation"),
                 clearing_attempt_id: r.get("clearing_attempt_id"),
                 clearing_workflow_id: r.get("clearing_workflow_id"),
@@ -1225,6 +1366,7 @@ impl ArtifactDamageLedger {
                     (Some(a), Some(b)) => Some([a, b]),
                     _ => None,
                 },
+                clear_assurance: r.get("clear_assurance"),
             })
             .collect())
     }
@@ -1265,7 +1407,7 @@ pub async fn verifying_attempts(pool: &PgPool) -> Result<Vec<(String, RepairAtte
     let rows = sqlx::query(
         "SELECT a.tenant_id, a.attempt_id, a.incident_id, a.index_version_id, a.artifact_id,
                 i.object_key, i.expected_sha256, a.workflow_id, a.authorized_by, a.state,
-                a.first_match_verifier_id
+                a.first_match_verifier_id, a.first_match_fetched_at
            FROM artifact_repair_attempts a
            JOIN artifact_integrity_incidents i
              ON i.tenant_id = a.tenant_id AND i.incident_id = a.incident_id
@@ -1282,6 +1424,69 @@ pub async fn verifying_attempts(pool: &PgPool) -> Result<Vec<(String, RepairAtte
         .collect())
 }
 
+/// Validate a single-replica interval.
+pub fn check_single_replica_interval(interval_secs: i64) -> Result<()> {
+    if !(MIN_SINGLE_REPLICA_INTERVAL_SECS..=MAX_SINGLE_REPLICA_INTERVAL_SECS)
+        .contains(&interval_secs)
+    {
+        return Err(KernelError::InvalidInput(format!(
+            "the single-replica interval must be {MIN_SINGLE_REPLICA_INTERVAL_SECS}..=\
+             {MAX_SINGLE_REPLICA_INTERVAL_SECS} seconds, got {interval_secs}"
+        )));
+    }
+    Ok(())
+}
+
+/// A block candidate a single-replica verifier should confirm by fetching
+/// again.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DueCandidate {
+    pub tenant_id: String,
+    pub index_version_id: String,
+    pub artifact_id: String,
+    /// The candidate's own fetch, so a verifier re-verifies it once.
+    pub fetch_id: String,
+}
+
+/// Unconfirmed candidates, across tenants, whose fetch is at least
+/// `interval_secs` old and still inside the confirmation window, on pins that
+/// are not blocked and still at the candidate's generation.
+/// Environment-scoped like [`verifying_attempts`]: a single-replica
+/// deployment's only replica re-verifies them to supply the spaced second
+/// observation.
+pub async fn single_replica_candidates_due(
+    pool: &PgPool,
+    interval_secs: i64,
+) -> Result<Vec<DueCandidate>> {
+    check_single_replica_interval(interval_secs)?;
+    let rows = sqlx::query(
+        "SELECT c.tenant_id, c.index_version_id, c.artifact_id, c.fetch_id
+           FROM artifact_integrity_candidates c
+           JOIN artifact_integrity_pins p
+             ON p.tenant_id = c.tenant_id AND p.index_version_id = c.index_version_id
+            AND p.artifact_id = c.artifact_id
+          WHERE p.state <> 'blocked' AND p.generation = c.pin_generation
+            AND c.fetched_at <= now() - make_interval(secs => $1)
+            AND c.fetched_at >= now() - make_interval(secs => $2)
+          ORDER BY c.fetched_at, c.tenant_id, c.fetch_id
+          LIMIT 500",
+    )
+    .bind(interval_secs as f64)
+    .bind(DEFAULT_CONFIRM_WINDOW_SECS as f64)
+    .fetch_all(pool)
+    .await
+    .map_err(storage_err)?;
+    Ok(rows
+        .iter()
+        .map(|r| DueCandidate {
+            tenant_id: r.get("tenant_id"),
+            index_version_id: r.get("index_version_id"),
+            artifact_id: r.get("artifact_id"),
+            fetch_id: r.get("fetch_id"),
+        })
+        .collect())
+}
+
 fn to_attempt(r: &sqlx::postgres::PgRow) -> RepairAttempt {
     RepairAttempt {
         attempt_id: r.get("attempt_id"),
@@ -1294,6 +1499,7 @@ fn to_attempt(r: &sqlx::postgres::PgRow) -> RepairAttempt {
         authorized_by: r.get("authorized_by"),
         state: r.get("state"),
         first_match_verifier_id: r.get("first_match_verifier_id"),
+        first_match_fetched_at: r.get("first_match_fetched_at"),
     }
 }
 

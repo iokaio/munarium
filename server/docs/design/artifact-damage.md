@@ -25,6 +25,8 @@ Two observations are **independent** only when all of the following hold:
 5. Both completed with a digest. A timeout or an unreadable object is *unavailable* and counts for nothing.
 6. For a block, their fetch times are within 24 hours of each other. For a clearance, both fetches started after the repair attempt was authorized.
 
+A deployment declared single-replica replaces criterion 1 with temporal and fetch independence from the same verifier. See [Single-replica assurance](#single-replica-assurance).
+
 **Authentication and authorization (proposal).** In this release a verifier is a Server replica running with the deployment's PostgreSQL credential in `observe` or `enforce` mode. It is authorized for every tenant and pin that replica serves, which is the same authority a replica already has over the catalog. Replicas share one database credential, so the database cannot tell replicas apart. Independence therefore depends on the deployment giving each replica a distinct, stable instance id. Kubernetes pod names satisfy this, as do the chart and compose defaults. An operator who assigns two replicas the same `MUNARIUM_INSTANCE_ID` makes them one verifier. A per-replica authenticated identity, such as the platform-v1 workload certificate, is the recorded hardening path. It needs the ART1 hub decision. See [Open questions](#open-questions).
 
 ### Storage pin
@@ -49,13 +51,35 @@ Migration `0060_artifact_damage.sql` adds five tenant-scoped tables. None stores
 |---|---|---|
 | `artifact_integrity_pins` | Artifact pin with any finding: integrity `generation`, `state` (`observed`, `blocked`, `cleared`) and the active incident | Catalogued artifacts (foreign key) |
 | `artifact_integrity_candidates` | First unconfirmed authoritative mismatch per pinned object, at the generation it was recorded | Components per artifact (the manifest limits) |
-| `artifact_integrity_incidents` | Committed block with its two confirming observations, and, when cleared, the two verifications, attempt and workflow identity | One per block. Blocks require two independent verifiers |
+| `artifact_integrity_incidents` | Committed block with its two confirming observations, and, when cleared, the two verifications, attempt and workflow identity. Migration `0082_artifact_damage_assurance.sql` adds `block_assurance` and `clear_assurance` | One per block. Blocks require two independent verifiers, or one declared single replica's two spaced runs |
 | `artifact_repair_attempts` | Preauthorized repair workflow scoped to one incident, with its first fresh match | One verifying attempt per incident |
 | `artifact_integrity_observations` | Every recorded observation and the ledger's decision on it | 1,024 per tenant |
 
 The observation history is bounded separately from the decision state. When the history is full, a new observation is not appended and existing entries are never evicted. The caller is told the history is full and logs that repair or review is required. Candidates, incidents and attempts carry their own evidence, so a full history can still block a newly confirmed pin, recover the evidence for that block and clear it. **No row means unknown integrity.** The absence of a finding is never reported as a clean audit.
 
 Each pin's `generation` starts at 0. It advances by one when a block commits and by one when a clearance commits, and at no other time. A candidate recorded at an earlier generation never confirms a block.
+
+### Single-replica assurance
+
+**Amendment, 20 November 2026.** This section records the maintainer decision of 20 November 2026 that single-replica deployments must be able to block and clear. It amends the independence rule recorded in hub ADR 0028 (artifact damage confirmation, fleet block and verified repair) for deployments that declare a single replica. The default rule above is unchanged.
+
+A deployment with one serving replica has one verifier identity, so the default rule can never block or clear there. An operator who declares the deployment single-replica (`MUNARIUM_ARTIFACT_DAMAGE_REPLICAS=single`) lets the ledger accept that verifier's own second observation in place of a second verifier, under all of these conditions:
+
+1. Both observations come from the same `verifier_id`, from **different runs** (`run_id`) and **different direct fetches** (`fetch_id`). A replayed fetch still counts once, and a run never confirms itself.
+2. The second fetch started at least the **single-replica interval** after the first (`MUNARIUM_ARTIFACT_DAMAGE_SINGLE_INTERVAL_SECS`, default 300 seconds, accepted range 60 to 3,600), and not in the future by the database clock. A second run inside the interval is recorded as `interval_not_elapsed` and counts for nothing. The first observation stays the reference, so waiting longer is the only way to confirm.
+3. Every other criterion holds: same pinned object at the current integrity generation, authoritative (L2) fetches, digests present, the 24-hour confirmation window for a block, and fetches after the repair authorization for a clearance. A fresh mismatch during verification still invalidates the attempt.
+
+Two observations from **different** verifier identities still confirm in a single-replica deployment, and are recorded as independent.
+
+**The interval.** The default of five minutes is chosen to be conservative rather than fast. It spans many readiness sweeps (15 seconds by default), so the two runs are separate verifier passes rather than a retry. It also outlasts the usual causes of a transient wrong read: an in-flight rewrite or republish of the object, object-store read-after-write or cache-propagation delay, and a short storage or network fault. A persistent mismatch five minutes apart is much less likely to be transient. The interval stays short against the 24-hour confirmation window, so a block lands within minutes of the first finding. The 60-second floor is also enforced by the schema on every `single_replica` row. The one-hour cap keeps a confirmation well inside the window.
+
+**How the replica supplies the second run.** A single replica isolates its copy once, so ordinary reads produce no second observation. In its readiness sweep it therefore re-verifies, once per candidate, every unconfirmed candidate whose first fetch is at least the interval old and still within the window. For a repair it verifies the attempt once, then once more after the interval. A default (`multi`) replica does neither.
+
+**Assurance is recorded.** Every incident records `block_assurance`, and once cleared `clear_assurance`: `independent` for two verifier identities and `single_replica` for one. The 0082 CHECKs accept a same-verifier block or clearance only when it is marked `single_replica` and its two runs and fetches differ and are at least 60 seconds apart. An `independent` row must still name two different verifiers. `artifact-damage list` shows both fields.
+
+**Refusal.** `single` is refused when the deployment declares more than one replica (`MUNARIUM_REPLICA_COUNT` above 1), and an unknown value or an interval outside the range is refused rather than falling back. In each case the Datastore infrastructure does not arm, as for an unknown damage mode. The replica count is the only observable signal. The per-process heartbeat rows are soft state and change identity on restart, so they are not used.
+
+**Residual risk.** Single-replica assurance is one replica's view. A systematically wrong local verifier, such as a bad build, a faulty storage client, a misconfigured store endpoint or a broken hashing path, sees the same wrong answer on both runs. It could therefore both block a healthy artifact and clear a damaged one. Temporal separation only protects against transient faults. An operator who declares `single` while actually running more replicas under one replica count also weakens the rule, because each replica then confirms alone. The recorded `single_replica` assurance lets an audit find every such decision. Where this risk matters, run a second replica with a distinct instance id: its observations confirm under the default rule and are recorded as `independent`.
 
 ## The state machine
 
@@ -65,12 +89,12 @@ stateDiagram-v2
     Healthy --> Isolated: local integrity failure
     Isolated --> Healthy: clean authoritative fetch (local damage)
     Isolated --> Candidate: authoritative mismatch
-    Candidate --> Candidate: same verifier, replayed fetch, timeout, other pin
-    Candidate --> Blocked: independent mismatch, same pinned object (generation +1)
+    Candidate --> Candidate: same verifier, replayed fetch, timeout, other pin, interval not elapsed
+    Candidate --> Blocked: independent mismatch, or spaced single-replica run, same pinned object (generation +1)
     Blocked --> Repairing: repair workflow preauthorized
     Repairing --> Repairing: one fresh match
     Repairing --> Blocked: fresh mismatch invalidates the attempt
-    Repairing --> Cleared: second independent fresh match (generation +1)
+    Repairing --> Cleared: second independent, or spaced single-replica, fresh match (generation +1)
     Cleared --> Candidate: fresh mismatch starts a new incident
 ```
 
@@ -129,6 +153,8 @@ An unknown value is a configuration error. The Datastore infrastructure then ref
 
 **Activation.** Roll every serving replica to `observe` first, and drain or replace any v1.4 reader. Then switch them to `enforce`. A block can only commit once every reader can enforce it.
 
+`MUNARIUM_ARTIFACT_DAMAGE_REPLICAS` selects the independence rule: `multi` (default) or `single`. `MUNARIUM_ARTIFACT_DAMAGE_SINGLE_INTERVAL_SECS` sets the single-replica interval (default 300). See [Single-replica assurance](#single-replica-assurance).
+
 **Rollback.** Before returning a replica to `off` while a block is outstanding, withdraw the affected scope. Set its rollout selector to `postgres`, or keep the artifact out of the `serving` slot. An `off` reader cannot see the block; a later switch back finds the block still in force. Returning to a v1.4.0 binary is by restoring the pre-upgrade backup ([rolling back to 1.4.0](../guides/server-1.5.md#rolling-back-to-140)). The restored database predates the block, so withdraw or repair the affected artifact before v1.4.0 serves it.
 
 ## Validation and coverage
@@ -141,6 +167,7 @@ An unknown value is a configuration error. The Datastore infrastructure then ref
 | ART2-T1 unauthorized, pre-repair, single-match, same-verifier, replayed, different-object, observe-mode and invalidated repairs leave the block; a valid repair clears once and records the clearance | Ledger tests and `a_preauthorized_verified_repair_clears_and_readers_recover` (server) |
 | ART2-T2 late report from an earlier incident; in-flight read after clearance; quarantined copy re-verified; fresh mismatch starts a new incident | Same |
 | Default mode records nothing durable | `the_default_mode_records_nothing_durable` (server) |
+| Single-replica assurance: spaced runs block and clear; runs inside the interval, a replayed fetch, the same run or a future fetch time do not; the default ledger never counts one verifier twice; assurance recorded; schema refuses unmarked or unspaced same-verifier rows; `single` refused above one declared replica | `single_replica_*`, `the_default_ledger_never_counts_one_verifier_twice_however_spaced` and `the_schema_admits_a_same_verifier_block_only_when_marked_and_spaced` (ledger); `a_declared_single_replica_blocks_and_clears_with_spaced_runs` (server); `replica_assurance_tests` (retrieval) |
 
 **Not covered locally.** The following remain uncovered: paused second replicas on a real fleet, a stream spanning a block on a live server, an unavailable final check against a failing database, concurrent failures across processes, binary rollback, and healthy reads on every serving replica after clearance. These are the REL1 fleet receipts. [Cluster qualification plan](cluster-qualification-plan.md)
 

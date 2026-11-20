@@ -16,6 +16,12 @@
 //! - **Repair verification.** A replica verifies each preauthorized repair
 //!   attempt once; two independent matches let the ledger clear the block.
 //!
+//! - **Single-replica assurance.** A deployment that declares exactly one
+//!   serving replica ([`parse_replica_assurance`]) lets the ledger accept that
+//!   replica's own second run and fetch, spaced by an interval, in place of a
+//!   second replica. The replica then re-verifies its own due candidates and
+//!   its own first repair match once the interval has passed.
+//!
 //! Everything here is opt-in through [`DamageMode`]. In `off`, the default,
 //! no executor carries a [`DamageContext`] and the v1.4 path runs unchanged.
 
@@ -29,9 +35,9 @@ use munarium_datastore::store::ArtifactStore;
 use munarium_datastore::verify::{Limits, ReaderCapabilities};
 use munarium_datastore::ArtifactCacheKey;
 use munarium_store_pg::artifact_damage::{
-    ArtifactDamageLedger, AuthoritativeObservation, Authority, Decision, ObjectPin, Outcome,
-    PgPool, PinAdmission, RecordResult, RepairAttempt, Timestamp, VerifierIdentity,
-    MANIFEST_OBJECT,
+    check_single_replica_interval, ArtifactDamageLedger, AuthoritativeObservation, Authority,
+    Decision, ObjectPin, Outcome, PgPool, PinAdmission, RecordResult, RepairAttempt, Timestamp,
+    VerifierIdentity, DEFAULT_SINGLE_REPLICA_INTERVAL_SECS, MANIFEST_OBJECT,
 };
 
 use crate::executor::L0Cache;
@@ -71,6 +77,50 @@ impl DamageMode {
     }
 }
 
+/// Read `MUNARIUM_ARTIFACT_DAMAGE_REPLICAS` and
+/// `MUNARIUM_ARTIFACT_DAMAGE_SINGLE_INTERVAL_SECS` (passed in raw) against the
+/// declared `MUNARIUM_REPLICA_COUNT`.
+///
+/// Returns `None` for the default `multi` rule (two independent verifiers)
+/// and `Some(interval)` for `single`. `single` is refused when the deployment
+/// declares more than one replica, and an unknown value or an interval outside
+/// the accepted range is refused rather than falling back to either rule. The
+/// interval is ignored unless `single` is selected.
+pub fn parse_replica_assurance(
+    replicas: &str,
+    interval_secs: &str,
+    replica_count: u32,
+) -> Result<Option<i64>> {
+    match replicas.trim() {
+        "" | "multi" => Ok(None),
+        "single" => {
+            if replica_count > 1 {
+                return Err(KernelError::InvalidInput(format!(
+                    "MUNARIUM_ARTIFACT_DAMAGE_REPLICAS=single requires a single-replica \
+                     deployment, but MUNARIUM_REPLICA_COUNT is {replica_count}"
+                )));
+            }
+            let interval = match interval_secs.trim() {
+                "" => DEFAULT_SINGLE_REPLICA_INTERVAL_SECS,
+                raw => raw.parse::<i64>().map_err(|e| {
+                    KernelError::InvalidInput(format!(
+                        "MUNARIUM_ARTIFACT_DAMAGE_SINGLE_INTERVAL_SECS: {e}"
+                    ))
+                })?,
+            };
+            check_single_replica_interval(interval).map_err(|e| {
+                KernelError::InvalidInput(format!(
+                    "MUNARIUM_ARTIFACT_DAMAGE_SINGLE_INTERVAL_SECS: {e}"
+                ))
+            })?;
+            Ok(Some(interval))
+        }
+        other => Err(KernelError::InvalidInput(format!(
+            "MUNARIUM_ARTIFACT_DAMAGE_REPLICAS must be multi|single, got {other:?}"
+        ))),
+    }
+}
+
 /// Where an integrity failure was detected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureSite {
@@ -95,6 +145,11 @@ pub struct DamageGuard {
     isolated: Mutex<HashMap<ArtifactCacheKey, i64>>,
     /// `(tenant, attempt)` pairs this replica has already verified.
     verified_attempts: Mutex<HashSet<(String, String)>>,
+    /// `Some(interval)` when the deployment is declared single-replica.
+    single_replica_interval_secs: Option<i64>,
+    /// `(tenant, candidate fetch)` pairs this replica has already re-verified
+    /// as a single replica.
+    reconfirmed_candidates: Mutex<HashSet<(String, String)>>,
 }
 
 impl DamageGuard {
@@ -104,6 +159,36 @@ impl DamageGuard {
             verifier_id: verifier_id.into(),
             isolated: Mutex::new(HashMap::new()),
             verified_attempts: Mutex::new(HashSet::new()),
+            single_replica_interval_secs: None,
+            reconfirmed_candidates: Mutex::new(HashSet::new()),
+        }
+    }
+
+    /// Declare this replica the deployment's only one (see
+    /// [`parse_replica_assurance`]): its ledgers accept its own spaced second
+    /// run as confirmation, recorded as single-replica assurance.
+    pub fn with_single_replica(mut self, interval_secs: i64) -> Result<Self> {
+        check_single_replica_interval(interval_secs)?;
+        self.single_replica_interval_secs = Some(interval_secs);
+        Ok(self)
+    }
+
+    /// The single-replica interval, when the deployment is declared so.
+    pub fn single_replica_interval_secs(&self) -> Option<i64> {
+        self.single_replica_interval_secs
+    }
+
+    /// The tenant's ledger under this replica's assurance rule.
+    pub fn ledger(&self, pool: &PgPool, tenant: &str) -> ArtifactDamageLedger {
+        let ledger = ArtifactDamageLedger::new(pool.clone(), tenant);
+        match self.single_replica_interval_secs {
+            // Validated when it was set; on the impossible failure keep the
+            // stricter two-verifier rule.
+            Some(interval) => ledger
+                .clone()
+                .with_single_replica(interval)
+                .unwrap_or(ledger),
+            None => ledger,
         }
     }
 
@@ -125,6 +210,12 @@ impl DamageGuard {
 
     fn verified(&self) -> std::sync::MutexGuard<'_, HashSet<(String, String)>> {
         self.verified_attempts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn reconfirmed(&self) -> std::sync::MutexGuard<'_, HashSet<(String, String)>> {
+        self.reconfirmed_candidates
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
     }
@@ -378,13 +469,29 @@ pub async fn verify_repairs(
     if !guard.active() {
         return Ok(0);
     }
+    let single = guard.single_replica_interval_secs();
     let mut done = 0usize;
     for (tenant, attempt) in munarium_store_pg::artifact_damage::verifying_attempts(pool).await? {
         let marker = (tenant.clone(), attempt.attempt_id.clone());
-        if guard.verified().contains(&marker)
-            || attempt.first_match_verifier_id.as_deref() == Some(guard.verifier_id.as_str())
-        {
+        if guard.verified().contains(&marker) {
             continue;
+        }
+        if attempt.first_match_verifier_id.as_deref() == Some(guard.verifier_id.as_str()) {
+            // This replica holds the first match. With two independent
+            // verifiers it waits for another one; as a declared single
+            // replica it verifies once more after the interval.
+            let due = match (single, attempt.first_match_fetched_at) {
+                (Some(secs), Some(first)) => {
+                    let now = ArtifactDamageLedger::new(pool.clone(), &tenant)
+                        .db_now()
+                        .await?;
+                    (now - first).num_seconds() >= secs
+                }
+                _ => false,
+            };
+            if !due {
+                continue;
+            }
         }
         // One attempt's failure must not stop the others: each is verified
         // or retried on its own, and an unverified attempt leaves its block
@@ -399,13 +506,91 @@ pub async fn verify_repairs(
                 }
             };
         tracing::info!(decision = ?recorded.decision, "repair verification recorded");
-        if !matches!(
+        // A single replica's first match is followed by its own spaced
+        // second verification, so it does not finish the attempt here.
+        let again = matches!(
             recorded.decision,
-            Decision::Recorded | Decision::Rejected(_)
-        ) {
+            Decision::Recorded | Decision::Rejected(_) | Decision::IntervalNotElapsed
+        ) || (single.is_some() && recorded.decision == Decision::RepairMatch);
+        if !again {
             guard.verified().insert(marker);
         }
         done += 1;
+    }
+    Ok(done)
+}
+
+/// As a declared single replica, re-verify each block candidate whose first
+/// fetch is at least the interval old, once per candidate. The new run and
+/// fetch supply the spaced second observation the ledger needs; whether it
+/// blocks is still the ledger's decision. Returns how many re-verifications
+/// it recorded. Does nothing unless the deployment is declared single-replica.
+pub async fn confirm_single_replica_candidates(
+    guard: &Arc<DamageGuard>,
+    pool: &PgPool,
+    stores: &dyn crate::mirror::ArtifactStoreFactory,
+    reader: &ReaderCapabilities,
+    limits: &Limits,
+) -> Result<usize> {
+    let Some(interval) = guard.single_replica_interval_secs() else {
+        return Ok(0);
+    };
+    if !guard.active() {
+        return Ok(0);
+    }
+    let mut done = 0usize;
+    for due in
+        munarium_store_pg::artifact_damage::single_replica_candidates_due(pool, interval).await?
+    {
+        let marker = (due.tenant_id.clone(), due.fetch_id.clone());
+        if guard.reconfirmed().contains(&marker) {
+            continue;
+        }
+        let catalog =
+            munarium_store_pg::artifacts::ArtifactCatalog::new(pool.clone(), &due.tenant_id);
+        let row = match catalog
+            .artifact(&due.index_version_id, &due.artifact_id)
+            .await
+        {
+            Ok(Some(row)) => row,
+            Ok(None) => continue,
+            Err(e) => {
+                tracing::warn!(error = %e, "single-replica confirmation could not run");
+                continue;
+            }
+        };
+        let store = match stores.store_for_prefix(&row.artifact_uri) {
+            Ok(store) => store,
+            Err(e) => {
+                tracing::warn!(error = %e, "single-replica confirmation could not run");
+                continue;
+            }
+        };
+        let ctx = DamageContext {
+            guard: Arc::clone(guard),
+            ledger: guard.ledger(pool, &due.tenant_id),
+        };
+        match ctx
+            .verify(
+                store,
+                &due.index_version_id,
+                &due.artifact_id,
+                reader,
+                limits,
+                None,
+            )
+            .await
+        {
+            Ok(r) => {
+                tracing::warn!(decision = ?r.decision, history_full = r.history_full,
+                    "single-replica confirmation verified against the authoritative store");
+                if r.decision != Decision::IntervalNotElapsed {
+                    guard.reconfirmed().insert(marker);
+                }
+                done += 1;
+            }
+            Err(e) => tracing::warn!(error = %e, "single-replica confirmation failed"),
+        }
     }
     Ok(done)
 }
@@ -429,7 +614,7 @@ async fn verify_one(
     let store = stores.store_for_prefix(&row.artifact_uri)?;
     let ctx = DamageContext {
         guard: Arc::clone(guard),
-        ledger: ArtifactDamageLedger::new(pool.clone(), tenant),
+        ledger: guard.ledger(pool, tenant),
     };
     ctx.verify(
         store,
@@ -441,4 +626,61 @@ async fn verify_one(
     )
     .await
     .map(Some)
+}
+
+#[cfg(test)]
+mod replica_assurance_tests {
+    use super::*;
+
+    #[test]
+    fn the_default_is_the_two_verifier_rule() {
+        assert_eq!(parse_replica_assurance("", "", 1).unwrap(), None);
+        assert_eq!(parse_replica_assurance("multi", "", 3).unwrap(), None);
+        // The interval means nothing without `single`.
+        assert_eq!(parse_replica_assurance("multi", "10", 1).unwrap(), None);
+        let guard = DamageGuard::new(DamageMode::Enforce, "replica-a");
+        assert_eq!(guard.single_replica_interval_secs(), None);
+    }
+
+    #[test]
+    fn single_takes_a_conservative_default_interval() {
+        assert_eq!(
+            parse_replica_assurance("single", "", 1).unwrap(),
+            Some(DEFAULT_SINGLE_REPLICA_INTERVAL_SECS)
+        );
+        assert_eq!(DEFAULT_SINGLE_REPLICA_INTERVAL_SECS, 300);
+        assert_eq!(
+            parse_replica_assurance(" single ", "900", 1).unwrap(),
+            Some(900)
+        );
+    }
+
+    #[test]
+    fn single_is_refused_with_more_than_one_declared_replica() {
+        for count in [2, 3, 10] {
+            let err = parse_replica_assurance("single", "", count).unwrap_err();
+            assert!(err.to_string().contains("MUNARIUM_REPLICA_COUNT"), "{err}");
+        }
+    }
+
+    #[test]
+    fn unknown_values_and_out_of_range_intervals_are_refused() {
+        for (replicas, interval) in [
+            ("Single", ""),
+            ("one", ""),
+            ("single", "59"),
+            ("single", "0"),
+            ("single", "-300"),
+            ("single", "3601"),
+            ("single", "5m"),
+        ] {
+            assert!(
+                parse_replica_assurance(replicas, interval, 1).is_err(),
+                "{replicas:?} {interval:?}"
+            );
+        }
+        assert!(DamageGuard::new(DamageMode::Enforce, "r")
+            .with_single_replica(30)
+            .is_err());
+    }
 }

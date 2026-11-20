@@ -50,7 +50,7 @@ and API references when applying them to a new deployment.
 
 | Document | What it is |
 |---|---|
-| [guides/server-1.5.md](guides/server-1.5.md) | Unreleased 1.5.0: changes since 1.4.0, migrations 0043–0081, backup before upgrade and rollback by backup restore |
+| [guides/server-1.5.md](guides/server-1.5.md) | Unreleased 1.5.0: changes since 1.4.0, migrations 0043–0082, backup before upgrade and rollback by backup restore |
 | [guides/server-1.4.md](guides/server-1.4.md) | Unreleased 1.4.0: Haiku 5.5, Governance Platform changes, upgrade, testing, CI and release/deployment checklist |
 | [guides/collection-vocabularies.md](guides/collection-vocabularies.md) | Versioned vocabulary generation, scoped search, collection queries, publication governance, checked answers, original-file authorization and upgrade/rollback |
 | [guides/getting-started.md](guides/getting-started.md) | From the published Docker image to a persistent corpus application: authenticated writes, shapes, runbooks, ingestion, index approval and evidence retrieval, with optional model completion |

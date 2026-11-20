@@ -681,3 +681,313 @@ async fn a_verifying_attempt_for_a_superseded_incident_is_inert() {
     }
     assert_eq!(f.blocked_by().await.as_deref(), Some(second.as_str()));
 }
+
+// ---------------------------------------------------------------------------
+// Single-replica assurance (amendment of 20 November 2026)
+// ---------------------------------------------------------------------------
+
+const INTERVAL: i64 = munarium_store_pg::artifact_damage::DEFAULT_SINGLE_REPLICA_INTERVAL_SECS;
+
+fn secs(n: i64) -> chrono::Duration {
+    chrono::Duration::seconds(n)
+}
+
+impl Fixture {
+    fn single(&self) -> ArtifactDamageLedger {
+        self.ledger.clone().with_single_replica(INTERVAL).unwrap()
+    }
+
+    /// The same verifier's next run: a fresh run id and a fresh fetch.
+    fn next_run(
+        &self,
+        first: &AuthoritativeObservation,
+        fetched_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthoritativeObservation {
+        let mut o = first.clone();
+        o.verifier.run_id = uuid::Uuid::new_v4().to_string();
+        o.fetch_id = uuid::Uuid::new_v4().to_string();
+        o.fetched_at = fetched_at;
+        o
+    }
+
+    async fn incident(&self) -> munarium_store_pg::artifact_damage::Incident {
+        self.ledger.incidents().await.unwrap().remove(0)
+    }
+}
+
+async fn decide(ledger: &ArtifactDamageLedger, o: &AuthoritativeObservation) -> Decision {
+    ledger
+        .record_authoritative(o, ENFORCE)
+        .await
+        .unwrap()
+        .decision
+}
+
+#[tokio::test]
+async fn single_replica_blocks_only_after_two_spaced_runs_and_fetches() {
+    let url = guard!();
+    let f = fixture(&url, "dmg-sr-block").await;
+    let single = f.single();
+    let now = f.ledger.db_now().await.unwrap();
+    let mut first = f.observe("replica-s", Outcome::Mismatch, None).await;
+    first.fetched_at = now - secs(INTERVAL + 60);
+    assert_eq!(decide(&single, &first).await, Decision::Candidate);
+
+    // One fetch replayed counts once, under any name or run.
+    let mut replay = first.clone();
+    replay.verifier.run_id = "another-run".into();
+    assert_eq!(decide(&single, &replay).await, Decision::ReplayedFetch);
+    // The same run with a fresh fetch is not a second run.
+    let mut same_run = first.clone();
+    same_run.fetch_id = uuid::Uuid::new_v4().to_string();
+    same_run.fetched_at = now;
+    assert_eq!(decide(&single, &same_run).await, Decision::SameVerifier);
+    // A second run and fetch inside the interval does not count, nor does
+    // one a second short of it, nor a fetch time in the future.
+    for at in [
+        first.fetched_at + secs(1),
+        first.fetched_at + secs(INTERVAL - 1),
+        now + secs(INTERVAL),
+    ] {
+        let soon = f.next_run(&first, at);
+        assert_eq!(decide(&single, &soon).await, Decision::IntervalNotElapsed);
+    }
+    assert_eq!(f.blocked_by().await, None);
+    assert_eq!(f.ledger.incidents().await.unwrap(), vec![]);
+
+    // A second run and fetch at least the interval later blocks.
+    let spaced = f.next_run(&first, now);
+    let incident = match decide(&single, &spaced).await {
+        Decision::Blocked {
+            incident_id,
+            generation,
+        } => {
+            assert_eq!(generation, 1);
+            incident_id
+        }
+        other => panic!("expected a single-replica block, got {other:?}"),
+    };
+    assert_eq!(f.blocked_by().await.as_deref(), Some(incident.as_str()));
+    let recorded = f.incident().await;
+    assert_eq!(recorded.block_assurance, "single_replica");
+    assert_eq!(
+        recorded.confirming_verifiers,
+        ["replica-s".to_string(), "replica-s".to_string()]
+    );
+    assert_eq!(recorded.clear_assurance, None);
+}
+
+#[tokio::test]
+async fn the_default_ledger_never_counts_one_verifier_twice_however_spaced() {
+    let url = guard!();
+    let f = fixture(&url, "dmg-sr-default").await;
+    assert_eq!(f.ledger.single_replica_interval_secs(), None);
+    let now = f.ledger.db_now().await.unwrap();
+    let mut first = f.observe("replica-s", Outcome::Mismatch, None).await;
+    first.fetched_at = now - secs(6 * 60 * 60);
+    assert_eq!(f.record(&first).await, Decision::Candidate);
+    let spaced = f.next_run(&first, now);
+    assert_eq!(f.record(&spaced).await, Decision::SameVerifier);
+    assert_eq!(f.blocked_by().await, None);
+
+    // Two verifiers block as before and record independent assurance.
+    assert!(matches!(
+        f.mismatch("replica-b").await,
+        Decision::Blocked { .. }
+    ));
+    assert_eq!(f.incident().await.block_assurance, "independent");
+}
+
+#[tokio::test]
+async fn single_replica_mode_still_records_two_verifiers_as_independent() {
+    let url = guard!();
+    let f = fixture(&url, "dmg-sr-indep").await;
+    let single = f.single();
+    let a = f.observe("replica-a", Outcome::Mismatch, None).await;
+    assert_eq!(decide(&single, &a).await, Decision::Candidate);
+    let b = f.observe("replica-b", Outcome::Mismatch, None).await;
+    assert!(matches!(
+        decide(&single, &b).await,
+        Decision::Blocked { .. }
+    ));
+    assert_eq!(f.incident().await.block_assurance, "independent");
+}
+
+#[tokio::test]
+async fn single_replica_clears_after_two_spaced_fresh_matches_with_authorization() {
+    let url = guard!();
+    let f = fixture(&url, "dmg-sr-clear").await;
+    let single = f.single();
+    let now = f.ledger.db_now().await.unwrap();
+    let mut first = f.observe("replica-s", Outcome::Mismatch, None).await;
+    first.fetched_at = now - secs(INTERVAL + 60);
+    assert_eq!(decide(&single, &first).await, Decision::Candidate);
+    let incident = match decide(&single, &f.next_run(&first, now)).await {
+        Decision::Blocked { incident_id, .. } => incident_id,
+        other => panic!("expected a block, got {other:?}"),
+    };
+
+    // Matches with no authorization are evidence only.
+    let unauthorized = f.observe("replica-s", Outcome::Match, None).await;
+    assert_eq!(decide(&single, &unauthorized).await, Decision::Recorded);
+
+    let attempt = f
+        .ledger
+        .authorize_repair(&incident, "repair-workflow", "operator", None)
+        .await
+        .unwrap();
+    // Open the verification window in the past so the two matches can be
+    // spaced without waiting.
+    sqlx::query(
+        "UPDATE artifact_repair_attempts SET authorized_at = authorized_at - interval '1 hour'
+          WHERE tenant_id = $1 AND attempt_id = $2",
+    )
+    .bind(&f.tenant)
+    .bind(&attempt.attempt_id)
+    .execute(&f.pool)
+    .await
+    .unwrap();
+    let now = f.ledger.db_now().await.unwrap();
+    let mut one = f
+        .observe("replica-s", Outcome::Match, Some(&attempt.attempt_id))
+        .await;
+    one.fetched_at = now - secs(INTERVAL + 30);
+    assert_eq!(decide(&single, &one).await, Decision::RepairMatch);
+
+    // The default rule never accepts the same verifier's second match.
+    assert_eq!(
+        f.record(&f.next_run(&one, now)).await,
+        Decision::SameVerifier
+    );
+    // Too soon, or replayed, does not count.
+    let soon = f.next_run(&one, one.fetched_at + secs(INTERVAL - 1));
+    assert_eq!(decide(&single, &soon).await, Decision::IntervalNotElapsed);
+    let mut replay = one.clone();
+    replay.verifier.run_id = "another-run".into();
+    assert_eq!(decide(&single, &replay).await, Decision::ReplayedFetch);
+    assert_eq!(f.blocked_by().await.as_deref(), Some(incident.as_str()));
+
+    // A second spaced run and fetch clears, once.
+    let generation = match decide(&single, &f.next_run(&one, now)).await {
+        Decision::Cleared {
+            incident_id,
+            generation,
+        } => {
+            assert_eq!(incident_id, incident);
+            generation
+        }
+        other => panic!("expected clearance, got {other:?}"),
+    };
+    assert_eq!(generation, 2);
+    assert_eq!(f.blocked_by().await, None);
+    let recorded = f.incident().await;
+    assert_eq!(recorded.state, "cleared");
+    assert_eq!(recorded.block_assurance, "single_replica");
+    assert_eq!(recorded.clear_assurance.as_deref(), Some("single_replica"));
+    assert_eq!(
+        recorded.clearing_verifiers,
+        Some(["replica-s".to_string(), "replica-s".to_string()])
+    );
+    assert_eq!(
+        recorded.clearing_workflow_id.as_deref(),
+        Some("repair-workflow")
+    );
+    let late = f.next_run(&one, now);
+    assert!(matches!(
+        decide(&single, &late).await,
+        Decision::Rejected(_)
+    ));
+}
+
+#[tokio::test]
+async fn a_mismatch_from_a_single_replica_still_invalidates_its_repair() {
+    let url = guard!();
+    let f = fixture(&url, "dmg-sr-inval").await;
+    let incident = f.block().await;
+    let single = f.single();
+    let attempt = f
+        .ledger
+        .authorize_repair(&incident, "repair-workflow", "operator", None)
+        .await
+        .unwrap();
+    let one = f
+        .observe("replica-s", Outcome::Match, Some(&attempt.attempt_id))
+        .await;
+    assert_eq!(decide(&single, &one).await, Decision::RepairMatch);
+    let bad = f
+        .observe("replica-s", Outcome::Mismatch, Some(&attempt.attempt_id))
+        .await;
+    assert_eq!(decide(&single, &bad).await, Decision::RepairInvalidated);
+    assert!(f.blocked_by().await.is_some());
+}
+
+#[tokio::test]
+async fn single_replica_intervals_outside_the_accepted_range_are_refused() {
+    let url = guard!();
+    let f = fixture(&url, "dmg-sr-range").await;
+    for bad in [0, 59, 3601, -1] {
+        assert!(f.ledger.clone().with_single_replica(bad).is_err(), "{bad}");
+    }
+    for good in [60, INTERVAL, 3600] {
+        assert_eq!(
+            f.ledger
+                .clone()
+                .with_single_replica(good)
+                .unwrap()
+                .single_replica_interval_secs(),
+            Some(good)
+        );
+    }
+}
+
+/// Defense in depth: the schema refuses a same-verifier incident unless it
+/// is marked single-replica with distinct runs and fetches at least 60
+/// seconds apart, whatever code writes it.
+#[tokio::test]
+async fn the_schema_admits_a_same_verifier_block_only_when_marked_and_spaced() {
+    let url = guard!();
+    let f = fixture(&url, "dmg-sr-schema").await;
+    f.ledger
+        .record_local_isolation(
+            &f.version,
+            &f.artifact,
+            &VerifierIdentity {
+                verifier_id: "replica-s".into(),
+                run_id: "r0".into(),
+            },
+            None,
+        )
+        .await
+        .unwrap();
+    for (assurance, runs, gap, accepted) in [
+        ("independent", ("r1", "r2"), 600.0, false),
+        ("single_replica", ("r1", "r1"), 600.0, false),
+        ("single_replica", ("r1", "r2"), 30.0, false),
+        ("weak", ("r1", "r2"), 600.0, false),
+        ("single_replica", ("r1", "r2"), 600.0, true),
+    ] {
+        let inserted = sqlx::query(
+            "INSERT INTO artifact_integrity_incidents
+                 (tenant_id, incident_id, index_version_id, artifact_id, object_key,
+                  expected_sha256, state, blocked_generation, first_verifier_id,
+                  first_run_id, first_fetch_id, first_fetched_at, first_observed_sha256,
+                  second_verifier_id, second_run_id, second_fetch_id, second_fetched_at,
+                  second_observed_sha256, block_assurance)
+             VALUES ($1, $2, $3, $4, 'x', $5, 'blocked', 1, 'replica-s', $6, 'f1',
+                     now() - make_interval(secs => $8), $5, 'replica-s', $7, 'f2', now(),
+                     $5, $9)",
+        )
+        .bind(&f.tenant)
+        .bind(format!("inc-{}", uuid::Uuid::new_v4().simple()))
+        .bind(&f.version)
+        .bind(&f.artifact)
+        .bind(hex('b'))
+        .bind(runs.0)
+        .bind(runs.1)
+        .bind(gap)
+        .bind(assurance)
+        .execute(&f.pool)
+        .await;
+        assert_eq!(inserted.is_ok(), accepted, "{assurance} {runs:?} {gap}");
+    }
+}

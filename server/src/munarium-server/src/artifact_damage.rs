@@ -71,10 +71,12 @@ fn incident_json(i: &Incident) -> serde_json::Value {
         "state": i.state,
         "blocked_generation": i.blocked_generation,
         "confirming_verifiers": i.confirming_verifiers,
+        "block_assurance": i.block_assurance,
         "cleared_generation": i.cleared_generation,
         "clearing_attempt_id": i.clearing_attempt_id,
         "clearing_workflow_id": i.clearing_workflow_id,
         "clearing_verifiers": i.clearing_verifiers,
+        "clear_assurance": i.clear_assurance,
     })
 }
 

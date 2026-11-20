@@ -255,6 +255,11 @@ impl Fleet {
     /// One replica: its own caches and verifier identity over the shared
     /// database and the shared L2 store.
     fn replica(&self, verifier: &str, mode: DamageMode) -> Replica {
+        self.replica_with(DamageGuard::new(mode, verifier))
+    }
+
+    /// A replica with an explicitly built damage guard.
+    fn replica_with(&self, guard: DamageGuard) -> Replica {
         let l1 = tempfile::tempdir().unwrap();
         let cache = L1Cache::new(
             l1.path(),
@@ -266,7 +271,7 @@ impl Fleet {
                 Arc::new(cache),
                 Arc::new(LocalStoreFactory::new(self.l2_root.path())),
                 8,
-                Arc::new(DamageGuard::new(mode, verifier)),
+                Arc::new(guard),
             ),
             _l1: l1,
         }
@@ -689,4 +694,187 @@ async fn the_repair_command_refuses_what_it_cannot_scope() {
             "{args:?}"
         );
     }
+}
+
+/// Move this tenant's single-replica evidence `secs` into the past, standing
+/// in for the interval elapsing: the candidate's fetch, the repair window
+/// and the first repair match.
+async fn backdate(f: &Fleet, pool: &sqlx::PgPool, secs: i64) {
+    sqlx::query(
+        "UPDATE artifact_integrity_candidates
+            SET fetched_at = fetched_at - make_interval(secs => $2)
+          WHERE tenant_id = $1",
+    )
+    .bind(&f.tenant)
+    .bind(secs as f64)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE artifact_repair_attempts
+            SET authorized_at = authorized_at - make_interval(secs => $2),
+                first_match_fetched_at = first_match_fetched_at - make_interval(secs => $2)
+          WHERE tenant_id = $1",
+    )
+    .bind(&f.tenant)
+    .bind(secs as f64)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+/// The single-replica amendment end to end: the only replica blocks after its
+/// own spaced second run, clears after its own spaced second match, records
+/// the assurance on both, and the default replica does neither.
+#[tokio::test]
+async fn a_declared_single_replica_blocks_and_clears_with_spaced_runs() {
+    let url = guard!();
+    let f = Fleet::new(url, "art-single").await;
+    let pool = f.pool();
+    let ledger = f.ledger();
+    let interval = munarium_store_pg::artifact_damage::DEFAULT_SINGLE_REPLICA_INTERVAL_SECS;
+    f.corrupt();
+
+    // A default replica records its candidate and, however long it waits,
+    // never confirms it alone.
+    let multi = f.replica("replica-m", DamageMode::Enforce);
+    refusal(&multi.execute(&f, &pool).await);
+    backdate(&f, &pool, interval + 60).await;
+    let before = ledger.history_len().await.unwrap();
+    crate::datastore_serving::verify_repairs(&multi.parts, &pool).await;
+    assert_eq!(
+        ledger.history_len().await.unwrap(),
+        before,
+        "a default replica does not re-verify its candidates"
+    );
+    assert_eq!(
+        ledger
+            .admit(&f.version, &f.artifact)
+            .await
+            .unwrap()
+            .blocked_by,
+        None
+    );
+
+    // The declared single replica, alone: drop the default replica's
+    // candidate so only this replica's evidence counts. Its own second run
+    // confirms only once its candidate is at least the interval old.
+    let single = f.replica_with(
+        DamageGuard::new(DamageMode::Enforce, "replica-s")
+            .with_single_replica(interval)
+            .unwrap(),
+    );
+    sqlx::query("DELETE FROM artifact_integrity_candidates WHERE tenant_id = $1")
+        .bind(&f.tenant)
+        .execute(&pool)
+        .await
+        .unwrap();
+    refusal(&single.execute(&f, &pool).await);
+    crate::datastore_serving::verify_repairs(&single.parts, &pool).await;
+    assert_eq!(
+        ledger
+            .admit(&f.version, &f.artifact)
+            .await
+            .unwrap()
+            .blocked_by,
+        None,
+        "not before the interval"
+    );
+    backdate(&f, &pool, interval + 60).await;
+    crate::datastore_serving::verify_repairs(&single.parts, &pool).await;
+    let blocked = ledger.admit(&f.version, &f.artifact).await.unwrap();
+    let incident = blocked.blocked_by.clone().expect("single-replica block");
+    assert_eq!(blocked.generation, 1);
+    refusal(&single.execute(&f, &pool).await);
+
+    // Repair, authorize, and verify twice with the interval between.
+    f.restore();
+    let attempt = crate::artifact_damage::execute(
+        &pool,
+        &[
+            "authorize-repair".into(),
+            "--tenant".into(),
+            f.tenant.clone(),
+            "--incident".into(),
+            incident.clone(),
+            "--workflow".into(),
+            "repair-wf".into(),
+            "--actor".into(),
+            "operator".into(),
+        ],
+    )
+    .await
+    .unwrap();
+    let attempt_id = attempt["attempt_id"].as_str().unwrap().to_string();
+    crate::datastore_serving::verify_repairs(&single.parts, &pool).await;
+    crate::datastore_serving::verify_repairs(&single.parts, &pool).await;
+    let progress = ledger.repair_attempt(&attempt_id).await.unwrap().unwrap();
+    assert_eq!(progress.state, "verifying", "one match, then a wait");
+    assert_eq!(
+        progress.first_match_verifier_id.as_deref(),
+        Some("replica-s")
+    );
+    // The single replica waits for the interval before its second match.
+    assert!(ledger
+        .admit(&f.version, &f.artifact)
+        .await
+        .unwrap()
+        .blocked_by
+        .is_some());
+    backdate(&f, &pool, interval + 60).await;
+    crate::datastore_serving::verify_repairs(&single.parts, &pool).await;
+    let cleared = ledger.admit(&f.version, &f.artifact).await.unwrap();
+    assert_eq!(cleared.blocked_by, None);
+    assert_eq!(cleared.generation, 2);
+
+    let listed = crate::artifact_damage::execute(
+        &pool,
+        &["list".into(), "--tenant".into(), f.tenant.clone()],
+    )
+    .await
+    .unwrap();
+    let recorded = &listed["incidents"][0];
+    assert_eq!(recorded["state"], "cleared");
+    assert_eq!(recorded["block_assurance"], "single_replica");
+    assert_eq!(recorded["clear_assurance"], "single_replica");
+    assert_eq!(
+        recorded["confirming_verifiers"],
+        serde_json::json!(["replica-s", "replica-s"])
+    );
+    assert_eq!(
+        recorded["clearing_verifiers"],
+        serde_json::json!(["replica-s", "replica-s"])
+    );
+    // The quarantined copy is re-verified and serves again.
+    executed(single.execute(&f, &pool).await);
+}
+
+/// A two-verifier block lists its assurance as independent.
+#[tokio::test]
+async fn an_independent_block_lists_independent_assurance() {
+    let url = guard!();
+    let f = Fleet::new(url, "art-indep").await;
+    let pool = f.pool();
+    f.corrupt();
+    refusal(
+        &f.replica("replica-a", DamageMode::Enforce)
+            .execute(&f, &pool)
+            .await,
+    );
+    refusal(
+        &f.replica("replica-b", DamageMode::Enforce)
+            .execute(&f, &pool)
+            .await,
+    );
+    let listed = crate::artifact_damage::execute(
+        &pool,
+        &["list".into(), "--tenant".into(), f.tenant.clone()],
+    )
+    .await
+    .unwrap();
+    assert_eq!(listed["incidents"][0]["block_assurance"], "independent");
+    assert_eq!(
+        listed["incidents"][0]["clear_assurance"],
+        serde_json::Value::Null
+    );
 }

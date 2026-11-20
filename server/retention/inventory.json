@@ -2457,14 +2457,17 @@
         "clear_second_run_id": "text",
         "clear_second_fetch_id": "text",
         "clear_second_fetched_at": "timestamptz",
-        "clear_second_observed_sha256": "text"
+        "clear_second_observed_sha256": "text",
+        "block_assurance": "text",
+        "clear_assurance": "text"
       },
-      "content": "Fleet artifact blocks with both confirming verifier observations and, once cleared, both repair verifications, attempt id and workflow id.",
+      "content": "Fleet artifact blocks with both confirming verifier observations and, once cleared, both repair verifications, attempt id and workflow id, and the assurance level (independent or single_replica) of the block and the clearance.",
       "json_content": {},
       "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
       "policy": "catalog",
       "origins": [
-        "src/munarium-store-pg/migrations/0060_artifact_damage.sql"
+        "src/munarium-store-pg/migrations/0060_artifact_damage.sql",
+        "src/munarium-store-pg/migrations/0082_artifact_damage_assurance.sql"
       ]
     },
     "artifact_repair_attempts": {

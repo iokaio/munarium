@@ -82,9 +82,24 @@ impl DatastoreParts {
         let mode =
             DamageMode::parse(&std::env::var("MUNARIUM_ARTIFACT_DAMAGE_MODE").unwrap_or_default())
                 .map_err(|e| e.to_string())?;
+        // The single-replica rule is an explicit declaration, refused when
+        // the deployment declares more than one replica, and never a
+        // fallback: an unknown value refuses to arm like an unknown mode.
+        let single_replica = munarium_retrieval::damage::parse_replica_assurance(
+            &std::env::var("MUNARIUM_ARTIFACT_DAMAGE_REPLICAS").unwrap_or_default(),
+            &std::env::var("MUNARIUM_ARTIFACT_DAMAGE_SINGLE_INTERVAL_SECS").unwrap_or_default(),
+            state.config.replica_count,
+        )
+        .map_err(|e| e.to_string())?;
         if mode != DamageMode::Off {
             tracing::info!(
                 mode = mode.as_str(),
+                replicas = if single_replica.is_some() {
+                    "single"
+                } else {
+                    "multi"
+                },
+                single_replica_interval_secs = single_replica,
                 "durable artifact damage handling enabled"
             );
         }
@@ -100,7 +115,12 @@ impl DatastoreParts {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(8),
-            Arc::new(DamageGuard::new(mode, verifier)),
+            Arc::new(match single_replica {
+                Some(interval) => DamageGuard::new(mode, verifier)
+                    .with_single_replica(interval)
+                    .map_err(|e| e.to_string())?,
+                None => DamageGuard::new(mode, verifier),
+            }),
         ))
     }
 
@@ -127,7 +147,7 @@ impl DatastoreParts {
     pub fn damage_context(&self, pool: &sqlx::PgPool, tenant: &str) -> Option<DamageContext> {
         self.damage.active().then(|| DamageContext {
             guard: Arc::clone(&self.damage),
-            ledger: ArtifactDamageLedger::new(pool.clone(), tenant),
+            ledger: self.damage.ledger(pool, tenant),
         })
     }
 
@@ -539,10 +559,23 @@ pub async fn warm_once(
     Ok(())
 }
 
-/// Verify preauthorized repair attempts as this replica's verifier (ART2).
-/// Failure is logged, never fatal: a verifier that cannot run leaves the
-/// block in force, which is the safe direction.
+/// Verify preauthorized repair attempts as this replica's verifier (ART2)
+/// and, in a deployment declared single-replica, re-verify due block
+/// candidates (ART1). Failure is logged, never fatal: a verifier that cannot
+/// run leaves the block in force, or the pin unblocked, which are the
+/// directions the two-observation rule already accepts.
 pub async fn verify_repairs(parts: &Arc<DatastoreParts>, pool: &sqlx::PgPool) {
+    if let Err(e) = munarium_retrieval::damage::confirm_single_replica_candidates(
+        &parts.damage,
+        pool,
+        parts.stores.as_ref(),
+        &parts.reader,
+        &parts.limits,
+    )
+    .await
+    {
+        tracing::warn!(error = %e, "single-replica confirmation sweep failed");
+    }
     if let Err(e) = munarium_retrieval::damage::verify_repairs(
         &parts.damage,
         pool,
