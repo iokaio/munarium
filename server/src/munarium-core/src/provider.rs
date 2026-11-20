@@ -15,6 +15,9 @@ pub enum ProviderId {
     Openai,
     Openrouter,
     Ollama,
+    /// A self-hosted inference endpoint for embeddings and reranking
+    /// (ClearView IR-1).
+    OpenaiCompatible,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

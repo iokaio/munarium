@@ -40,6 +40,8 @@ mod anthropic_policy;
 pub use anthropic_policy::{AnthropicModelPolicy, AnthropicPolicy, Effort, Thinking};
 mod ollama;
 pub use ollama::OllamaProvider;
+pub mod openai_compatible;
+pub use openai_compatible::{InferenceProfile, OpenAiCompatibleEndpoint};
 
 // ---------------------------------------------------------------------------
 // declarative ProviderConfig
@@ -61,7 +63,7 @@ pub struct ProviderMeta {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderSpec {
-    /// anthropic | openai | openrouter | ollama
+    /// anthropic | openai | openrouter | ollama | openai-compatible
     pub provider: String,
     /// Endpoint override; omit for the provider default. Covers Azure
     /// OpenAI-style and vLLM/enterprise-gateway deployments.
@@ -102,6 +104,10 @@ pub struct ProviderSpec {
     pub anthropic: Option<AnthropicPolicy>,
     #[serde(default)]
     pub budgets: Budgets,
+    /// `openai-compatible` only: the endpoint's declared bounds (ClearView
+    /// IR-1). Omitted on every other kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inference: Option<InferenceProfile>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -110,6 +116,9 @@ pub struct ProviderModels {
     pub complete: Vec<String>,
     #[serde(default)]
     pub embed: Vec<String>,
+    /// Reranking models (`openai-compatible` only; ClearView IR-1).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rerank: Vec<String>,
     /// Optional per-config override of the built-in "fast" tier model.
     #[serde(default)]
     pub fast: Option<String>,
@@ -251,6 +260,7 @@ pub fn default_config_doc(provider: &str) -> Option<ProviderConfigDoc> {
             structured_output: StructuredOutputPolicy::default(),
             anthropic: None,
             budgets: Budgets::default(),
+            inference: None,
         },
     })
 }
@@ -319,6 +329,27 @@ pub struct Budgets {
     /// defaults to off.
     #[serde(default, rename = "dailyTokens")]
     pub daily_tokens: DailyTokenCaps,
+    /// ClearView I2: the part of `dailyTotalTokens` set aside for explicitly
+    /// authorized shadow evaluation. Shadow work reserves only from this
+    /// allocation and serving work only from the rest, so shadow can never
+    /// consume serving capacity and the two together never exceed the cap.
+    /// Absent (the default) authorizes no shadow work at all.
+    #[serde(
+        default,
+        rename = "shadowDailyTokens",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub shadow_daily_tokens: Option<u64>,
+}
+
+impl Budgets {
+    /// The daily ceiling serving attempts reserve against: the total cap less
+    /// the shadow allocation. Exactly `dailyTotalTokens` when no shadow
+    /// allocation is set (every v1.4 configuration).
+    pub fn serving_daily_limit(&self) -> Option<u64> {
+        self.daily_total_tokens
+            .map(|total| total.saturating_sub(self.shadow_daily_tokens.unwrap_or(0)))
+    }
 }
 
 /// Per-tier daily token ceilings. A tier without a value is unlimited.
@@ -362,6 +393,24 @@ pub fn parse_provider_config(yaml: &str) -> std::result::Result<ProviderConfigDo
     {
         return Err("dailyTotalTokens must fit a nonnegative signed 64-bit integer".into());
     }
+    if let Some(shadow) = doc.spec.budgets.shadow_daily_tokens {
+        if doc
+            .spec
+            .budgets
+            .daily_total_tokens
+            .is_none_or(|total| shadow > total)
+        {
+            return Err(
+                "shadowDailyTokens requires dailyTotalTokens and must not exceed it".into(),
+            );
+        }
+    }
+    if doc.spec.inference.is_some() && doc.spec.provider != openai_compatible::KIND {
+        return Err("inference settings require an openai-compatible provider".into());
+    }
+    if !doc.spec.models.rerank.is_empty() && doc.spec.provider != openai_compatible::KIND {
+        return Err("rerank models require an openai-compatible provider".into());
+    }
     if doc.spec.credential_alias.as_ref().is_some_and(|alias| {
         alias.is_empty()
             || alias.len() > 64
@@ -401,10 +450,10 @@ pub fn parse_provider_config(yaml: &str) -> std::result::Result<ProviderConfigDo
             }
         }
         "ollama" => ollama::validate_endpoint(doc.spec.endpoint.as_deref())?,
+        openai_compatible::KIND => openai_compatible::validate(&doc.spec)?,
         other => {
-            return Err(format!(
-                "unsupported provider '{other}' (anthropic|openai|openrouter|ollama)"
-            ))
+            let kinds = "anthropic|openai|openrouter|ollama|openai-compatible";
+            return Err(format!("unsupported provider '{other}' ({kinds})"));
         }
     }
     Ok(doc)
@@ -415,7 +464,7 @@ pub fn parse_provider_config(yaml: &str) -> std::result::Result<ProviderConfigDo
 pub fn resolve_config_credential(spec: &ProviderSpec) -> Result<Option<String>> {
     match &spec.credential_ref {
         Some(reference) => resolve_credential(reference).map(Some),
-        None if spec.provider == "ollama" => Ok(None),
+        None if spec.provider == "ollama" || spec.provider == openai_compatible::KIND => Ok(None),
         None => Err(KernelError::InvalidInput(
             "credentialRef is required for this provider".into(),
         )),
@@ -1087,6 +1136,11 @@ pub fn build_provider(doc: &ProviderConfigDoc) -> Result<Box<dyn ModelProvider>>
     let endpoint = doc.spec.endpoint.as_deref();
     if doc.spec.provider == "ollama" {
         return Ok(Box::new(OllamaProvider::new(&doc.spec)?));
+    }
+    if doc.spec.provider == openai_compatible::KIND {
+        return Ok(Box::new(openai_compatible::OpenAiCompatibleProvider::new(
+            &doc.spec,
+        )?));
     }
     let cred = doc.spec.credential_ref.clone().ok_or_else(|| {
         KernelError::InvalidInput("credentialRef is required for this provider".into())

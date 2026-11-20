@@ -172,7 +172,9 @@ pub(crate) async fn capture<T>(
     estimate: u64,
     work: impl std::future::Future<Output = T>,
 ) -> (T, bool) {
-    let limit = entry.doc.spec.budgets.daily_total_tokens;
+    // The serving share of the daily cap: the whole cap unless a shadow
+    // allocation (ClearView I2) is set aside from it.
+    let limit = entry.doc.spec.budgets.serving_daily_limit();
     if state.pg_pool().is_none() && limit.is_none() {
         return (work.await, true);
     }
