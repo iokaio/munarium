@@ -164,6 +164,12 @@ pub struct ScaleReport {
     pub replica_membership: ReplicaMembership,
 }
 
+/// The live count for `observed_replicas`: null unless the read succeeded,
+/// so a failed read is never reported as 0.
+pub fn observed_count(m: &ReplicaMembership) -> Option<u32> {
+    (m.status == "observed").then(|| u32::try_from(m.replicas.len()).unwrap_or(u32::MAX))
+}
+
 /// Classify a heartbeat read against the configured count.
 pub fn membership_report(
     environment_id: String,
@@ -274,8 +280,7 @@ pub async fn op_scale_report(state: &AppState, tenant: &str) -> ScaleReport {
         instance_id: state.config.instance_id.clone(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         replica_count: state.config.replica_count,
-        observed_replicas: (membership.status == "observed")
-            .then(|| u32::try_from(membership.replicas.len()).unwrap_or(u32::MAX)),
+        observed_replicas: observed_count(&membership),
         builder_enabled: builder_enabled(),
         db_pool: db_pool_usage(state),
         admission: admission_usage(state),
@@ -540,8 +545,14 @@ mod tests {
             failed.reason.as_deref(),
             Some("replica heartbeat read failed")
         );
+        assert_eq!(observed_count(&failed), None, "unknown, never 0");
+        assert_eq!(
+            observed_count(&membership_report("env".into(), 2, Ok(Vec::new()))),
+            Some(0),
+            "an observed empty fleet is 0"
+        );
         let mut r = report(None);
-        r.observed_replicas = None;
+        r.observed_replicas = observed_count(&failed);
         r.replica_membership = failed;
         let json = serde_json::to_value(&r).unwrap();
         assert!(json["observed_replicas"].is_null(), "{json}");
