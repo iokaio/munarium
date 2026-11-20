@@ -16,6 +16,35 @@ use axum::http::HeaderMap;
 use axum::response::Response;
 use std::sync::Arc;
 
+/// One count shown in an overview tile (ClearView U5).
+///
+/// A failed read is shown as `unavailable` with its reason in a notice
+/// below the tiles, never as 0. A successful read of nothing is still 0.
+struct TileCount {
+    value: String,
+    sub: String,
+    note: String,
+}
+
+fn tile_count(what: &str, read: munarium_core::Result<usize>, sub: &str) -> TileCount {
+    match read {
+        Ok(n) => TileCount {
+            value: n.to_string(),
+            sub: sub.to_string(),
+            note: String::new(),
+        },
+        Err(e) => TileCount {
+            value: "unavailable".to_string(),
+            sub: "read failed; see the notice below".to_string(),
+            note: format!(
+                r#"<div class="notice">{} unavailable: {}</div>"#,
+                charts::esc(what),
+                charts::esc(&e.to_string())
+            ),
+        },
+    }
+}
+
 /// A stat tile that links to the page holding the detail.
 fn tile_link(href: &str, label: &str, value: &str, sub: &str) -> String {
     format!(
@@ -34,29 +63,31 @@ pub(super) async fn overview(State(state): State<Arc<AppState>>, headers: Header
 
     // Control-plane inventory: the registries render on both stores; the
     // table-backed counts degrade to a note on the memory store.
-    let shapes = crate::runbooks_api::op_list_shapes(&state, tenant)
-        .await
-        .map(|s| s.len())
-        .unwrap_or(0);
-    let providers = crate::providers_api::op_list_providers(&state, tenant)
-        .await
-        .map(|p| p.len())
-        .unwrap_or(0);
+    let shapes = tile_count(
+        "shapes",
+        crate::runbooks_api::op_list_shapes(&state, tenant)
+            .await
+            .map(|s| s.len()),
+        "published",
+    );
+    let providers = tile_count(
+        "providers",
+        crate::providers_api::op_list_providers(&state, tenant)
+            .await
+            .map(|p| p.len()),
+        "applied + defaults",
+    );
+    let read_notes = format!("{}{}", shapes.note, providers.note);
     let inventory = match reports_api::op_control_plane_counts(&state, tenant).await {
         Ok(c) => format!(
-            r#"<div class="tiles">{}{}{}{}{}{}{}{}</div>"#,
+            r#"<div class="tiles">{}{}{}{}{}{}{}{}</div>{read_notes}"#,
             tile_link(
                 "/admin/runbooks",
                 "runbooks",
                 &c.runbooks_active.to_string(),
                 &format!("active of {} hosted", c.runbooks_total)
             ),
-            tile_link(
-                "/admin/runbooks",
-                "shapes",
-                &shapes.to_string(),
-                "published"
-            ),
+            tile_link("/admin/runbooks", "shapes", &shapes.value, &shapes.sub),
             tile_link(
                 "/admin/collections",
                 "collections",
@@ -84,8 +115,8 @@ pub(super) async fn overview(State(state): State<Arc<AppState>>, headers: Header
             tile_link(
                 "/admin/providers",
                 "providers",
-                &providers.to_string(),
-                "applied + defaults"
+                &providers.value,
+                &providers.sub
             ),
             tile_link(
                 "/admin/findings?severity=block",
@@ -95,18 +126,13 @@ pub(super) async fn overview(State(state): State<Arc<AppState>>, headers: Header
             ),
         ),
         Err(e) => format!(
-            r#"<div class="tiles">{}{}</div>{}"#,
-            tile_link(
-                "/admin/runbooks",
-                "shapes",
-                &shapes.to_string(),
-                "published"
-            ),
+            r#"<div class="tiles">{}{}</div>{read_notes}{}"#,
+            tile_link("/admin/runbooks", "shapes", &shapes.value, &shapes.sub),
             tile_link(
                 "/admin/providers",
                 "providers",
-                &providers.to_string(),
-                "applied + defaults"
+                &providers.value,
+                &providers.sub
             ),
             store_note(&e)
         ),
@@ -134,10 +160,18 @@ pub(super) async fn overview(State(state): State<Arc<AppState>>, headers: Header
         .iter()
         .filter_map(|b| b.p95_latency_ms)
         .fold(0.0_f64, f64::max);
-    let sessions = reports_api::op_sessions_report(&state, tenant, "24h")
-        .await
-        .map(|s| s.buckets.iter().map(|b| b.sessions_opened).sum::<i64>())
-        .unwrap_or(0);
+    let sessions = tile_count(
+        "sessions opened",
+        reports_api::op_sessions_report(&state, tenant, "24h")
+            .await
+            .map(|s| {
+                s.buckets
+                    .iter()
+                    .map(|b| b.sessions_opened.max(0) as usize)
+                    .sum::<usize>()
+            }),
+        "",
+    );
     let depth = state
         .interactions_tx
         .max_capacity()
@@ -171,18 +205,19 @@ pub(super) async fn overview(State(state): State<Arc<AppState>>, headers: Header
     );
     let body = format!(
         r#"<h2>control plane</h2>{inventory}
-<h2>traffic · 24h</h2><div class="tiles">{}{}{}{}{}</div>
+<h2>traffic · 24h</h2><div class="tiles">{}{}{}{}{}</div>{}
 <h2>requests (24h)</h2><div class="card">{spark}</div>
 <h2>latency (24h)</h2><div class="card">{lat}</div>"#,
         charts::tile("requests · 24h", &requests.to_string(), "all planes"),
         charts::tile("error rate · 24h", &err_rate, "status ≥ 400"),
         charts::tile("worst p95 · 24h", &format!("{p95:.0} ms"), "per bucket"),
-        charts::tile("sessions opened · 24h", &sessions.to_string(), ""),
+        charts::tile("sessions opened · 24h", &sessions.value, &sessions.sub),
         charts::tile(
             "audit queue depth",
             &depth.to_string(),
             "this instance; drops on saturation"
         ),
+        sessions.note,
     );
     render(&admin, "overview", "Overview", &body)
 }
@@ -523,4 +558,51 @@ Scrape target: <code>GET /metrics</code> on the ops plane (:9090). Secrets never
         ),
     );
     render(&admin, "health", "Health", &body)
+}
+
+#[cfg(test)]
+mod tests {
+    //! ClearView U5 against the Phase 1 console fixture's failed-read cases.
+    use super::*;
+    use munarium_core::KernelError;
+
+    const FIXTURE: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tests/fixtures/clearview-phase1/v14-console.json"
+    ));
+
+    #[test]
+    fn a_failed_read_is_unavailable_and_an_empty_read_is_zero() {
+        let fixture: serde_json::Value = serde_json::from_str(FIXTURE).unwrap();
+        let cases = fixture["failed_reads"]["cases"].as_array().unwrap();
+        let mut checked = 0;
+        for c in cases {
+            match c["v15"].as_str().unwrap() {
+                "unavailable" => {
+                    let got = tile_count(
+                        c["tile"].as_str().unwrap(),
+                        Err(KernelError::Storage("pool timed out <x>".into())),
+                        "sub",
+                    );
+                    assert_eq!(got.value, "unavailable", "{}", c["case"]);
+                    assert_ne!(got.value, c["expected_v14_value"].as_str().unwrap());
+                    assert!(got.note.contains("unavailable"), "{}", got.note);
+                    assert!(
+                        got.note.contains("pool timed out &lt;x&gt;"),
+                        "{}",
+                        got.note
+                    );
+                    checked += 1;
+                }
+                v if v.starts_with("0 ") => {
+                    let got = tile_count("shapes", Ok(0), "published");
+                    assert_eq!((got.value.as_str(), got.note.as_str()), ("0", ""));
+                    assert_eq!(got.sub, "published");
+                    checked += 1;
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(checked, 4, "fixture lost failed-read cases");
+    }
 }

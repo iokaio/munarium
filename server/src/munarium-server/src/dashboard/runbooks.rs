@@ -180,15 +180,17 @@ pub(super) async fn hub(
                     .map(|s| (s.state.clone(), s.steps as f64, String::new()))
                     .collect::<Vec<_>>(),
             );
-            let recent = reports_api::op_recent_runs(&state, tenant, 20)
-                .await
-                .unwrap_or_default();
+            // A failed read is a notice, never an empty table (ClearView U5).
+            let recent = match reports_api::op_recent_runs(&state, tenant, 20).await {
+                Ok(rows) => runs_table(&rows),
+                Err(e) => store_note(&e),
+            };
             format!(
                 "{}<div class=\"tiles\">{tiles}</div>\
                  <h2>step states</h2><div class=\"card\">{steps}</div>\
                  <h2>recent runs</h2><div class=\"card\">{}</div>",
                 window_picker("/admin/runbooks", window),
-                runs_table(&recent)
+                recent
             )
         }
         Err(e) => store_note(&e),
@@ -222,9 +224,11 @@ pub(super) async fn runbook(
     };
     let info = runbooks_api::op_runbook_info(&state, tenant, &src.runbook_ref).await;
     let doc = parse_runbook(&src.yaml);
-    let runs = runbooks_api::op_runs_for_runbook(&state, tenant, &src.runbook_ref, 20)
-        .await
-        .unwrap_or_default();
+    // A failed read is a notice, never an empty table (ClearView U5).
+    let runs = match runbooks_api::op_runs_for_runbook(&state, tenant, &src.runbook_ref, 20).await {
+        Ok(rows) => runs_table(&rows),
+        Err(e) => store_note(&e),
+    };
 
     let mut lifecycle = vec![
         ("runbook", format!("<code>{}</code>", esc(&src.runbook_ref))),
@@ -465,7 +469,7 @@ pub(super) async fn runbook(
 <h2>recent runs</h2><div class="card">{}</div>
 <h2>applied yaml</h2><div class="card">{}</div>"#,
         kv(&lifecycle),
-        runs_table(&runs),
+        runs,
         pre(&src.yaml),
     );
     render(
