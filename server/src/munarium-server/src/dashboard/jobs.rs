@@ -21,12 +21,12 @@
 //! `<meta http-equiv="refresh">` and stops once the job ends (U12).
 
 use super::{
-    admin_auth, complete_result, error_panel, html_table, kv, link, path_segment, pill, render,
-    render_refreshing, shell_word, Tone,
+    admin_auth, admin_auth_for_page, complete_result, error_panel, html_table, kv, link,
+    path_segment, pill, render, render_refreshing, shell_word, Tone,
 };
 use crate::charts::esc;
 use crate::state::AppState;
-use axum::extract::{Path, State};
+use axum::extract::{Path, RawQuery, State};
 use axum::http::HeaderMap;
 use axum::response::Response;
 use munarium_core::KernelError;
@@ -277,13 +277,16 @@ async fn read_events(q: &BuildJobs, tenant: &str, job: &JobId) -> Result<EventsR
     Ok(read)
 }
 
-/// `GET /admin/build-jobs/{job_id}`.
+/// `GET /admin/build-jobs/{job_id}`. Its own reloads arrive with the
+/// refresh marker and do not count as the operator's use of a console
+/// session.
 pub(super) async fn detail(
     State(state): State<Arc<AppState>>,
     Path(job_id): Path<String>,
+    RawQuery(query): RawQuery,
     headers: HeaderMap,
 ) -> Response {
-    let admin = match admin_auth(&state, &headers).await {
+    let admin = match admin_auth_for_page(&state, &headers, query.as_deref()).await {
         Ok(c) => c,
         Err(r) => return r,
     };
@@ -317,11 +320,12 @@ pub(super) async fn detail(
         .and_then(|h| h.ok_or_else(|| "the job is no longer visible".to_string()));
     let open = is_open(&progress.job.state);
     let body = detail_body(&progress, &events, &versions);
+    let path = job_path(&progress.job.job_id);
     render_refreshing(
         &admin,
         ACTIVE,
         &format!("Build job {}", progress.job.job_id),
-        open.then_some(REFRESH_SECS),
+        open.then_some((REFRESH_SECS, path.as_str())),
         &body,
     )
 }
@@ -334,7 +338,7 @@ pub(super) fn detail_body(
     let job = &p.job;
     let refresh = if is_open(&job.state) {
         format!(
-            r#"<p class="muted">This page reloads every {REFRESH_SECS} seconds while the job is {}; it stops once the job ends.</p>"#,
+            r#"<p class="muted">This page reloads every {REFRESH_SECS} seconds while the job is {}; it stops once the job ends. The reloads do not count as console activity, so an unattended console session still ends at its idle limit.</p>"#,
             esc(&job.state)
         )
     } else {

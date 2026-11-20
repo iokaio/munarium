@@ -283,7 +283,8 @@ fn write<T>(lock: &RwLock<T>) -> RwLockWriteGuard<'_, T> {
 
 impl Metrics {
     /// The sum of a counter's series whose label text contains `needle`
-    /// (empty matches every series). Read by the console's MCP page.
+    /// (empty matches every series). Read by the console's replica-scoped
+    /// health page; the sum covers every tenant this replica serves.
     pub fn counter_sum(&self, metric: &str, needle: &str) -> u64 {
         read(&self.counters)
             .iter()

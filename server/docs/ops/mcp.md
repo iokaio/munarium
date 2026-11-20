@@ -326,13 +326,15 @@ and reranking receipts are not yet correlated (`enrolled_inference:
 ## Console
 
 `/admin/mcp` (access and audit group) shows, for the signed-in tenant: whether
-this replica serves MCP and with which forms; this replica's audit-admission
-refusals, MCP load shedding and native interaction-record drops; tool calls by
-tool over 24 hours with completed, refused and unknown counts; keyed
-operations whose outcome is unknown; the newest invocations with their
-linkage; and the unrevoked tokens carrying `mcp`, each with the standard
-revocation review. It adds no action of its own. The traffic and usage pages
-accept the `mcp` plane.
+this replica serves MCP and with which forms; tool calls by tool over 24 hours
+with completed, refused and unknown counts; keyed operations whose outcome is
+unknown; the newest invocations with their linkage; and the unrevoked tokens
+carrying `mcp`, each with the standard revocation review. It adds no action of
+its own, and every count on it is the tenant's own. This replica's
+audit-admission refusals, MCP load shedding and native interaction-record
+drops are process counters across every tenant, so they are on the
+replica-scoped `/admin/health` page, labelled as such. The traffic and usage
+pages accept the `mcp` plane.
 
 ## Metrics
 

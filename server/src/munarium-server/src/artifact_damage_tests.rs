@@ -25,7 +25,7 @@ use munarium_datastore::model::*;
 use munarium_datastore::shard::ShardWriter;
 use munarium_datastore::store::LocalFileStore;
 use munarium_datastore::{ArtifactCacheKey, PreparedChunk};
-use munarium_retrieval::damage::{DamageGuard, DamageMode};
+use munarium_retrieval::damage::{DamageGuard, DamageMode, FailureSite};
 use munarium_retrieval::executor::{ExecutionOutcome, TextPayload};
 use munarium_retrieval::mirror::LocalStoreFactory;
 use munarium_store_pg::artifact_damage::{ArtifactDamageLedger, Decision, ReleaseDecision};
@@ -659,6 +659,52 @@ async fn a_preauthorized_verified_repair_clears_and_readers_recover() {
     let cleared = ledger.admit(&f.version, &f.artifact).await.unwrap();
     assert_eq!(cleared.blocked_by, None);
     assert_eq!(cleared.generation, 2);
+
+    // A replica that isolates a copy while the pin cannot be read records an
+    // unknown generation, never 0: the clearance above, which happened
+    // before it isolated, must not release the isolation.
+    let late = f.replica("replica-l", DamageMode::Enforce).await;
+    let unreachable = sqlx::postgres::PgPoolOptions::new()
+        .acquire_timeout(std::time::Duration::from_secs(3))
+        .connect_lazy("postgres://munarium@127.0.0.1:1/unreachable")
+        .unwrap();
+    late.parts
+        .damage_context(&unreachable, &f.tenant)
+        .unwrap()
+        .on_integrity_failure(
+            &f.version,
+            &f.artifact,
+            &f.key(),
+            FailureSite::Hydrate,
+            "the pin could not be read",
+            &late.parts.cache,
+            &late.parts.l0,
+            late.parts.stores.store_for_prefix(&f.l2_prefix).unwrap(),
+            &late.parts.reader,
+            &late.parts.limits,
+        )
+        .await;
+    assert!(late.parts.damage.is_isolated(&f.key()));
+    for _ in 0..2 {
+        let admitted = late
+            .parts
+            .damage_context(&pool, &f.tenant)
+            .unwrap()
+            .admit(
+                &f.version,
+                &f.artifact,
+                &f.key(),
+                &late.parts.cache,
+                &late.parts.l0,
+            )
+            .await
+            .unwrap();
+        assert_eq!((admitted.generation, admitted.blocked_by), (2, None));
+        assert!(
+            late.parts.damage.is_isolated(&f.key()),
+            "released without a clearance after the isolation"
+        );
+    }
     let listed = crate::artifact_damage::execute(
         &pool,
         &["list".into(), "--tenant".into(), f.tenant.clone()],
@@ -871,6 +917,52 @@ async fn a_declared_single_replica_blocks_and_clears_with_spaced_runs() {
     let cleared = ledger.admit(&f.version, &f.artifact).await.unwrap();
     assert_eq!(cleared.blocked_by, None);
     assert_eq!(cleared.generation, 2);
+
+    // A replica that isolates a copy while the pin cannot be read records an
+    // unknown generation, never 0: the clearance above, which happened
+    // before it isolated, must not release the isolation.
+    let late = f.replica("replica-l", DamageMode::Enforce).await;
+    let unreachable = sqlx::postgres::PgPoolOptions::new()
+        .acquire_timeout(std::time::Duration::from_secs(3))
+        .connect_lazy("postgres://munarium@127.0.0.1:1/unreachable")
+        .unwrap();
+    late.parts
+        .damage_context(&unreachable, &f.tenant)
+        .unwrap()
+        .on_integrity_failure(
+            &f.version,
+            &f.artifact,
+            &f.key(),
+            FailureSite::Hydrate,
+            "the pin could not be read",
+            &late.parts.cache,
+            &late.parts.l0,
+            late.parts.stores.store_for_prefix(&f.l2_prefix).unwrap(),
+            &late.parts.reader,
+            &late.parts.limits,
+        )
+        .await;
+    assert!(late.parts.damage.is_isolated(&f.key()));
+    for _ in 0..2 {
+        let admitted = late
+            .parts
+            .damage_context(&pool, &f.tenant)
+            .unwrap()
+            .admit(
+                &f.version,
+                &f.artifact,
+                &f.key(),
+                &late.parts.cache,
+                &late.parts.l0,
+            )
+            .await
+            .unwrap();
+        assert_eq!((admitted.generation, admitted.blocked_by), (2, None));
+        assert!(
+            late.parts.damage.is_isolated(&f.key()),
+            "released without a clearance after the isolation"
+        );
+    }
 
     let listed = crate::artifact_damage::execute(
         &pool,

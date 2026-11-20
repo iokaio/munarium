@@ -11,7 +11,9 @@
 //!   key's fingerprint ([`munarium_core::artifact_verifier`]). Anything else
 //!   is recorded as [`Decision::Unauthenticated`] and counts for nothing. A
 //!   candidate or first repair match whose key has since been revoked is
-//!   replaced, never confirmed.
+//!   replaced, never confirmed. Both keys of a pair are read under a share
+//!   lock, so a revocation that commits before the decision is honoured and
+//!   one that commits after it is ordered after it.
 //! - **Independence (ART1).** A fleet block commits only when a second
 //!   authoritative mismatch on the *same pinned object* (artifact, object key,
 //!   expected digest, storage generation) at the pin's *current generation*
@@ -885,6 +887,29 @@ impl ArtifactDamageLedger {
         .map(str::to_string))
     }
 
+    /// Whether the enrolled key `fingerprint` is unrevoked, with its row
+    /// share-locked until this transaction ends. Used for the stored first
+    /// observation of a pair, exactly as [`Self::unauthenticated`] locks the
+    /// current one: a revocation that commits first is seen (the lock waits
+    /// for it and reads the committed row), and one that commits later is
+    /// ordered after this decision. An unlocked read could see the key
+    /// active, let the revocation commit, and then confirm on it anyway.
+    async fn key_active(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        fingerprint: &str,
+    ) -> Result<bool> {
+        let active: Option<bool> = sqlx::query_scalar(
+            "SELECT revoked_at IS NULL FROM artifact_verifier_keys
+              WHERE fingerprint = $1 FOR SHARE",
+        )
+        .bind(fingerprint)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(storage_err)?;
+        Ok(active.unwrap_or(false))
+    }
+
     async fn decide_confirmation(
         &self,
         tx: &mut Transaction<'_, Postgres>,
@@ -902,10 +927,7 @@ impl ArtifactDamageLedger {
         let candidate = sqlx::query(
             "SELECT pin_generation, verifier_id, verifier_run_id, fetch_id, fetched_at,
                     observed_sha256,
-                    abs(extract(epoch FROM (fetched_at - $7::timestamptz))) <= $8 AS fresh,
-                    EXISTS(SELECT 1 FROM artifact_verifier_keys k
-                            WHERE k.fingerprint = artifact_integrity_candidates.verifier_id
-                              AND k.revoked_at IS NULL) AS enrolled
+                    abs(extract(epoch FROM (fetched_at - $7::timestamptz))) <= $8 AS fresh
                FROM artifact_integrity_candidates
               WHERE tenant_id = $1 AND index_version_id = $2 AND artifact_id = $3
                 AND object_key = $4 AND expected_sha256 = $5 AND storage_generation = $6
@@ -923,11 +945,25 @@ impl ArtifactDamageLedger {
         .await
         .map_err(storage_err)?;
 
-        let usable = candidate.filter(|c| {
-            c.get::<i64, _>("pin_generation") == pin.generation
-                && c.get::<bool, _>("fresh")
-                && c.get::<bool, _>("enrolled")
-        });
+        let candidate = match candidate {
+            Some(c)
+                if c.get::<i64, _>("pin_generation") == pin.generation
+                    && c.get::<bool, _>("fresh") =>
+            {
+                Some(c)
+            }
+            _ => None,
+        };
+        let usable = match candidate {
+            Some(c)
+                if self
+                    .key_active(tx, &c.get::<String, _>("verifier_id"))
+                    .await? =>
+            {
+                Some(c)
+            }
+            _ => None,
+        };
         let Some(first) = usable else {
             // No candidate, or one from an earlier generation, outside the
             // confirmation window or from a key revoked since: this
@@ -1055,9 +1091,6 @@ impl ArtifactDamageLedger {
                     a.first_match_fetched_at, a.first_match_observed_sha256,
                     a.first_match_storage_generation,
                     $3::timestamptz >= a.authorized_at AS fresh,
-                    EXISTS(SELECT 1 FROM artifact_verifier_keys k
-                            WHERE k.fingerprint = a.first_match_verifier_id
-                              AND k.revoked_at IS NULL) AS first_enrolled,
                     i.object_key, i.expected_sha256
                FROM artifact_repair_attempts a
                JOIN artifact_integrity_incidents i
@@ -1128,10 +1161,11 @@ impl ArtifactDamageLedger {
         let storage_generation = o.pin.storage_generation.clone().unwrap_or_default();
         let observed = o.observed_sha256.clone().unwrap_or_default();
         // A first match whose key was revoked since is replaced, never
-        // confirmed.
-        let first_verifier: Option<String> = a
-            .get::<Option<String>, _>("first_match_verifier_id")
-            .filter(|_| a.get::<bool, _>("first_enrolled"));
+        // confirmed. Its key row is share-locked like the current one.
+        let first_verifier = match a.get::<Option<String>, _>("first_match_verifier_id") {
+            Some(v) if self.key_active(tx, &v).await? => Some(v),
+            _ => None,
+        };
         let Some(first_verifier) = first_verifier else {
             sqlx::query(
                 "UPDATE artifact_repair_attempts

@@ -695,12 +695,33 @@ pub(super) async fn health(State(state): State<Arc<AppState>>, headers: HeaderMa
         ),
         ("shutdown grace", format!("{} s", cfg.shutdown_grace_secs)),
     ]);
+    // Process counters: this replica, every tenant. They belong here and not
+    // on the tenant-scoped MCP page, which must not show other tenants'
+    // activity volumes.
+    let counter = |metric: &str, needle: &str| {
+        charts::esc(&state.metrics.counter_sum(metric, needle).to_string())
+    };
+    let mcp = kv(&[
+        (
+            "audit admission refusals",
+            counter("munarium_mcp_audit_refusals_total", ""),
+        ),
+        (
+            "load shed at MCP entry",
+            counter("munarium_mcp_requests_total", "shed"),
+        ),
+        (
+            "native interaction records dropped",
+            counter("munarium_interactions_dropped_total", ""),
+        ),
+    ]);
     let scale = crate::scale_diagnostics::health_section(
         &crate::scale_diagnostics::op_scale_report(&state, &admin.tenant.tenant_id).await,
     );
     let body = format!(
         r#"<div class="tiles">{}{}{}{}{}{}</div>
 {scale}
+<h2>MCP and interaction records (this replica, all tenants, since start)</h2><div class="card">{mcp}</div>
 <h2>effective configuration</h2><div class="card">{config}</div>
 <div class="notice">Process state only — never calls the paid <a href="/healthai">/healthai</a> probe.
 Scrape target: <code>GET /metrics</code> on the ops plane (:9090). Secrets never render here: the database URL, static token values, and the token secret show only as present or absent.</div>"#,

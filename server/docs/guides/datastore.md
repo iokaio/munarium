@@ -767,7 +767,9 @@ first and its per-version outcomes. The page says "older history pruned" when
 the events read reports a gap, and "history unavailable" for a job only a v1.4
 builder claimed. A read that fails is shown as unavailable rather than as an
 empty list. The page reloads every five seconds while the job is pending or
-running. It is read-only; cancel a job through the API or `mmctl`.
+running. The reloads do not count as console activity, so a console session
+left on the page still ends at its idle limit. It is read-only; cancel a job
+through the API or `mmctl`.
 
 #### Fair claiming across tenants
 

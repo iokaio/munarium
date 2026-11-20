@@ -4,8 +4,12 @@
 //! token-revocation review (`/admin/tokens/{jti}/revoke`, typed confirmation).
 //! The page adds no action of its own; the console's management actions keep
 //! their native roles. Every value from the store is escaped (U9).
+//!
+//! Every count shown is the signed-in tenant's. The replica's process-wide
+//! MCP counters cover all tenants, so they are on the replica-scoped health
+//! page instead, never here.
 
-use super::{action, admin_auth, html_table, kv, pill, render, store_note, Tone};
+use super::{action, admin_auth, html_table, pill, render, store_note, Tone};
 use crate::charts::esc;
 use crate::state::AppState;
 use axum::extract::State;
@@ -70,29 +74,6 @@ pub(super) async fn page(State(state): State<Arc<AppState>>, headers: HeaderMap)
         Err(r) => return r,
     };
     let tenant = admin.tenant.tenant_id.clone();
-    let metrics = kv(&[
-        (
-            "audit admission refusals (this replica)",
-            esc(&state
-                .metrics
-                .counter_sum("munarium_mcp_audit_refusals_total", "")
-                .to_string()),
-        ),
-        (
-            "load shed at MCP entry (this replica)",
-            esc(&state
-                .metrics
-                .counter_sum("munarium_mcp_requests_total", "shed")
-                .to_string()),
-        ),
-        (
-            "native interaction records dropped (this replica)",
-            esc(&state
-                .metrics
-                .counter_sum("munarium_interactions_dropped_total", "")
-                .to_string()),
-        ),
-    ]);
     let activity = match crate::mcp_store::activity(&state, &tenant).await {
         Ok(a) => {
             let by_tool = html_table(
@@ -197,7 +178,7 @@ pub(super) async fn page(State(state): State<Arc<AppState>>, headers: HeaderMap)
     };
     let body = format!(
         r#"{}
-<div class="card"><h2>Signals</h2>{metrics}</div>
+<p class="muted">Every count on this page is this tenant's. This replica's MCP admission refusals, load shedding and dropped interaction records cover every tenant, so they are on the <a href="/admin/health">health</a> page.</p>
 {activity}
 <div class="card"><h2>Tokens that can enter MCP</h2>{}{tokens}<p class="muted">Unrevoked, unexpired tokens carrying the mcp scope (newest {TOKEN_LIMIT}). Revoking goes through the token review and its typed confirmation.</p></div>"#,
         mode_note(&state),

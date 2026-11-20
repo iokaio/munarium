@@ -139,6 +139,26 @@ pub fn load_verifier_key(path: &str) -> Result<VerifierSigningKey> {
     })
 }
 
+/// Whether an unblocked pin at `current` releases a local isolation recorded
+/// at `*at`, updating an unknown `*at` in place.
+///
+/// A known generation is released only by a later one: the pin was blocked
+/// and then cleared after the isolation. An unknown generation (`None`) can
+/// never be released by itself, because the clearance it would need may
+/// have happened before the isolation. The first generation read afterwards
+/// takes its place instead, so release waits for a clearance after that
+/// read. That is never earlier than with the true generation, which was at
+/// most the one read.
+pub(crate) fn release_after_clearance(at: &mut Option<i64>, current: i64) -> bool {
+    match *at {
+        Some(isolated_at) => current > isolated_at,
+        None => {
+            *at = Some(current);
+            false
+        }
+    }
+}
+
 /// Where an integrity failure was detected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureSite {
@@ -162,8 +182,10 @@ pub struct DamageGuard {
     signing_key: Option<VerifierSigningKey>,
     /// Locally isolated keys and the pin generation at isolation. A key is
     /// released only after the pin's generation advances unblocked, i.e. a
-    /// block followed by a verified clearance.
-    isolated: Mutex<HashMap<ArtifactCacheKey, i64>>,
+    /// block followed by a verified clearance. `None` is an unknown
+    /// generation (the pin could not be read when the key was isolated):
+    /// see [`release_after_clearance`].
+    isolated: Mutex<HashMap<ArtifactCacheKey, Option<i64>>>,
     /// `(tenant, attempt)` pairs this replica has already verified.
     verified_attempts: Mutex<HashSet<(String, String)>>,
     /// `Some(interval)` when the deployment is declared single-replica.
@@ -239,7 +261,7 @@ impl DamageGuard {
         }
     }
 
-    fn isolated(&self) -> std::sync::MutexGuard<'_, HashMap<ArtifactCacheKey, i64>> {
+    fn isolated(&self) -> std::sync::MutexGuard<'_, HashMap<ArtifactCacheKey, Option<i64>>> {
         self.isolated.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
@@ -289,8 +311,8 @@ impl DamageContext {
         let admission = self.ledger.admit(index_version_id, artifact_id).await?;
         if admission.blocked_by.is_none() {
             let mut isolated = self.guard.isolated();
-            if let Some(at) = isolated.get(key).copied() {
-                if admission.generation > at {
+            if let Some(at) = isolated.get_mut(key) {
+                if release_after_clearance(at, admission.generation) {
                     // The pin was blocked and then cleared after this replica
                     // isolated its copy. Discard the quarantined copy so the
                     // next hydration re-fetches and re-verifies it against
@@ -325,12 +347,17 @@ impl DamageContext {
         reader: &ReaderCapabilities,
         limits: &Limits,
     ) -> Option<RecordResult> {
-        let generation = self
-            .ledger
-            .admit(index_version_id, artifact_id)
-            .await
-            .map(|a| a.generation)
-            .unwrap_or(0);
+        // A pin that cannot be read leaves the generation unknown, never 0:
+        // a 0 would let any later generation release the isolation without
+        // a clearance that followed it.
+        let generation = match self.ledger.admit(index_version_id, artifact_id).await {
+            Ok(a) => Some(a.generation),
+            Err(e) => {
+                tracing::warn!(error = %e,
+                    "reading the pin while isolating an artifact failed; the isolation waits for a clearance after the next readable generation");
+                None
+            }
+        };
         {
             let mut isolated = self.guard.isolated();
             if isolated.contains_key(key) {
@@ -732,5 +759,33 @@ mod replica_assurance_tests {
         assert!(DamageGuard::new(DamageMode::Enforce, "r")
             .with_single_replica(30)
             .is_err());
+    }
+}
+
+#[cfg(test)]
+mod isolation_release_tests {
+    use super::release_after_clearance;
+
+    #[test]
+    fn a_known_generation_is_released_only_by_a_later_one() {
+        let mut at = Some(2);
+        assert!(!release_after_clearance(&mut at, 2));
+        assert!(!release_after_clearance(&mut at, 1));
+        assert!(release_after_clearance(&mut at, 4));
+        assert_eq!(at, Some(2));
+    }
+
+    /// An isolation whose generation could not be read is never released by
+    /// the first generation seen afterwards, however high: a clearance
+    /// before the isolation must not release it. It is released only by a
+    /// clearance after that first read.
+    #[test]
+    fn an_unknown_generation_waits_for_a_clearance_after_the_next_read() {
+        let mut at = None;
+        assert!(!release_after_clearance(&mut at, 6));
+        assert_eq!(at, Some(6));
+        assert!(!release_after_clearance(&mut at, 6));
+        assert!(!release_after_clearance(&mut at, 0));
+        assert!(release_after_clearance(&mut at, 8));
     }
 }

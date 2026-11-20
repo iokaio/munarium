@@ -1243,6 +1243,102 @@ async fn a_revoked_key_counts_for_nothing_and_its_evidence_is_not_confirmed() {
     );
 }
 
+/// Begin revoking `fingerprint` on a connection of its own and leave the
+/// revocation uncommitted, holding the key row's lock.
+async fn revoking(f: &Fixture, fingerprint: &str) -> sqlx::Transaction<'static, sqlx::Postgres> {
+    let mut tx = f.pool.begin().await.unwrap();
+    sqlx::query(
+        "UPDATE artifact_verifier_keys
+            SET revoked_at = now(), revoked_by = 'operator', revoke_reason = 'race'
+          WHERE fingerprint = $1 AND revoked_at IS NULL",
+    )
+    .bind(fingerprint)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx
+}
+
+/// Record `o` while a revocation of another key is in flight, and commit
+/// that revocation while the record is (with the share lock) waiting for
+/// it. Without the lock the record decides on the stale, unrevoked row and
+/// commits before the revocation does.
+async fn record_racing(
+    f: &Fixture,
+    o: &AuthoritativeObservation,
+    revocation: sqlx::Transaction<'static, sqlx::Postgres>,
+) -> Decision {
+    let signed = f.signed(o).await;
+    let (recorded, ()) = tokio::join!(
+        f.ledger.record_authoritative(&signed, ENFORCE),
+        async move {
+            tokio::time::sleep(std::time::Duration::from_millis(750)).await;
+            revocation.commit().await.unwrap();
+        }
+    );
+    recorded.unwrap().decision
+}
+
+/// A revocation of the stored first observation's key that commits before
+/// the second observation's decision is honoured: the decision waits on
+/// the key row, sees it revoked, and never confirms on it.
+#[tokio::test]
+async fn a_revocation_racing_a_confirmation_is_honoured() {
+    let url = guard!();
+    let f = fixture(&url, "dmg-auth-race").await;
+    assert_eq!(f.mismatch("replica-a").await, Decision::Candidate);
+    let o = f.observe("replica-b", Outcome::Mismatch, None).await;
+    let revocation = revoking(&f, &f.fp("replica-a").await).await;
+    assert_eq!(record_racing(&f, &o, revocation).await, Decision::Candidate);
+    assert_eq!(f.blocked_by().await, None);
+    // replica-b's mismatch is now the candidate: a third key confirms it.
+    assert!(matches!(
+        f.mismatch("replica-c").await,
+        Decision::Blocked { .. }
+    ));
+    assert_eq!(
+        f.incident().await.confirming_verifiers,
+        [f.fp("replica-b").await, f.fp("replica-c").await]
+    );
+}
+
+/// The same for a repair: a first match whose key's revocation commits
+/// before the second match's decision is replaced, never cleared on.
+#[tokio::test]
+async fn a_revocation_racing_a_clearance_is_honoured() {
+    let url = guard!();
+    let f = fixture(&url, "dmg-auth-race-clear").await;
+    let incident = f.block().await;
+    let attempt = f
+        .ledger
+        .authorize_repair(&incident, "repair-workflow", "operator", None)
+        .await
+        .unwrap();
+    let m = f
+        .observe("replica-c", Outcome::Match, Some(&attempt.attempt_id))
+        .await;
+    assert_eq!(f.record(&m).await, Decision::RepairMatch);
+    let o = f
+        .observe("replica-d", Outcome::Match, Some(&attempt.attempt_id))
+        .await;
+    let revocation = revoking(&f, &f.fp("replica-c").await).await;
+    assert_eq!(
+        record_racing(&f, &o, revocation).await,
+        Decision::RepairMatch
+    );
+    assert!(f.blocked_by().await.is_some());
+    let progress = f
+        .ledger
+        .repair_attempt(&attempt.attempt_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        progress.first_match_verifier_id,
+        Some(f.fp("replica-d").await)
+    );
+}
+
 #[tokio::test]
 async fn enrollment_is_idempotent_and_revocation_is_permanent() {
     let url = guard!();

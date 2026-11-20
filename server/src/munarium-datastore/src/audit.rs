@@ -14,7 +14,10 @@
 //! digests the audit compares against are the pin's own, never a substituted
 //! manifest's. An absent object or a failed read is [`AuditOutcome::Unavailable`],
 //! not a mismatch: no byte was observed to disagree with the pin, and a
-//! timeout must never count as damage.
+//! timeout must never count as damage. The one exception is a component the
+//! manifest marks optional (`required: false`): when the store lists it as
+//! absent, the audit skips it exactly as hydration does, so the artifact
+//! hydration serves is the artifact the audit can find complete.
 
 use sha2::{Digest, Sha256};
 
@@ -152,6 +155,11 @@ pub fn audit_artifact(
     for c in &manifest.components {
         let fetched = match store.exists(&c.path) {
             Ok(true) => store.get_component(&c.path, None).ok(),
+            // An absent optional component is skipped, as hydration and open
+            // skip it: the pin does not require it, so its absence neither
+            // makes the artifact unusable nor leaves the audit incomplete. A
+            // failed listing is still unavailable.
+            Ok(false) if !c.required => continue,
             _ => None,
         };
         let (observed_sha256, observed_bytes, outcome) = match fetched {
@@ -334,6 +342,43 @@ mod tests {
         let audit = run(&store, &id);
         assert_eq!(audit.objects.len(), 1);
         assert_eq!(audit.objects[0].outcome, AuditOutcome::Mismatch);
+    }
+
+    /// An optional component the store does not hold is skipped, exactly as
+    /// hydration skips it: the audit is complete and matches. A present
+    /// optional component is still compared, and a missing required one is
+    /// still unavailable.
+    #[test]
+    fn an_absent_optional_component_is_skipped_like_hydration() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _, mut manifest) = seed(dir.path());
+        let optional = manifest.components[0].path.clone();
+        manifest.components[0].required = false;
+        let bytes = serde_json::to_vec(&manifest).unwrap();
+        store.put_component(MANIFEST, &bytes).unwrap();
+        let id = digest(&bytes);
+        assert!(run(&store, &id).all_match());
+        assert!(
+            run(&store, &id).object(&optional).is_some(),
+            "present: compared"
+        );
+
+        std::fs::remove_file(dir.path().join(&optional)).unwrap();
+        let audit = run(&store, &id);
+        assert!(audit.first_unavailable().is_none(), "{audit:?}");
+        assert!(audit.all_match(), "{audit:?}");
+        assert!(audit.object(&optional).is_none());
+        assert_eq!(audit.objects.len(), manifest.components.len());
+
+        // A required component that is absent is still unavailable.
+        assert!(manifest.components[1].required);
+        let required = manifest.components[1].path.clone();
+        std::fs::remove_file(dir.path().join(&required)).unwrap();
+        let audit = run(&store, &id);
+        assert_eq!(
+            audit.first_unavailable().map(|o| o.object_key.as_str()),
+            Some(required.as_str())
+        );
     }
 
     /// Absence is never damage: a missing component is unavailable.

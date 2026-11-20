@@ -331,19 +331,41 @@ fn constant_time_eq(a: &str, b: &str) -> bool {
             == 0
 }
 
+/// The replica's own idle and absolute bounds that liveness applies on top
+/// of each row's recorded values, in seconds.
+///
+/// Under `enabled` they are this replica's settings, so the stricter of the
+/// recorded and configured values wins. Under `legacy` the replica serves no
+/// session and has no settings of its own (they are not even read), so it
+/// judges each row by its recorded values alone: the widest values any
+/// replica can record ([`IDLE_RANGE`] and [`MAX_RANGE`] maxima, which every
+/// recorded value is within) impose no further bound. A rolled-back replica
+/// therefore lists as live every session a re-enabled fleet could still
+/// honour, and so prompts its revocation, rather than labelling it by the
+/// defaults.
+fn liveness_bounds(s: &ConsoleSessionSettings) -> (i64, i64) {
+    if s.sessions() {
+        (s.idle_secs as i64, s.max_secs as i64)
+    } else {
+        (IDLE_RANGE.1 as i64, MAX_RANGE.1 as i64)
+    }
+}
+
 /// The memory store's liveness rule — the same predicate the PostgreSQL
 /// query applies: not revoked, before the recorded absolute expiry, within
-/// this replica's absolute lifetime, and used within the stricter idle bound.
+/// this replica's absolute lifetime, and used within the stricter idle bound
+/// ([`liveness_bounds`]).
 fn live_at(
     r: &SessionRecord,
     now: chrono::DateTime<chrono::Utc>,
     s: &ConsoleSessionSettings,
 ) -> bool {
     let secs = chrono::Duration::seconds;
-    let idle = r.idle_secs.min(s.idle_secs as i64);
+    let (idle_bound, max_bound) = liveness_bounds(s);
+    let idle = r.idle_secs.min(idle_bound);
     r.revoked_at.is_none()
         && now < r.expires_at
-        && now < r.created_at + secs(s.max_secs as i64)
+        && now < r.created_at + secs(max_bound)
         && now < r.last_seen_at + secs(idle)
 }
 
@@ -419,6 +441,11 @@ impl ConsoleSessions {
 
     fn max(&self) -> i64 {
         self.settings.max_secs as i64
+    }
+
+    /// The `$2` and `$3` bounds of [`PG_LIVE`] ([`liveness_bounds`]).
+    fn bounds(&self) -> (i64, i64) {
+        liveness_bounds(&self.settings)
     }
 }
 
@@ -515,23 +542,43 @@ fn current_authority(state: &AppState, session_id: &str, digest: &str) -> Option
     }
 }
 
-/// Resolves a cookie handle to a live session, recording the use (idle
-/// expiry counts from the last request). `None` for anything that is not a
-/// live session this replica's configuration still authorizes: a malformed,
-/// unknown, tampered, signed-out, revoked or expired handle, or a credential
-/// that no longer resolves to the same tenant and role with mgmt authority.
-pub async fn resolve(state: &AppState, handle: &str) -> Result<Option<LiveSession>> {
+/// Whether a request counts as the operator's use of the session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Use {
+    /// An operator's request: it restarts the idle clock.
+    Active,
+    /// A page reloading itself (the build-job page's meta refresh): liveness
+    /// is checked exactly as for [`Use::Active`], but the idle clock is not
+    /// restarted, so an unattended page cannot keep a session alive.
+    Passive,
+}
+
+/// Resolves a cookie handle to a live session, recording an
+/// [`Use::Active`] use (idle expiry counts from the last such request).
+/// `None` for anything that is not a live session this replica's
+/// configuration still authorizes: a malformed, unknown, tampered,
+/// signed-out, revoked or expired handle, or a credential that no longer
+/// resolves to the same tenant and role with mgmt authority.
+pub async fn resolve(state: &AppState, handle: &str, using: Use) -> Result<Option<LiveSession>> {
     if !well_formed(handle) {
         return Ok(None);
     }
     let sessions = &state.console;
     let digest = handle_digest(handle);
+    let touch = using == Use::Active;
     let found: Option<(String, String, String, String, String)> = match state.pg_pool() {
-        Some(pool) => sqlx::query_as(&format!(
-            "UPDATE console_sessions SET last_seen_at = now()
-              WHERE handle_digest = $1 AND {PG_LIVE}
-          RETURNING session_id, tenant_id, role, credential_digest, binding_secret"
-        ))
+        Some(pool) => sqlx::query_as(&if touch {
+            format!(
+                "UPDATE console_sessions SET last_seen_at = now()
+                  WHERE handle_digest = $1 AND {PG_LIVE}
+              RETURNING session_id, tenant_id, role, credential_digest, binding_secret"
+            )
+        } else {
+            format!(
+                "SELECT session_id, tenant_id, role, credential_digest, binding_secret
+                   FROM console_sessions WHERE handle_digest = $1 AND {PG_LIVE}"
+            )
+        })
         .bind(&digest)
         .bind(sessions.idle())
         .bind(sessions.max())
@@ -543,7 +590,9 @@ pub async fn resolve(state: &AppState, handle: &str) -> Result<Option<LiveSessio
             let mut mem = sessions.lock();
             match mem.get_mut(&digest) {
                 Some(s) if live_at(&s.record, now, &sessions.settings) => {
-                    s.record.last_seen_at = now;
+                    if touch {
+                        s.record.last_seen_at = now;
+                    }
                     Some((
                         s.record.session_id.clone(),
                         s.record.tenant_id.clone(),
@@ -616,8 +665,8 @@ pub async fn list(state: &AppState, tenant: &str) -> Result<Vec<SessionRecord>> 
                   ORDER BY created_at DESC, session_id DESC LIMIT $4"
             ))
             .bind(tenant)
-            .bind(sessions.idle())
-            .bind(sessions.max())
+            .bind(sessions.bounds().0)
+            .bind(sessions.bounds().1)
             .bind(LIST_LIMIT)
             .fetch_all(pool)
             .await
@@ -656,8 +705,8 @@ pub async fn get(state: &AppState, tenant: &str, session_id: &str) -> Result<Ses
                    FROM console_sessions WHERE tenant_id = $1 AND session_id = $4"
             ))
             .bind(tenant)
-            .bind(sessions.idle())
-            .bind(sessions.max())
+            .bind(sessions.bounds().0)
+            .bind(sessions.bounds().1)
             .bind(session_id)
             .fetch_optional(pool)
             .await
@@ -893,5 +942,48 @@ mod tests {
         let mut revoked = r.clone();
         revoked.revoked_at = Some(t0);
         assert!(!live_at(&revoked, t0 + secs(1), &s));
+    }
+
+    /// A legacy (rolled-back) replica has no session settings of its own,
+    /// so it judges each row by the values recorded at sign-in alone, never
+    /// by the defaults: a session a re-enabled fleet could still honour is
+    /// listed as live, which prompts its revocation.
+    #[test]
+    fn a_legacy_replica_judges_liveness_by_the_recorded_values() {
+        let t0 = chrono::Utc::now();
+        let secs = chrono::Duration::seconds;
+        let legacy = ConsoleSessionSettings::default();
+        assert!(!legacy.sessions());
+        // Recorded under idle 7200 s and absolute 86400 s, both looser than
+        // the defaults (1800 s and 28800 s).
+        let mut r = record(t0);
+        r.idle_secs = 7_200;
+        r.expires_at = t0 + secs(86_400);
+        assert!(
+            live_at(&r, t0 + secs(3_600), &legacy),
+            "idle by default only"
+        );
+        assert!(live_at(&r, t0 + secs(7_199), &legacy));
+        assert!(!live_at(&r, t0 + secs(7_200), &legacy), "recorded idle");
+        let mut busy = r.clone();
+        busy.last_seen_at = t0 + secs(80_000);
+        assert!(
+            live_at(&busy, t0 + secs(80_001), &legacy),
+            "past default max"
+        );
+        assert!(
+            !live_at(&busy, t0 + secs(86_400), &legacy),
+            "recorded expiry"
+        );
+        let mut revoked = r.clone();
+        revoked.revoked_at = Some(t0);
+        assert!(!live_at(&revoked, t0 + secs(1), &legacy));
+        // An enabled replica still applies the stricter of the two.
+        assert!(!live_at(
+            &r,
+            t0 + secs(3_600),
+            &ConsoleSessionSettings::enabled()
+        ));
+        assert_eq!(liveness_bounds(&legacy), (86_400, 604_800));
     }
 }

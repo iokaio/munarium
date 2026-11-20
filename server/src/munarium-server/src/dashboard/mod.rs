@@ -63,6 +63,7 @@ use munarium_core::KernelError;
 use std::sync::Arc;
 
 const COOKIE: &str = crate::console_sessions::LEGACY_COOKIE;
+use crate::console_sessions::Use as SessionUse;
 
 /// Sent by a trusted view-only proxy (the demo BFF's GET-only passthrough):
 /// action forms render as notes, so a page that cannot POST through the
@@ -135,6 +136,42 @@ fn admin_credential(headers: &HeaderMap) -> String {
 /// The v1.4 cookie is then ignored. Under `legacy` the session cookie is
 /// never read. A bearer header behaves the same in both modes.
 async fn admin_auth(state: &AppState, headers: &HeaderMap) -> Result<AdminCtx, Response> {
+    admin_auth_as(state, headers, SessionUse::Active).await
+}
+
+/// The query a self-reloading page's refresh URL carries ([`refresh_url`]).
+const REFRESH_QUERY: &str = "refresh=1";
+
+/// Where a self-reloading page's `<meta http-equiv="refresh">` points: the
+/// page itself, marked so the reload is not counted as the operator's use
+/// of a console session ([`admin_auth_for_page`]).
+pub(crate) fn refresh_url(path: &str) -> String {
+    format!("{path}?{REFRESH_QUERY}")
+}
+
+/// [`admin_auth`] for a page that may reload itself: a request for the
+/// page's [`refresh_url`] checks the console session's liveness like any
+/// other, but does not restart its idle clock, so a page left open cannot
+/// keep an unattended session alive (ClearView U10 and U12). The marker can
+/// only shorten a session, never extend or grant one.
+pub(crate) async fn admin_auth_for_page(
+    state: &AppState,
+    headers: &HeaderMap,
+    query: Option<&str>,
+) -> Result<AdminCtx, Response> {
+    let using = if query == Some(REFRESH_QUERY) {
+        SessionUse::Passive
+    } else {
+        SessionUse::Active
+    };
+    admin_auth_as(state, headers, using).await
+}
+
+async fn admin_auth_as(
+    state: &AppState,
+    headers: &HeaderMap,
+    using: SessionUse,
+) -> Result<AdminCtx, Response> {
     let store = if state.pg_pool().is_some() {
         "postgres"
     } else {
@@ -159,7 +196,7 @@ async fn admin_auth(state: &AppState, headers: &HeaderMap) -> Result<AdminCtx, R
     }
     let handle = cookie_value(headers, settings.cookie_name());
     let live = match &handle {
-        Some(h) => crate::console_sessions::resolve(state, h).await,
+        Some(h) => crate::console_sessions::resolve(state, h, using).await,
         None => Ok(None),
     };
     match live {
@@ -329,7 +366,7 @@ pub(crate) const NAV: &[NavGroup] = &[
             nav_page(
                 "/admin/mcp",
                 "mcp",
-                "MCP agent activity by tool, durable-admission refusals, unknown outcomes, and the tokens that can enter MCP.", &["ops/mcp.md", "security-posture.md"]),
+                "This tenant's MCP activity by tool, its unknown outcomes, and the tokens that can enter MCP.", &["ops/mcp.md", "security-posture.md"]),
             nav_page(
                 "/admin/console-sessions",
                 "console sessions",
@@ -496,18 +533,26 @@ pub(crate) fn render(admin: &AdminCtx, active: &str, title: &str, body: &str) ->
     page(admin, active, title, "", body).into_response()
 }
 
-/// A full page that reloads itself every `refresh_secs` seconds, or a plain
-/// page when `None`. No script: a `<meta http-equiv="refresh">`, emitted only
-/// while there is something to watch (ClearView U12).
+/// A full page that reloads itself every `secs` seconds from `path`'s
+/// [`refresh_url`], or a plain page when `None`. No script: a
+/// `<meta http-equiv="refresh">`, emitted only while there is something to
+/// watch (ClearView U12). The handler serves `path` through
+/// [`admin_auth_for_page`], so the reloads do not keep a console session
+/// from idling out.
 pub(crate) fn render_refreshing(
     admin: &AdminCtx,
     active: &str,
     title: &str,
-    refresh_secs: Option<u32>,
+    refresh: Option<(u32, &str)>,
     body: &str,
 ) -> Response {
-    let head = refresh_secs
-        .map(|s| format!(r#"<meta http-equiv="refresh" content="{s}">"#))
+    let head = refresh
+        .map(|(secs, path)| {
+            format!(
+                r#"<meta http-equiv="refresh" content="{secs};url={}">"#,
+                charts::esc(&refresh_url(path))
+            )
+        })
         .unwrap_or_default();
     page_with_head(admin, active, title, "", &head, body).into_response()
 }
@@ -906,9 +951,12 @@ pub struct LoginForm {
 /// cookie holds the token. Under `MUNARIUM_CONSOLE_SESSIONS=enabled` it
 /// starts a revocable session, sets the cookie to its opaque handle and
 /// removes any v1.4 cookie, so the static token no longer sits in the
-/// browser. The token check is the same in both modes.
+/// browser. A session handle the browser already carried is signed out
+/// first, so the session the new cookie replaces does not stay live,
+/// unseen, until it expires. The token check is the same in both modes.
 async fn login_submit(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    headers: HeaderMap,
     axum::extract::Form(form): axum::extract::Form<LoginForm>,
 ) -> Response {
     let token = form.token.trim();
@@ -916,6 +964,20 @@ async fn login_submit(
         Ok(ctx)
             if (ctx.role == "mgmt" || ctx.disabled_mode) && state.console.settings.sessions() =>
         {
+            if let Some(old) = cookie_value(&headers, state.console.settings.cookie_name()) {
+                // Only a handle this browser holds can be named here, and
+                // signing it out only ends a session: it grants nothing.
+                if let Err(e) = crate::console_sessions::sign_out(&state, &old).await {
+                    tracing::warn!(error = %e, "the replaced console session could not be signed out");
+                    return (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        login_page(Some(
+                            "the previous console session could not be signed out (session store unavailable), so no new one was started; try again",
+                        )),
+                    )
+                        .into_response();
+                }
+            }
             match crate::console_sessions::create(&state, &ctx, token).await {
                 Ok(handle) => {
                     let mut resp = Redirect::to("/admin").into_response();
@@ -3580,6 +3642,141 @@ mod tests {
         assert_eq!(body.matches(">expired</span>").count(), 2, "{body}");
     }
 
+    /// The MCP page is tenant-scoped, so it shows no process-wide counter:
+    /// those sum every tenant's MCP traffic on this replica. They are on the
+    /// replica-scoped health page, labelled as covering all tenants.
+    #[tokio::test]
+    async fn replica_wide_mcp_counters_are_on_the_health_page_only() {
+        let state = state(static_auth()).await;
+        // Another tenant's traffic, as the process counters record it.
+        state.metrics.inc_by(
+            "munarium_mcp_audit_refusals_total",
+            crate::metrics::labels(&[("reason", "store-error")]),
+            7_301,
+        );
+        state.metrics.inc_by(
+            "munarium_mcp_requests_total",
+            crate::metrics::labels(&[("method", "tools/call"), ("outcome", "shed")]),
+            7_302,
+        );
+        state
+            .metrics
+            .inc_by("munarium_interactions_dropped_total", String::new(), 7_303);
+        let mcp = body_string(get(&state, "/admin/mcp", Some("m"), false).await).await;
+        for leaked in [
+            "7301",
+            "7302",
+            "7303",
+            "audit admission refusals",
+            "load shed at MCP entry",
+        ] {
+            assert!(!mcp.contains(leaked), "{leaked}: {mcp}");
+        }
+        assert!(mcp.contains(r#"href="/admin/health""#), "{mcp}");
+        let health = body_string(get(&state, "/admin/health", Some("m"), false).await).await;
+        assert!(health.contains("this replica, all tenants"), "{health}");
+        for shown in ["7301", "7302", "7303"] {
+            assert!(health.contains(shown), "{shown}: {health}");
+        }
+        for path in ["/admin/mcp", "/admin/health"] {
+            let body = body_string(get(&state, path, Some("m"), false).await).await;
+            html_checks::assert_operable(path, &body);
+        }
+    }
+
+    /// A self-reloading page's refresh (the build-job page's meta refresh)
+    /// checks the session but does not restart its idle clock, so a page
+    /// left open cannot keep an unattended session alive. The operator's own
+    /// request for the same page still does.
+    #[tokio::test]
+    async fn a_page_refresh_does_not_keep_an_idle_session_alive() {
+        let settings = ConsoleSessionSettings {
+            idle_secs: 600,
+            max_secs: 3600,
+            ..ConsoleSessionSettings::enabled()
+        };
+        let state = sessions_state(static_auth(), settings).await;
+        let page = "/admin/build-jobs/bjob-refresh";
+        let refresh = refresh_url(page);
+        assert_eq!(refresh, "/admin/build-jobs/bjob-refresh?refresh=1");
+
+        let idle = sign_in(&state, "m").await;
+        for _ in 0..2 {
+            state.console.advance_clock(250);
+            // Still live, so the refresh is served (the memory store has no
+            // build jobs, so the page is the honest unavailable panel).
+            let resp = get_with_cookie(&state, &refresh, &session_cookie(&idle)).await;
+            assert_eq!(resp.status(), StatusCode::OK, "within the idle limit");
+        }
+        state.console.advance_clock(250);
+        // 750 s since the last operator request, with only refreshes in
+        // between: the session has idled out, and a refresh is refused too.
+        assert!(!admitted(&state, &idle).await, "refreshes kept it alive");
+        let resp = get_with_cookie(&state, &refresh, &session_cookie(&idle)).await;
+        assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+
+        // The operator opening the same page is activity.
+        let active = sign_in(&state, "m").await;
+        state.console.advance_clock(500);
+        let resp = get_with_cookie(&state, page, &session_cookie(&active)).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        state.console.advance_clock(500);
+        assert!(admitted(&state, &active).await);
+    }
+
+    /// Signing in again from a browser that holds a session signs the
+    /// replaced session out, so it does not stay live and unseen until it
+    /// expires. A cookie that names no live session does not stop a login.
+    #[tokio::test]
+    async fn signing_in_again_signs_out_the_replaced_session() {
+        let state = sessions_state(static_auth(), ConsoleSessionSettings::enabled()).await;
+        let first = sign_in(&state, "m").await;
+        assert!(admitted(&state, &first).await);
+        let relogin = |cookie: String| {
+            let state = state.clone();
+            async move {
+                send(
+                    &state,
+                    axum::http::Request::post("/admin/login")
+                        .header("cookie", cookie)
+                        .header("content-type", "application/x-www-form-urlencoded")
+                        .body(axum::body::Body::from("token=m"))
+                        .unwrap(),
+                )
+                .await
+            }
+        };
+        let resp = relogin(session_cookie(&first)).await;
+        assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+        let second = cookie_set(&resp, SESSION_COOKIE).expect("a new session");
+        assert_ne!(second, first);
+        assert!(!admitted(&state, &first).await, "the replaced session");
+        assert!(admitted(&state, &second).await);
+        let body =
+            body_string(get(&state, "/admin/console-sessions", Some("m"), false).await).await;
+        assert_eq!(body.matches(">signed out</span>").count(), 1, "{body}");
+        assert_eq!(body.matches(">live</span>").count(), 1, "{body}");
+
+        // A malformed or already ended handle does not stop the login.
+        for stale in ["not-a-handle".to_string(), first.clone()] {
+            let resp = relogin(session_cookie(&stale)).await;
+            assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+            assert!(cookie_set(&resp, SESSION_COOKIE).is_some());
+        }
+        // A failed login signs nothing out.
+        let resp = send(
+            &state,
+            axum::http::Request::post("/admin/login")
+                .header("cookie", session_cookie(&second))
+                .header("content-type", "application/x-www-form-urlencoded")
+                .body(axum::body::Body::from("token=nope"))
+                .unwrap(),
+        )
+        .await;
+        assert!(body_string(resp).await.contains("invalid token"));
+        assert!(admitted(&state, &second).await);
+    }
+
     /// Console revocation behind review and typed confirmation (U4), on the
     /// memory store: another session is ended, refusals act on nothing, and
     /// a duplicate changes nothing. Another tenant cannot see the session.
@@ -4040,6 +4237,67 @@ mod tests {
         assert_eq!(ids.len(), 2);
     }
 
+    /// A legacy (rolled-back) replica labels each session by the lifetimes
+    /// recorded at sign-in, not by the defaults: a session signed in under
+    /// longer configured values, which a re-enabled fleet would honour, is
+    /// listed as live so the operator is prompted to revoke it.
+    #[tokio::test]
+    async fn a_legacy_replica_lists_sessions_by_their_recorded_lifetimes_on_postgres() {
+        let Ok(url) = std::env::var("MUNARIUM_TEST_DATABASE_URL") else {
+            eprintln!(
+                "console legacy liveness PostgreSQL test NOT RUN: MUNARIUM_TEST_DATABASE_URL unset"
+            );
+            return;
+        };
+        let tenant = format!("console-legacy-live-{}", uuid::Uuid::new_v4().simple());
+        let m = format!("m-{tenant}");
+        let tokens = vec![(m.clone(), tenant.clone(), "mgmt".to_string())];
+        let long = ConsoleSessionSettings {
+            idle_secs: 7_200,
+            max_secs: 86_400,
+            ..ConsoleSessionSettings::enabled()
+        };
+        let enabled = pg_replica(&url, tokens.clone(), long).await;
+        let legacy = pg_replica(&url, tokens.clone(), ConsoleSessionSettings::default()).await;
+        let handle = sign_in(&enabled, &m).await;
+        let age = |interval: &'static str| {
+            let pool = enabled.pg_pool().unwrap().clone();
+            let tenant = tenant.clone();
+            async move {
+                sqlx::query(&format!(
+                    "UPDATE console_sessions SET last_seen_at = now() - interval '{interval}',
+                            created_at = now() - interval '{interval}'
+                      WHERE tenant_id = $1"
+                ))
+                .bind(&tenant)
+                .execute(&pool)
+                .await
+                .unwrap();
+            }
+        };
+        // An hour without a request: past the default idle (1800 s), within
+        // the recorded one (7200 s) and the recorded absolute expiry.
+        age("1 hour").await;
+        let rows = crate::console_sessions::list(&legacy, &tenant)
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].live, "{rows:?}");
+        let body =
+            body_string(get(&legacy, "/admin/console-sessions", Some(&m), false).await).await;
+        assert_eq!(body.matches(">live</span>").count(), 1, "{body}");
+        assert!(body.contains("recorded idle and absolute expiry"), "{body}");
+        // ...and an enabled replica with those settings does honour it.
+        assert!(admitted(&enabled, &handle).await);
+        // Past the recorded idle it is expired everywhere.
+        age("3 hours").await;
+        let rows = crate::console_sessions::list(&legacy, &tenant)
+            .await
+            .unwrap();
+        assert!(!rows[0].live, "{rows:?}");
+        assert!(!admitted(&enabled, &handle).await);
+    }
+
     // -----------------------------------------------------------------------
     // U12: build-job progress from recorded events
     // -----------------------------------------------------------------------
@@ -4118,9 +4376,23 @@ mod tests {
             body_string(get(&state, "/admin/build-jobs/bjob-u12-run", Some("m"), false).await)
                 .await;
         assert!(
-            run.contains(r#"<meta http-equiv="refresh" content="5">"#),
+            run.contains(
+                r#"<meta http-equiv="refresh" content="5;url=/admin/build-jobs/bjob-u12-run?refresh=1">"#
+            ),
             "{run}"
         );
+        // The reload target serves the same page.
+        let reloaded = body_string(
+            get(
+                &state,
+                "/admin/build-jobs/bjob-u12-run?refresh=1",
+                Some("m"),
+                false,
+            )
+            .await,
+        )
+        .await;
+        assert!(reloaded.contains("2 sources done"), "{reloaded}");
         assert!(run.contains("2 sources done"), "{run}");
         assert!(run.contains("total unknown"), "{run}");
         assert!(run.contains(">extracting</span>"), "{run}");

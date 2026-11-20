@@ -18,6 +18,11 @@
 //! crate's job functions are `unsafe fn`. The calls stay as reviewed until
 //! the maintainer chooses how to proceed.
 
+// The structure layouts below are checked against the documented sizes for
+// 32- and 64-bit Windows only (see the tests).
+#[cfg(not(any(target_pointer_width = "32", target_pointer_width = "64")))]
+compile_error!("the Job Object structure layouts are verified only for 32- and 64-bit Windows");
+
 use super::IsolatedPdfLimits;
 use std::ffi::c_void;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
@@ -199,13 +204,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn structures_match_the_documented_x64_sizes() {
+    fn structures_match_the_documented_sizes() {
         // JOBOBJECT_BASIC_LIMIT_INFORMATION is 64 bytes and the extended form
-        // 144 on x64; a wrong layout would set the wrong limits silently.
-        if cfg!(target_pointer_width = "64") {
-            assert_eq!(std::mem::size_of::<BasicLimitInformation>(), 64);
-            assert_eq!(std::mem::size_of::<ExtendedLimitInformation>(), 144);
-            assert_eq!(std::mem::size_of::<BasicAccountingInformation>(), 48);
-        }
+        // 144 on x64; 48 and 112 on x86, where SIZE_T and ULONG_PTR are four
+        // bytes and the LARGE_INTEGER fields keep eight-byte alignment.
+        // JOBOBJECT_BASIC_ACCOUNTING_INFORMATION is 48 on both. A wrong
+        // layout would set the wrong limits silently.
+        #[cfg(target_pointer_width = "64")]
+        let documented = (64, 144, 48);
+        #[cfg(target_pointer_width = "32")]
+        let documented = (48, 112, 48);
+        assert_eq!(
+            (
+                std::mem::size_of::<BasicLimitInformation>(),
+                std::mem::size_of::<ExtendedLimitInformation>(),
+                std::mem::size_of::<BasicAccountingInformation>(),
+            ),
+            documented
+        );
     }
 }

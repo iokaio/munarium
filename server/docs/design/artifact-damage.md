@@ -68,7 +68,7 @@ Migration `0060_artifact_damage.sql` adds five tenant-scoped tables. None stores
 | `artifact_repair_attempts` | Preauthorized repair workflow scoped to one incident, with its first fresh match | One verifying attempt per incident |
 | `artifact_integrity_observations` | Every recorded observation and the ledger's decision on it | 1,024 per tenant |
 
-The observation history is bounded separately from the decision state. When the history is full, a new observation is not appended and existing entries are never evicted. The caller is told the history is full and logs that repair or review is required. Candidates, incidents and attempts carry their own evidence, so a full history can still block a newly confirmed pin, recover the evidence for that block and clear it. **No row means unknown integrity.** The absence of a finding is never reported as a clean audit.
+The observation history is bounded separately from the decision state. When the history is full, a new observation is not appended and existing entries are never evicted. Nothing prunes the history, and clearing an incident frees no entry, so a full history stays full. The caller is told the history is full and logs that repair or review is required. Candidates, incidents and attempts carry their own evidence, so a full history can still block a newly confirmed pin, recover the evidence for that block and clear it. **No row means unknown integrity.** The absence of a finding is never reported as a clean audit.
 
 Each pin's `generation` starts at 0. It advances by one when a block commits and by one when a clearance commits, and at no other time. A candidate recorded at an earlier generation never confirms a block.
 

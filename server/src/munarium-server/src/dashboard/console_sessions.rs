@@ -56,7 +56,7 @@ fn mode_note(state: &AppState) -> String {
             s.idle_secs, s.max_secs
         )
     } else {
-        "This replica uses the v1.4 console login (MUNARIUM_CONSOLE_SESSIONS=legacy): the browser cookie holds the mgmt token, and no session is created or honoured here. Sessions left from an earlier switch to enabled are listed so they can be revoked before switching again.".to_string()
+        "This replica uses the v1.4 console login (MUNARIUM_CONSOLE_SESSIONS=legacy): the browser cookie holds the mgmt token, and no session is created or honoured here. Sessions left from an earlier switch to enabled are listed so they can be revoked before switching again; each is shown as live while its own recorded idle and absolute expiry would still let an enabled replica honour it.".to_string()
     };
     format!(r#"<div class="notice">{}</div>"#, esc(&text))
 }
