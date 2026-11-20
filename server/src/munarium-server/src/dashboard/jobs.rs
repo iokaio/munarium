@@ -609,6 +609,7 @@ mod tests {
             attempts,
             result: None,
             error: None,
+            error_code: None,
             requested_by: "api:rw".into(),
             created_at: "2026-11-20 10:00:00+00".into(),
         }
