@@ -19,7 +19,7 @@ When a task advances, add a dated status, link the PR or implementation revision
 | ID | Task and primary design | Status and next evidence |
 |---|---|---|
 | P0-T1 | [Freeze the v1.4 baseline and maintain the contract worklist](README.md#p0-t1) | Partial. Released source and image are pinned for Matrix. The Phase 1 [job and console fixtures](../../tests/fixtures/clearview-phase1/README.md) and their expected v1.4 results were frozen in `ff65ad5`, from sources byte-identical to v1.4.0. Still to record: full release artifact and SDK pins, owners, rollback boundaries and next review dates. |
-| Phase 0 | [Prepare qualification environments](README.md#qualification-environments) | Planned. Record named owners, dated availability, access, topology, cost authority and expiry before scheduling each environment. |
+| Phase 0 | [Prepare qualification environments](README.md#qualification-environments) | Deferred by maintainer decision (19 November 2026): no paid Azure or cluster runs until the entire plan is code complete, reviewed and tuned. Until then, prepare code and cluster test plans only. Before scheduling, record named owners, dated availability, access, topology, cost authority and expiry for each environment. |
 
 <a id="phase-m-matrix-isolation"></a>
 
@@ -76,6 +76,8 @@ The PR was open at the status check. DCO, hygiene, contract and unit/store/confo
 | 4 | R9 · B2 | [Record fenced progress and a transactional event ring](airk-analysis.md#r9) | Planned. Depends on R4. Measure and pin [B2 per-tenant event retention](airk-analysis.md#b2). |
 | 4 | R12 | [Validate identifiers at new boundaries](airk-analysis.md#r12) | Planned. Verify that malformed IDs are rejected before work and historical IDs still resolve. |
 
+**19 November 2026 · Munarium `feat/clearview` after SCALE-1/SCALE-3 (`465b06b`).** Locally: the `munarium-server` binary tests passed with PostgreSQL (310 passed, 8 ignored), plus `generate_server_api.py --check` (140 operations, contract current), `scripts` unittest discovery (including the Helm chart tests), `check_compatibility`, `cargo fmt --check`, clippy and the gate entry point.
+
 **19 November 2026 · Munarium `feat/clearview` after R4 publication fencing (`74c7e2c`).** Against a disposable pgvector container: every `munarium-store-pg`, `munarium-retrieval` and `munarium-retrieval-pg` test binary passed, including `publication_fencing` (6) and `jobs_integration`; the `munarium-server` binary tests passed (300 passed, 8 ignored); clippy on the four crates and `cargo fmt --check` passed; the gate entry point exited 0.
 
 **19 November 2026 · Munarium `feat/clearview` after R7 and the console work.** With R7 and U1/U2/U4/U8 combined on the dependency-updated tree: format and clippy clean, the `munarium-server` binary tests passed with PostgreSQL (300 passed, 8 ignored), and the gate entry point, `docs_coverage`, `check_license`, `docs_linkcheck` and `git diff --check` passed. The work ran in separate worktrees and was cherry-picked; each agent's own validation is summarized in the rows above.
@@ -127,9 +129,9 @@ The PR was open at the status check. DCO, hygiene, contract and unit/store/confo
 
 | ID | Task and primary design | Status and next evidence |
 |---|---|---|
-| SCALE-1 | [Align Helm replica counts and runtime admission](scale-out.md#scale-1-t1) | Planned. Qualify bare-chart and production installs, legacy upgrade values, surge, `platform-v1` constraints and rollback. |
+| SCALE-1 | [Align Helm replica counts and runtime admission](scale-out.md#scale-1-t1) | Code ready (`4d4d653`, docs `465b06b`); cluster receipt deferred until code complete. Chart 0.5.0 adds an optional `providerReplicaCount` (omitted by default, so the v1.4 render is unchanged; `auto` renders `replicas`; an integer renders that value) and an optional `strategy` for platform-v1 surge control. It adds a `values-production.yaml` profile and a README section on install, legacy and `--reuse-values` upgrades, migration, surge and rollback. `scripts/test_helm_chart.py` (8 cases) compares the legacy render byte for byte against the v1.4.0 chart. Admission settings are not exposed in the chart. Deferred: the SCALE-1-T1 cluster run on Azure, per the maintainer decision of 19 November 2026. |
 | SCALE-2 | [Separate serving and builder groups](scale-out.md#scale-2-t1) | Planned. Depends on fenced claims. Add and drain a builder while serving foreground traffic. |
-| SCALE-3 | [Expose replica, pool and queue diagnostics](scale-out.md#scale-3-t1) | Planned. Compare displayed counts and bottlenecks against fleet and database observations. |
+| SCALE-3 | [Expose replica, pool and queue diagnostics](scale-out.md#scale-3-t1) | Code ready (`273ac32`); cluster receipt deferred until code complete. New metrics: replica count, DB pool size, the build-queue backlog by state, the oldest pending age, and a queue-read health gauge. A new mgmt-only `GET /v1/reports/scale` reports on the answering replica: identity, configured count, pools and admission, and the caller tenant's backlog. A failed read returns `unavailable` with null counts. The console Health page has a section that follows the U5 rule. The API artifacts and four SDKs were regenerated (`generate_server_api.py --check` passes). **For review:** a new additive Server-only route was added without a hub record, because it is not a cross-project contract. Not implemented: the warning when the live process count exceeds the configured count, because membership is not observable without a fleet table. Deferred: the SCALE-3-T1 cluster comparison. |
 | SC1 | [Qualify operator-controlled scale-up and drain](scale-out.md#sc1) | Planned. Exercise hash-only Server first, then the combined fleet with enrolled collections. |
 | SC2 | [Qualify shared and dedicated Lens placement](repository-handoffs.md#sc2) | Planned. Record the shared placement contract and test approved sharing, incompatible policies and loss of dedicated capacity. |
 
