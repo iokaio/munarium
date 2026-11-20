@@ -931,7 +931,7 @@ pub async fn op_timeseries(
 /// GET /v1/reports/timeseries — bucketed traffic/error/latency series.
 #[utoipa::path(get, path = "/v1/reports/timeseries",
     params(("window" = Option<String>, Query, description = "1h | 24h | 7d | 30d (default 24h)"),
-           ("plane" = Option<String>, Query, description = "rest | grpc (default both)")),
+           ("plane" = Option<String>, Query, description = "rest | grpc | mcp (default all)")),
     responses((status = 200, body = dto::TimeseriesResponse)), tag = "reports")]
 pub async fn timeseries(
     State(state): State<Arc<AppState>>,

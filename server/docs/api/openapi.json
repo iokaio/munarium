@@ -4706,7 +4706,7 @@
           {
             "name": "plane",
             "in": "query",
-            "description": "rest | grpc (default both)",
+            "description": "rest | grpc | mcp (default all)",
             "required": false,
             "schema": {
               "type": "string"
