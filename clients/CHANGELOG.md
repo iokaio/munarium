@@ -7,6 +7,21 @@
   Published 1.4.0 packages keep their 1.4/1.3 range.
 - Include the client changes made since the 1.4.0 publication for the Server 1.5
   wire fields. Package publication remains a separate action.
+- Expose the Server 1.5 wire fields on the typed facades over REST, SSE and
+  typed gRPC: the turn option `collection_availability` (`report` | `require`)
+  with the response `coverage` and the per-member `outcome`/`reason` progress
+  members (C1), and the search option `disclose_execution` with the response
+  `execution` (R1). Each option is sent only when set and each response member
+  is optional, so requests to and responses from a Server 1.4 are unchanged.
+  Rust adds `turn_covered`, `turn_stream_covered` and `search_disclosed`, whose
+  default trait implementations keep existing implementers compiling; its
+  `turn`, `turn_stream` and `search` refuse the new options client-side rather
+  than drop their response members.
+- Python, .NET and Java errors carry the R11 `retryable` and `retry_action`
+  guidance from problem+json or gRPC `ErrorInfo`. It is informational: retry
+  behavior is unchanged and turns stay send-once. The Rust error enum does not
+  carry it yet, because adding fields to its public variants would break
+  existing matches.
 
 ## 1.4.0 — 2026-10-09, Server 1.4 clients
 
