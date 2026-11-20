@@ -220,8 +220,10 @@ read them from raw JSON.
 
 - R1: Python's committed `retrieval_pb2` stubs are regenerated. The new
   request field breaks exhaustive `prost` literals of `HybridSearchRequest`
-  without `..Default::default()`, including the official Rust client's gRPC
-  transport. That client change is pending maintainer direction.
+  without `..Default::default()`. The official Rust client's gRPC transport
+  sets the field explicitly to its v1.4 value (`8f81f7f`), because its facade
+  does not return `execution` yet.
 - C1: Python's committed `session_pb2` stubs are regenerated. The new
   request field breaks exhaustive `prost` literals of `TurnRequest` in the same
-  way, including the official Rust client's gRPC transport.
+  way. The official Rust client sets it explicitly to `""`, the v1.4 value
+  (`8f81f7f`).
