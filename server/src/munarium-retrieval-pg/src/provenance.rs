@@ -130,6 +130,7 @@ mod tests {
                 },
             ],
             note: None,
+            failure: None,
         };
         let mapped = locations(&extracted, 5);
         assert_eq!(mapped[0]["location"]["character_length"], 4);
@@ -146,6 +147,7 @@ mod tests {
             status: ExtractionStatus::Ok,
             pages: vec![],
             note: None,
+            failure: None,
         };
         assert!(locations(&extracted, 100)[0]["location"].is_null());
     }

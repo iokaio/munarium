@@ -1475,3 +1475,81 @@ async fn sparse_generation_exact_oracle_and_hnsw_recall() {
     exact.pool().close().await;
     ann.pool().close().await;
 }
+
+/// Answers like the isolated PDF profile (R3/B4) would, keyed on the bytes,
+/// so the build path can be checked without a child process.
+struct IsolatedLike;
+
+impl munarium_extract::TextExtractor for IsolatedLike {
+    fn media_types(&self) -> &[&str] {
+        &["application/pdf"]
+    }
+    fn id(&self) -> &'static str {
+        "isolated-like@1"
+    }
+    fn extract(&self, bytes: &[u8]) -> munarium_core::Result<munarium_extract::Extracted> {
+        use munarium_extract::{Budget, Extracted, ExtractionMethod, FailureClass};
+        let m = ExtractionMethod::PdfTextLayer;
+        Ok(match bytes {
+            b"big" => Extracted::failed(m, FailureClass::OverBudget(Budget::Memory), "big"),
+            b"busy" => Extracted::failed(m, FailureClass::Deferred, "busy"),
+            _ => Extracted::failed(m, FailureClass::ParserFailed, "bad"),
+        })
+    }
+}
+
+/// The isolated profile's outcomes reach `sources.extraction_status`
+/// distinctly, and a deferred document never reaches the paid provider.
+#[tokio::test]
+async fn isolated_outcomes_are_recorded_distinctly_and_deferral_never_escalates() {
+    let Some(url) = test_url() else { return };
+    let tenant = fresh_tenant("isolated");
+    let store = PgStore::connect(&url, &tenant).await.expect("connect");
+    let stub = std::sync::Arc::new(StubDocIntel::default()); // finds nothing
+    let registry =
+        munarium_extract::ExtractorRegistry::with_extractors(vec![Box::new(IsolatedLike)]);
+    let r = PgRetrieval::new(store.pool().clone(), &tenant)
+        .with_extractors(std::sync::Arc::new(registry))
+        .with_doc_intel(Some(stub.clone()));
+    assert_eq!(r.extractor_version(), "extract@1[isolated-like@1]");
+
+    let col = r
+        .ensure_collection("isolated", "shape@1", 0, &[], None)
+        .await
+        .expect("collection");
+    let mut ids = Vec::new();
+    for (path, bytes) in [
+        ("a/big.pdf", &b"big"[..]),
+        ("a/busy.pdf", b"busy"),
+        ("a/bad.pdf", b"bad"),
+    ] {
+        let (id, _, _) = r
+            .put_source("", "application/pdf", path, None, bytes)
+            .await
+            .expect("put");
+        r.bind_source(&col.id, &id, None).await.expect("bind");
+        ids.push(id);
+    }
+    r.build_collection_index(&col.id, 2000, 1, true)
+        .await
+        .expect("a refused document does not fail the build");
+
+    let mut statuses = Vec::new();
+    for id in &ids {
+        let status: Option<String> = sqlx::query_scalar(
+            "SELECT extraction_status FROM sources WHERE tenant_id = $1 AND source_id = $2",
+        )
+        .bind(&tenant)
+        .bind(id)
+        .fetch_one(r.pool())
+        .await
+        .expect("row");
+        statuses.push(status.unwrap_or_default());
+    }
+    assert_eq!(statuses, ["over_budget", "deferred", "failed"]);
+    assert_eq!(
+        stub.calls.load(std::sync::atomic::Ordering::SeqCst),
+        2,
+        "over-budget and parser failure escalate under the v1.4 rule; deferral does not"
+    );
+}

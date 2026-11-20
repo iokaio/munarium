@@ -33,14 +33,19 @@
 use munarium_core::{KernelError, Result};
 
 mod docx;
+pub mod isolated;
 #[cfg(feature = "ocr")]
 mod ocr;
 mod pdf;
 
 pub use docx::DocxExtractor;
+pub use isolated::{IsolatedPdfExtractor, IsolatedPdfLimits, IsolatedRun, RunReport};
 #[cfg(feature = "ocr")]
 pub use ocr::{OcrExtractor, OcrModels, DEFAULT_MAX_PAGES};
 pub use pdf::PdfTextExtractor;
+
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 /// Bump when any extractor changes its output for the same bytes. It joins
 /// the index identity, so a change here correctly invalidates and rebuilds.
@@ -89,6 +94,66 @@ impl ExtractionStatus {
     }
 }
 
+/// Which budget of the isolated PDF profile a document exceeded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Budget {
+    /// The document is larger than the child's memory budget can hold.
+    Input,
+    /// The child ran out of its OS-enforced memory limit.
+    Memory,
+    /// The child used its OS-enforced CPU time.
+    Cpu,
+    /// The child did not finish before the wall-clock deadline.
+    WallClock,
+    /// The extracted text was larger than the output cap.
+    Output,
+}
+
+impl Budget {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Budget::Input => "input",
+            Budget::Memory => "memory",
+            Budget::Cpu => "cpu",
+            Budget::WallClock => "wall_clock",
+            Budget::Output => "output",
+        }
+    }
+}
+
+/// Why a non-`ok` result has no text, when the extractor can say more than
+/// its status. Only the opt-in isolated PDF profile sets this; every v1.4
+/// extractor leaves it `None`, so v1.4 status values and escalation are
+/// unchanged.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FailureClass {
+    /// The parser rejected the document, or crashed on it.
+    ParserFailed,
+    /// The document exceeded a budget of the isolated profile.
+    OverBudget(Budget),
+    /// Admission did not grant an extraction slot within the queue wait.
+    /// The document was never parsed.
+    Deferred,
+    /// The caller went away (a cancelled or dropped build) before the
+    /// extraction finished. The child was killed and reaped.
+    Cancelled,
+    /// The isolated child could not be started, limited or understood.
+    /// This is a fault of the deployment, not of the document.
+    IsolationFailed,
+}
+
+impl FailureClass {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            FailureClass::ParserFailed => "parser_failed",
+            FailureClass::OverBudget(_) => "over_budget",
+            FailureClass::Deferred => "deferred",
+            FailureClass::Cancelled => "cancelled",
+            FailureClass::IsolationFailed => "isolation_failed",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Extracted {
     pub text: String,
@@ -99,6 +164,8 @@ pub struct Extracted {
     pub pages: Vec<PageSpan>,
     /// Set when the source was recognized but yielded nothing usable.
     pub note: Option<String>,
+    /// Set only by the opt-in isolated PDF profile. See [`FailureClass`].
+    pub failure: Option<FailureClass>,
 }
 
 impl Extracted {
@@ -116,6 +183,7 @@ impl Extracted {
             method,
             pages,
             note: None,
+            failure: None,
         }
     }
 
@@ -129,7 +197,98 @@ impl Extracted {
             method,
             pages: Vec::new(),
             note: Some(note.into()),
+            failure: None,
         }
+    }
+
+    /// A failed extraction with a class. Used by the isolated PDF profile.
+    pub fn failed(
+        method: ExtractionMethod,
+        failure: FailureClass,
+        note: impl Into<String>,
+    ) -> Self {
+        Self {
+            text: String::new(),
+            status: ExtractionStatus::Failed,
+            method,
+            pages: Vec::new(),
+            note: Some(note.into()),
+            failure: Some(failure),
+        }
+    }
+
+    /// The value recorded in `sources.extraction_status`. Without a failure
+    /// class this is exactly the v1.4 status (`ok`, `empty`, `failed`). The
+    /// isolated profile adds `over_budget`, `deferred` and `cancelled`, so a
+    /// document refused by a budget or never admitted is not mistaken for one
+    /// the parser rejected.
+    pub fn status_label(&self) -> &'static str {
+        match self.failure {
+            None | Some(FailureClass::ParserFailed) | Some(FailureClass::IsolationFailed) => {
+                self.status.as_str()
+            }
+            Some(FailureClass::OverBudget(_)) => "over_budget",
+            Some(FailureClass::Deferred) => "deferred",
+            Some(FailureClass::Cancelled) => "cancelled",
+        }
+    }
+
+    /// Whether this local result may be escalated to a paid document
+    /// intelligence provider. The provider must still be configured and must
+    /// accept the media type, and its own size budget still applies.
+    ///
+    /// Without a failure class this is the v1.4 rule unchanged: anything but
+    /// `ok` is eligible. A parser failure and an over-budget refusal are
+    /// eligible under that same rule, because v1.4 already escalates a PDF
+    /// local extraction could not read. Deferred, cancelled and
+    /// isolation-failed results are never eligible: the document was not
+    /// read, so escalating would turn local congestion or a broken
+    /// deployment into paid calls.
+    pub fn escalation_eligible(&self) -> bool {
+        if self.status == ExtractionStatus::Ok {
+            return false;
+        }
+        match self.failure {
+            None | Some(FailureClass::ParserFailed) | Some(FailureClass::OverBudget(_)) => true,
+            Some(FailureClass::Deferred)
+            | Some(FailureClass::Cancelled)
+            | Some(FailureClass::IsolationFailed) => false,
+        }
+    }
+}
+
+/// A cancellation flag shared between an async caller and the blocking
+/// extraction it started. Dropping the guard from [`Cancellation::guard`]
+/// cancels, so a dropped build future stops its child process.
+#[derive(Debug, Clone, Default)]
+pub struct Cancellation(Arc<AtomicBool>);
+
+impl Cancellation {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn cancel(&self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+
+    /// A guard that cancels when dropped.
+    pub fn guard(&self) -> CancelOnDrop {
+        CancelOnDrop(self.clone())
+    }
+}
+
+/// Cancels its [`Cancellation`] when dropped.
+#[derive(Debug)]
+pub struct CancelOnDrop(Cancellation);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.cancel();
     }
 }
 
@@ -148,6 +307,20 @@ pub trait TextExtractor: Send + Sync {
     fn media_types(&self) -> &[&str];
     fn extract(&self, bytes: &[u8]) -> Result<Extracted>;
     fn id(&self) -> &'static str;
+
+    /// The identity this extractor contributes to the extractor-set version.
+    /// Defaults to `id()`; an extractor whose settings change its indexed
+    /// output includes those settings here.
+    fn identity(&self) -> String {
+        self.id().to_string()
+    }
+
+    /// Extract, stopping early when `cancel` is set. In-process extractors
+    /// cannot be preempted and ignore it.
+    fn extract_cancellable(&self, bytes: &[u8], cancel: &Cancellation) -> Result<Extracted> {
+        let _ = cancel;
+        self.extract(bytes)
+    }
 }
 
 /// Media types treated as already-text: decoded UTF-8 (lossy), no handler.
@@ -179,14 +352,30 @@ impl ExtractorRegistry {
         }
     }
 
+    /// A registry holding exactly these extractors, for callers and tests
+    /// that need a different set than `new()`.
+    pub fn with_extractors(extractors: Vec<Box<dyn TextExtractor>>) -> Self {
+        Self { extractors }
+    }
+
     pub fn register(&mut self, extractor: Box<dyn TextExtractor>) {
         self.extractors.push(extractor);
     }
 
-    /// Every extractor id, sorted — joins the index identity so an extractor
-    /// change forces a rebuild rather than serving stale chunks.
+    /// The opt-in isolated PDF profile: replaces the in-process
+    /// `pdf-text@1` with `pdf-text-isolated@1{...}`, which changes the set
+    /// identity, so an index built this way never matches a v1.4 index.
+    pub fn with_isolated_pdf(mut self, extractor: IsolatedPdfExtractor) -> Self {
+        self.extractors
+            .retain(|e| !e.media_types().contains(&pdf::PDF_MEDIA));
+        self.extractors.push(Box::new(extractor));
+        self
+    }
+
+    /// Every extractor identity, sorted — joins the index identity so an
+    /// extractor change forces a rebuild rather than serving stale chunks.
     pub fn version(&self) -> String {
-        let mut ids: Vec<&str> = self.extractors.iter().map(|e| e.id()).collect();
+        let mut ids: Vec<String> = self.extractors.iter().map(|e| e.identity()).collect();
         ids.sort_unstable();
         format!("{EXTRACTOR_SET_VERSION}[{}]", ids.join(","))
     }
@@ -195,6 +384,17 @@ impl ExtractorRegistry {
     /// is recorded as `failed` and the build moves on, mirroring the
     /// batch-ingest rule that one bad file never fails the batch.
     pub fn extract(&self, media_type: &str, bytes: &[u8]) -> Extracted {
+        self.extract_cancellable(media_type, bytes, &Cancellation::new())
+    }
+
+    /// [`ExtractorRegistry::extract`], stopping an isolated extraction when
+    /// `cancel` is set.
+    pub fn extract_cancellable(
+        &self,
+        media_type: &str,
+        bytes: &[u8],
+        cancel: &Cancellation,
+    ) -> Extracted {
         let media = media_type
             .split(';')
             .next()
@@ -212,7 +412,7 @@ impl ExtractorRegistry {
 
         for extractor in &self.extractors {
             if extractor.media_types().iter().any(|m| *m == media) {
-                return match extractor.extract(bytes) {
+                return match extractor.extract_cancellable(bytes, cancel) {
                     Ok(extracted) => extracted,
                     Err(e) => Extracted {
                         text: String::new(),
@@ -220,6 +420,7 @@ impl ExtractorRegistry {
                         method: ExtractionMethod::Text,
                         pages: Vec::new(),
                         note: Some(format!("{} failed: {e}", extractor.id())),
+                        failure: None,
                     },
                 };
             }
@@ -302,6 +503,83 @@ mod tests {
         );
         assert_eq!(out.status, ExtractionStatus::Failed);
         assert!(out.note.is_some());
+    }
+
+    #[test]
+    fn the_v14_identity_is_unchanged() {
+        // B4-T1: with the isolated profile off, v1.4 rebuilds keep this exact
+        // identity. Changing it invalidates every existing index.
+        assert_eq!(
+            ExtractorRegistry::new().version(),
+            "extract@1[docx@1,pdf-text@1]"
+        );
+    }
+
+    #[test]
+    fn v14_results_carry_no_failure_class_and_keep_v14_labels_and_escalation() {
+        let r = ExtractorRegistry::new();
+        let failed = r.extract(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            b"definitely not a zip",
+        );
+        assert_eq!(failed.failure, None);
+        assert_eq!(failed.status_label(), "failed");
+        assert!(failed.escalation_eligible());
+        let empty = Extracted::empty(ExtractionMethod::PdfTextLayer, "scan");
+        assert_eq!(empty.status_label(), "empty");
+        assert!(empty.escalation_eligible());
+        let ok = r.extract("text/plain", b"hello");
+        assert_eq!(ok.status_label(), "ok");
+        assert!(!ok.escalation_eligible());
+    }
+
+    #[test]
+    fn failure_classes_have_distinct_labels_and_escalation_rules() {
+        let m = ExtractionMethod::PdfTextLayer;
+        let parser = Extracted::failed(m, FailureClass::ParserFailed, "bad");
+        let over = Extracted::failed(m, FailureClass::OverBudget(Budget::Memory), "big");
+        let deferred = Extracted::failed(m, FailureClass::Deferred, "busy");
+        let cancelled = Extracted::failed(m, FailureClass::Cancelled, "gone");
+        let broken = Extracted::failed(m, FailureClass::IsolationFailed, "no child");
+        assert_eq!(parser.status_label(), "failed");
+        assert_eq!(over.status_label(), "over_budget");
+        assert_eq!(deferred.status_label(), "deferred");
+        assert_eq!(cancelled.status_label(), "cancelled");
+        assert_eq!(broken.status_label(), "failed");
+        // Today's rule escalates any unreadable PDF; keep that for a parser
+        // failure and an over-budget refusal, and never escalate work that
+        // was not attempted.
+        assert!(parser.escalation_eligible());
+        assert!(over.escalation_eligible());
+        assert!(!deferred.escalation_eligible());
+        assert!(!cancelled.escalation_eligible());
+        assert!(!broken.escalation_eligible());
+    }
+
+    #[test]
+    fn the_isolated_profile_replaces_pdf_text_and_changes_the_identity() {
+        let isolated =
+            IsolatedPdfExtractor::new("munarium-server".into(), IsolatedPdfLimits::PROVISIONAL)
+                .expect("valid limits");
+        let r = ExtractorRegistry::new().with_isolated_pdf(isolated);
+        let v = r.version();
+        assert_ne!(v, ExtractorRegistry::new().version());
+        assert!(
+            v.starts_with("extract@1[docx@1,pdf-text-isolated@1{"),
+            "{v}"
+        );
+        assert!(!v.contains("pdf-text@1"), "{v}");
+        assert_eq!(r.extractors.len(), 2);
+    }
+
+    #[test]
+    fn cancel_on_drop_cancels() {
+        let c = Cancellation::new();
+        {
+            let _g = c.guard();
+            assert!(!c.is_cancelled());
+        }
+        assert!(c.is_cancelled());
     }
 
     #[test]

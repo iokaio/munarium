@@ -274,6 +274,14 @@ impl PgRetrieval {
         self
     }
 
+    /// Use this extractor registry instead of the v1.4 default. The server
+    /// shares one registry across tenants, so the isolated PDF profile's
+    /// concurrency cap is per process rather than per handle.
+    pub fn with_extractors(mut self, extractors: Arc<munarium_extract::ExtractorRegistry>) -> Self {
+        self.extractors = extractors;
+        self
+    }
+
     pub fn source_store(&self) -> &Arc<dyn SourceStore> {
         &self.sources
     }
@@ -313,21 +321,35 @@ impl PgRetrieval {
         // this replica. On the blocking pool instead; the copy of the bytes
         // is what makes the closure `'static`, and it is bounded by the
         // 256 MiB source ceiling.
+        //
+        // A blocking task cannot be cancelled, but the isolated PDF profile
+        // (R3/B4) can stop its child: dropping this future drops the guard,
+        // which cancels, and the child is killed and reaped. The in-process
+        // v1.4 extractors ignore the flag.
+        let cancel = munarium_extract::Cancellation::new();
+        let _cancel_on_drop = cancel.guard();
         let extractors = Arc::clone(&self.extractors);
         let media = media_type.to_string();
         let owned = bytes.to_vec();
-        let local =
-            match tokio::task::spawn_blocking(move || extractors.extract(&media, &owned)).await {
-                Ok(extracted) => extracted,
-                // A panic inside an extractor is a failed document, not a failed
-                // build — the same rule `ExtractorRegistry::extract` applies to
-                // an extractor error.
-                Err(e) => munarium_extract::Extracted::empty(
-                    munarium_extract::ExtractionMethod::Text,
-                    format!("extraction task failed: {e}"),
-                ),
-            };
-        if local.status == munarium_extract::ExtractionStatus::Ok {
+        let local = match tokio::task::spawn_blocking(move || {
+            extractors.extract_cancellable(&media, &owned, &cancel)
+        })
+        .await
+        {
+            Ok(extracted) => extracted,
+            // A panic inside an extractor is a failed document, not a failed
+            // build — the same rule `ExtractorRegistry::extract` applies to
+            // an extractor error.
+            Err(e) => munarium_extract::Extracted::empty(
+                munarium_extract::ExtractionMethod::Text,
+                format!("extraction task failed: {e}"),
+            ),
+        };
+        // v1.4's rule, unchanged for every v1.4 result: anything but `ok`
+        // may escalate. The isolated profile never escalates a document it
+        // deferred, a cancelled extraction or a broken child — see
+        // `Extracted::escalation_eligible`.
+        if !local.escalation_eligible() {
             return local;
         }
         let Some(provider) = &self.doc_intel else {
@@ -349,6 +371,7 @@ impl PgRetrieval {
                     method: munarium_extract::ExtractionMethod::Ocr,
                     pages: Vec::new(),
                     note: Some(analyzed.provider_fingerprint),
+                    failure: None,
                 }
             }
             Ok(analyzed) => {
@@ -391,7 +414,8 @@ impl PgRetrieval {
         if extracted.status != munarium_extract::ExtractionStatus::Ok {
             tracing::warn!(
                 tenant = %self.tenant_id, source = %source_id,
-                status = extracted.status.as_str(),
+                status = extracted.status_label(),
+                class = extracted.failure.map(|f| f.as_str()).unwrap_or(""),
                 note = extracted.note.as_deref().unwrap_or(""),
                 "source produced no indexable text"
             );
@@ -402,7 +426,9 @@ impl PgRetrieval {
         )
         .bind(&self.tenant_id)
         .bind(source_id)
-        .bind(extracted.status.as_str())
+        // v1.4 values for every v1.4 result; the isolated profile adds
+        // `over_budget`, `deferred` and `cancelled`.
+        .bind(extracted.status_label())
         .bind(extracted.method.as_str())
         .execute(ex)
         .await
@@ -1064,6 +1090,9 @@ fn sample_text(text: &str, budget: usize) -> String {
         .collect::<Vec<_>>()
         .join("\n…\n")
 }
+
+#[cfg(test)]
+mod extraction_tests;
 
 #[cfg(test)]
 mod tests {
