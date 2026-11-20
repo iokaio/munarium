@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: munarium.ioka.io/v1
+kind: Runbook
+metadata: { name: cli-check, version: 1 }
+spec:
+  collections:
+    - name: cli-docs
+      shape: missing-shape@9
+  steps:
+    - buildIndex: {}

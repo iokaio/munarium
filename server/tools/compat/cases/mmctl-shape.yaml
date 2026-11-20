@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: munarium.ioka.io/v1
+kind: Shape
+metadata: { name: cli-shape, version: 1 }
+spec:
+  chunking: { strategy: para@1, max_chars: 600 }
+  indexing: { rrf_k: 60, candidate_n: 50 }

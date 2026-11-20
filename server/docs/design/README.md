@@ -57,7 +57,7 @@ Work can proceed in parallel as each row's entry conditions clear. The component
 
 | Phase | Deliverable | May begin when | Done when |
 |---|---|---|---|
-| <a id="phase-0-freeze-the-baseline-and-record-shared-decisions"></a>0 | Server release engineering freezes the v1.4 baseline, scope and contract worklist. | Immediately. | <a id="p0-t1"></a>**P0-T1** records released digests, fixtures, expected results, accountable components and rollback boundaries. For each pending contract or measurement, name the owner, affected phase and next review date. An affected wire change waits for its hub record and export. |
+| <a id="phase-0-freeze-the-baseline-and-record-shared-decisions"></a>0 | Server release engineering freezes the v1.4 baseline, scope and contract worklist. | Immediately. | <a id="p0-t1"></a>**P0-T1** records released digests, fixtures, expected results, accountable components and rollback boundaries. For each pending contract or measurement, name the owner, affected phase and next review date. An affected wire change waits for its hub record and export. [Baseline record](v14-baseline.md) |
 | <a id="phase-m-complete-the-matrix-transfer"></a>M | Reconcile and improve Matrix in its existing repo, then delete superseded files in main. | Both Git trees and the published baseline are pinned. | Each removed path has a verified destination. Real-peer, CLI, container, contract and docs parity pass. [M1](repository-handoffs.md#m1) |
 | <a id="phase-l-complete-lens-before-releasing-server-v15"></a>L | Build the Lens repo, qualified image and operator docs. | The scaffold can start immediately. Production serving needs IR-0–IR-4. | A fresh checkout builds the stub. The completed image also passes both corpus-family thresholds and every workspace build/query/citation/rollback receipt. [Lens delivery](repository-handoffs.md#lens-d1) |
 | <a id="phase-1-fence-workers-and-report-observed-failures"></a>1 | Fence job claims and publication, recover exhausted jobs, classify failures and correct misleading console output (R4, R5, U5, U9). | v1.4 job and UI fixtures exist. R5's wire shape requires C2. | A retired claimant cannot authorize another write. Recovery can finish an immutable write authorized before reclaim. An expired final attempt releases its target and reports a classified failure. Historical failures serialize correctly and an unavailable read is visible in the console. [R4-T1](airk-analysis.md#r4-t1) · [C2-T1](airk-analysis.md#c2-t1) |
@@ -102,6 +102,8 @@ flowchart TD
 ## Release evidence
 
 Use one receipt per acceptance ID and environment. Record candidate and baseline digests, configuration, fixture or inventory revision, expected and observed results, coverage gaps, owner and evidence location. A missing or failed required receipt holds v1.5, including for features that default off.
+
+Local rehearsal receipts for COMPAT-T1 to T5 and A5-T2, collected on one workstation against the published v1.4.0 image and a local candidate build, are in [compat-local-receipts.md](compat-local-receipts.md). They are `evidence_class: local` and do not replace the receipts above on the exact release candidate.
 
 | Required on the v1.5 candidate | Evidence the release owner collects |
 |---|---|
