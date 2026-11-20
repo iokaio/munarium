@@ -12,6 +12,14 @@
 //! suite learned from its own global queue: the test must own the whole
 //! queue for its lifetime, or accept any claimant. Owning it is the
 //! deterministic choice here.
+//!
+//! Owning the queue also means owning the DATABASE. Other suites (the
+//! `munarium-server` binary tests, for one) leave pending jobs behind in the
+//! shared test database, and a global `claim_any` would take them. So the
+//! test creates its own throwaway database on the configured server, lets
+//! `PgStore::connect` migrate it, and drops it afterwards through a guard
+//! that also runs when an assertion fails. The assertions are unchanged: the
+//! queue they see is exactly the queue the test built.
 
 use munarium_store_pg::jobs::{BuildJobs, EnqueueOutcome, JobKind, JobTarget};
 use munarium_store_pg::PgStore;
@@ -29,9 +37,93 @@ macro_rules! guard {
     };
 }
 
-async fn jobs(tenant: &str) -> (BuildJobs, sqlx::PgPool) {
-    let store = PgStore::connect(&url().unwrap(), tenant).await.unwrap();
+async fn jobs(database_url: &str, tenant: &str) -> (BuildJobs, sqlx::PgPool) {
+    let store = PgStore::connect(database_url, tenant).await.unwrap();
     (BuildJobs::new(store.pool().clone()), store.pool().clone())
+}
+
+/// A throwaway database on the configured server, dropped when the guard
+/// goes out of scope, including while a failed assertion unwinds.
+struct ScratchDatabase {
+    admin_url: String,
+    name: String,
+    url: String,
+}
+
+impl ScratchDatabase {
+    async fn create(base_url: &str) -> Self {
+        use sqlx::Connection;
+        let name = format!("munarium_jobs_{}", uuid::Uuid::new_v4().simple());
+        let mut admin = sqlx::PgConnection::connect(base_url).await.unwrap();
+        sqlx::query(&format!("CREATE DATABASE \"{name}\""))
+            .execute(&mut admin)
+            .await
+            .unwrap();
+        admin.close().await.unwrap();
+        Self {
+            admin_url: base_url.to_string(),
+            url: with_database(base_url, &name),
+            name,
+        }
+    }
+}
+
+impl Drop for ScratchDatabase {
+    fn drop(&mut self) {
+        // Drop cannot await, and the test's runtime may be unwinding, so the
+        // DROP runs on its own thread and runtime. FORCE ends the test pool's
+        // remaining connections (PostgreSQL 13+).
+        let admin_url = self.admin_url.clone();
+        let name = self.name.clone();
+        let outcome = std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| e.to_string())?;
+            rt.block_on(async move {
+                use sqlx::Connection;
+                let mut admin = sqlx::PgConnection::connect(&admin_url).await?;
+                sqlx::query(&format!("DROP DATABASE IF EXISTS \"{name}\" WITH (FORCE)"))
+                    .execute(&mut admin)
+                    .await?;
+                admin.close().await
+            })
+            .map_err(|e| e.to_string())
+        })
+        .join();
+        match outcome {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => eprintln!("could not drop scratch database {}: {e}", self.name),
+            Err(_) => eprintln!("dropping scratch database {} panicked", self.name),
+        }
+    }
+}
+
+/// `url` with its database path replaced by `name`, keeping the scheme,
+/// authority and query parameters.
+fn with_database(url: &str, name: &str) -> String {
+    let (head, query) = match url.split_once('?') {
+        Some((head, query)) => (head, Some(query)),
+        None => (url, None),
+    };
+    let authority = head.find("://").expect("a postgres:// URL") + 3;
+    let base = match head[authority..].find('/') {
+        Some(slash) => &head[..authority + slash],
+        None => head,
+    };
+    match query {
+        Some(query) => format!("{base}/{name}?{query}"),
+        None => format!("{base}/{name}"),
+    }
+}
+
+#[test]
+fn with_database_replaces_only_the_path() {
+    assert_eq!(
+        with_database("postgres://u:p@h:5432/munarium?sslmode=disable", "x"),
+        "postgres://u:p@h:5432/x?sslmode=disable"
+    );
+    assert_eq!(with_database("postgres://u@h", "x"), "postgres://u@h/x");
 }
 
 fn scope<'a>(id: &'a str) -> JobTarget<'a> {
@@ -46,7 +138,8 @@ async fn the_job_queue_dedups_claims_leases_and_cancels() {
     guard!();
     let run = uuid::Uuid::new_v4().simple().to_string();
     let tenant = format!("tenant-jobs-{run}");
-    let (q, pool) = jobs(&tenant).await;
+    let db = ScratchDatabase::create(&url().unwrap()).await;
+    let (q, pool) = jobs(&db.url, &tenant).await;
 
     // --- Dedup: two enqueues for one open target are one job. -------------
     let col_dedup = format!("col-dedup-{run}");
