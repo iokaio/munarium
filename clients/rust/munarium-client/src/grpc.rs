@@ -1755,9 +1755,12 @@ fn covered_turn_response_dto(mut resp: pb::TurnResponse) -> Result<dto::CoveredT
             })
         })
         .transpose()?;
+    // The typed gRPC TurnResponse carries no stage receipts (REST-first,
+    // see wire-compatibility.md), so `execution` is always absent here.
     Ok(dto::CoveredTurnResponse {
         turn: turn_response_dto(resp)?,
         coverage,
+        execution: None,
     })
 }
 

@@ -586,6 +586,7 @@ pub trait SessionsPlane: Send + Sync {
         Ok(dto::CoveredTurnResponse {
             turn: self.turn(session_id, req).await?,
             coverage: None,
+            execution: None,
         })
     }
 
@@ -627,6 +628,7 @@ pub trait SessionsPlane: Send + Sync {
                         CoveredTurnStreamEvent::Done(Box::new(dto::CoveredTurnResponse {
                             turn: *turn,
                             coverage: None,
+                            execution: None,
                         }))
                     }
                 })
