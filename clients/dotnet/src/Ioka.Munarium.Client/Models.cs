@@ -229,6 +229,79 @@ public sealed record SearchResult
 {
     [JsonPropertyName("hits")] public required IReadOnlyList<SearchHit> Hits { get; init; }
     [JsonPropertyName("envelope")] public required ProvenanceEnvelope Envelope { get; init; }
+    /// <summary>ClearView R1: how the search actually executed. Present when
+    /// the request set <see cref="SearchRequest.DiscloseExecution"/>, and on
+    /// every REST read of an inference-enrolled collection; null on a v1.4
+    /// response.</summary>
+    [JsonPropertyName("execution")] public SearchExecution? Execution { get; init; }
+}
+
+/// <summary>One search request, including the options the positional
+/// <c>SearchAsync</c> overload cannot carry.</summary>
+public sealed record SearchRequest
+{
+    public required string Query { get; init; }
+    public required string ShapeRef { get; init; }
+    /// <summary>Null = server default (10).</summary>
+    public uint? TopK { get; init; }
+    /// <summary>Null = the active index for the shape.</summary>
+    public string? IndexVersion { get; init; }
+    public JsonElement? Filter { get; init; }
+    /// <summary>ClearView R1: <c>true</c> asks for
+    /// <see cref="SearchResult.Execution"/>. Null (the default) omits the
+    /// key, so the request bytes are the v1.4 request's.</summary>
+    public bool? DiscloseExecution { get; init; }
+}
+
+/// <summary>How one search actually executed (ClearView R1). A null member
+/// was not measured by the serving engine: unknown, never zero or false.</summary>
+public sealed record SearchExecution
+{
+    /// <summary>Disclosure format version; currently 1.</summary>
+    [JsonPropertyName("version")] public uint Version { get; init; }
+    /// <summary>postgresql | datastore.</summary>
+    [JsonPropertyName("engine")] public required string Engine { get; init; }
+    /// <summary>The engine's lexical score domain; scores from different
+    /// domains are not comparable.</summary>
+    [JsonPropertyName("lexical_domain")] public required string LexicalDomain { get; init; }
+    /// <summary>The legs the engine ran, lexical first.</summary>
+    [JsonPropertyName("legs")] public IReadOnlyList<SearchLeg> Legs { get; init; } = [];
+    /// <summary>The inference stages of an enrolled collection. REST only
+    /// (the gRPC message carries none); empty for an unenrolled read.</summary>
+    [JsonPropertyName("stages")] public IReadOnlyList<SearchStage> Stages { get; init; } = [];
+}
+
+/// <summary>One retrieval leg's observations (ClearView R1).</summary>
+public sealed record SearchLeg
+{
+    /// <summary>lexical | vector.</summary>
+    [JsonPropertyName("leg")] public required string Leg { get; init; }
+    /// <summary>The per-leg candidate pool requested from the engine.</summary>
+    [JsonPropertyName("candidate_limit")] public ulong? CandidateLimit { get; init; }
+    /// <summary>Candidates returned before fusion; null = not measured.</summary>
+    [JsonPropertyName("fetched")] public ulong? Fetched { get; init; }
+    /// <summary>Whether the eligible set was exhausted; null = unknown.</summary>
+    [JsonPropertyName("exhausted")] public bool? Exhausted { get; init; }
+}
+
+/// <summary>One inference stage's receipt on an enrolled read (content-free).</summary>
+public sealed record SearchStage
+{
+    /// <summary>embedding | reranking.</summary>
+    [JsonPropertyName("stage")] public required string Stage { get; init; }
+    /// <summary>require | prefer.</summary>
+    [JsonPropertyName("policy")] public required string Policy { get; init; }
+    [JsonPropertyName("policy_revision")] public ulong PolicyRevision { get; init; }
+    /// <summary>True only when the stage's output shaped the served result.</summary>
+    [JsonPropertyName("applied")] public bool Applied { get; init; }
+    /// <summary>ready | not_applicable | disabled | unconfigured |
+    /// probe_failed | unavailable | budget_exhausted.</summary>
+    [JsonPropertyName("state")] public required string State { get; init; }
+    [JsonPropertyName("reason")] public string? Reason { get; init; }
+    /// <summary>lexical_only | fused_order, under prefer only.</summary>
+    [JsonPropertyName("fallback")] public string? Fallback { get; init; }
+    [JsonPropertyName("identity")] public string? Identity { get; init; }
+    [JsonPropertyName("scored")] public ulong? Scored { get; init; }
 }
 
 public sealed record ApplyShapeResult
@@ -382,6 +455,9 @@ internal sealed record Problem
     [JsonPropertyName("shape_ref")] public string? ShapeRef { get; init; }
     [JsonPropertyName("kind")] public string? Kind { get; init; }
     [JsonPropertyName("id")] public string? Id { get; init; }
+    /// <summary>ClearView R11 retry guidance; absent from v1.4 servers.</summary>
+    [JsonPropertyName("retryable")] public bool? Retryable { get; init; }
+    [JsonPropertyName("retry_action")] public string? RetryAction { get; init; }
 }
 
 internal sealed record EventsBody
@@ -436,6 +512,8 @@ internal sealed record SearchBody
     [JsonPropertyName("top_k")] public uint? TopK { get; init; }
     [JsonPropertyName("index_version")] public string? IndexVersion { get; init; }
     [JsonPropertyName("filter")] public JsonElement? Filter { get; init; }
+    /// <summary>ClearView R1; omitted when null (the v1.4 request).</summary>
+    [JsonPropertyName("disclose_execution")] public bool? DiscloseExecution { get; init; }
 }
 
 internal sealed record CompleteBody

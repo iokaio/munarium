@@ -15,6 +15,17 @@ internal static class Errors
 
     internal static MunariumException FromParts(
         string slug, string detail, Problem ext, int? status = null, TimeSpan? retryAfter = null)
+    {
+        var error = Typed(slug, detail, ext, status, retryAfter);
+        // ClearView R11: carried verbatim beside every slug and informational
+        // only; no retry decision in this client reads them.
+        error.Retryable = ext.Retryable;
+        error.RetryAction = ext.RetryAction;
+        return error;
+    }
+
+    private static MunariumException Typed(
+        string slug, string detail, Problem ext, int? status, TimeSpan? retryAfter)
         => slug switch
         {
             "head-conflict" => new HeadConflictException(ext.Expected ?? 0, ext.Actual ?? 0, detail),
@@ -98,6 +109,11 @@ internal static class Errors
                 ShapeRef = md.GetValueOrDefault("shape_ref"),
                 Kind = md.GetValueOrDefault("kind"),
                 Id = md.GetValueOrDefault("id"),
+                // R11: the REST member names, valued "true"/"false".
+                Retryable = md.TryGetValue("retryable", out var r)
+                    ? r switch { "true" => true, "false" => false, _ => null }
+                    : null,
+                RetryAction = md.GetValueOrDefault("retry_action"),
             };
             // The server does not emit google.rpc.RetryInfo today, so
             // RateLimitedException.RetryAfter stays null on gRPC.

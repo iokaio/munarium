@@ -445,6 +445,59 @@ public sealed record TurnRequest
     /// legacy single-layer document path: the key is omitted entirely, so an
     /// existing caller's request bytes are unchanged.</summary>
     [JsonPropertyName("research_profile")] public string? ResearchProfile { get; init; }
+    /// <summary>ClearView C1: how this multi-collection read treats a member
+    /// collection that cannot be searched, <c>report</c> or <c>require</c>
+    /// (see <see cref="Ioka.Munarium.Client.CollectionAvailability"/>). Null (the default)
+    /// omits the key and keeps v1.4 behavior. <c>report</c> returns the other
+    /// members' verified results with <see cref="TurnResult.Coverage"/>;
+    /// <c>require</c> refuses the turn when any member is unavailable.</summary>
+    [JsonPropertyName("collection_availability")] public string? CollectionAvailability { get; init; }
+}
+
+/// <summary>The <see cref="TurnRequest.CollectionAvailability"/> values
+/// (ClearView C1).</summary>
+public static class CollectionAvailability
+{
+    /// <summary>Return what completed, report what did not, withhold
+    /// unsupported claims.</summary>
+    public const string Report = "report";
+    /// <summary>Refuse the read when any visible member is unavailable.</summary>
+    public const string Require = "require";
+}
+
+/// <summary>One visible member of a multi-collection read (ClearView C1). A
+/// collection the session cannot see never appears.</summary>
+public sealed record CollectionOutcome
+{
+    [JsonPropertyName("collection")] public required string Collection { get; init; }
+    /// <summary>The research-profile layer that read this member, when a
+    /// profile ran.</summary>
+    [JsonPropertyName("layer")] public string? Layer { get; init; }
+    /// <summary>search | probe: where the member's outcome was decided.</summary>
+    [JsonPropertyName("stage")] public required string Stage { get; init; }
+    /// <summary>complete | empty | unavailable.</summary>
+    [JsonPropertyName("outcome")] public required string Outcome { get; init; }
+    /// <summary>Hits before the merge; null when unavailable.</summary>
+    [JsonPropertyName("hits")] public uint? Hits { get; init; }
+    /// <summary>Content-free reason for unavailable: no_active_index |
+    /// engine_unavailable | search_failed.</summary>
+    [JsonPropertyName("reason")] public string? Reason { get; init; }
+}
+
+/// <summary>What a multi-collection read covered and which claims it cannot
+/// support (ClearView C1).</summary>
+public sealed record TurnCoverage
+{
+    /// <summary>report | require: the policy the turn ran under.</summary>
+    [JsonPropertyName("policy")] public required string Policy { get; init; }
+    /// <summary>True when every visible member completed (with or without
+    /// hits). Document hits still never prove exhaustive coverage.</summary>
+    [JsonPropertyName("complete")] public bool Complete { get; init; }
+    /// <summary>Visible members in read order.</summary>
+    [JsonPropertyName("members")] public IReadOnlyList<CollectionOutcome> Members { get; init; } = [];
+    /// <summary>absence | exhaustive_coverage: claims withheld because they
+    /// depend on an unavailable member. Empty when complete.</summary>
+    [JsonPropertyName("withheld_claims")] public IReadOnlyList<string> WithheldClaims { get; init; } = [];
 }
 
 public sealed record TurnHit
@@ -553,6 +606,10 @@ public sealed record TurnResult
     /// <summary>Present only when a research profile ran. A legacy
     /// turn's response carries no <c>hierarchy</c> key at all.</summary>
     [JsonPropertyName("hierarchy")] public EvidenceHierarchyDecision? Hierarchy { get; init; }
+    /// <summary>ClearView C1: present only when the request selected
+    /// <see cref="TurnRequest.CollectionAvailability"/>; null on every other
+    /// turn and from a v1.4 server.</summary>
+    [JsonPropertyName("coverage")] public TurnCoverage? Coverage { get; init; }
 }
 
 /// <summary>One progress event on the streaming turn plane. The wire tags
@@ -572,6 +629,11 @@ public sealed record TurnProgressEvent
     [JsonPropertyName("hits")] public uint? Hits { get; init; }
     /// <summary>retrieval: the collection had no active index.</summary>
     [JsonPropertyName("skipped")] public bool? Skipped { get; init; }
+    /// <summary>probe / retrieval: complete | empty | unavailable, only when
+    /// the turn selected a collection availability policy (ClearView C1).</summary>
+    [JsonPropertyName("outcome")] public string? Outcome { get; init; }
+    /// <summary>probe / retrieval: content-free reason for unavailable.</summary>
+    [JsonPropertyName("reason")] public string? Reason { get; init; }
     /// <summary>model / completion / expansion: provider family.
     /// layer_source: which evidence provider served the source
     /// (documents | facts | matrix).</summary>
@@ -823,7 +885,7 @@ public sealed record TimeseriesReport
     /// <summary>1h | 24h | 7d | 30d.</summary>
     [JsonPropertyName("window")] public required string Window { get; init; }
     [JsonPropertyName("bucket_seconds")] public long BucketSeconds { get; init; }
-    /// <summary>rest | grpc when the query filtered by plane.</summary>
+    /// <summary>rest | grpc | mcp when the query filtered by plane.</summary>
     [JsonPropertyName("plane")] public string? Plane { get; init; }
     [JsonPropertyName("buckets")] public IReadOnlyList<TimeseriesBucket> Buckets { get; init; } = [];
 }

@@ -165,6 +165,28 @@ public interface IRetrievalPlane
     Task<SearchResult> SearchAsync(
         string query, string shapeRef, uint? topK = null, string? indexVersion = null,
         JsonElement? filter = null, CancellationToken ct = default);
+
+    /// <summary>The same search from a <see cref="SearchRequest"/>, which also
+    /// carries the ClearView R1 <see cref="SearchRequest.DiscloseExecution"/>
+    /// option; the result's <see cref="SearchResult.Execution"/> is filled when
+    /// the server returns one. Both shipped transports implement it. The
+    /// default implementation (for other implementers of this interface)
+    /// delegates to the positional overload and throws
+    /// <see cref="UnsupportedTransportException"/> when disclosure is
+    /// requested, rather than silently dropping it.</summary>
+    Task<SearchResult> SearchAsync(SearchRequest request, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.DiscloseExecution == true)
+        {
+            throw new UnsupportedTransportException(
+                "this IRetrievalPlane implementation does not return execution disclosure");
+        }
+        return SearchAsync(
+            request.Query, request.ShapeRef, request.TopK, request.IndexVersion,
+            request.Filter, ct);
+    }
+
     Task<IndexStatus> IndexStatusAsync(string shapeRef, CancellationToken ct = default);
     /// <summary>Side-by-side build + atomic flip. REST-only today — the gRPC
     /// client throws <see cref="UnsupportedTransportException"/>.</summary>
@@ -384,7 +406,7 @@ public interface IReportsPlane
 
     /// <summary>Bucketed request/error/latency series.
     /// <paramref name="window"/>: 1h | 24h | 7d | 30d (server default 24h);
-    /// <paramref name="plane"/>: rest | grpc.</summary>
+    /// <paramref name="plane"/>: rest | grpc | mcp.</summary>
     Task<TimeseriesReport> TimeseriesAsync(
         string? window = null, string? plane = null, CancellationToken ct = default);
 

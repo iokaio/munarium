@@ -424,6 +424,18 @@ internal sealed partial class GrpcTransport
     public async Task<TurnResult> TurnAsync(
         string sessionId, TurnRequest request, CancellationToken ct = default)
     {
+        var msg = ToPbTurnRequest(sessionId, request);
+        // A turn spends provider tokens — send once, never auto-retried, and
+        // DEADLINE-EXEMPT like the REST twin: aborting client-side does not
+        // stop the server's paid completion.
+        var resp = await RunAsync(
+            o => _sessions.TurnAsync(msg, o), RetryClass.Write, null, ct, deadline: false)
+            .ConfigureAwait(false);
+        return ToTurnResult(resp);
+    }
+
+    internal static Mmp.V1.TurnRequest ToPbTurnRequest(string sessionId, TurnRequest request)
+    {
         RejectZero("top_k", (ulong?)request.TopK);
         var msg = new Mmp.V1.TurnRequest
         {
@@ -435,6 +447,9 @@ internal sealed partial class GrpcTransport
             // exactly the legacy document path the REST twin gets by omitting
             // the key.
             ResearchProfile = request.ResearchProfile ?? "",
+            // ClearView C1: "" is the v1.4 behavior, as the REST twin's
+            // omitted key is.
+            CollectionAvailability = request.CollectionAvailability ?? "",
         };
         if (request.ModelOverride is { } o)
         {
@@ -445,13 +460,7 @@ internal sealed partial class GrpcTransport
                 Tier = o.Tier ?? "",
             };
         }
-        // A turn spends provider tokens — send once, never auto-retried, and
-        // DEADLINE-EXEMPT like the REST twin: aborting client-side does not
-        // stop the server's paid completion.
-        var resp = await RunAsync(
-            o => _sessions.TurnAsync(msg, o), RetryClass.Write, null, ct, deadline: false)
-            .ConfigureAwait(false);
-        return ToTurnResult(resp);
+        return msg;
     }
 
     public IAsyncEnumerable<TurnStreamEvent> TurnStreamAsync(
@@ -496,7 +505,7 @@ internal sealed partial class GrpcTransport
         ProviderFingerprint = Opt(e.ProviderFingerprint),
     };
 
-    private static TurnResult ToTurnResult(Mmp.V1.TurnResponse resp) => new()
+    internal static TurnResult ToTurnResult(Mmp.V1.TurnResponse resp) => new()
     {
         SessionId = resp.SessionId,
         Ordinal = resp.Ordinal,
@@ -566,6 +575,28 @@ internal sealed partial class GrpcTransport
                 CompletenessAvailable = h.CompletenessAvailable,
                 DisclosedConflicts = h.DisclosedConflicts,
                 ConflictsPolicy = h.ConflictsPolicy,
+            }
+            : null,
+        // ClearView C1: present only when the request selected a policy.
+        // proto3 strings carry absence as "", so layer/reason go back to null;
+        // hits is a proto3 optional, unset when the member was unavailable.
+        Coverage = resp.Coverage is { } cov
+            ? new TurnCoverage
+            {
+                Policy = cov.Policy,
+                Complete = cov.Complete,
+                Members = cov.Members
+                    .Select(m => new CollectionOutcome
+                    {
+                        Collection = m.Collection,
+                        Layer = Opt(m.Layer),
+                        Stage = m.Stage,
+                        Outcome = m.Outcome,
+                        Hits = m.HasHits ? m.Hits : null,
+                        Reason = Opt(m.Reason),
+                    })
+                    .ToArray(),
+                WithheldClaims = cov.WithheldClaims.ToArray(),
             }
             : null,
     };

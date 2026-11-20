@@ -745,22 +745,45 @@ internal sealed partial class GrpcTransport : ITransport
 
     // -- retrieval ----------------------------------------------------------
 
-    public async Task<SearchResult> SearchAsync(
+    public Task<SearchResult> SearchAsync(
         string query, string shapeRef, uint? topK = null, string? indexVersion = null,
-        JsonElement? filter = null, CancellationToken ct = default)
+        JsonElement? filter = null, CancellationToken ct = default) =>
+        SearchAsync(
+            new SearchRequest
+            {
+                Query = query, ShapeRef = shapeRef, TopK = topK,
+                IndexVersion = indexVersion, Filter = filter,
+            },
+            ct);
+
+    public async Task<SearchResult> SearchAsync(
+        SearchRequest request, CancellationToken ct = default)
     {
-        RejectZero("top_k", topK);
-        var msg = new HybridSearchRequest
-        {
-            Query = query,
-            ShapeRef = shapeRef,
-            TopK = topK ?? 0,
-            FilterJson = filter?.GetRawText() ?? "",
-            IndexVersion = indexVersion ?? "",
-        };
+        var msg = ToPbSearchRequest(request);
         var resp = await RunAsync(
             o => _retrieval.HybridSearchAsync(msg, o), RetryClass.Read, null, ct)
             .ConfigureAwait(false);
+        return ToSearchResult(resp);
+    }
+
+    internal static HybridSearchRequest ToPbSearchRequest(SearchRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        RejectZero("top_k", request.TopK);
+        return new HybridSearchRequest
+        {
+            Query = request.Query,
+            ShapeRef = request.ShapeRef,
+            TopK = request.TopK ?? 0,
+            FilterJson = request.Filter?.GetRawText() ?? "",
+            IndexVersion = request.IndexVersion ?? "",
+            // ClearView R1: false (proto3's default) is the v1.4 request.
+            DiscloseExecution = request.DiscloseExecution ?? false,
+        };
+    }
+
+    internal static SearchResult ToSearchResult(HybridSearchResponse resp)
+    {
         var envelope = resp.Envelope
             ?? throw new UnexpectedServerException("HybridSearchResponse without ProvenanceEnvelope");
         return new SearchResult
@@ -790,6 +813,25 @@ internal sealed partial class GrpcTransport : ITransport
                 EventWatermark = envelope.EventWatermark,
                 ProviderFingerprint = Opt(envelope.ProviderFingerprint),
             },
+            // ClearView R1: absent unless disclosed. The proto marks unmeasured
+            // leg members unset (optional), never 0/false; it has no stages.
+            Execution = resp.Execution is { } x
+                ? new SearchExecution
+                {
+                    Version = x.Version,
+                    Engine = x.Engine,
+                    LexicalDomain = x.LexicalDomain,
+                    Legs = x.Legs
+                        .Select(l => new SearchLeg
+                        {
+                            Leg = l.Leg,
+                            CandidateLimit = l.HasCandidateLimit ? l.CandidateLimit : null,
+                            Fetched = l.HasFetched ? l.Fetched : null,
+                            Exhausted = l.HasExhausted ? l.Exhausted : null,
+                        })
+                        .ToArray(),
+                }
+                : null,
         };
     }
 

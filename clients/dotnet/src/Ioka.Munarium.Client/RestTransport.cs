@@ -523,13 +523,24 @@ internal sealed partial class RestTransport : ITransport
     public Task<SearchResult> SearchAsync(
         string query, string shapeRef, uint? topK = null, string? indexVersion = null,
         JsonElement? filter = null, CancellationToken ct = default) =>
+        SearchAsync(
+            new SearchRequest
+            {
+                Query = query, ShapeRef = shapeRef, TopK = topK,
+                IndexVersion = indexVersion, Filter = filter,
+            },
+            ct);
+
+    public Task<SearchResult> SearchAsync(SearchRequest request, CancellationToken ct = default) =>
         SendAsync(
             HttpMethod.Post, "/v1/search",
             JsonContent(
                 new SearchBody
                 {
-                    Query = query, ShapeRef = shapeRef, TopK = topK,
-                    IndexVersion = indexVersion, Filter = filter,
+                    Query = request.Query, ShapeRef = request.ShapeRef, TopK = request.TopK,
+                    IndexVersion = request.IndexVersion, Filter = request.Filter,
+                    // null omits the key: the v1.4 request bytes
+                    DiscloseExecution = request.DiscloseExecution,
                 },
                 MunariumJsonContext.Default.SearchBody),
             // a read that happens to be a POST — same retry class as GETs

@@ -18,6 +18,21 @@ public class MunariumException : Exception
     /// may succeed. Head conflicts are retryable too but need a REBUILT
     /// request — see <see cref="MunariumClient.ProposeClaimWithRetryAsync"/>.</summary>
     public virtual bool Transient => false;
+
+    /// <summary>ClearView R11 retry guidance from the server: <c>true</c>
+    /// only when the server has evidence the request was rejected before
+    /// execution, so the identical request may be repeated (after any
+    /// Retry-After). Null when the server sent no guidance (every v1.4
+    /// server, and every slug outside the registry's retry table).
+    /// Informational: it does not change this client's own retry policy,
+    /// and session turns stay send-once regardless.</summary>
+    public bool? Retryable { get; internal set; }
+
+    /// <summary>ClearView R11: <c>repeat</c> | <c>retry_later</c> |
+    /// <c>reread</c> | <c>inspect_outcome</c>, verbatim from the server;
+    /// null when absent. An absent or unrecognized action authorizes no
+    /// automated replay (server/docs/api/errors.md, Retry guidance).</summary>
+    public string? RetryAction { get; internal set; }
 }
 
 /// <summary>Optimistic expected_head mismatch — normal and retryable:
