@@ -89,10 +89,43 @@ public final class SessionsApi {
             String conflictsPolicy) {}
 
     /**
+     * One visible member of a multi-collection read (ClearView C1). A
+     * collection the session cannot see never appears. {@code stage} is
+     * {@code search | probe}; {@code outcome} is {@code complete | empty |
+     * unavailable}; {@code hits} is null when unavailable; {@code reason}
+     * ({@code no_active_index | engine_unavailable | search_failed}) and
+     * {@code layer} (the research-profile layer) are null when absent.
+     */
+    public record CollectionOutcome(
+            String collection,
+            String layer,
+            String stage,
+            String outcome,
+            Integer hits,
+            String reason) {}
+
+    /**
+     * What a multi-collection read covered, and which claims it cannot
+     * support (ClearView C1). {@code policy} is {@code report | require};
+     * {@code complete} is true when every visible member completed;
+     * {@code withheldClaims} ({@code absence}, {@code exhaustive_coverage})
+     * is empty when complete. Document hits never prove exhaustive coverage.
+     */
+    public record TurnCoverage(
+            String policy,
+            boolean complete,
+            List<CollectionOutcome> members,
+            List<String> withheldClaims) {}
+
+    /**
      * {@code hierarchy} is present ONLY when a research profile ran. A legacy
      * turn leaves it null, and the shared mapper's NON_NULL inclusion keeps
      * the key out of the JSON entirely — the governing S-3.x invariant is
      * that a caller who does not use a profile sees byte-identical behaviour.
+     *
+     * <p>{@code coverage} (ClearView C1) is present only when the turn set
+     * {@code collectionAvailability}; a v1.4 server, or a turn without a
+     * policy, leaves it null.
      */
     public record TurnResult(
             String sessionId,
@@ -102,7 +135,22 @@ public final class SessionsApi {
             List<TurnHit> hits,
             List<CollectionEnvelope> envelopes,
             TurnCompletion completion,
-            EvidenceHierarchyDecision hierarchy) {}
+            EvidenceHierarchyDecision hierarchy,
+            TurnCoverage coverage) {
+        /** The 1.4 component list: no coverage. */
+        public TurnResult(
+                String sessionId,
+                int ordinal,
+                List<String> collectionsSearched,
+                List<String> skipped,
+                List<TurnHit> hits,
+                List<CollectionEnvelope> envelopes,
+                TurnCompletion completion,
+                EvidenceHierarchyDecision hierarchy) {
+            this(sessionId, ordinal, collectionsSearched, skipped, hits, envelopes, completion,
+                    hierarchy, null);
+        }
+    }
 
     /**
      * One progress event on the streaming turn plane. Modeled permissively —
@@ -183,7 +231,33 @@ public final class SessionsApi {
             // which case the original query searched alone — so an empty list
             // and a null are different readings. The paid call itself rides on
             // `provider`/`model`/`inputTokens`/`outputTokens` above.
-            List<String> terms) {}
+            List<String> terms,
+            // probe / retrieval, ClearView C1: `complete | empty | unavailable`
+            // and a content-free reason for `unavailable`, sent only when the
+            // turn selected a collection_availability policy. Appended for the
+            // same positional reason as above.
+            String outcome,
+            String reason) {
+        /** The 1.4 component list: no C1 outcome or reason. */
+        public TurnProgress(
+                String stage, String collection, Integer hits, Boolean skipped,
+                String provider, String model, String tier, Boolean wasOverride,
+                Integer attempt, Long inputTokens, Long outputTokens, List<String> checks,
+                Integer violations, String layer, String role, String requirement,
+                String source, String block, Boolean supportsCompleteness, String refusalCode,
+                Long elapsedMs, String profile, List<String> layers, String intentKind,
+                Boolean intentExplicit, Boolean completenessAvailable,
+                Integer disclosedConflicts, Integer layersUsed, Integer contextChars,
+                List<String> layersDropped, Integer probed, Integer selected,
+                List<String> collections, List<String> terms) {
+            this(stage, collection, hits, skipped, provider, model, tier, wasOverride, attempt,
+                    inputTokens, outputTokens, checks, violations, layer, role, requirement,
+                    source, block, supportsCompleteness, refusalCode, elapsedMs, profile, layers,
+                    intentKind, intentExplicit, completenessAvailable, disclosedConflicts,
+                    layersUsed, contextChars, layersDropped, probed, selected, collections,
+                    terms, null, null);
+        }
+    }
 
     /** One stored transcript row (JSON-shaped fields ride verbatim). */
     public record SessionTurn(

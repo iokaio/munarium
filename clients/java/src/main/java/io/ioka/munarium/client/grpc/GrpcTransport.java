@@ -1012,9 +1012,15 @@ public final class GrpcTransport implements io.ioka.munarium.client.Transport {
                 .setTopK(q.topK() == null ? 0 : q.topK())
                 .setFilterJson(q.filter() == null ? "" : q.filter().toString())
                 .setIndexVersion(orEmpty(q.indexVersion()))
+                // ClearView R1: false is the proto3 default and the v1.4 request.
+                .setDiscloseExecution(Boolean.TRUE.equals(q.discloseExecution()))
                 .build();
         // Search is a read: same retry class as the query plane.
         var resp = read(() -> retrievalSvc().hybridSearch(req));
+        return searchResult(resp);
+    }
+
+    static Retrieval.SearchResult searchResult(mmp.v1.Retrieval.HybridSearchResponse resp) {
         if (!resp.hasEnvelope()) {
             throw new UnexpectedServerException(
                     "HybridSearchResponse without ProvenanceEnvelope", null);
@@ -1028,7 +1034,23 @@ public final class GrpcTransport implements io.ioka.munarium.client.Transport {
                                 h.getVectorRank() == 0.0 ? null : (int) h.getVectorRank(),
                                 jsonOpt(h.getMetadataJson())))
                         .toList(),
-                envelope(resp.getEnvelope()));
+                envelope(resp.getEnvelope()),
+                resp.hasExecution() ? execution(resp.getExecution()) : null);
+    }
+
+    /** R1 disclosure. Unset optional leg fields stay null (not measured); the
+     * typed gRPC message carries no inference stages, so {@code stages} is null. */
+    private static Retrieval.SearchExecution execution(mmp.v1.Retrieval.SearchExecution e) {
+        return new Retrieval.SearchExecution(e.getVersion(), e.getEngine(), e.getLexicalDomain(),
+                e.getLegsList().stream()
+                        .map(l -> new Retrieval.SearchLeg(l.getLeg(),
+                                l.hasCandidateLimit()
+                                        ? unsigned("candidate_limit", l.getCandidateLimit())
+                                        : null,
+                                l.hasFetched() ? unsigned("fetched", l.getFetched()) : null,
+                                l.hasExhausted() ? l.getExhausted() : null))
+                        .toList(),
+                null);
     }
 
     @Override
@@ -1348,6 +1370,8 @@ public final class GrpcTransport implements io.ioka.munarium.client.Transport {
         // proto3 scalar: empty string IS "not set", which is exactly the
         // legacy document path — no presence wrapper needed.
         b.setResearchProfile(orEmpty(o.researchProfile()));
+        // ClearView C1: "" is the v1.4 behavior (no policy).
+        b.setCollectionAvailability(orEmpty(o.collectionAvailability()));
         var req = b.build();
         // Send-once, never auto-retried, and DEADLINE-EXEMPT like the REST
         // twin: aborting client-side does not stop the paid completion.
@@ -1355,7 +1379,7 @@ public final class GrpcTransport implements io.ioka.munarium.client.Transport {
         return turnResult(resp);
     }
 
-    private static SessionsApi.TurnResult turnResult(Session.TurnResponse resp) {
+    static SessionsApi.TurnResult turnResult(Session.TurnResponse resp) {
         List<SessionsApi.CollectionEnvelope> envelopes = new ArrayList<>();
         for (Session.CollectionEnvelope e : resp.getEnvelopesList()) {
             if (!e.hasEnvelope()) {
@@ -1391,7 +1415,22 @@ public final class GrpcTransport implements io.ioka.munarium.client.Transport {
                                 h.getSourceId(), h.getSourcePath(), h.getSourceContentHash(),
                                 h.getText(), h.getScore()))
                         .toList(),
-                envelopes, completion, hierarchy);
+                envelopes, completion, hierarchy,
+                // Present only when the request selected a policy (C1).
+                resp.hasCoverage() ? coverage(resp.getCoverage()) : null);
+    }
+
+    private static SessionsApi.TurnCoverage coverage(Session.TurnCoverage c) {
+        // optStr: proto3 cannot carry an absent string, and REST sends layer
+        // and reason absent; hits presence rides on `optional`.
+        return new SessionsApi.TurnCoverage(c.getPolicy(), c.getComplete(),
+                c.getMembersList().stream()
+                        .map(m -> new SessionsApi.CollectionOutcome(m.getCollection(),
+                                optStr(m.getLayer()), m.getStage(), m.getOutcome(),
+                                m.hasHits() ? m.getHits() : null,
+                                optStr(m.getReason())))
+                        .toList(),
+                c.getWithheldClaimsList());
     }
 
     private static SessionsApi.EvidenceHierarchyDecision hierarchy(

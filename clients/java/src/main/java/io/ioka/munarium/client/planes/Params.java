@@ -45,15 +45,35 @@ public final class Params {
         }
     }
 
-    /** Hybrid search request. */
+    /**
+     * Hybrid search request. {@code discloseExecution} (ClearView R1): {@code true} asks the server to
+     * add an {@code execution} disclosure to the result. Null is not sent, so
+     * an existing caller's request bytes are unchanged.
+     */
     public record SearchQuery(
-            String query, String shapeRef, Integer topK, String indexVersion, JsonNode filter) {
+            String query,
+            String shapeRef,
+            Integer topK,
+            String indexVersion,
+            JsonNode filter,
+            Boolean discloseExecution) {
+        /** The 1.4 component list: no execution disclosure requested. */
+        public SearchQuery(
+                String query, String shapeRef, Integer topK, String indexVersion, JsonNode filter) {
+            this(query, shapeRef, topK, indexVersion, filter, null);
+        }
+
         public static SearchQuery of(String query, String shapeRef) {
-            return new SearchQuery(query, shapeRef, null, null, null);
+            return new SearchQuery(query, shapeRef, null, null, null, null);
         }
 
         public SearchQuery withTopK(int k) {
-            return new SearchQuery(query, shapeRef, k, indexVersion, filter);
+            return new SearchQuery(query, shapeRef, k, indexVersion, filter, discloseExecution);
+        }
+
+        /** Ask for (or explicitly decline) the R1 execution disclosure. */
+        public SearchQuery withDiscloseExecution(boolean disclose) {
+            return new SearchQuery(query, shapeRef, topK, indexVersion, filter, disclose);
         }
     }
 
@@ -165,25 +185,55 @@ public final class Params {
      * through a named evidence hierarchy; null is the legacy single-layer
      * document path and is NOT sent, so an existing caller's request bytes
      * are unchanged.
+     *
+     * <p>{@code collectionAvailability} (ClearView C1) is {@code report} or
+     * {@code require}: how a multi-collection read treats a member that
+     * cannot be searched. {@code report} returns the other members' verified
+     * results with {@code TurnResult.coverage()}; {@code require} refuses the
+     * turn when any visible member is unavailable. Null is not sent and keeps
+     * the v1.4 behavior.
      */
     public record TurnOptions(
             String query,
             Integer topK,
             Boolean complete,
             ModelOverride modelOverride,
-            String researchProfile) {
+            String researchProfile,
+            String collectionAvailability) {
+        /** {@code collectionAvailability}: return what completed, report the rest. */
+        public static final String COLLECTION_AVAILABILITY_REPORT = "report";
+        /** {@code collectionAvailability}: refuse when any member is unavailable. */
+        public static final String COLLECTION_AVAILABILITY_REQUIRE = "require";
+
+        /** The 1.4 component list: no availability policy. */
+        public TurnOptions(
+                String query,
+                Integer topK,
+                Boolean complete,
+                ModelOverride modelOverride,
+                String researchProfile) {
+            this(query, topK, complete, modelOverride, researchProfile, null);
+        }
+
         public static TurnOptions of(String query) {
-            return new TurnOptions(query, null, null, null, null);
+            return new TurnOptions(query, null, null, null, null, null);
         }
 
         /** Run the runbook's completion step under an optional override. */
         public TurnOptions withCompletion(ModelOverride override) {
-            return new TurnOptions(query, topK, true, override, researchProfile);
+            return new TurnOptions(
+                    query, topK, true, override, researchProfile, collectionAvailability);
         }
 
         /** Route this turn through a named research profile. */
         public TurnOptions withResearchProfile(String profile) {
-            return new TurnOptions(query, topK, complete, modelOverride, profile);
+            return new TurnOptions(
+                    query, topK, complete, modelOverride, profile, collectionAvailability);
+        }
+
+        /** Select the C1 availability policy: {@code report} or {@code require}. */
+        public TurnOptions withCollectionAvailability(String policy) {
+            return new TurnOptions(query, topK, complete, modelOverride, researchProfile, policy);
         }
     }
 

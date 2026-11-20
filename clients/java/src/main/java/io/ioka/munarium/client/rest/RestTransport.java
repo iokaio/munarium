@@ -759,6 +759,9 @@ public final class RestTransport implements Transport {
         member(body, "top_k", q.topK());
         member(body, "index_version", q.indexVersion());
         member(body, "filter", q.filter());
+        // ClearView R1: null-guarded, so a caller that never asks sends the
+        // v1.4 bytes.
+        member(body, "disclose_execution", q.discloseExecution());
         // A read that happens to be a POST — same retry class as GETs.
         return convert(
                 run(RetryClass.READ, request("/v1/search", null, false),
@@ -1034,6 +1037,8 @@ public final class RestTransport implements Transport {
         // Null-guarded like every other optional member: a caller who does
         // not use a research profile must send the bytes it always sent.
         member(body, "research_profile", o.researchProfile());
+        // ClearView C1: sent only when a policy was selected.
+        member(body, "collection_availability", o.collectionAvailability());
         return body;
     }
 

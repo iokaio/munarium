@@ -37,6 +37,12 @@ public final class Problems {
 
     private static MunariumException fromParts(
             String slug, String detail, Ext ext, Integer status, Duration retryAfter) {
+        return typed(slug, detail, ext, status, retryAfter)
+                .withRetryGuidance(ext.optBool("retryable"), ext.optText("retry_action"));
+    }
+
+    private static MunariumException typed(
+            String slug, String detail, Ext ext, Integer status, Duration retryAfter) {
         return switch (slug) {
             case "head-conflict" ->
                     new HeadConflictException(ext.asLong("expected"), ext.asLong("actual"), detail);
@@ -86,6 +92,12 @@ public final class Problems {
 
         String asText(String key);
 
+        /** A boolean member, or null when absent or not a boolean. */
+        Boolean optBool(String key);
+
+        /** A string member, or null when absent or not a string. */
+        String optText(String key);
+
         List<GateFinding> findings();
     }
 
@@ -108,6 +120,18 @@ public final class Problems {
         @Override
         public String asText(String key) {
             return body.path(key).asText("");
+        }
+
+        @Override
+        public Boolean optBool(String key) {
+            JsonNode v = body.get(key);
+            return v != null && v.isBoolean() ? v.booleanValue() : null;
+        }
+
+        @Override
+        public String optText(String key) {
+            JsonNode v = body.get(key);
+            return v != null && v.isTextual() ? v.textValue() : null;
         }
 
         @Override
@@ -139,6 +163,17 @@ public final class Problems {
         @Override
         public String asText(String key) {
             return md.getOrDefault(key, "");
+        }
+
+        @Override
+        public Boolean optBool(String key) {
+            String v = md.get(key);
+            return "true".equals(v) ? Boolean.TRUE : "false".equals(v) ? Boolean.FALSE : null;
+        }
+
+        @Override
+        public String optText(String key) {
+            return md.get(key);
         }
 
         @Override

@@ -11,6 +11,11 @@ package io.ioka.munarium.client.errors;
 public class MunariumException extends RuntimeException {
     private final String slug;
     private final boolean transientFailure;
+    // ClearView R11 retry guidance. Set once by Problems before the exception
+    // is thrown; not constructor arguments, so every subclass constructor
+    // keeps its published signature.
+    private Boolean retryable;
+    private String retryAction;
 
     protected MunariumException(String slug, boolean transientFailure, String message) {
         super(message);
@@ -36,5 +41,35 @@ public class MunariumException extends RuntimeException {
      */
     public boolean isTransient() {
         return transientFailure;
+    }
+
+    /**
+     * ClearView R11: the server's {@code retryable} member (REST problem+json,
+     * or the gRPC {@code ErrorInfo} metadata key of the same name). {@code true}
+     * only when the server has evidence the request was rejected before
+     * execution; {@code null} when the server sent no guidance (every v1.4
+     * server, and every slug outside the guidance table).
+     *
+     * <p>Informational: it does not change this client's automatic retry
+     * behavior, and session turns stay send-once regardless.
+     */
+    public Boolean retryable() {
+        return retryable;
+    }
+
+    /**
+     * ClearView R11: {@code repeat}, {@code retry_later}, {@code reread} or
+     * {@code inspect_outcome}; {@code null} when absent. An absent or
+     * unrecognized action authorizes no automated replay.
+     */
+    public String retryAction() {
+        return retryAction;
+    }
+
+    /** Attach the decoded R11 members; called only by {@link Problems}. */
+    final MunariumException withRetryGuidance(Boolean retryable, String retryAction) {
+        this.retryable = retryable;
+        this.retryAction = retryAction;
+        return this;
     }
 }
