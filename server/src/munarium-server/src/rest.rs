@@ -1743,6 +1743,11 @@ pub fn router(state: Arc<AppState>) -> Router {
             "/v1/index-build-jobs/{job_id}/cancel",
             post(crate::datastore_jobs::cancel_job),
         )
+        // ClearView R6: a job's durable per-version outcomes.
+        .route(
+            "/v1/index-build-jobs/{job_id}/versions",
+            get(crate::datastore_jobs::list_job_versions),
+        )
         // The rollout selector: which engine serves a scope, and the
         // operator's one-call rollback to PostgreSQL.
         .route(

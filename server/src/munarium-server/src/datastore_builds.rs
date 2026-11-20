@@ -28,7 +28,7 @@ use munarium_retrieval::mirror::{
 use munarium_retrieval::RequiredVersionsPolicy;
 use munarium_store_pg::artifacts::{ArtifactCatalog, BindingSlot};
 use munarium_store_pg::attempts::BuildAttempts;
-use munarium_store_pg::jobs::JobFence;
+use munarium_store_pg::jobs::{JobFence, JobSignal};
 
 use munarium_api_types as dto;
 
@@ -202,6 +202,7 @@ impl AppState {
             vector_policy: munarium_retrieval::mirror::VectorPolicy::from_env(),
             // Synchronous by default; the builder loop sets the claim's fence.
             job_fence: None,
+            job_signal: None,
         })
     }
 }
@@ -403,7 +404,7 @@ pub async fn op_rebuild_artifact(
     tenant_id: &str,
     index_version_id: &str,
 ) -> Result<dto::IndexArtifactBuildDto> {
-    op_rebuild_artifact_fenced(state, tenant_id, index_version_id, None).await
+    op_rebuild_artifact_fenced(state, tenant_id, index_version_id, None, None).await
 }
 
 /// [`op_rebuild_artifact`] for a queued rebuild job, fenced by its claim
@@ -413,9 +414,11 @@ pub async fn op_rebuild_artifact_fenced(
     tenant_id: &str,
     index_version_id: &str,
     fence: Option<&JobFence>,
+    signal: Option<&JobSignal>,
 ) -> Result<dto::IndexArtifactBuildDto> {
     let mut ctx = state.mirror_context(tenant_id)?;
     ctx.job_fence = fence.cloned();
+    ctx.job_signal = signal.cloned();
     let outcome = state
         .retrieval_for(tenant_id)?
         .rebuild_version(&ctx, index_version_id)
@@ -617,7 +620,7 @@ pub async fn op_backfill_collection(
     tenant_id: &str,
     collection_id: &str,
 ) -> Result<dto::IndexArtifactBackfillResponse> {
-    op_backfill_collection_fenced(state, tenant_id, collection_id, None).await
+    op_backfill_collection_fenced(state, tenant_id, collection_id, None, None).await
 }
 
 /// [`op_backfill_collection`] for a queued backfill job, fenced by its claim
@@ -629,9 +632,11 @@ pub async fn op_backfill_collection_fenced(
     tenant_id: &str,
     collection_id: &str,
     fence: Option<&JobFence>,
+    signal: Option<&JobSignal>,
 ) -> Result<dto::IndexArtifactBackfillResponse> {
     let mut ctx = state.mirror_context(tenant_id)?;
     ctx.job_fence = fence.cloned();
+    ctx.job_signal = signal.cloned();
 
     // The policy comes from the scope's own rollout row when it has one, so a
     // backfill covers exactly what the selector will later demand. A scope with

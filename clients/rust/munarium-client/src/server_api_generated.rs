@@ -250,6 +250,10 @@ impl ServerApiClient {
     pub async fn cancel_job(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("CancelJob", "POST", "/v1/index-build-jobs/{job_id}/cancel", "application/json", request).await
     }
+    /// GET /v1/index-build-jobs/{job_id}/versions
+    pub async fn list_job_versions(&self, request: ApiRequest) -> Result<ApiResponse> {
+        self.call("ListJobVersions", "GET", "/v1/index-build-jobs/{job_id}/versions", "application/json", request).await
+    }
     /// GET /v1/indexes/{shape_ref}
     pub async fn get_index(&self, request: ApiRequest) -> Result<ApiResponse> {
         self.call("GetIndex", "GET", "/v1/indexes/{shape_ref}", "application/json", request).await

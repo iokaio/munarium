@@ -155,6 +155,7 @@ impl Modify for SecurityAddon {
         crate::datastore_jobs::get_job,
         crate::datastore_jobs::list_jobs,
         crate::datastore_jobs::cancel_job,
+        crate::datastore_jobs::list_job_versions,
         crate::datastore_serving::rollout_get,
         crate::datastore_serving::rollout_set,
         crate::datastore_builds::backfill,

@@ -127,6 +127,7 @@ impl Fixture {
                 approx_threshold: None,
             },
             job_fence: fence.cloned(),
+            job_signal: None,
         }
     }
 
@@ -479,18 +480,25 @@ async fn a_generation_retired_before_the_publication_lock_publishes_nothing() {
 }
 
 /// R4-T1, second case. The intent is committed before reclaim; the old
-/// execution is paused after its catalog insert, the job is reclaimed, and the
-/// old execution resumes and finishes. It publishes exactly the recorded
+/// execution is paused during its upload, the job is reclaimed, and the old
+/// execution resumes and finishes. It publishes exactly the recorded
 /// manifest key and digest, records the result, and never binds. The
 /// replacement defers while the sealed attempt is live, then reuses the
 /// verified artifact and binds it under the current generation.
+///
+/// The pause is inside the upload, after the component writes. ClearView R6
+/// added a safe boundary between the catalog insert and the upload: an
+/// execution retired before that boundary stops there and leaves its intent
+/// to the sealed-attempt reconciler (the third case below, and R6's
+/// `cancel_after_the_intent_lets_only_the_recorded_object_finish`). One
+/// retired during the upload finishes it, which is what this case covers.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn an_intent_committed_before_reclaim_finishes_only_its_manifest() {
     guard!();
     let f = fixture("intent-worker", 2, true).await;
     let gen1 = f.seed_claimed_job("rebuild", false).await;
 
-    let (hook, pause) = pause_at(BuildPhase::AfterCatalogInsert, false);
+    let (hook, pause) = pause_at(BuildPhase::AfterComponentUpload, false);
     let old = spawn_mirror(&f, f.ctx(Some(&gen1), Some(hook)));
     pause.reached.await.unwrap();
     let old_attempt = f.linked_attempts(&gen1).await.pop().expect("linked");
@@ -500,6 +508,10 @@ async fn an_intent_committed_before_reclaim_finishes_only_its_manifest() {
         .await
         .unwrap()
         .expect("the intent is committed before the catalog insert");
+    assert!(
+        f.object_at(&intent.manifest_key).is_none(),
+        "paused before the manifest write"
+    );
     assert_eq!(intent.state, IntentState::Pending);
     assert_eq!(intent.job_generation, gen1.generation);
 

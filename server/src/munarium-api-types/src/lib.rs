@@ -2636,6 +2636,73 @@ pub struct IndexBuildJobListResponse {
     pub jobs: Vec<IndexBuildJobDto>,
 }
 
+/// What one build job did to one index version, from its durable records
+/// (ClearView R6). Every member describes this job only.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct IndexBuildJobVersionDto {
+    pub index_version_id: String,
+    /// Position in the set the job selected before starting its first
+    /// version. Absent for a version the job did not select (a direct build
+    /// learns its version id only when it commits).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_ordinal: Option<i32>,
+    /// `committed`: this job committed the PostgreSQL logical version.
+    /// `not_committed`: it did not (a mirror of an existing version, or a
+    /// direct build stopped before its commit).
+    pub logical_version: String,
+    /// The claim generation that committed the logical version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub committed_generation: Option<i32>,
+    /// `reused`: a verified artifact for the plan already existed.
+    /// `deferred`: another attempt held the plan. Reported separately from
+    /// anything this job published.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disposition: Option<String>,
+    /// Artifact attempts this job linked to the version.
+    pub attempts: i64,
+    /// The newest linked attempt, its claim generation and its state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attempt_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attempt_generation: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attempt_state: Option<String>,
+    /// `none`: no publication intent was committed, so this job published no
+    /// manifest for the version. `unknown`: an intent is committed and
+    /// unresolved; until the worker or the reconciler confirms the object,
+    /// whether the manifest reached storage is unknown. `published`,
+    /// `converged` or `failed`: the recorded resolution of that intent.
+    pub manifest: String,
+    /// The artifact the intent names.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact_id: Option<String>,
+    /// That artifact's catalog state (`sealed`, `verified`, `failed`,
+    /// `retired`), when it was catalogued.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog: Option<String>,
+    /// Whether the version's `staged` slot binds that artifact. Never
+    /// `serving`: a build job does not activate an index.
+    pub staged_bound: bool,
+}
+
+/// One page of a build job's per-version outcomes (ClearView R6).
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct IndexBuildJobVersionsResponse {
+    pub job_id: String,
+    /// The job's own state, unchanged by recovery.
+    pub state: String,
+    /// `recorded`: every claim of this job kept per-version history, so the
+    /// pages list everything it touched (an empty page means nothing).
+    /// `partial`: some claims were made by a builder that kept none.
+    /// `unavailable`: no claim kept history (a v1.4 job); an empty page
+    /// means unknown, not nothing.
+    pub history: String,
+    pub versions: Vec<IndexBuildJobVersionDto>,
+    /// Pass as `cursor` for the next page; absent on the last page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
 /// Promote the `staged` binding into `serving` — a compare-and-swap against
 /// BOTH generations the caller read (serving 0 = the slot is empty).
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

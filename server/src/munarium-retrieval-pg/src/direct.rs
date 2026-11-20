@@ -89,6 +89,26 @@ impl PgRetrieval {
         collection_id: &str,
         max_chars: usize,
     ) -> Result<PreparedBuild> {
+        self.extract_collection_prepared_with(collection_id, max_chars, |_, _| async { Ok(()) })
+            .await
+    }
+
+    /// [`extract_collection_prepared`](Self::extract_collection_prepared)
+    /// with a boundary before each source (ClearView R6). `before_source`
+    /// receives `(sources done, sources total)` and stops the extraction by
+    /// returning an error; a queued build uses it to stop at the next source
+    /// after a cancel. Each source is extracted, chunked and embedded as one
+    /// unit, so this is also the embedding boundary.
+    pub async fn extract_collection_prepared_with<F, Fut>(
+        &self,
+        collection_id: &str,
+        max_chars: usize,
+        mut before_source: F,
+    ) -> Result<PreparedBuild>
+    where
+        F: FnMut(usize, usize) -> Fut,
+        Fut: std::future::Future<Output = Result<()>>,
+    {
         self.assert_scope_readable("collection", collection_id)
             .await?;
         let info = self.collection_by_id(collection_id).await?;
@@ -124,7 +144,8 @@ impl PgRetrieval {
 
         let mut chunks = Vec::new();
         let mut outcomes = Vec::with_capacity(sources.len());
-        for s in &sources {
+        for (done, s) in sources.iter().enumerate() {
+            before_source(done, sources.len()).await?;
             let key = munarium_core::sources::SourceKey::new(
                 &self.tenant_id,
                 &s.filename,

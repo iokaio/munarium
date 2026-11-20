@@ -73,7 +73,7 @@ impl JobKind {
 }
 
 /// A job row, as callers read it.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BuildJob {
     pub tenant_id: String,
     pub job_id: String,
@@ -169,6 +169,200 @@ pub async fn lock_generation(conn: &mut sqlx::PgConnection, fence: &JobFence) ->
             && r.get::<i32, _>("attempts") == fence.generation
             && r.get::<Option<String>, _>("claimed_by").as_deref() == Some(fence.node_id.as_str())
     }))
+}
+
+/// Record the generation a fenced builder just claimed (ClearView R6). In
+/// the claiming transaction, so a committed claim always has its run row and
+/// a rolled-back one never does. A generation without a run row was claimed
+/// by a v1.4 builder, and its per-version history is reported unavailable.
+async fn record_run(conn: &mut sqlx::PgConnection, job: &BuildJob, node_id: &str) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO index_build_job_runs (tenant_id, job_id, job_generation, node_id)
+         VALUES ($1,$2,$3,$4)
+         ON CONFLICT (tenant_id, job_id, job_generation) DO NOTHING",
+    )
+    .bind(&job.tenant_id)
+    .bind(&job.job_id)
+    .bind(job.attempts)
+    .bind(node_id)
+    .execute(&mut *conn)
+    .await
+    .map_err(storage_err)?;
+    Ok(())
+}
+
+/// Why a worker-local [`JobSignal`] stopped its build.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StopReason {
+    /// The job was cancelled.
+    Cancelled,
+    /// The claim's generation was retired some other way: the lease lapsed
+    /// and the job was reclaimed, completed, or failed by cleanup.
+    LeaseLost,
+}
+
+type StopHook = Box<dyn FnOnce(StopReason) + Send>;
+
+#[derive(Default)]
+struct SignalInner {
+    /// 0 = running, 1 = cancelled, 2 = lease lost.
+    stop: std::sync::atomic::AtomicU8,
+    /// The last lease renewal failed with an error, so whether the claim is
+    /// still current is unknown until it is revalidated.
+    uncertain: std::sync::atomic::AtomicBool,
+    hooks: std::sync::Mutex<Vec<StopHook>>,
+}
+
+/// A worker-local stop signal for one job claim (ClearView R6).
+///
+/// The builder signals it on CONFIRMED loss of the claim: a cancel, or a
+/// lease renewal refused because the generation was retired. A renewal that
+/// fails with an error only marks the lease [`uncertain`](Self::uncertain);
+/// the build then revalidates against PostgreSQL at its next safe boundary
+/// instead of stopping on a guess, and every shared write still rechecks the
+/// claim under the job-row lock. Builds check the signal at their safe
+/// boundaries (between sources, between versions, before seal and before
+/// upload) and stop there, which releases the builder slot.
+///
+/// [`on_stop`](Self::on_stop) registers work to run when the signal stops.
+/// Its intended consumer is the opt-in R3 PDF child process, which should
+/// register a hook that kills and reaps the child; that wiring is a
+/// follow-up. A legacy in-process parse cannot be interrupted and holds its
+/// slot until it returns, after which the next boundary stops the build.
+#[derive(Clone, Default)]
+pub struct JobSignal {
+    inner: std::sync::Arc<SignalInner>,
+}
+
+impl std::fmt::Debug for JobSignal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("JobSignal")
+            .field("stopped", &self.stopped())
+            .field("uncertain", &self.uncertain())
+            .finish()
+    }
+}
+
+impl JobSignal {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Stop the build. The first reason wins; hooks run once, on this call.
+    pub fn stop(&self, reason: StopReason) {
+        use std::sync::atomic::Ordering;
+        let code = match reason {
+            StopReason::Cancelled => 1,
+            StopReason::LeaseLost => 2,
+        };
+        if self
+            .inner
+            .stop
+            .compare_exchange(0, code, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return;
+        }
+        let hooks =
+            std::mem::take(&mut *self.inner.hooks.lock().unwrap_or_else(|e| e.into_inner()));
+        for hook in hooks {
+            hook(reason);
+        }
+    }
+
+    /// Why the build was stopped, or `None` while it may continue.
+    pub fn stopped(&self) -> Option<StopReason> {
+        match self.inner.stop.load(std::sync::atomic::Ordering::SeqCst) {
+            0 => None,
+            1 => Some(StopReason::Cancelled),
+            _ => Some(StopReason::LeaseLost),
+        }
+    }
+
+    /// Record whether the last lease renewal's outcome is unknown.
+    pub fn set_uncertain(&self, uncertain: bool) {
+        self.inner
+            .uncertain
+            .store(uncertain, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub fn uncertain(&self) -> bool {
+        self.inner
+            .uncertain
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Run `hook` when the signal stops, or now if it already has.
+    pub fn on_stop(&self, hook: impl FnOnce(StopReason) + Send + 'static) {
+        let mut hooks = self.inner.hooks.lock().unwrap_or_else(|e| e.into_inner());
+        match self.stopped() {
+            Some(reason) => {
+                drop(hooks);
+                hook(reason);
+            }
+            None => hooks.push(Box::new(hook)),
+        }
+    }
+}
+
+/// How much of a job's per-version history was recorded (ClearView R6).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HistoryStatus {
+    /// Every claimed generation was claimed by a fenced builder, so the
+    /// versions listed are everything the job touched. A job never claimed
+    /// has a recorded, empty history: it started no version.
+    Recorded,
+    /// Some generations were claimed by a builder that kept no history.
+    Partial,
+    /// No claimed generation recorded history: a v1.4 job. An empty page
+    /// means "unknown", never "nothing".
+    Unavailable,
+}
+
+impl HistoryStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Recorded => "recorded",
+            Self::Partial => "partial",
+            Self::Unavailable => "unavailable",
+        }
+    }
+}
+
+/// What one job did to one index version, from the durable records.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JobVersionOutcome {
+    pub index_version_id: String,
+    /// Position in the job's selected set, when the job selected it.
+    pub selected_ordinal: Option<i32>,
+    /// The generation that committed this logical version (a direct build).
+    pub committed_generation: Option<i32>,
+    /// `reused` or `deferred`: what the job found without publishing.
+    pub disposition: Option<String>,
+    /// How many artifact attempts the job linked to this version.
+    pub attempt_count: i64,
+    /// The newest linked attempt and its generation and state.
+    pub attempt_id: Option<String>,
+    pub attempt_generation: Option<i32>,
+    pub attempt_state: Option<String>,
+    /// The newest attempt's publication intent: `pending` (unresolved, so the
+    /// manifest outcome is unknown), `published`, `converged` or `failed`.
+    pub intent_state: Option<String>,
+    pub artifact_id: Option<String>,
+    /// The catalog state of the intent's artifact, when it was catalogued.
+    pub artifact_state: Option<String>,
+    /// Whether the version's `staged` slot binds the intent's artifact.
+    pub staged_bound: bool,
+}
+
+/// One page of a job's per-version history.
+#[derive(Debug, Clone, PartialEq)]
+pub struct JobVersionHistory {
+    pub job: BuildJob,
+    pub history: HistoryStatus,
+    pub versions: Vec<JobVersionOutcome>,
+    /// The last version on this page, when more may follow.
+    pub next_after: Option<String>,
 }
 
 /// What an enqueue did.
@@ -331,6 +525,7 @@ impl BuildJobs {
         .await
         .map_err(storage_err)?;
         let job = row_to_job(claimed);
+        record_run(&mut tx, &job, node_id).await?;
         tx.commit().await.map_err(storage_err)?;
         Ok(Some(job))
     }
@@ -516,9 +711,18 @@ impl BuildJobs {
         Ok(updated.rows_affected() == 1)
     }
 
-    /// Cancel a job that has not finished. A running job's executing attempt
-    /// keeps its own lease semantics; cancellation stops the JOB from being
-    /// re-offered, which is what an operator asking to stop actually needs.
+    /// Cancel a job that has not finished.
+    ///
+    /// Commits the `cancelled` state at once, which v1.4 readers see
+    /// unchanged, and releases the open target so the same build can be
+    /// enqueued again immediately. It is an UPDATE of the job row, so it
+    /// takes the same row lock as every fenced write ([`lock_generation`]):
+    /// a fenced write that commits first is kept, and one that comes later
+    /// finds the job `cancelled` and writes nothing (ClearView R6). The
+    /// running worker learns of it at its next safe boundary
+    /// ([`BuildJobs::is_current`] or a refused fenced write) and stops; a
+    /// worker that never comes back needs no acknowledgment. Returns false
+    /// for a job that had already finished, or a repeated cancel.
     pub async fn cancel(&self, tenant_id: &str, job_id: &str) -> Result<bool> {
         let updated = sqlx::query(
             "UPDATE index_build_jobs
@@ -531,6 +735,172 @@ impl BuildJobs {
         .await
         .map_err(storage_err)?;
         Ok(updated.rows_affected() == 1)
+    }
+
+    /// Whether a claim is still current, without taking the row lock: the
+    /// revalidation a build makes at a safe boundary, where a cancel may have
+    /// committed or a lease renewal failed with an error. A shared write
+    /// still takes [`lock_generation`] in its own transaction; this only
+    /// decides whether to keep working.
+    pub async fn is_current(&self, fence: &JobFence) -> Result<bool> {
+        let current: Option<bool> = sqlx::query_scalar(
+            "SELECT state = 'running' AND attempts = $3 AND claimed_by IS NOT DISTINCT FROM $4
+               FROM index_build_jobs
+              WHERE tenant_id = $1 AND job_id = $2",
+        )
+        .bind(&fence.tenant_id)
+        .bind(&fence.job_id)
+        .bind(fence.generation)
+        .bind(&fence.node_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(storage_err)?;
+        Ok(current == Some(true))
+    }
+
+    /// Why a claim is no longer current: `Cancelled` when the job is
+    /// `cancelled`, otherwise `LeaseLost`. `None` while it is current.
+    pub async fn stop_reason(&self, fence: &JobFence) -> Result<Option<StopReason>> {
+        if self.is_current(fence).await? {
+            return Ok(None);
+        }
+        let state: Option<String> = sqlx::query_scalar(
+            "SELECT state FROM index_build_jobs WHERE tenant_id = $1 AND job_id = $2",
+        )
+        .bind(&fence.tenant_id)
+        .bind(&fence.job_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(storage_err)?;
+        Ok(Some(if state.as_deref() == Some("cancelled") {
+            StopReason::Cancelled
+        } else {
+            StopReason::LeaseLost
+        }))
+    }
+
+    /// A job's per-version outcomes, one page, ordered by version id
+    /// (ClearView R6). Tenant-scoped; `None` when the tenant has no such job.
+    ///
+    /// Assembled from the durable records a fenced build writes: the selected
+    /// set and dispositions, logical-version commits, artifact-attempt links
+    /// and publication intents, with the catalog row and `staged` binding they
+    /// name. A pending intent is reported as pending: its manifest outcome is
+    /// unknown until the worker or the reconciler resolves it. Read-only; it
+    /// never starts recovery.
+    pub async fn version_history(
+        &self,
+        tenant_id: &str,
+        job_id: &str,
+        after: Option<&str>,
+        limit: i64,
+    ) -> Result<Option<JobVersionHistory>> {
+        let Some(job) = self.get(tenant_id, job_id).await? else {
+            return Ok(None);
+        };
+        let recorded: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM index_build_job_runs
+              WHERE tenant_id = $1 AND job_id = $2
+                AND job_generation BETWEEN 1 AND $3",
+        )
+        .bind(tenant_id)
+        .bind(job_id)
+        .bind(job.attempts)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(storage_err)?;
+        let history = if job.attempts <= 0 || recorded >= i64::from(job.attempts) {
+            HistoryStatus::Recorded
+        } else if recorded == 0 {
+            HistoryStatus::Unavailable
+        } else {
+            HistoryStatus::Partial
+        };
+        let limit = limit.clamp(1, 200);
+        let rows = sqlx::query(
+            "WITH v AS (
+                 SELECT index_version_id FROM index_build_job_versions
+                  WHERE tenant_id = $1 AND job_id = $2
+                 UNION
+                 SELECT index_version_id FROM index_version_job_commits
+                  WHERE tenant_id = $1 AND job_id = $2
+                 UNION
+                 SELECT index_version_id FROM index_build_attempt_jobs
+                  WHERE tenant_id = $1 AND job_id = $2)
+             SELECT v.index_version_id,
+                    sel.ordinal, sel.disposition,
+                    c.job_generation AS committed_generation,
+                    (SELECT count(*) FROM index_build_attempt_jobs n
+                      WHERE n.tenant_id = $1 AND n.job_id = $2
+                        AND n.index_version_id = v.index_version_id) AS attempt_count,
+                    a.attempt_id, a.job_generation AS attempt_generation,
+                    att.state AS attempt_state,
+                    i.state AS intent_state, i.artifact_id,
+                    art.state AS artifact_state,
+                    COALESCE(b.artifact_id = i.artifact_id, false) AS staged_bound
+               FROM v
+               LEFT JOIN index_build_job_versions sel
+                 ON sel.tenant_id = $1 AND sel.job_id = $2
+                AND sel.index_version_id = v.index_version_id
+               LEFT JOIN index_version_job_commits c
+                 ON c.tenant_id = $1 AND c.index_version_id = v.index_version_id
+                AND c.job_id = $2
+               LEFT JOIN LATERAL (
+                     SELECT l.attempt_id, l.job_generation FROM index_build_attempt_jobs l
+                      WHERE l.tenant_id = $1 AND l.job_id = $2
+                        AND l.index_version_id = v.index_version_id
+                      ORDER BY l.job_generation DESC, l.linked_at DESC
+                      LIMIT 1) a ON true
+               LEFT JOIN index_build_attempts att
+                 ON att.tenant_id = $1 AND att.attempt_id = a.attempt_id
+               LEFT JOIN index_build_publication_intents i
+                 ON i.tenant_id = $1 AND i.attempt_id = a.attempt_id
+               LEFT JOIN index_artifacts art
+                 ON art.tenant_id = $1 AND art.index_version_id = v.index_version_id
+                AND art.artifact_id = i.artifact_id
+               LEFT JOIN index_artifact_bindings b
+                 ON b.tenant_id = $1 AND b.index_version_id = v.index_version_id
+                AND b.slot = 'staged'
+              WHERE $3::text IS NULL OR v.index_version_id > $3
+              ORDER BY v.index_version_id
+              LIMIT $4",
+        )
+        .bind(tenant_id)
+        .bind(job_id)
+        .bind(after)
+        .bind(limit + 1)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(storage_err)?;
+        let mut versions: Vec<JobVersionOutcome> = rows
+            .into_iter()
+            .map(|r| JobVersionOutcome {
+                index_version_id: r.get("index_version_id"),
+                selected_ordinal: r.get("ordinal"),
+                committed_generation: r.get("committed_generation"),
+                disposition: r.get("disposition"),
+                attempt_count: r.get("attempt_count"),
+                attempt_id: r.get("attempt_id"),
+                attempt_generation: r.get("attempt_generation"),
+                attempt_state: r.get("attempt_state"),
+                intent_state: r.get("intent_state"),
+                artifact_id: r.get("artifact_id"),
+                artifact_state: r.get("artifact_state"),
+                staged_bound: r.get("staged_bound"),
+            })
+            .collect();
+        let next_after = if versions.len() as i64 > limit {
+            versions.truncate(limit as usize);
+            versions.last().map(|v| v.index_version_id.clone())
+        } else {
+            None
+        };
+        Ok(Some(JobVersionHistory {
+            job,
+            history,
+            versions,
+            next_after,
+        }))
     }
 
     pub async fn get(&self, tenant_id: &str, job_id: &str) -> Result<Option<BuildJob>> {

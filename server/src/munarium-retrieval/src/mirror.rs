@@ -51,7 +51,7 @@ use munarium_store_pg::attempts::{
     reconcile_sealed, AttemptMode, AttemptState, BuildAttempts, ClaimOutcome, IntentState,
     PublicationIntent, SealedVerdict,
 };
-use munarium_store_pg::jobs::JobFence;
+use munarium_store_pg::jobs::{JobFence, JobSignal, StopReason};
 
 /// Supplies an `ArtifactStore` rooted at a prefix.
 ///
@@ -109,6 +109,9 @@ pub enum BuildPhase {
     AfterComponentUpload,
     AfterManifestWrite,
     BeforeBinding,
+    /// A queued direct build committed its PostgreSQL logical version and
+    /// has not yet acquired an artifact attempt (ClearView R6).
+    AfterLogicalCommit,
 }
 
 /// Returns `Err` to interrupt the build at that phase.
@@ -201,6 +204,11 @@ pub struct MirrorContext {
     /// commits a publication intent before cataloguing or uploading, and
     /// binds `staged` only while the claim's generation is current.
     pub job_fence: Option<JobFence>,
+    /// The worker-local stop signal for that claim (ClearView R6). The
+    /// builder stops it on a confirmed cancel or lease loss; the build checks
+    /// it, and revalidates the claim, at each safe boundary
+    /// ([`MirrorContext::checkpoint`]). `None` for a synchronous build.
+    pub job_signal: Option<JobSignal>,
 }
 
 impl std::fmt::Debug for MirrorContext {
@@ -213,6 +221,7 @@ impl std::fmt::Debug for MirrorContext {
             .field("faults", &self.faults.is_some())
             .field("observer", &self.observer.is_some())
             .field("job_fence", &self.job_fence.is_some())
+            .field("job_signal", &self.job_signal)
             .finish_non_exhaustive()
     }
 }
@@ -245,6 +254,53 @@ impl MirrorContext {
         match &self.faults {
             Some(h) => h(phase),
             None => Ok(()),
+        }
+    }
+
+    /// Run the failure-injection hook at `phase`. Public so the direct build,
+    /// which lives in its own module, can expose its own pause points.
+    pub fn inject(&self, phase: BuildPhase) -> Result<()> {
+        self.fault(phase)
+    }
+
+    /// A safe boundary of a queued build (ClearView R6): between sources,
+    /// between versions, before seal and before upload.
+    ///
+    /// Stops the build with the fence's stale error when the worker-local
+    /// signal has stopped, or when the claim is no longer current in
+    /// PostgreSQL. The read is how a build learns of a cancel that committed
+    /// since its last boundary, and how it revalidates a lease whose last
+    /// renewal failed with an error: if PostgreSQL cannot answer, the build
+    /// does not go on to its next shared write. A synchronous build has no
+    /// fence and always continues.
+    pub async fn checkpoint(&self) -> Result<()> {
+        let Some(fence) = &self.job_fence else {
+            return Ok(());
+        };
+        if let Some(signal) = &self.job_signal {
+            if signal.stopped().is_some() {
+                return Err(fence.stale());
+            }
+        }
+        match self.attempts.job_claim_stop_reason(fence).await? {
+            None => {
+                if let Some(signal) = &self.job_signal {
+                    signal.set_uncertain(false);
+                }
+                Ok(())
+            }
+            Some(reason) => {
+                if let Some(signal) = &self.job_signal {
+                    signal.stop(reason);
+                }
+                tracing::info!(
+                    job_id = %fence.job_id,
+                    generation = fence.generation,
+                    cancelled = reason == StopReason::Cancelled,
+                    "queued build stopping at a safe boundary"
+                );
+                Err(fence.stale())
+            }
         }
     }
 }
@@ -312,6 +368,7 @@ pub async fn mirror_index(
             // replacement would leave the version verified but unbound.
             if let Some(fence) = &ctx.job_fence {
                 bind_staged_fenced(ctx, index_version_id, &existing.artifact_id, fence).await?;
+                record_disposition(ctx, fence, index_version_id, "reused").await;
             }
             let outcome = Ok(MirrorOutcome::AlreadyBuilt {
                 artifact_id: existing.artifact_id,
@@ -332,6 +389,9 @@ pub async fn mirror_index(
         .sealed_for_plan(index_version_id, &plan_hash)
         .await?
     {
+        if let Some(fence) = &ctx.job_fence {
+            record_disposition(ctx, fence, index_version_id, "deferred").await;
+        }
         let outcome = Ok(MirrorOutcome::AlreadyRunning {
             owner_node_id: sealed.owner_node_id,
         });
@@ -359,6 +419,9 @@ pub async fn mirror_index(
     {
         ClaimOutcome::Claimed(id) => id,
         ClaimOutcome::AlreadyRunning { owner_node_id } => {
+            if let Some(fence) = &ctx.job_fence {
+                record_disposition(ctx, fence, index_version_id, "deferred").await;
+            }
             let outcome = Ok(MirrorOutcome::AlreadyRunning { owner_node_id });
             report(ctx, "mirror", &BuildTimer::start(), &outcome);
             return outcome;
@@ -492,6 +555,7 @@ pub async fn direct_index(
             // replacement would leave the version verified but unbound.
             if let Some(fence) = &ctx.job_fence {
                 bind_staged_fenced(ctx, index_version_id, &existing.artifact_id, fence).await?;
+                record_disposition(ctx, fence, index_version_id, "reused").await;
             }
             let outcome = Ok(MirrorOutcome::AlreadyBuilt {
                 artifact_id: existing.artifact_id,
@@ -505,6 +569,9 @@ pub async fn direct_index(
         .sealed_for_plan(index_version_id, &plan_hash)
         .await?
     {
+        if let Some(fence) = &ctx.job_fence {
+            record_disposition(ctx, fence, index_version_id, "deferred").await;
+        }
         let outcome = Ok(MirrorOutcome::AlreadyRunning {
             owner_node_id: sealed.owner_node_id,
         });
@@ -524,6 +591,9 @@ pub async fn direct_index(
     {
         ClaimOutcome::Claimed(id) => id,
         ClaimOutcome::AlreadyRunning { owner_node_id } => {
+            if let Some(fence) = &ctx.job_fence {
+                record_disposition(ctx, fence, index_version_id, "deferred").await;
+            }
             let outcome = Ok(MirrorOutcome::AlreadyRunning { owner_node_id });
             report(ctx, "direct", &BuildTimer::start(), &outcome);
             return outcome;
@@ -691,6 +761,8 @@ async fn mirror_body(
     };
     timer.finished_export();
     ctx.fault(BuildPhase::AfterExport)?;
+    // ClearView R6: a safe boundary before the (long) seal.
+    ctx.checkpoint().await?;
 
     // A build that lost its lease must not publish: another node may already
     // have reclaimed the plan and be building it too.
@@ -730,6 +802,9 @@ async fn mirror_body(
     .map_err(|e| KernelError::Storage(format!("seal task: {e}")))??;
     timer.finished_seal();
     ctx.fault(BuildPhase::AfterSeal)?;
+    // ClearView R6: a cancel that committed during the seal stops the build
+    // here, before it can commit a publication intent.
+    ctx.checkpoint().await?;
 
     // The same lease check again, AFTER the seal. The heartbeat ran through
     // the seal (that is why it is held for the whole build), but the flag it
@@ -844,6 +919,10 @@ async fn mirror_body(
         .mark_sealed(attempt_id, &sealed.artifact_id)
         .await?;
     ctx.fault(BuildPhase::AfterCatalogInsert)?;
+    // ClearView R6: the boundary before upload. A queued build stopped here
+    // leaves its attempt `sealed` and its intent pending; only that exact
+    // intent can still finish, through the sealed-attempt reconciler.
+    ctx.checkpoint().await?;
 
     let bound_staged = publish_and_verify(
         ctx,
@@ -1088,6 +1167,29 @@ async fn bind_staged_fenced(
             );
             Ok(false)
         }
+    }
+}
+
+/// Record a version's disposition for a queued build, best effort: the
+/// outcome read reports a version without one as untouched, which is the
+/// conservative reading (ClearView R6).
+async fn record_disposition(
+    ctx: &MirrorContext,
+    fence: &JobFence,
+    index_version_id: &str,
+    disposition: &str,
+) {
+    match ctx
+        .attempts
+        .record_version_disposition(fence, index_version_id, disposition)
+        .await
+    {
+        Ok(true) => {}
+        Ok(false) => tracing::info!(
+            job_id = %fence.job_id,
+            "build job claim was superseded; a version disposition was not recorded"
+        ),
+        Err(e) => tracing::warn!(error = %e, "could not record a build-job version disposition"),
     }
 }
 

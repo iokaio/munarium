@@ -555,6 +555,92 @@ impl BuildAttempts {
         Ok(true)
     }
 
+    /// Retain the versions a queued build selected, before it starts the
+    /// first one (ClearView R6). Fenced like every other job write: `Ok(false)`
+    /// when the claim's generation has been retired, and nothing is written.
+    /// Idempotent; a version already selected by this job keeps its ordinal.
+    pub async fn record_job_versions(
+        &self,
+        fence: &JobFence,
+        index_version_ids: &[&str],
+    ) -> Result<bool> {
+        fence.require_tenant(&self.tenant_id)?;
+        let mut tx = self.pool.begin().await.map_err(storage_err)?;
+        if !lock_generation(&mut tx, fence).await? {
+            return Ok(false);
+        }
+        for (ordinal, version) in index_version_ids.iter().enumerate() {
+            sqlx::query(
+                "INSERT INTO index_build_job_versions
+                     (tenant_id, job_id, index_version_id, ordinal, job_generation)
+                 VALUES ($1,$2,$3,$4,$5)
+                 ON CONFLICT (tenant_id, job_id, index_version_id) DO NOTHING",
+            )
+            .bind(&self.tenant_id)
+            .bind(&fence.job_id)
+            .bind(version)
+            .bind(i32::try_from(ordinal).unwrap_or(i32::MAX))
+            .bind(fence.generation)
+            .execute(&mut *tx)
+            .await
+            .map_err(storage_err)?;
+        }
+        tx.commit().await.map_err(storage_err)?;
+        Ok(true)
+    }
+
+    /// Record what a queued build found for a version without publishing:
+    /// `reused` (a verified artifact for the plan already existed) or
+    /// `deferred` (another attempt held the plan). Fenced; `Ok(false)` when
+    /// the generation has been retired.
+    pub async fn record_version_disposition(
+        &self,
+        fence: &JobFence,
+        index_version_id: &str,
+        disposition: &str,
+    ) -> Result<bool> {
+        if !matches!(disposition, "reused" | "deferred") {
+            return Err(KernelError::InvalidInput(format!(
+                "unknown build-job version disposition {disposition:?}"
+            )));
+        }
+        fence.require_tenant(&self.tenant_id)?;
+        let mut tx = self.pool.begin().await.map_err(storage_err)?;
+        if !lock_generation(&mut tx, fence).await? {
+            return Ok(false);
+        }
+        sqlx::query(
+            "INSERT INTO index_build_job_versions
+                 (tenant_id, job_id, index_version_id, ordinal, job_generation, disposition)
+             VALUES ($1,$2,$3,0,$4,$5)
+             ON CONFLICT (tenant_id, job_id, index_version_id)
+             DO UPDATE SET disposition = EXCLUDED.disposition, updated_at = now()",
+        )
+        .bind(&self.tenant_id)
+        .bind(&fence.job_id)
+        .bind(index_version_id)
+        .bind(fence.generation)
+        .bind(disposition)
+        .execute(&mut *tx)
+        .await
+        .map_err(storage_err)?;
+        tx.commit().await.map_err(storage_err)?;
+        Ok(true)
+    }
+
+    /// `None` while the fence's claim is current, otherwise why it is not.
+    /// Read without the row lock (see
+    /// [`BuildJobs::stop_reason`](crate::jobs::BuildJobs::stop_reason)).
+    pub async fn job_claim_stop_reason(
+        &self,
+        fence: &JobFence,
+    ) -> Result<Option<crate::jobs::StopReason>> {
+        fence.require_tenant(&self.tenant_id)?;
+        crate::jobs::BuildJobs::new(self.pool.clone())
+            .stop_reason(fence)
+            .await
+    }
+
     /// The job claim an attempt was acquired under. `None` is an unfenced
     /// attempt: a synchronous build, or one started by a v1.4 builder.
     pub async fn job_link(&self, attempt_id: &str) -> Result<Option<AttemptJobLink>> {

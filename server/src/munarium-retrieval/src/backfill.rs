@@ -95,8 +95,26 @@ pub async fn backfill_collection(
         .required_versions(collection_id, policy, pin_horizon_secs)
         .await?;
 
+    // ClearView R6: a queued backfill retains the set it selected BEFORE it
+    // starts the first version, so a cancelled backfill can report which
+    // selected versions it never reached.
+    if let Some(fence) = &ctx.job_fence {
+        let ids: Vec<&str> = required
+            .iter()
+            .map(|v| v.index_version_id.as_str())
+            .collect();
+        if !ctx.attempts.record_job_versions(fence, &ids).await? {
+            return Err(fence.stale());
+        }
+    }
+
     let mut versions = Vec::with_capacity(required.len());
     for v in required {
+        // ClearView R6: a safe boundary between versions. A stop here ends
+        // the whole backfill; the per-version failures below are kept in the
+        // report, but a cancelled or superseded claim is not a version
+        // failure to record and move past.
+        ctx.checkpoint().await?;
         let target = MirrorTarget::Collection { collection_id };
         let result = backfill_one(ctx, pg, target, &v.index_version_id)
             .await
@@ -162,6 +180,17 @@ pub async fn backfill_one(
             .unwrap_or("unknown"),
     );
     let plan = mirror_plan(facts.embedded);
+    // ClearView R6: a queued rebuild selects its one version; inside a
+    // backfill the set is already recorded and this is a no-op.
+    if let Some(fence) = &ctx.job_fence {
+        if !ctx
+            .attempts
+            .record_job_versions(fence, &[index_version_id])
+            .await?
+        {
+            return Err(fence.stale());
+        }
+    }
     mirror_index(ctx, pg, target, index_version_id, &spec, &plan).await
 }
 

@@ -68,9 +68,14 @@ pub async fn build_collection_direct(
     // be a compare-and-swap against it.
     let expected_active = pg.current_active_collection_index(collection_id).await?;
 
-    // The slow half — no transaction anywhere near it.
+    // The slow half — no transaction anywhere near it. A queued build checks
+    // its claim before each source (ClearView R6), so a cancel stops it
+    // between sources instead of after the last one.
+    ctx.checkpoint().await?;
     let build = pg
-        .extract_collection_prepared(collection_id, max_chars)
+        .extract_collection_prepared_with(collection_id, max_chars, |_done, _total| {
+            ctx.checkpoint()
+        })
         .await?;
 
     // The REAL spec, from what extraction actually did.
@@ -116,6 +121,13 @@ pub async fn build_collection_direct(
             ctx.job_fence.as_ref(),
         )
         .await?;
+
+    // ClearView R6: the boundary between the PostgreSQL commit and the
+    // artifact attempt. A build stopped here has a committed logical version
+    // attributed to its job and generation, and no attempt; the outcome read
+    // reports exactly that.
+    ctx.inject(crate::mirror::BuildPhase::AfterLogicalCommit)?;
+    ctx.checkpoint().await?;
 
     // The artifact, from the SAME chunks — extraction never runs twice.
     let chunks: Vec<PreparedChunk> = build

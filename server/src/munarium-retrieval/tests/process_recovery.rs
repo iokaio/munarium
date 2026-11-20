@@ -73,6 +73,7 @@ async fn work() {
             approx_threshold: None,
         },
         job_fence: None,
+        job_signal: None,
     };
     let mode = harness::setting("P08_MODE");
     if mode == "setup" {

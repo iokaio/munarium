@@ -2211,6 +2211,41 @@
         "src/munarium-store-pg/migrations/0042_platform_records.sql",
         "src/munarium-server/src/platform_records.rs"
       ]
+    },
+    "index_build_job_runs": {
+      "columns": {
+        "tenant_id": "text",
+        "job_id": "text",
+        "job_generation": "int",
+        "node_id": "text",
+        "claimed_at": "timestamptz"
+      },
+      "content": "Which claim generations of a build job a fenced builder made, and the claiming node name already exposed as claimed_by; identifiers only.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0044_build_job_outcomes.sql"
+      ]
+    },
+    "index_build_job_versions": {
+      "columns": {
+        "tenant_id": "text",
+        "job_id": "text",
+        "index_version_id": "text",
+        "ordinal": "int",
+        "job_generation": "int",
+        "disposition": "text",
+        "selected_at": "timestamptz",
+        "updated_at": "timestamptz"
+      },
+      "content": "Index versions a queued backfill or rebuild selected, with a closed disposition (reused or deferred); identifiers only.",
+      "json_content": {},
+      "owner": "Tenant data/configuration owner; endpoint scopes govern authority and the database operator controls retained copies.",
+      "policy": "catalog",
+      "origins": [
+        "src/munarium-store-pg/migrations/0044_build_job_outcomes.sql"
+      ]
     }
   },
   "artifacts": {

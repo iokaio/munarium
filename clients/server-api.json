@@ -498,6 +498,14 @@
       "streaming": false
     },
     {
+      "name": "list_job_versions",
+      "rpc": "ListJobVersions",
+      "method": "GET",
+      "path": "/v1/index-build-jobs/{job_id}/versions",
+      "content_type": "application/json",
+      "streaming": false
+    },
+    {
       "name": "get_index",
       "rpc": "GetIndex",
       "method": "GET",

@@ -814,6 +814,19 @@ class ServerApiClient(BaseServerApi):
             request,
         )
 
+    def list_job_versions(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/index-build-jobs/{job_id}/versions"""
+        return self._call(
+            "ListJobVersions",
+            "GET",
+            "/v1/index-build-jobs/{job_id}/versions",
+            "application/json",
+            request,
+        )
+
     def get_index(
         self,
         request: ApiRequest | None = None,
@@ -2632,6 +2645,19 @@ class AsyncServerApiClient(BaseAsyncServerApi):
             "CancelJob",
             "POST",
             "/v1/index-build-jobs/{job_id}/cancel",
+            "application/json",
+            request,
+        )
+
+    async def list_job_versions(
+        self,
+        request: ApiRequest | None = None,
+    ) -> ApiResponse:
+        """GET /v1/index-build-jobs/{job_id}/versions"""
+        return await self._call(
+            "ListJobVersions",
+            "GET",
+            "/v1/index-build-jobs/{job_id}/versions",
             "application/json",
             request,
         )

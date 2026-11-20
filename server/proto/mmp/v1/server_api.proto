@@ -148,6 +148,8 @@ service ServerApiService {
   rpc GetJob(ServerApiRequest) returns (ServerApiResponse);
   // POST /v1/index-build-jobs/{job_id}/cancel
   rpc CancelJob(ServerApiRequest) returns (ServerApiResponse);
+  // GET /v1/index-build-jobs/{job_id}/versions
+  rpc ListJobVersions(ServerApiRequest) returns (ServerApiResponse);
   // GET /v1/indexes/{shape_ref}
   rpc GetIndex(ServerApiRequest) returns (ServerApiResponse);
   // POST /v1/indexes/{shape_ref}/build

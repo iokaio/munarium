@@ -2749,6 +2749,76 @@
         }
       }
     },
+    "/v1/index-build-jobs/{job_id}/versions": {
+      "parameters": [
+        {
+          "name": "X-Munarium-Uid",
+          "in": "header",
+          "description": "End-user id asserted by the API-management layer. Required on legacy /v1 requests (400 uid-required without it; MUNARIUM_REQUIRE_UID=false relaxes to 'anonymous'). When the bearer is a capability JWT, this must equal the token's sub claim (403 uid-mismatch otherwise).",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "index-artifacts"
+        ],
+        "summary": "GET /v1/index-build-jobs/{job_id}/versions",
+        "operationId": "list_job_versions",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "description": "build job id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "The `next_cursor` of the previous page.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, 1 to 200 (default 50).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 200,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "one page of the job's per-version outcomes; `history` says whether an empty page means nothing or unknown",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexBuildJobVersionsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "a malformed cursor or limit, or the memory store"
+          },
+          "404": {
+            "description": "no such job"
+          }
+        }
+      }
+    },
     "/v1/indexes/{shape_ref}": {
       "parameters": [
         {
@@ -9862,6 +9932,132 @@
             ],
             "format": "int64",
             "minimum": 0
+          }
+        }
+      },
+      "IndexBuildJobVersionDto": {
+        "type": "object",
+        "description": "What one build job did to one index version, from its durable records\n(ClearView R6). Every member describes this job only.",
+        "required": [
+          "index_version_id",
+          "logical_version",
+          "attempts",
+          "manifest",
+          "staged_bound"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The artifact the intent names."
+          },
+          "attempt_generation": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "attempt_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The newest linked attempt, its claim generation and its state."
+          },
+          "attempt_state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "attempts": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Artifact attempts this job linked to the version."
+          },
+          "catalog": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "That artifact's catalog state (`sealed`, `verified`, `failed`,\n`retired`), when it was catalogued."
+          },
+          "committed_generation": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "The claim generation that committed the logical version."
+          },
+          "disposition": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`reused`: a verified artifact for the plan already existed.\n`deferred`: another attempt held the plan. Reported separately from\nanything this job published."
+          },
+          "index_version_id": {
+            "type": "string"
+          },
+          "logical_version": {
+            "type": "string",
+            "description": "`committed`: this job committed the PostgreSQL logical version.\n`not_committed`: it did not (a mirror of an existing version, or a\ndirect build stopped before its commit)."
+          },
+          "manifest": {
+            "type": "string",
+            "description": "`none`: no publication intent was committed, so this job published no\nmanifest for the version. `unknown`: an intent is committed and\nunresolved; until the worker or the reconciler confirms the object,\nwhether the manifest reached storage is unknown. `published`,\n`converged` or `failed`: the recorded resolution of that intent."
+          },
+          "selected_ordinal": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Position in the set the job selected before starting its first\nversion. Absent for a version the job did not select (a direct build\nlearns its version id only when it commits)."
+          },
+          "staged_bound": {
+            "type": "boolean",
+            "description": "Whether the version's `staged` slot binds that artifact. Never\n`serving`: a build job does not activate an index."
+          }
+        }
+      },
+      "IndexBuildJobVersionsResponse": {
+        "type": "object",
+        "description": "One page of a build job's per-version outcomes (ClearView R6).",
+        "required": [
+          "job_id",
+          "state",
+          "history",
+          "versions"
+        ],
+        "properties": {
+          "history": {
+            "type": "string",
+            "description": "`recorded`: every claim of this job kept per-version history, so the\npages list everything it touched (an empty page means nothing).\n`partial`: some claims were made by a builder that kept none.\n`unavailable`: no claim kept history (a v1.4 job); an empty page\nmeans unknown, not nothing."
+          },
+          "job_id": {
+            "type": "string"
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `cursor` for the next page; absent on the last page."
+          },
+          "state": {
+            "type": "string",
+            "description": "The job's own state, unchanged by recovery."
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IndexBuildJobVersionDto"
+            }
           }
         }
       },

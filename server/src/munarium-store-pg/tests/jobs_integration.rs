@@ -29,9 +29,9 @@ macro_rules! guard {
     };
 }
 
-async fn jobs(tenant: &str) -> BuildJobs {
+async fn jobs(tenant: &str) -> (BuildJobs, sqlx::PgPool) {
     let store = PgStore::connect(&url().unwrap(), tenant).await.unwrap();
-    BuildJobs::new(store.pool().clone())
+    (BuildJobs::new(store.pool().clone()), store.pool().clone())
 }
 
 fn scope<'a>(id: &'a str) -> JobTarget<'a> {
@@ -46,7 +46,7 @@ async fn the_job_queue_dedups_claims_leases_and_cancels() {
     guard!();
     let run = uuid::Uuid::new_v4().simple().to_string();
     let tenant = format!("tenant-jobs-{run}");
-    let q = jobs(&tenant).await;
+    let (q, pool) = jobs(&tenant).await;
 
     // --- Dedup: two enqueues for one open target are one job. -------------
     let col_dedup = format!("col-dedup-{run}");
@@ -494,4 +494,121 @@ async fn the_job_queue_dedups_claims_leases_and_cancels() {
             .await
             .unwrap());
     }
+
+    // --- R6: cancel before claim, and the claim's run record. ------------
+    // R6-T1 row 1: cancel wins before any claim. The v1.4 response and
+    // state, no worker, no run record, and a recorded, empty history (the
+    // job started no version). A repeated cancel is `false` and changes
+    // nothing.
+    let EnqueueOutcome::Enqueued(early_id) = q
+        .enqueue(
+            &tenant,
+            JobKind::Backfill,
+            scope("col-r6-early"),
+            serde_json::json!({}),
+            "test",
+            None,
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("enqueue");
+    };
+    assert!(q.cancel(&tenant, &early_id).await.unwrap(), "ok: true");
+    let early = q.get(&tenant, &early_id).await.unwrap().unwrap();
+    assert_eq!(
+        (
+            early.state.as_str(),
+            early.attempts,
+            early.claimed_by.as_deref()
+        ),
+        ("cancelled", 0, None)
+    );
+    assert!(
+        q.claim_any("builder-r6", 600, 3).await.unwrap().is_none(),
+        "a cancelled job is never claimed"
+    );
+    let history = q
+        .version_history(&tenant, &early_id, None, 50)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        history.history,
+        munarium_store_pg::jobs::HistoryStatus::Recorded
+    );
+    assert!(history.versions.is_empty() && history.next_after.is_none());
+    assert!(
+        !q.cancel(&tenant, &early_id).await.unwrap(),
+        "repeat: ok false"
+    );
+    assert_eq!(
+        q.get(&tenant, &early_id).await.unwrap().unwrap().state,
+        "cancelled"
+    );
+    // The target is free at once.
+    let EnqueueOutcome::Enqueued(again_id) = q
+        .enqueue(
+            &tenant,
+            JobKind::Backfill,
+            scope("col-r6-early"),
+            serde_json::json!({}),
+            "test",
+            None,
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("the cancelled target enqueues again at once");
+    };
+    // Every claim records its generation and node in the claiming
+    // transaction, so the history of a fenced job is complete.
+    let c1 = q.claim_any("builder-r6", 0, 3).await.unwrap().unwrap();
+    let c2 = q.claim_any("builder-r6b", 0, 3).await.unwrap().unwrap();
+    assert_eq!(
+        (c1.job_id.as_str(), c2.job_id.as_str()),
+        (again_id.as_str(), again_id.as_str())
+    );
+    let runs: Vec<(i32, String)> = sqlx::query_as(
+        "SELECT job_generation, node_id FROM index_build_job_runs
+          WHERE tenant_id = $1 AND job_id = $2 ORDER BY job_generation",
+    )
+    .bind(&tenant)
+    .bind(&again_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        runs,
+        vec![
+            (1, "builder-r6".to_string()),
+            (2, "builder-r6b".to_string())
+        ]
+    );
+    let fence2 = munarium_store_pg::jobs::JobFence::of_claim(&c2, "builder-r6b");
+    let fence1 = munarium_store_pg::jobs::JobFence::of_claim(&c1, "builder-r6");
+    assert!(q.is_current(&fence2).await.unwrap());
+    assert_eq!(
+        q.stop_reason(&fence1).await.unwrap(),
+        Some(munarium_store_pg::jobs::StopReason::LeaseLost),
+        "a reclaimed generation reports lease loss"
+    );
+    assert!(q.cancel(&tenant, &again_id).await.unwrap());
+    assert_eq!(
+        q.stop_reason(&fence2).await.unwrap(),
+        Some(munarium_store_pg::jobs::StopReason::Cancelled)
+    );
+    assert!(
+        !q.complete_fenced(
+            &tenant,
+            &again_id,
+            "builder-r6b",
+            2,
+            Ok(serde_json::json!({})),
+            None
+        )
+        .await
+        .unwrap(),
+        "a cancelled job's holder cannot complete it"
+    );
 }

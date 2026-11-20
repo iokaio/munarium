@@ -127,6 +127,8 @@ public sealed partial class ServerApiClient {
     public Task<ApiResponse> GetJobAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("GetJob", "GET", "/v1/index-build-jobs/{job_id}", "application/json", request ?? new(), ct);
     /// <summary>POST /v1/index-build-jobs/{job_id}/cancel</summary>
     public Task<ApiResponse> CancelJobAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("CancelJob", "POST", "/v1/index-build-jobs/{job_id}/cancel", "application/json", request ?? new(), ct);
+    /// <summary>GET /v1/index-build-jobs/{job_id}/versions</summary>
+    public Task<ApiResponse> ListJobVersionsAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("ListJobVersions", "GET", "/v1/index-build-jobs/{job_id}/versions", "application/json", request ?? new(), ct);
     /// <summary>GET /v1/indexes/{shape_ref}</summary>
     public Task<ApiResponse> GetIndexAsync(ApiRequest? request = null, CancellationToken ct = default) => CallAsync("GetIndex", "GET", "/v1/indexes/{shape_ref}", "application/json", request ?? new(), ct);
     /// <summary>POST /v1/indexes/{shape_ref}/build</summary>

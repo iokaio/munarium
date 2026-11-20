@@ -628,6 +628,7 @@ successfully while its result reports `complete: false`.
 | Direct collection build | Same route, `kind: direct`, `collection_id`, optional `max_chars`, `watermark_seq` | `mmctl datastore jobs enqueue direct <collection-id> --max-chars N --watermark N` |
 | Inspect/list jobs | `GET /v1/index-build-jobs/{job_id}` or `GET /v1/index-build-jobs` | `mmctl datastore jobs get <job-id>` or `list` |
 | Cancel | `POST /v1/index-build-jobs/{job_id}/cancel` | `mmctl datastore jobs cancel <job-id>` |
+| Per-version outcomes | `GET /v1/index-build-jobs/{job_id}/versions`, optional `cursor`, `limit` (1 to 200, default 50) | None yet; use the API |
 
 All enqueue requests also accept an optional `correlation_id`. Job states are
 `pending`, `running`, `succeeded`, `failed`, `cancelled` and `superseded`. Inspect
@@ -654,6 +655,49 @@ so if the replacement job reported `deferred`, enqueue it again. Synchronous
 rebuild, backfill and verify endpoints are unchanged. The records are kept in
 `index_version_job_commits`, `index_build_attempt_jobs` and
 `index_build_publication_intents` (migration 0043).
+
+Cancellation is cooperative (ClearView R6). Cancel commits `cancelled` at once,
+with the same `ok` response and state v1.4 returned, and frees the target, so the
+same build can be enqueued again immediately; nothing waits for the old worker.
+Cancel updates the job row and so takes the same lock as the fenced writes
+above: a write that commits first is kept, one that comes later writes nothing.
+The running worker learns of the cancel at its next safe boundary and stops
+there, which frees its builder slot. The boundaries are before each source of a
+direct build (extraction, chunking and embedding of one source are one unit),
+between the PostgreSQL commit and the artifact attempt, between the versions of
+a backfill, before seal, before the publication intent and before upload. The
+job-lease renewal also stops the worker when a renewal is refused. A renewal
+that fails with an error leaves the lease uncertain: the worker keeps going
+only after it has revalidated the claim against PostgreSQL at the next
+boundary, and every shared write still rechecks the claim under the row lock.
+A worker inside one source's extraction holds its slot until that source
+returns; the opt-in child-process PDF extraction (R3) is expected to be killed
+through the worker's stop signal, which is not yet wired.
+
+What a stopped job leaves depends on which commit won:
+
+| Order of commits | Cancel response and job state | What the job leaves |
+|---|---|---|
+| Cancel before any claim | `ok: true`, `cancelled` | No worker, no version, an empty `recorded` history. |
+| Cancel after claim, before a version's publication intent | `ok: true`, `cancelled` | No manifest from that generation for the version. Its attempt is `failed` and only its own staging is removed. A direct build stopped after its commit keeps that logical version, attributed to the job. Earlier versions of a backfill stay published. |
+| Publication intent, then cancel | `ok: true`, `cancelled` | Only the recorded manifest may finish, through the worker or the sealed-attempt reconciler; it is never bound by that generation. Until then its outcome is `unknown`. |
+| Completion before cancel, or a repeated cancel | `ok: false`, existing state | The recorded outcome. Nothing new is published or reconciled. |
+
+A queued backfill or rebuild records the versions it selected before starting
+the first one. `GET /v1/index-build-jobs/{job_id}/versions` pages a job's
+per-version outcomes for the caller's tenant, ordered by version ID. Each entry
+reports whether this job committed the logical version (`logical_version`), any
+`disposition` (`reused`: a verified artifact already existed; `deferred`: another
+attempt held the plan), the newest linked attempt, `manifest` (`none`, `unknown`
+while an intent is unresolved, `published`, `converged` or `failed`), the
+artifact's `catalog` state and whether `staged` binds it. A selected version
+with no attempt, intent or disposition was never reached. `history` is
+`recorded` when every claim of the job kept these records, so an empty page
+means the job did nothing; `unavailable` for a job only a v1.4 builder claimed,
+where an empty page means unknown; and `partial` when the two were mixed. No
+job activates an index, and recovery never changes the job's terminal state.
+The records are `index_build_job_runs` and `index_build_job_versions`
+(migration 0044).
 
 For scripted CLI polling, `datastore jobs get` returns exit 0 for `succeeded`,
 4 for `failed`/`cancelled`, and 3 otherwise, including `superseded`. Read the

@@ -20,7 +20,9 @@
 use std::sync::Arc;
 
 use munarium_core::{KernelError, Result};
-use munarium_store_pg::jobs::{BuildJob, BuildJobs, EnqueueOutcome, JobFence, JobKind, JobTarget};
+use munarium_store_pg::jobs::{
+    BuildJob, BuildJobs, EnqueueOutcome, JobFence, JobKind, JobSignal, JobTarget, JobVersionOutcome,
+};
 
 use crate::error::ApiError;
 use crate::state::AppState;
@@ -43,10 +45,15 @@ use munarium_api_types as dto;
 /// execution commits and publishes nothing new; it may only finish an intent
 /// its generation already committed. `None` runs the job with the synchronous
 /// operations' authority.
+///
+/// `signal` is the claim's worker-local stop signal (ClearView R6). The build
+/// checks it, and revalidates the claim, at each safe boundary and stops
+/// there once the job is cancelled or the claim retired.
 pub async fn run_one_job(
     state: &AppState,
     job: &BuildJob,
     fence: Option<&JobFence>,
+    signal: Option<&JobSignal>,
 ) -> Result<serde_json::Value> {
     let tenant = job.tenant_id.as_str();
     match JobKind::parse(&job.kind)? {
@@ -56,7 +63,7 @@ pub async fn run_one_job(
                 .as_deref()
                 .ok_or_else(|| KernelError::InvalidInput("a backfill job names a scope".into()))?;
             let report = crate::datastore_builds::op_backfill_collection_fenced(
-                state, tenant, scope_id, fence,
+                state, tenant, scope_id, fence, signal,
             )
             .await?;
             Ok(serde_json::json!({
@@ -69,9 +76,10 @@ pub async fn run_one_job(
             let version = job.index_version_id.as_deref().ok_or_else(|| {
                 KernelError::InvalidInput("a rebuild job names an index version".into())
             })?;
-            let built =
-                crate::datastore_builds::op_rebuild_artifact_fenced(state, tenant, version, fence)
-                    .await?;
+            let built = crate::datastore_builds::op_rebuild_artifact_fenced(
+                state, tenant, version, fence, signal,
+            )
+            .await?;
             Ok(serde_json::to_value(&built).map_err(|e| KernelError::Storage(e.to_string()))?)
         }
         JobKind::Direct => {
@@ -90,6 +98,7 @@ pub async fn run_one_job(
                 .unwrap_or(0);
             let mut ctx = state.mirror_context(tenant)?;
             ctx.job_fence = fence.cloned();
+            ctx.job_signal = signal.cloned();
             let retrieval = state.retrieval_for(tenant)?;
             let outcome = retrieval
                 .build_collection_direct(&ctx, collection_id, max_chars, watermark_seq)
@@ -163,40 +172,28 @@ pub fn spawn_builder(state: &Arc<AppState>) {
                     // mirror; the job lease was not, so any build longer than
                     // `lease_secs` was re-offered to another replica while
                     // this one was still working on it. Stopped by the guard
-                    // whichever way the build ends.
-                    let beat = {
-                        let jobs = jobs.clone();
-                        let tenant = job.tenant_id.clone();
-                        let job_id = job.job_id.clone();
-                        let node = node.clone();
-                        let every = std::time::Duration::from_secs((lease_secs as u64 / 3).max(5));
-                        AbortOnDrop(tokio::spawn(async move {
-                            loop {
-                                tokio::time::sleep(every).await;
-                                match jobs
-                                    .heartbeat_fenced(&tenant, &job_id, &node, generation)
-                                    .await
-                                {
-                                    Ok(true) => {}
-                                    Ok(false) => {
-                                        tracing::warn!(
-                                            job_id = %job_id,
-                                            "build job lease is no longer ours; another builder may own it"
-                                        );
-                                        break;
-                                    }
-                                    Err(e) => {
-                                        tracing::warn!(error = %e, job_id = %job_id, "build job heartbeat failed")
-                                    }
-                                }
-                            }
-                        }))
-                    };
+                    // whichever way the build ends. The renewal also drives
+                    // the worker-local stop signal (ClearView R6).
                     let fence = JobFence::of_claim(&job, &node);
-                    let outcome = run_one_job(&state, &job, Some(&fence))
+                    let signal = JobSignal::new();
+                    let beat = spawn_lease_watch(
+                        jobs.clone(),
+                        fence.clone(),
+                        signal.clone(),
+                        std::time::Duration::from_secs((lease_secs as u64 / 3).max(5)),
+                    );
+                    let outcome = run_one_job(&state, &job, Some(&fence), Some(&signal))
                         .await
                         .map_err(|e| e.to_string());
                     drop(beat);
+                    if let Some(reason) = signal.stopped() {
+                        tracing::info!(
+                            job_id = %job.job_id,
+                            generation,
+                            cancelled = reason == munarium_store_pg::jobs::StopReason::Cancelled,
+                            "build job stopped at a safe boundary; builder slot released"
+                        );
+                    }
                     match jobs
                         .complete_fenced(
                             &job.tenant_id,
@@ -226,6 +223,70 @@ pub fn spawn_builder(state: &Arc<AppState>) {
             tokio::time::sleep(std::time::Duration::from_millis(poll_ms)).await;
         }
     });
+}
+
+/// Renew a claim's lease every `every` and drive its stop signal
+/// (ClearView R6).
+///
+/// A refused renewal is CONFIRMED loss: the job was cancelled, or the
+/// generation was retired by a reclaim, a completion or expired-claim
+/// cleanup. The signal stops with the reason and the watch ends. A renewal
+/// that fails with an error is not evidence either way: the lease is marked
+/// uncertain and the build revalidates the claim at its next safe boundary,
+/// before any further shared write. A later successful renewal clears it.
+fn spawn_lease_watch(
+    jobs: BuildJobs,
+    fence: JobFence,
+    signal: JobSignal,
+    every: std::time::Duration,
+) -> AbortOnDrop {
+    AbortOnDrop(tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(every).await;
+            if lease_watch_once(&jobs, &fence, &signal).await {
+                break;
+            }
+        }
+    }))
+}
+
+/// One renewal of [`spawn_lease_watch`]. Returns true when the watch should
+/// end because the claim is confirmed lost.
+async fn lease_watch_once(jobs: &BuildJobs, fence: &JobFence, signal: &JobSignal) -> bool {
+    match jobs
+        .heartbeat_fenced(
+            &fence.tenant_id,
+            &fence.job_id,
+            &fence.node_id,
+            fence.generation,
+        )
+        .await
+    {
+        Ok(true) => {
+            signal.set_uncertain(false);
+            false
+        }
+        Ok(false) => {
+            let reason = jobs
+                .stop_reason(fence)
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or(munarium_store_pg::jobs::StopReason::LeaseLost);
+            tracing::warn!(
+                job_id = %fence.job_id,
+                cancelled = reason == munarium_store_pg::jobs::StopReason::Cancelled,
+                "build job lease is no longer ours; stopping at the next safe boundary"
+            );
+            signal.stop(reason);
+            true
+        }
+        Err(e) => {
+            signal.set_uncertain(true);
+            tracing::warn!(error = %e, job_id = %fence.job_id, "build job heartbeat failed; lease uncertain");
+            false
+        }
+    }
 }
 
 /// A job that has been claimed this many times has failed enough. Its last
@@ -427,6 +488,107 @@ pub async fn cancel_job(
     Ok(axum::Json(dto::OkResponse { ok: cancelled }))
 }
 
+/// The `manifest` member of a version outcome, from its intent state.
+fn manifest_label(intent_state: Option<&str>) -> &'static str {
+    match intent_state {
+        None => "none",
+        Some("pending") => "unknown",
+        Some("published") => "published",
+        Some("converged") => "converged",
+        Some("failed") => "failed",
+        // A state this binary does not know is not evidence of anything.
+        Some(_) => "unknown",
+    }
+}
+
+fn version_dto(v: JobVersionOutcome) -> dto::IndexBuildJobVersionDto {
+    dto::IndexBuildJobVersionDto {
+        logical_version: if v.committed_generation.is_some() {
+            "committed".into()
+        } else {
+            "not_committed".into()
+        },
+        manifest: manifest_label(v.intent_state.as_deref()).into(),
+        index_version_id: v.index_version_id,
+        selected_ordinal: v.selected_ordinal,
+        committed_generation: v.committed_generation,
+        disposition: v.disposition,
+        attempts: v.attempt_count,
+        attempt_id: v.attempt_id,
+        attempt_generation: v.attempt_generation,
+        attempt_state: v.attempt_state,
+        artifact_id: v.artifact_id,
+        catalog: v.artifact_state,
+        staged_bound: v.staged_bound,
+    }
+}
+
+/// Paging for the job history reads.
+#[derive(Debug, Default, serde::Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct JobPage {
+    /// The `next_cursor` of the previous page.
+    pub cursor: Option<String>,
+    /// Page size, 1 to 200 (default 50).
+    #[param(value_type = Option<u32>, minimum = 1, maximum = 200)]
+    pub limit: Option<String>,
+}
+
+impl JobPage {
+    fn limit(&self) -> ApiResult<i64> {
+        match self.limit.as_deref() {
+            None => Ok(50),
+            Some(raw) => match raw.parse::<i64>() {
+                Ok(n) if (1..=200).contains(&n) => Ok(n),
+                _ => Err(ApiError::from(KernelError::InvalidInput(
+                    "limit must be an integer from 1 to 200".into(),
+                ))),
+            },
+        }
+    }
+}
+
+/// GET /v1/index-build-jobs/{job_id}/versions
+#[utoipa::path(
+    get,
+    path = "/v1/index-build-jobs/{job_id}/versions",
+    tag = "index-artifacts",
+    params(("job_id" = String, Path, description = "build job id"), JobPage),
+    responses(
+        (status = 200, description = "one page of the job's per-version outcomes; `history` says whether an empty page means nothing or unknown", body = dto::IndexBuildJobVersionsResponse),
+        (status = 400, description = "a malformed cursor or limit, or the memory store"),
+        (status = 404, description = "no such job")
+    )
+)]
+pub async fn list_job_versions(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    axum::extract::Path(job_id): axum::extract::Path<String>,
+    axum::extract::Query(page): axum::extract::Query<JobPage>,
+    headers: axum::http::HeaderMap,
+) -> ApiResult<axum::Json<dto::IndexBuildJobVersionsResponse>> {
+    let ctx = crate::rest::auth_ctx(&state, &headers)?;
+    let pool = state.pg_pool().ok_or_else(|| {
+        ApiError::from(KernelError::InvalidInput(
+            "build jobs require the postgres store".into(),
+        ))
+    })?;
+    let limit = page.limit()?;
+    let history = BuildJobs::new(pool.clone())
+        .version_history(&ctx.tenant_id, &job_id, page.cursor.as_deref(), limit)
+        .await?
+        .ok_or(KernelError::NotFound {
+            kind: "build job",
+            id: job_id,
+        })?;
+    Ok(axum::Json(dto::IndexBuildJobVersionsResponse {
+        job_id: history.job.job_id,
+        state: history.job.state,
+        history: history.history.as_str().into(),
+        versions: history.versions.into_iter().map(version_dto).collect(),
+        next_cursor: history.next_after,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     //! v1.4 job DTO baseline for ClearView Phase 1 (R4, R5/C2). The fixture
@@ -488,6 +650,89 @@ mod tests {
         let ok = rows.iter().find(|r| r["case"] == "succeeded").unwrap();
         let ok = serde_json::to_value(job_dto(job_from_row(ok))).unwrap();
         assert!(ok.get("error").is_none() && ok.get("error_code").is_none());
+    }
+
+    /// ClearView R6: the lease watch stops the worker-local signal only on
+    /// CONFIRMED loss, with the reason, and marks an erroring renewal as
+    /// uncertain rather than lost. Tenant-scoped rows, never claimable.
+    #[tokio::test]
+    async fn the_lease_watch_signals_confirmed_loss_and_marks_errors_uncertain() {
+        let Ok(url) = std::env::var("MUNARIUM_TEST_DATABASE_URL") else {
+            eprintln!("SKIPPED: MUNARIUM_TEST_DATABASE_URL is unset");
+            return;
+        };
+        let tenant = format!("tenant-r6-watch-{}", uuid::Uuid::new_v4().simple());
+        let store = munarium_store_pg::PgStore::connect(&url, &tenant)
+            .await
+            .unwrap();
+        let pool = store.pool().clone();
+        let jobs = BuildJobs::new(pool.clone());
+        let seed = |job_id: &'static str| {
+            let pool = pool.clone();
+            let tenant = tenant.clone();
+            async move {
+                sqlx::query(
+                    "INSERT INTO index_build_jobs
+                         (tenant_id, job_id, kind, index_version_id, state, claimed_by,
+                          claimed_at, attempts, requested_by)
+                     VALUES ($1,$2,'rebuild','iv-watch','running','builder-w','infinity',1,'t')",
+                )
+                .bind(&tenant)
+                .bind(job_id)
+                .execute(&pool)
+                .await
+                .unwrap();
+                JobFence {
+                    tenant_id: tenant,
+                    job_id: job_id.into(),
+                    node_id: "builder-w".into(),
+                    generation: 1,
+                }
+            }
+        };
+
+        // Current: renewal succeeds, nothing stops.
+        let fence = seed("bjob-watch-cancel").await;
+        let signal = JobSignal::new();
+        signal.set_uncertain(true);
+        assert!(!lease_watch_once(&jobs, &fence, &signal).await);
+        assert_eq!((signal.stopped(), signal.uncertain()), (None, false));
+        // Cancelled: the renewal is refused and the reason is Cancelled.
+        assert!(jobs.cancel(&tenant, &fence.job_id).await.unwrap());
+        assert!(lease_watch_once(&jobs, &fence, &signal).await);
+        assert_eq!(
+            signal.stopped(),
+            Some(munarium_store_pg::jobs::StopReason::Cancelled)
+        );
+
+        // Reclaimed under the same node name: LeaseLost.
+        let fence = seed("bjob-watch-reclaim").await;
+        sqlx::query(
+            "UPDATE index_build_jobs SET attempts = 2 WHERE tenant_id = $1 AND job_id = $2",
+        )
+        .bind(&tenant)
+        .bind(&fence.job_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let signal = JobSignal::new();
+        assert!(lease_watch_once(&jobs, &fence, &signal).await);
+        assert_eq!(
+            signal.stopped(),
+            Some(munarium_store_pg::jobs::StopReason::LeaseLost)
+        );
+        sqlx::query("UPDATE index_build_jobs SET state = 'cancelled' WHERE tenant_id = $1")
+            .bind(&tenant)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // A renewal that errors is not loss: uncertain, still running.
+        let closed = BuildJobs::new(pool.clone());
+        pool.close().await;
+        let signal = JobSignal::new();
+        assert!(!lease_watch_once(&closed, &fence, &signal).await);
+        assert_eq!((signal.stopped(), signal.uncertain()), (None, true));
     }
 
     #[test]

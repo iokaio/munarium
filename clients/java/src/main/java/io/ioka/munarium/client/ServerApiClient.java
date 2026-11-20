@@ -195,6 +195,9 @@ public final class ServerApiClient extends ServerApiTransport {
     /** POST /v1/index-build-jobs/{job_id}/cancel */
     public ApiResponse cancelJob(ApiRequest request) { return call("CancelJob", "POST", "/v1/index-build-jobs/{job_id}/cancel", "application/json", request); }
     public CompletableFuture<ApiResponse> cancelJobAsync(ApiRequest request) { return async(() -> cancelJob(request)); }
+    /** GET /v1/index-build-jobs/{job_id}/versions */
+    public ApiResponse listJobVersions(ApiRequest request) { return call("ListJobVersions", "GET", "/v1/index-build-jobs/{job_id}/versions", "application/json", request); }
+    public CompletableFuture<ApiResponse> listJobVersionsAsync(ApiRequest request) { return async(() -> listJobVersions(request)); }
     /** GET /v1/indexes/{shape_ref} */
     public ApiResponse getIndex(ApiRequest request) { return call("GetIndex", "GET", "/v1/indexes/{shape_ref}", "application/json", request); }
     public CompletableFuture<ApiResponse> getIndexAsync(ApiRequest request) { return async(() -> getIndex(request)); }
