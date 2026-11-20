@@ -294,7 +294,13 @@ fn a_missing_child_binary_is_an_isolation_failure() {
         IsolatedPdfExtractor::new("/nonexistent/munarium-server".into(), limits()).expect("limits");
     let run = x.run(b"%PDF-1.4", &Cancellation::new());
     assert_eq!(run.extracted.failure, Some(FailureClass::IsolationFailed));
-    assert!(!run.extracted.escalation_eligible());
+    for escalate_over_budget in [false, true] {
+        let policy = IsolatedPdfPolicy {
+            escalate_over_budget,
+            ..Default::default()
+        };
+        assert!(!run.extracted.escalation_eligible(&policy));
+    }
     assert_eq!(x.running(), 0, "the permit is released");
 }
 

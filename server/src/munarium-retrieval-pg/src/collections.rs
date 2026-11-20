@@ -17,7 +17,6 @@ use munarium_core::retrieval::{
 };
 use munarium_core::{KernelError, Result};
 use pgvector::Vector;
-use sha2::Digest as _;
 use sqlx::Row;
 use std::collections::HashSet;
 
@@ -894,10 +893,7 @@ impl PgRetrieval {
             identity.push_str("|semantic:");
             identity.push_str(&space.identity);
         }
-        let index_id = format!(
-            "idx-{}",
-            &hex::encode(sha2::Sha256::digest(identity.as_bytes()))[..16]
-        );
+        let (index_id, exists) = self.resolve_recipe_version(&identity).await?;
 
         let mut manifest = serde_json::json!({
             "collection_id": collection_id,
@@ -913,15 +909,7 @@ impl PgRetrieval {
             object.insert("semantic".into(), space.manifest());
         }
 
-        let exists =
-            sqlx::query("SELECT 1 AS one FROM index_versions WHERE tenant_id = $1 AND id = $2")
-                .bind(&self.tenant_id)
-                .bind(&index_id)
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(storage_err)?
-                .is_some();
-
+        let mut deferred = crate::DeferredDocuments::new(self.extractors.isolated_policy());
         if !exists {
             let mut tx = self.pool.begin().await.map_err(storage_err)?;
             sqlx::query(
@@ -951,6 +939,7 @@ impl PgRetrieval {
                 // through. A failure is recorded per source and the build
                 // continues — one bad document never fails the build.
                 let extracted = self.extract_source(&media_type, &bytes).await;
+                deferred.observe(&sid, &extracted)?;
                 self.record_extraction(&mut *tx, &sid, &extracted).await?;
                 self.record_chunk_provenance(
                     &mut tx, &index_id, &sid, &path, &extracted, max_chars,
@@ -980,7 +969,9 @@ impl PgRetrieval {
             batch
                 .flush(&mut tx, &self.tenant_id, collection_id, &index_id)
                 .await?;
+            self.record_deferred(&mut *tx, &index_id, &deferred).await?;
             tx.commit().await.map_err(storage_err)?;
+            deferred.finish(&self.tenant_id, &format!("collection:{collection_id}"));
             // Corpus-adaptive stop terms read this at query time (entry 21).
             self.record_lexeme_frequency(collection_id, &index_id)
                 .await?;

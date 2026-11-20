@@ -5,8 +5,8 @@
 
 use super::*;
 use munarium_extract::{
-    Budget, Extracted, ExtractionMethod, ExtractionStatus, ExtractorRegistry, FailureClass,
-    TextExtractor,
+    Budget, DeferredPolicy, Extracted, ExtractionMethod, ExtractionStatus, ExtractorRegistry,
+    FailureClass, IsolatedPdfPolicy, TextExtractor,
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -53,10 +53,19 @@ impl DocumentIntelligence for Counting {
 }
 
 fn retrieval(local: Extracted, provider: Option<Arc<Counting>>) -> PgRetrieval {
+    retrieval_with(local, provider, IsolatedPdfPolicy::default())
+}
+
+fn retrieval_with(
+    local: Extracted,
+    provider: Option<Arc<Counting>>,
+    policy: IsolatedPdfPolicy,
+) -> PgRetrieval {
     let pool = sqlx::postgres::PgPoolOptions::new()
         .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
         .expect("lazy pool");
-    let registry = ExtractorRegistry::with_extractors(vec![Box::new(Fixed(local))]);
+    let registry = ExtractorRegistry::with_extractors(vec![Box::new(Fixed(local))])
+        .with_isolated_policy(policy);
     PgRetrieval::new(pool, "t-extraction")
         .with_extractors(Arc::new(registry))
         .with_doc_intel(provider.map(|p| p as Arc<dyn DocumentIntelligence>))
@@ -94,18 +103,46 @@ async fn zero_escalation_calls_without_a_configured_provider() {
     }
 }
 
+const ESCALATE: IsolatedPdfPolicy = IsolatedPdfPolicy {
+    escalate_over_budget: true,
+    deferred: DeferredPolicy::Skip,
+};
+
+fn over_budget_outcomes() -> Vec<Extracted> {
+    [
+        Budget::Input,
+        Budget::Memory,
+        Budget::Cpu,
+        Budget::WallClock,
+        Budget::Output,
+    ]
+    .into_iter()
+    .map(|b| {
+        Extracted::failed(
+            ExtractionMethod::PdfTextLayer,
+            FailureClass::OverBudget(b),
+            "over budget: bound",
+        )
+    })
+    .collect()
+}
+
 #[tokio::test]
 async fn deferred_cancelled_and_broken_children_never_escalate() {
     let m = ExtractionMethod::PdfTextLayer;
-    for class in [
+    for (class, policy) in [
         FailureClass::Deferred,
         FailureClass::Cancelled,
         FailureClass::IsolationFailed,
-    ] {
+    ]
+    .into_iter()
+    .flat_map(|c| [(c, IsolatedPdfPolicy::default()), (c, ESCALATE)])
+    {
         let provider = Arc::new(Counting::default());
-        let r = retrieval(
+        let r = retrieval_with(
             Extracted::failed(m, class, "not read"),
             Some(Arc::clone(&provider)),
+            policy,
         );
         let out = r.extract_source("application/pdf", b"%PDF-1.4").await;
         assert_eq!(out.failure, Some(class));
@@ -118,21 +155,22 @@ async fn deferred_cancelled_and_broken_children_never_escalate() {
 }
 
 #[tokio::test]
-async fn parser_failures_and_over_budget_keep_the_v14_escalation_rule() {
+async fn parser_failures_keep_the_v14_escalation_rule() {
     // v1.4 escalates any PDF local extraction could not read; the isolated
-    // profile keeps exactly that for a parser failure and a budget refusal.
+    // profile keeps exactly that for a parser failure, under either policy.
     let m = ExtractionMethod::PdfTextLayer;
-    for local in [
-        Extracted::failed(m, FailureClass::ParserFailed, "bad"),
-        Extracted::failed(m, FailureClass::OverBudget(Budget::Memory), "big"),
-        Extracted::empty(m, "scan"),
-    ] {
-        let provider = Arc::new(Counting::default());
-        let r = retrieval(local, Some(Arc::clone(&provider)));
-        let out = r.extract_source("application/pdf", b"%PDF-1.4").await;
-        assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
-        assert_eq!(out.status, ExtractionStatus::Ok);
-        assert_eq!(out.method, ExtractionMethod::Ocr);
+    for policy in [IsolatedPdfPolicy::default(), ESCALATE] {
+        for local in [
+            Extracted::failed(m, FailureClass::ParserFailed, "bad"),
+            Extracted::empty(m, "scan"),
+        ] {
+            let provider = Arc::new(Counting::default());
+            let r = retrieval_with(local, Some(Arc::clone(&provider)), policy);
+            let out = r.extract_source("application/pdf", b"%PDF-1.4").await;
+            assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
+            assert_eq!(out.status, ExtractionStatus::Ok);
+            assert_eq!(out.method, ExtractionMethod::Ocr);
+        }
     }
     // A readable document never reaches the provider.
     let provider = Arc::new(Counting::default());
@@ -149,6 +187,123 @@ async fn parser_failures_and_over_budget_keep_the_v14_escalation_rule() {
     );
     r.extract_source("application/pdf", b"%PDF-1.4").await;
     assert_eq!(provider.calls.load(Ordering::SeqCst), 0);
+}
+
+/// Maintainer decision (20 November 2026): an over-budget document does not
+/// reach the paid provider by default, and keeps its `over_budget` result.
+#[tokio::test]
+async fn over_budget_documents_are_not_escalated_by_default() {
+    for local in over_budget_outcomes() {
+        let provider = Arc::new(Counting::default());
+        let r = retrieval(local.clone(), Some(Arc::clone(&provider)));
+        let out = r.extract_source("application/pdf", b"%PDF-1.4").await;
+        assert_eq!(
+            provider.calls.load(Ordering::SeqCst),
+            0,
+            "{:?} must not reach the paid provider by default",
+            local.failure
+        );
+        assert_eq!(out.failure, local.failure);
+        assert_eq!(out.status_label(), "over_budget");
+        assert!(out.text.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn over_budget_documents_escalate_when_the_setting_enables_it() {
+    for local in over_budget_outcomes() {
+        let provider = Arc::new(Counting::default());
+        let r = retrieval_with(local.clone(), Some(Arc::clone(&provider)), ESCALATE);
+        let out = r.extract_source("application/pdf", b"%PDF-1.4").await;
+        assert_eq!(
+            provider.calls.load(Ordering::SeqCst),
+            1,
+            "{:?}",
+            local.failure
+        );
+        assert_eq!(out.status, ExtractionStatus::Ok);
+        assert_eq!(out.method, ExtractionMethod::Ocr);
+        assert_eq!(out.text, "recovered by the analyzer");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// deferred documents
+// ---------------------------------------------------------------------------
+
+fn deferred() -> Extracted {
+    Extracted::failed(
+        ExtractionMethod::PdfTextLayer,
+        FailureClass::Deferred,
+        "busy",
+    )
+}
+
+#[test]
+fn deferred_documents_are_skipped_by_default_and_collected() {
+    let mut d = DeferredDocuments::new(IsolatedPdfPolicy::default());
+    d.observe("s-1", &deferred()).expect("skip");
+    d.observe(
+        "s-2",
+        &Extracted::empty(ExtractionMethod::PdfTextLayer, "scan"),
+    )
+    .expect("not deferred");
+    for other in every_isolated_outcome() {
+        if other.failure != Some(FailureClass::Deferred) {
+            d.observe("s-other", &other).expect("only deferred counts");
+        }
+    }
+    d.observe("s-3", &deferred()).expect("skip");
+    assert_eq!(d.skipped(), ["s-1".to_string(), "s-3".to_string()]);
+}
+
+#[test]
+fn deferred_documents_fail_the_build_when_set_to_fail() {
+    let mut d = DeferredDocuments::new(IsolatedPdfPolicy {
+        escalate_over_budget: false,
+        deferred: DeferredPolicy::Fail,
+    });
+    // Other outcomes never fail the build.
+    for other in every_isolated_outcome() {
+        if other.failure != Some(FailureClass::Deferred) {
+            d.observe("s-other", &other).expect("not deferred");
+        }
+    }
+    let err = d.observe("s-1", &deferred()).expect_err("fail");
+    let KernelError::RateLimited(message) = &err else {
+        panic!("a capacity refusal is RateLimited, got {err:?}");
+    };
+    assert_eq!(message, DEFERRED_BUILD_MESSAGE);
+    assert!(!message.contains("s-1"), "names no source");
+    assert!(d.skipped().is_empty());
+    // No C2 code describes local extraction capacity: a queued job records
+    // the failure unclassified, with the generic safe message.
+    let failure = munarium_store_pg::job_failure::classify(&err);
+    assert_eq!(failure.code, None);
+    assert_eq!(
+        failure.message,
+        munarium_store_pg::job_failure::GENERIC_FAILURE_MESSAGE
+    );
+}
+
+#[test]
+fn a_version_that_skipped_deferred_documents_does_not_satisfy_a_rebuild() {
+    assert!(!manifest_skipped_deferred(
+        &serde_json::json!({"max_chars": 400})
+    ));
+    assert!(!manifest_skipped_deferred(
+        &serde_json::json!({ DEFERRED_SOURCES_MEMBER: [] })
+    ));
+    assert!(manifest_skipped_deferred(
+        &serde_json::json!({ DEFERRED_SOURCES_MEMBER: ["s-1"] })
+    ));
+    // The chain's next id differs from the first, deterministically.
+    let first = recipe_version_id("shape|para@1|local|extract@1[...]|s-1:h");
+    let next = recipe_version_id(&format!(
+        "shape|para@1|local|extract@1[...]|s-1:h|after-deferred:{first}"
+    ));
+    assert_ne!(first, next);
+    assert!(first.starts_with("idx-") && first.len() == 20, "{first}");
 }
 
 #[tokio::test]

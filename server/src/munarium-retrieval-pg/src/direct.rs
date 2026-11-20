@@ -181,6 +181,7 @@ impl PgRetrieval {
 
         let mut chunks = Vec::new();
         let mut outcomes = Vec::with_capacity(sources.len());
+        let mut deferred = crate::DeferredDocuments::new(self.extractors.isolated_policy());
         for (done, s) in sources.iter().enumerate() {
             before_source(done, sources.len()).await?;
             let key = munarium_core::sources::SourceKey::new(
@@ -192,6 +193,7 @@ impl PgRetrieval {
             let extracted = self
                 .extract_source_stoppable(&s.media_type, &bytes, stop)
                 .await;
+            deferred.observe(&s.source_id, &extracted)?;
 
             use sha2::Digest as _;
             let status = match extracted.status {
@@ -224,6 +226,10 @@ impl PgRetrieval {
             }
         }
 
+        // The prepared build's spec records each source's outcome, so a
+        // rebuild after a deferral has a different version id and extracts
+        // the deferred documents again.
+        deferred.finish(&self.tenant_id, &format!("collection:{collection_id}"));
         Ok(PreparedBuild {
             info,
             sources,

@@ -231,6 +231,107 @@ pub fn local_embed(text: &str) -> Vec<f32> {
 }
 
 // ---------------------------------------------------------------------------
+// deferred documents (R3/B4)
+// ---------------------------------------------------------------------------
+
+/// The error a build returns when the isolated PDF profile deferred one of
+/// its documents and `MUNARIUM_PDF_EXTRACTION_DEFERRED=fail`. It names no
+/// source, path or content.
+pub const DEFERRED_BUILD_MESSAGE: &str =
+    "isolated PDF extraction deferred a document (no extraction slot within the \
+     queue wait) and MUNARIUM_PDF_EXTRACTION_DEFERRED=fail; the build committed \
+     nothing; retry when extraction load allows";
+
+/// The manifest member listing the sources a recipe-hash (`idx-`) version
+/// skipped as deferred. Present only when a build skipped one, which only
+/// the isolated PDF profile can cause.
+pub const DEFERRED_SOURCES_MEMBER: &str = "deferred_sources";
+
+/// Applies the isolated profile's deferred-document policy across one build.
+///
+/// `Skip` (the default) collects deferred documents; the build continues
+/// without them, each is recorded `deferred` on its source, and
+/// [`finish`](Self::finish) logs how many were skipped. `Fail` refuses the
+/// build at the first deferred document, before anything is committed.
+///
+/// The failure is `RateLimited`, a capacity refusal a caller may retry: REST
+/// answers 429 `rate-limited`, gRPC `RESOURCE_EXHAUSTED`. No ClearView C2
+/// build-job code fits it (the codes classify by error type, and none of the
+/// six describes local extraction capacity), so a queued job records it
+/// unclassified, with the generic message, and the cause goes to the log.
+#[derive(Debug)]
+pub(crate) struct DeferredDocuments {
+    policy: munarium_extract::DeferredPolicy,
+    skipped: Vec<String>,
+}
+
+impl DeferredDocuments {
+    pub(crate) fn new(policy: munarium_extract::IsolatedPdfPolicy) -> Self {
+        Self {
+            policy: policy.deferred,
+            skipped: Vec::new(),
+        }
+    }
+
+    /// Observe one source's extraction.
+    pub(crate) fn observe(
+        &mut self,
+        source_id: &str,
+        extracted: &munarium_extract::Extracted,
+    ) -> Result<()> {
+        if extracted.failure != Some(munarium_extract::FailureClass::Deferred) {
+            return Ok(());
+        }
+        match self.policy {
+            munarium_extract::DeferredPolicy::Skip => {
+                self.skipped.push(source_id.to_string());
+                Ok(())
+            }
+            munarium_extract::DeferredPolicy::Fail => {
+                Err(KernelError::RateLimited(DEFERRED_BUILD_MESSAGE.to_string()))
+            }
+        }
+    }
+
+    /// The deferred sources the build skipped, in build order.
+    pub(crate) fn skipped(&self) -> &[String] {
+        &self.skipped
+    }
+
+    /// Log the skipped documents. Counts only: no source, path or content.
+    pub(crate) fn finish(&self, tenant_id: &str, scope: &str) {
+        if !self.skipped.is_empty() {
+            tracing::warn!(
+                tenant = %tenant_id,
+                scope = %scope,
+                deferred = self.skipped.len(),
+                "build skipped {} deferred document(s): isolated PDF extraction had no slot \
+                 within the queue wait; each is recorded `deferred` on its source and a \
+                 rebuild picks it up (MUNARIUM_PDF_EXTRACTION_DEFERRED=skip)",
+                self.skipped.len()
+            );
+        }
+    }
+}
+
+/// Whether a recipe-hash version's manifest records skipped deferred
+/// sources. Such a version does not satisfy a rebuild of the same inputs.
+pub(crate) fn manifest_skipped_deferred(manifest: &serde_json::Value) -> bool {
+    manifest
+        .get(DEFERRED_SOURCES_MEMBER)
+        .and_then(|v| v.as_array())
+        .is_some_and(|a| !a.is_empty())
+}
+
+/// The recipe-hash version id for `identity`.
+pub(crate) fn recipe_version_id(identity: &str) -> String {
+    format!(
+        "idx-{}",
+        &hex::encode(sha2::Sha256::digest(identity.as_bytes()))[..16]
+    )
+}
+
+// ---------------------------------------------------------------------------
 // the backend
 // ---------------------------------------------------------------------------
 
@@ -374,15 +475,29 @@ impl PgRetrieval {
         };
         // v1.4's rule, unchanged for every v1.4 result: anything but `ok`
         // may escalate. The isolated profile never escalates a document it
-        // deferred, a cancelled extraction or a broken child — see
-        // `Extracted::escalation_eligible`.
-        if !local.escalation_eligible() {
-            return local;
-        }
+        // deferred, a cancelled extraction or a broken child, and escalates
+        // an over-budget document only when the policy enables it (off by
+        // default) — see `Extracted::escalation_eligible`.
         let Some(provider) = &self.doc_intel else {
             return local;
         };
         if !provider.supports(media_type) {
+            return local;
+        }
+        let policy = self.extractors.isolated_policy();
+        if !local.escalation_eligible(&policy) {
+            if let Some(munarium_extract::FailureClass::OverBudget(budget)) = local.failure {
+                // The refusal names the bound; the note is the profile's own
+                // text (sizes and limits), never document content.
+                tracing::warn!(
+                    tenant = %self.tenant_id,
+                    provider = provider.id(),
+                    budget = budget.as_str(),
+                    note = local.note.as_deref().unwrap_or(""),
+                    "over-budget document not escalated to document intelligence \
+                     (MUNARIUM_PDF_EXTRACTION_ESCALATE_OVER_BUDGET=false)"
+                );
+            }
             return local;
         }
         match provider.analyze(media_type, bytes).await {
@@ -419,6 +534,68 @@ impl PgRetrieval {
                 local
             }
         }
+    }
+
+    /// The id a recipe-hash (`idx-`) build of `identity` uses, and whether
+    /// that version already exists (an existing complete version is reused,
+    /// not rebuilt).
+    ///
+    /// The id is a hash of the build's inputs, computed before extraction,
+    /// so a version that skipped deferred documents would otherwise satisfy
+    /// every later rebuild of the same inputs and the documents would never
+    /// be indexed. Such a version records them in its manifest
+    /// ([`DEFERRED_SOURCES_MEMBER`]); a rebuild that finds one moves on to
+    /// the next id in a deterministic chain (`identity|after-deferred:<id>`)
+    /// and builds there. Versions stay append-only. Without a deferral, which
+    /// only the isolated PDF profile produces, the first id is the v1.4 id.
+    pub(crate) async fn resolve_recipe_version(&self, identity: &str) -> Result<(String, bool)> {
+        let mut identity = identity.to_string();
+        loop {
+            let id = recipe_version_id(&identity);
+            let manifest: Option<serde_json::Value> = sqlx::query_scalar(
+                "SELECT manifest FROM index_versions WHERE tenant_id = $1 AND id = $2",
+            )
+            .bind(&self.tenant_id)
+            .bind(&id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(storage_err)?;
+            match manifest {
+                None => return Ok((id, false)),
+                Some(m) if manifest_skipped_deferred(&m) => {
+                    identity = format!("{identity}|after-deferred:{id}");
+                }
+                Some(_) => return Ok((id, true)),
+            }
+        }
+    }
+
+    /// Record, inside the build's transaction, the deferred sources a
+    /// recipe-hash build skipped. Nothing is written when none were.
+    pub(crate) async fn record_deferred<'e, E>(
+        &self,
+        ex: E,
+        index_id: &str,
+        deferred: &DeferredDocuments,
+    ) -> Result<()>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    {
+        if deferred.skipped().is_empty() {
+            return Ok(());
+        }
+        sqlx::query(
+            "UPDATE index_versions SET manifest = manifest || jsonb_build_object($3::text, $4::jsonb)
+              WHERE tenant_id = $1 AND id = $2",
+        )
+        .bind(&self.tenant_id)
+        .bind(index_id)
+        .bind(DEFERRED_SOURCES_MEMBER)
+        .bind(serde_json::json!(deferred.skipped()))
+        .execute(ex)
+        .await
+        .map_err(storage_err)?;
+        Ok(())
     }
 
     /// Record how a source's text was obtained. Visible on the source row so
@@ -862,10 +1039,7 @@ impl PgRetrieval {
             self.extractors.version(),
             source_set.join(",")
         );
-        let index_id = format!(
-            "idx-{}",
-            &hex::encode(sha2::Sha256::digest(identity.as_bytes()))[..16]
-        );
+        let (index_id, exists) = self.resolve_recipe_version(&identity).await?;
 
         let manifest = serde_json::json!({
             "shape_ref": shape_ref,
@@ -876,15 +1050,7 @@ impl PgRetrieval {
             "max_chars": max_chars,
         });
 
-        let exists =
-            sqlx::query("SELECT 1 AS one FROM index_versions WHERE tenant_id = $1 AND id = $2")
-                .bind(&self.tenant_id)
-                .bind(&index_id)
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(storage_err)?
-                .is_some();
-
+        let mut deferred = DeferredDocuments::new(self.extractors.isolated_policy());
         if !exists {
             let mut tx = self.pool.begin().await.map_err(storage_err)?;
             sqlx::query(
@@ -908,6 +1074,7 @@ impl PgRetrieval {
                 let key = SourceKey::new(&self.tenant_id, &path, &hash)?;
                 let bytes = self.sources.get(&key).await?;
                 let extracted = self.extract_source(&media_type, &bytes).await;
+                deferred.observe(&sid, &extracted)?;
                 self.record_extraction(&mut *tx, &sid, &extracted).await?;
                 self.record_chunk_provenance(
                     &mut tx, &index_id, &sid, &path, &extracted, max_chars,
@@ -937,7 +1104,9 @@ impl PgRetrieval {
                     .map_err(storage_err)?;
                 }
             }
+            self.record_deferred(&mut *tx, &index_id, &deferred).await?;
             tx.commit().await.map_err(storage_err)?;
+            deferred.finish(&self.tenant_id, &format!("shape:{shape_ref}"));
         }
 
         // refresh the watermark on re-activation of an identical version

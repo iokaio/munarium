@@ -98,7 +98,9 @@ pub struct Config {
 /// `extract@1[docx@1,pdf-text@1]`. `Isolated` runs the same parser in a
 /// resource-limited child of this binary under the identity
 /// `pdf-text-isolated@1{...}`, so an index built with it is a new index that
-/// must be verified and activated like any other.
+/// must be verified and activated like any other. `Isolated` also carries how
+/// builds treat the profile's refusals ([`munarium_extract::IsolatedPdfPolicy`]),
+/// which is not part of the identity.
 ///
 /// Read by [`pdf_extraction_from_env`] beside `Config::from_env` rather than
 /// stored on `Config`, so the many test fixtures that build a `Config`
@@ -106,7 +108,10 @@ pub struct Config {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PdfExtractionConfig {
     Inline,
-    Isolated(munarium_extract::IsolatedPdfLimits),
+    Isolated(
+        munarium_extract::IsolatedPdfLimits,
+        munarium_extract::IsolatedPdfPolicy,
+    ),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -587,7 +592,15 @@ fn doc_intel_from_env() -> Result<DocIntelConfig, String> {
 /// opts into the child-process profile; its bounds come from the
 /// `MUNARIUM_PDF_EXTRACTION_*` settings below, whose defaults are
 /// provisional (server/docs/design/pdf-isolation-measurements.md). The
-/// bounds are read only under `isolated`.
+/// bounds are read only under `isolated`, as are the two build policies
+/// (maintainer decision, 20 November 2026):
+///
+/// - `MUNARIUM_PDF_EXTRACTION_ESCALATE_OVER_BUDGET` = true | false.
+///   **Default: false**: an over-budget document is not escalated to paid
+///   document intelligence, and the refusal is logged.
+/// - `MUNARIUM_PDF_EXTRACTION_DEFERRED` = skip | fail. **Default: skip**: a
+///   build leaves deferred documents out and logs how many; `fail` fails the
+///   build instead.
 pub fn pdf_extraction_from_env() -> Result<PdfExtractionConfig, String> {
     pdf_extraction_from(|key| std::env::var(key).ok())
 }
@@ -641,7 +654,37 @@ fn pdf_extraction_from(
             limits
                 .validate()
                 .map_err(|e| format!("MUNARIUM_PDF_EXTRACTION=isolated: {e}"))?;
-            Ok(PdfExtractionConfig::Isolated(limits))
+            let escalate_over_budget = match var("MUNARIUM_PDF_EXTRACTION_ESCALATE_OVER_BUDGET")
+                .as_deref()
+                .unwrap_or("false")
+            {
+                "true" | "1" => true,
+                "false" | "0" | "" => false,
+                other => {
+                    return Err(format!(
+                        "MUNARIUM_PDF_EXTRACTION_ESCALATE_OVER_BUDGET must be true|false, got '{other}'"
+                    ))
+                }
+            };
+            let deferred = match var("MUNARIUM_PDF_EXTRACTION_DEFERRED")
+                .as_deref()
+                .unwrap_or("skip")
+            {
+                "skip" | "" => munarium_extract::DeferredPolicy::Skip,
+                "fail" => munarium_extract::DeferredPolicy::Fail,
+                other => {
+                    return Err(format!(
+                        "MUNARIUM_PDF_EXTRACTION_DEFERRED must be skip|fail, got '{other}'"
+                    ))
+                }
+            };
+            Ok(PdfExtractionConfig::Isolated(
+                limits,
+                munarium_extract::IsolatedPdfPolicy {
+                    escalate_over_budget,
+                    deferred,
+                },
+            ))
         }
         other => Err(format!(
             "MUNARIUM_PDF_EXTRACTION must be inline|isolated, got '{other}'"
@@ -1064,11 +1107,17 @@ mod pdf_extraction_tests {
     #[test]
     fn the_default_is_v14_inline_extraction() {
         assert_eq!(parse(&[]).expect("default"), PdfExtractionConfig::Inline);
-        // The bounds are ignored unless the profile is selected.
-        assert_eq!(
-            parse(&[("MUNARIUM_PDF_EXTRACTION_MEMORY_MIB", "not a number")]).expect("inline"),
-            PdfExtractionConfig::Inline
-        );
+        // The bounds and policies are ignored unless the profile is selected.
+        for key in [
+            "MUNARIUM_PDF_EXTRACTION_MEMORY_MIB",
+            "MUNARIUM_PDF_EXTRACTION_ESCALATE_OVER_BUDGET",
+            "MUNARIUM_PDF_EXTRACTION_DEFERRED",
+        ] {
+            assert_eq!(
+                parse(&[(key, "not a value")]).expect("inline"),
+                PdfExtractionConfig::Inline
+            );
+        }
         assert_eq!(
             parse(&[("MUNARIUM_PDF_EXTRACTION", "inline")]).expect("inline"),
             PdfExtractionConfig::Inline
@@ -1079,9 +1128,12 @@ mod pdf_extraction_tests {
     fn isolated_uses_the_provisional_defaults_and_reads_overrides() {
         assert_eq!(
             parse(&[("MUNARIUM_PDF_EXTRACTION", "isolated")]).expect("isolated"),
-            PdfExtractionConfig::Isolated(munarium_extract::IsolatedPdfLimits::PROVISIONAL)
+            PdfExtractionConfig::Isolated(
+                munarium_extract::IsolatedPdfLimits::PROVISIONAL,
+                munarium_extract::IsolatedPdfPolicy::default()
+            )
         );
-        let PdfExtractionConfig::Isolated(l) = parse(&[
+        let PdfExtractionConfig::Isolated(l, _) = parse(&[
             ("MUNARIUM_PDF_EXTRACTION", "isolated"),
             ("MUNARIUM_PDF_EXTRACTION_MEMORY_MIB", "256"),
             ("MUNARIUM_PDF_EXTRACTION_CPU_SECS", "5"),
@@ -1099,6 +1151,42 @@ mod pdf_extraction_tests {
         assert_eq!(l.max_output_bytes, 8 * 1024 * 1024);
         assert_eq!(l.max_concurrent, 1);
         assert_eq!(l.queue_wait, std::time::Duration::ZERO);
+    }
+
+    /// Maintainer decision (20 November 2026): no over-budget escalation and
+    /// skipped deferred documents unless configured otherwise.
+    #[test]
+    fn isolated_policies_default_to_no_escalation_and_skip() {
+        let policy = |vars: &[(&str, &str)]| {
+            let mut all = vec![("MUNARIUM_PDF_EXTRACTION", "isolated")];
+            all.extend_from_slice(vars);
+            match parse(&all).expect("isolated") {
+                PdfExtractionConfig::Isolated(_, p) => p,
+                other => panic!("isolated expected, got {other:?}"),
+            }
+        };
+        let default = policy(&[]);
+        assert!(!default.escalate_over_budget);
+        assert_eq!(default.deferred, munarium_extract::DeferredPolicy::Skip);
+        let set = policy(&[
+            ("MUNARIUM_PDF_EXTRACTION_ESCALATE_OVER_BUDGET", "true"),
+            ("MUNARIUM_PDF_EXTRACTION_DEFERRED", "fail"),
+        ]);
+        assert!(set.escalate_over_budget);
+        assert_eq!(set.deferred, munarium_extract::DeferredPolicy::Fail);
+        let explicit = policy(&[
+            ("MUNARIUM_PDF_EXTRACTION_ESCALATE_OVER_BUDGET", "false"),
+            ("MUNARIUM_PDF_EXTRACTION_DEFERRED", "skip"),
+        ]);
+        assert_eq!(explicit, default);
+        for (key, bad) in [
+            ("MUNARIUM_PDF_EXTRACTION_ESCALATE_OVER_BUDGET", "yes"),
+            ("MUNARIUM_PDF_EXTRACTION_DEFERRED", "retry"),
+        ] {
+            let err = parse(&[("MUNARIUM_PDF_EXTRACTION", "isolated"), (key, bad)])
+                .expect_err("invalid policy");
+            assert!(err.contains(key), "{err}");
+        }
     }
 
     #[test]

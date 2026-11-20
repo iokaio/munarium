@@ -16,8 +16,8 @@
 //! ```
 
 use munarium_extract::{
-    Budget, Cancellation, ExtractionStatus, FailureClass, IsolatedPdfExtractor, IsolatedPdfLimits,
-    PdfTextExtractor, TextExtractor,
+    Budget, Cancellation, DeferredPolicy, ExtractionStatus, FailureClass, IsolatedPdfExtractor,
+    IsolatedPdfLimits, IsolatedPdfPolicy, PdfTextExtractor, TextExtractor,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -131,6 +131,17 @@ fn assert_reaped(pid: Option<u32>) {
     );
 }
 
+/// Neither setting escalates a document that was never read.
+fn assert_never_escalates(extracted: &munarium_extract::Extracted) {
+    for escalate_over_budget in [false, true] {
+        let policy = IsolatedPdfPolicy {
+            escalate_over_budget,
+            ..Default::default()
+        };
+        assert!(!extracted.escalation_eligible(&policy), "{policy:?}");
+    }
+}
+
 fn budget(run: &munarium_extract::IsolatedRun) -> Option<Budget> {
     match run.extracted.failure {
         Some(FailureClass::OverBudget(b)) => Some(b),
@@ -226,7 +237,7 @@ fn cancellation_kills_and_reaps_the_child() {
     let run = x.run(&bytes, &cancel);
     canceller.join().expect("canceller");
     assert_eq!(run.extracted.failure, Some(FailureClass::Cancelled));
-    assert!(!run.extracted.escalation_eligible());
+    assert_never_escalates(&run.extracted);
     assert!(started.elapsed() < Duration::from_secs(5));
     assert_reaped(run.report.child_pid);
     assert_eq!(x.running(), 0);
@@ -312,7 +323,7 @@ fn admission_caps_concurrent_children_and_defers_the_rest() {
     let deferred = x.run(&text_pdf(3), &Cancellation::new());
     assert_eq!(deferred.extracted.failure, Some(FailureClass::Deferred));
     assert_eq!(deferred.extracted.status_label(), "deferred");
-    assert!(!deferred.extracted.escalation_eligible());
+    assert_never_escalates(&deferred.extracted);
     assert_eq!(
         deferred.report.child_pid, None,
         "a deferred document is never parsed"
@@ -569,6 +580,370 @@ async fn a_cancelled_queued_build_kills_its_isolated_child_and_frees_the_builder
     .await
     .expect("count");
     assert_eq!(versions, 0, "no index version committed");
+}
+
+// ---------------------------------------------------------------------------
+// build policies: over-budget escalation and deferred documents (maintainer
+// decision, 20 November 2026)
+// ---------------------------------------------------------------------------
+
+/// A document-intelligence provider that counts its calls.
+#[derive(Default)]
+struct CountingProvider {
+    calls: std::sync::atomic::AtomicUsize,
+}
+
+#[async_trait::async_trait]
+impl munarium_core::docintel::DocumentIntelligence for CountingProvider {
+    fn supports(&self, media_type: &str) -> bool {
+        media_type == PDF
+    }
+    async fn analyze(
+        &self,
+        _media_type: &str,
+        _bytes: &[u8],
+    ) -> munarium_core::Result<munarium_core::docintel::AnalyzedDocument> {
+        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(munarium_core::docintel::AnalyzedDocument {
+            text: "recovered by the counting analyzer".into(),
+            pages_analyzed: 1,
+            provider_fingerprint: "counting/v1".into(),
+        })
+    }
+    fn id(&self) -> &'static str {
+        "counting"
+    }
+}
+
+impl CountingProvider {
+    fn calls(&self) -> usize {
+        self.calls.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+/// Log lines written while the returned guard is held, on this thread.
+#[derive(Clone, Default)]
+struct Logs(Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl std::io::Write for Logs {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().expect("logs").extend_from_slice(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Logs {
+    fn capture(&self) -> tracing::subscriber::DefaultGuard {
+        let writer = self.clone();
+        tracing::subscriber::set_default(
+            tracing_subscriber::fmt()
+                .with_ansi(false)
+                .with_max_level(tracing::Level::WARN)
+                .with_writer(move || writer.clone())
+                .finish(),
+        )
+    }
+    fn text(&self) -> String {
+        String::from_utf8_lossy(&self.0.lock().expect("logs")).into_owned()
+    }
+}
+
+/// A tenant with one collection holding one PDF, built through `extractor`
+/// under `policy`, with a counting provider attached.
+struct PolicyFixture {
+    pool: sqlx::PgPool,
+    tenant: String,
+    pg: munarium_retrieval_pg::PgRetrieval,
+    provider: Arc<CountingProvider>,
+    collection_id: String,
+    source_id: String,
+}
+
+impl PolicyFixture {
+    async fn new(
+        url: &str,
+        extractor: Arc<IsolatedPdfExtractor>,
+        policy: IsolatedPdfPolicy,
+        pdf: &[u8],
+    ) -> Self {
+        let tenant = format!("tenant-r3-policy-{}", uuid::Uuid::new_v4().simple());
+        let store = munarium_store_pg::PgStore::connect(url, &tenant)
+            .await
+            .expect("connect");
+        let pool = store.pool().clone();
+        let registry =
+            munarium_extract::ExtractorRegistry::with_extractors(vec![Box::new(Probe {
+                inner: extractor,
+                runs: Arc::default(),
+            })])
+            .with_isolated_policy(policy);
+        let provider = Arc::new(CountingProvider::default());
+        let pg = munarium_retrieval_pg::PgRetrieval::new(pool.clone(), &tenant)
+            .with_extractors(Arc::new(registry))
+            .with_doc_intel(Some(
+                Arc::clone(&provider) as Arc<dyn munarium_core::docintel::DocumentIntelligence>
+            ));
+        let col = pg
+            .ensure_collection(
+                &format!("col-r3-policy-{}", uuid::Uuid::new_v4().simple()),
+                "para",
+                0,
+                &[],
+                Some("R3 build policy"),
+            )
+            .await
+            .expect("collection");
+        let (source_id, _, _) = pg
+            .put_source("", PDF, "r3/policy.pdf", Some("para"), pdf)
+            .await
+            .expect("source");
+        pg.bind_source(&col.id, &source_id, None)
+            .await
+            .expect("bind");
+        Self {
+            pool,
+            tenant,
+            pg,
+            provider,
+            collection_id: col.id,
+            source_id,
+        }
+    }
+
+    async fn status(&self) -> String {
+        sqlx::query_scalar(
+            "SELECT extraction_status FROM sources WHERE tenant_id = $1 AND source_id = $2",
+        )
+        .bind(&self.tenant)
+        .bind(&self.source_id)
+        .fetch_one(&self.pool)
+        .await
+        .expect("status")
+    }
+
+    async fn versions(&self) -> i64 {
+        sqlx::query_scalar(
+            "SELECT count(*) FROM index_versions WHERE tenant_id = $1 AND collection_id = $2",
+        )
+        .bind(&self.tenant)
+        .bind(&self.collection_id)
+        .fetch_one(&self.pool)
+        .await
+        .expect("count")
+    }
+
+    async fn chunks(&self, index_id: &str) -> i64 {
+        sqlx::query_scalar(
+            "SELECT count(*) FROM collection_chunks WHERE tenant_id = $1 AND index_version_id = $2",
+        )
+        .bind(&self.tenant)
+        .bind(index_id)
+        .fetch_one(&self.pool)
+        .await
+        .expect("chunks")
+    }
+}
+
+/// A one-slot extractor: a document arriving while the slot is held is
+/// deferred after 50 ms. A slow document holds the slot for up to 10 s.
+fn one_slot_extractor() -> Arc<IsolatedPdfExtractor> {
+    let mut limits = generous();
+    limits.max_concurrent = 1;
+    limits.queue_wait = Duration::from_millis(50);
+    limits.wall_clock = Duration::from_secs(10);
+    Arc::new(extractor(limits))
+}
+
+/// Hold `x`'s slot with a slow document. Returns once the child runs; the
+/// thread finishes when the slot is free again. Called after the fixture is
+/// set up, so database setup time cannot outlast the hold.
+fn occupy(x: &Arc<IsolatedPdfExtractor>) -> std::thread::JoinHandle<()> {
+    let busy = {
+        let x = Arc::clone(x);
+        let heavy = heavy_pdf(2_000_000);
+        std::thread::spawn(move || {
+            let run = x.run(&heavy, &Cancellation::new());
+            assert_reaped(run.report.child_pid);
+        })
+    };
+    let waited = Instant::now();
+    while x.running() == 0 {
+        assert!(
+            waited.elapsed() < Duration::from_secs(10),
+            "child never admitted"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    busy
+}
+
+fn database_url() -> Option<String> {
+    let url = std::env::var("MUNARIUM_TEST_DATABASE_URL").ok();
+    if url.is_none() {
+        eprintln!("SKIPPED: MUNARIUM_TEST_DATABASE_URL is unset");
+    }
+    url
+}
+
+/// An over-budget document (here the output cap) is not escalated to a
+/// configured provider by default: zero provider calls, `over_budget` on the
+/// source and a warn line naming the bound but no document text. With
+/// `MUNARIUM_PDF_EXTRACTION_ESCALATE_OVER_BUDGET=true` the same document
+/// reaches the provider once and is indexed from its text. Needs
+/// PostgreSQL; skips loudly without `MUNARIUM_TEST_DATABASE_URL`.
+#[tokio::test]
+async fn over_budget_documents_escalate_only_when_the_setting_enables_it() {
+    let Some(url) = database_url() else {
+        return;
+    };
+    // The cap is enforced with a 4 KiB frame allowance, so the document's
+    // text must exceed both (as in `the_output_cap_refuses_oversized_text`).
+    let mut limits = generous();
+    limits.max_output_bytes = 4 * 1024;
+    let pdf = text_pdf(400);
+
+    let logs = Logs::default();
+    let f = {
+        let _capture = logs.capture();
+        let f = PolicyFixture::new(
+            &url,
+            Arc::new(extractor(limits)),
+            IsolatedPdfPolicy::default(),
+            &pdf,
+        )
+        .await;
+        f.pg.build_collection_index(&f.collection_id, 400, 1, true)
+            .await
+            .expect("the build succeeds without the document");
+        f
+    };
+    assert_eq!(f.provider.calls(), 0, "no paid call by default");
+    assert_eq!(f.status().await, "over_budget");
+    let text = logs.text();
+    let line = text
+        .lines()
+        .find(|l| l.contains("over-budget document not escalated"))
+        .unwrap_or_else(|| panic!("no refusal logged:\n{text}"));
+    assert!(line.contains("WARN"), "{line}");
+    assert!(line.contains("budget=\"output\""), "{line}");
+    assert!(line.contains("4096 byte output cap"), "{line}");
+    assert!(!text.contains("quarterly settlement"), "no document text");
+
+    let enabled = IsolatedPdfPolicy {
+        escalate_over_budget: true,
+        ..Default::default()
+    };
+    let f = PolicyFixture::new(&url, Arc::new(extractor(limits)), enabled, &pdf).await;
+    let version =
+        f.pg.build_collection_index(&f.collection_id, 400, 1, true)
+            .await
+            .expect("build");
+    assert_eq!(f.provider.calls(), 1, "escalated once when enabled");
+    assert_eq!(f.status().await, "ok");
+    assert!(f.chunks(&version.id).await > 0, "indexed from the provider");
+}
+
+/// By default a deferred document is skipped: the build commits without it,
+/// the source reads `deferred`, a warn line counts the skip, and the
+/// provider is never called. A rebuild of the same inputs then extracts and
+/// indexes it under a new version. Needs PostgreSQL.
+#[tokio::test]
+async fn deferred_documents_are_skipped_by_default_and_a_rebuild_picks_them_up() {
+    let Some(url) = database_url() else {
+        return;
+    };
+    let x = one_slot_extractor();
+    let logs = Logs::default();
+    let f = PolicyFixture::new(
+        &url,
+        Arc::clone(&x),
+        IsolatedPdfPolicy::default(),
+        &text_pdf(5),
+    )
+    .await;
+    let busy = occupy(&x);
+    let first = {
+        let _capture = logs.capture();
+        f.pg.build_collection_index(&f.collection_id, 400, 1, true)
+            .await
+            .expect("a deferred document does not fail the build by default")
+    };
+    assert_eq!(f.status().await, "deferred");
+    assert_eq!(f.chunks(&first.id).await, 0, "the document was left out");
+    assert_eq!(
+        first.manifest["deferred_sources"],
+        serde_json::json!([f.source_id]),
+        "the version records what it skipped"
+    );
+    assert_eq!(f.provider.calls(), 0, "a deferred document never escalates");
+    let text = logs.text();
+    let line = text
+        .lines()
+        .find(|l| l.contains("build skipped 1 deferred document(s)"))
+        .unwrap_or_else(|| panic!("no skip logged:\n{text}"));
+    assert!(line.contains("WARN"), "{line}");
+    assert!(line.contains("a rebuild picks it up"), "{line}");
+    assert!(!line.contains(&f.source_id), "counts only: {line}");
+
+    busy.join().expect("busy");
+    let rebuilt =
+        f.pg.build_collection_index(&f.collection_id, 400, 2, true)
+            .await
+            .expect("rebuild");
+    assert_ne!(rebuilt.id, first.id, "the incomplete version is not reused");
+    assert_eq!(f.status().await, "ok");
+    assert!(f.chunks(&rebuilt.id).await > 0, "the rebuild indexed it");
+    assert!(rebuilt.manifest.get("deferred_sources").is_none());
+    // A complete version is reused as before.
+    let again =
+        f.pg.build_collection_index(&f.collection_id, 400, 3, true)
+            .await
+            .expect("idempotent");
+    assert_eq!(again.id, rebuilt.id);
+    assert_eq!(f.versions().await, 2);
+}
+
+/// With `MUNARIUM_PDF_EXTRACTION_DEFERRED=fail`, a deferred document fails
+/// the build with the typed, safe capacity error and nothing is committed,
+/// on the synchronous build and on the prepared (queued) path. Needs
+/// PostgreSQL.
+#[tokio::test]
+async fn deferred_documents_fail_the_build_when_set_to_fail() {
+    let Some(url) = database_url() else {
+        return;
+    };
+    let x = one_slot_extractor();
+    let fail = IsolatedPdfPolicy {
+        deferred: DeferredPolicy::Fail,
+        ..Default::default()
+    };
+    let f = PolicyFixture::new(&url, Arc::clone(&x), fail, &text_pdf(5)).await;
+    let busy = occupy(&x);
+    let err =
+        f.pg.build_collection_index(&f.collection_id, 400, 1, true)
+            .await
+            .expect_err("a deferred document fails the build");
+    let munarium_core::KernelError::RateLimited(message) = &err else {
+        panic!("a capacity refusal is RateLimited, got {err:?}");
+    };
+    assert_eq!(message, munarium_retrieval_pg::DEFERRED_BUILD_MESSAGE);
+    assert!(!message.contains(&f.source_id), "{message}");
+    assert_eq!(f.versions().await, 0, "nothing committed");
+    let Err(err) =
+        f.pg.extract_collection_prepared(&f.collection_id, 400)
+            .await
+    else {
+        panic!("the prepared build fails too");
+    };
+    assert!(
+        matches!(err, munarium_core::KernelError::RateLimited(_)),
+        "{err:?}"
+    );
+    assert_eq!(f.provider.calls(), 0);
+    busy.join().expect("busy");
 }
 
 // ---------------------------------------------------------------------------

@@ -138,6 +138,49 @@ impl IsolatedPdfLimits {
     }
 }
 
+/// What a build does with a document the isolated profile deferred
+/// (`MUNARIUM_PDF_EXTRACTION_DEFERRED`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DeferredPolicy {
+    /// The default: the build continues without the document, records it
+    /// `deferred` on its source and logs how many it skipped. A rebuild picks
+    /// it up.
+    #[default]
+    Skip,
+    /// The build fails at the first deferred document and commits nothing.
+    Fail,
+}
+
+impl DeferredPolicy {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DeferredPolicy::Skip => "skip",
+            DeferredPolicy::Fail => "fail",
+        }
+    }
+}
+
+/// How builds treat the isolated profile's refusals (maintainer decision of
+/// 20 November 2026). The default is the decided one: over-budget documents
+/// are not escalated to paid document intelligence, and deferred documents
+/// are skipped.
+///
+/// Not part of the extractor identity. Neither setting changes what the
+/// profile extracts from a document: escalation is the build's choice of a
+/// second extractor, which v1.4 never recorded in the identity either, and a
+/// deferred document is recorded `deferred` on its source under both
+/// settings. Only the isolated profile produces the failure classes these
+/// act on, so the inline (v1.4) profile is unaffected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct IsolatedPdfPolicy {
+    /// Escalate an over-budget document to a configured document
+    /// intelligence provider (`MUNARIUM_PDF_EXTRACTION_ESCALATE_OVER_BUDGET`).
+    /// Off by default: a document too large or too slow for the budget is
+    /// the document most likely to be expensive to analyze.
+    pub escalate_over_budget: bool,
+    pub deferred: DeferredPolicy,
+}
+
 /// How this platform enforces the memory and CPU limits.
 pub fn os_limits() -> &'static str {
     if cfg!(windows) {

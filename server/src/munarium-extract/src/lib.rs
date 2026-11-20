@@ -39,7 +39,10 @@ mod ocr;
 mod pdf;
 
 pub use docx::DocxExtractor;
-pub use isolated::{IsolatedPdfExtractor, IsolatedPdfLimits, IsolatedRun, RunReport};
+pub use isolated::{
+    DeferredPolicy, IsolatedPdfExtractor, IsolatedPdfLimits, IsolatedPdfPolicy, IsolatedRun,
+    RunReport,
+};
 #[cfg(feature = "ocr")]
 pub use ocr::{OcrExtractor, OcrModels, DEFAULT_MAX_PAGES};
 pub use pdf::PdfTextExtractor;
@@ -238,18 +241,20 @@ impl Extracted {
     /// accept the media type, and its own size budget still applies.
     ///
     /// Without a failure class this is the v1.4 rule unchanged: anything but
-    /// `ok` is eligible. A parser failure and an over-budget refusal are
-    /// eligible under that same rule, because v1.4 already escalates a PDF
-    /// local extraction could not read. Deferred, cancelled and
-    /// isolation-failed results are never eligible: the document was not
-    /// read, so escalating would turn local congestion or a broken
-    /// deployment into paid calls.
-    pub fn escalation_eligible(&self) -> bool {
+    /// `ok` is eligible. A parser failure is eligible under that same rule,
+    /// because v1.4 already escalates a PDF local extraction could not read.
+    /// An over-budget refusal is eligible only when `policy` enables it (off
+    /// by default): a document past the budget is the one most likely to be
+    /// expensive to analyze. Deferred, cancelled and isolation-failed results
+    /// are never eligible: the document was not read, so escalating would
+    /// turn local congestion or a broken deployment into paid calls.
+    pub fn escalation_eligible(&self, policy: &IsolatedPdfPolicy) -> bool {
         if self.status == ExtractionStatus::Ok {
             return false;
         }
         match self.failure {
-            None | Some(FailureClass::ParserFailed) | Some(FailureClass::OverBudget(_)) => true,
+            None | Some(FailureClass::ParserFailed) => true,
+            Some(FailureClass::OverBudget(_)) => policy.escalate_over_budget,
             Some(FailureClass::Deferred)
             | Some(FailureClass::Cancelled)
             | Some(FailureClass::IsolationFailed) => false,
@@ -354,6 +359,10 @@ const TEXT_MEDIA_EXACT: &[&str] = &[
 /// Dispatches a source to the right extractor.
 pub struct ExtractorRegistry {
     extractors: Vec<Box<dyn TextExtractor>>,
+    /// How builds treat the isolated profile's refusals. The default unless
+    /// [`ExtractorRegistry::with_isolated_policy`] sets it; it acts only on
+    /// failure classes the isolated profile produces.
+    isolated_policy: IsolatedPdfPolicy,
 }
 
 impl Default for ExtractorRegistry {
@@ -367,13 +376,17 @@ impl ExtractorRegistry {
     pub fn new() -> Self {
         Self {
             extractors: vec![Box::new(DocxExtractor), Box::new(PdfTextExtractor)],
+            isolated_policy: IsolatedPdfPolicy::default(),
         }
     }
 
     /// A registry holding exactly these extractors, for callers and tests
     /// that need a different set than `new()`.
     pub fn with_extractors(extractors: Vec<Box<dyn TextExtractor>>) -> Self {
-        Self { extractors }
+        Self {
+            extractors,
+            isolated_policy: IsolatedPdfPolicy::default(),
+        }
     }
 
     pub fn register(&mut self, extractor: Box<dyn TextExtractor>) {
@@ -388,6 +401,17 @@ impl ExtractorRegistry {
             .retain(|e| !e.media_types().contains(&pdf::PDF_MEDIA));
         self.extractors.push(Box::new(extractor));
         self
+    }
+
+    /// Set how builds treat the isolated profile's refusals. Not part of
+    /// [`ExtractorRegistry::version`]; see [`IsolatedPdfPolicy`].
+    pub fn with_isolated_policy(mut self, policy: IsolatedPdfPolicy) -> Self {
+        self.isolated_policy = policy;
+        self
+    }
+
+    pub fn isolated_policy(&self) -> IsolatedPdfPolicy {
+        self.isolated_policy
     }
 
     /// Every extractor identity, sorted — joins the index identity so an
@@ -560,13 +584,17 @@ mod tests {
         );
         assert_eq!(failed.failure, None);
         assert_eq!(failed.status_label(), "failed");
-        assert!(failed.escalation_eligible());
         let empty = Extracted::empty(ExtractionMethod::PdfTextLayer, "scan");
         assert_eq!(empty.status_label(), "empty");
-        assert!(empty.escalation_eligible());
         let ok = r.extract("text/plain", b"hello");
         assert_eq!(ok.status_label(), "ok");
-        assert!(!ok.escalation_eligible());
+        // The isolated policy acts only on isolated failure classes, so no
+        // setting changes a v1.4 result's escalation.
+        for policy in every_policy() {
+            assert!(failed.escalation_eligible(&policy));
+            assert!(empty.escalation_eligible(&policy));
+            assert!(!ok.escalation_eligible(&policy));
+        }
     }
 
     #[test]
@@ -583,13 +611,61 @@ mod tests {
         assert_eq!(cancelled.status_label(), "cancelled");
         assert_eq!(broken.status_label(), "failed");
         // Today's rule escalates any unreadable PDF; keep that for a parser
-        // failure and an over-budget refusal, and never escalate work that
-        // was not attempted.
-        assert!(parser.escalation_eligible());
-        assert!(over.escalation_eligible());
-        assert!(!deferred.escalation_eligible());
-        assert!(!cancelled.escalation_eligible());
-        assert!(!broken.escalation_eligible());
+        // failure under every policy, and never escalate work that was not
+        // attempted.
+        for policy in every_policy() {
+            assert!(parser.escalation_eligible(&policy));
+            assert!(!deferred.escalation_eligible(&policy));
+            assert!(!cancelled.escalation_eligible(&policy));
+            assert!(!broken.escalation_eligible(&policy));
+        }
+        // Maintainer decision (20 November 2026): an over-budget refusal
+        // does not escalate by default, and does when the setting enables it.
+        let default = IsolatedPdfPolicy::default();
+        assert!(!default.escalate_over_budget);
+        assert_eq!(default.deferred, DeferredPolicy::Skip);
+        assert!(!over.escalation_eligible(&default));
+        for budget in [
+            Budget::Input,
+            Budget::Memory,
+            Budget::Cpu,
+            Budget::WallClock,
+            Budget::Output,
+        ] {
+            let over = Extracted::failed(m, FailureClass::OverBudget(budget), "bound");
+            assert!(!over.escalation_eligible(&default), "{budget:?}");
+            let enabled = IsolatedPdfPolicy {
+                escalate_over_budget: true,
+                ..default
+            };
+            assert!(over.escalation_eligible(&enabled), "{budget:?}");
+        }
+    }
+
+    fn every_policy() -> [IsolatedPdfPolicy; 4] {
+        [
+            (false, DeferredPolicy::Skip),
+            (true, DeferredPolicy::Skip),
+            (false, DeferredPolicy::Fail),
+            (true, DeferredPolicy::Fail),
+        ]
+        .map(|(escalate_over_budget, deferred)| IsolatedPdfPolicy {
+            escalate_over_budget,
+            deferred,
+        })
+    }
+
+    #[test]
+    fn the_isolated_policy_defaults_and_is_not_part_of_the_identity() {
+        let r = ExtractorRegistry::new();
+        assert_eq!(r.isolated_policy(), IsolatedPdfPolicy::default());
+        let policy = IsolatedPdfPolicy {
+            escalate_over_budget: true,
+            deferred: DeferredPolicy::Fail,
+        };
+        let set = ExtractorRegistry::new().with_isolated_policy(policy);
+        assert_eq!(set.isolated_policy(), policy);
+        assert_eq!(set.version(), r.version());
     }
 
     #[test]

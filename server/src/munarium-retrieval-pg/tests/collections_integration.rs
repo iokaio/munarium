@@ -1499,7 +1499,8 @@ impl munarium_extract::TextExtractor for IsolatedLike {
 }
 
 /// The isolated profile's outcomes reach `sources.extraction_status`
-/// distinctly, and a deferred document never reaches the paid provider.
+/// distinctly, a deferred document never reaches the paid provider, and an
+/// over-budget one does not by default.
 #[tokio::test]
 async fn isolated_outcomes_are_recorded_distinctly_and_deferral_never_escalates() {
     let Some(url) = test_url() else { return };
@@ -1549,7 +1550,7 @@ async fn isolated_outcomes_are_recorded_distinctly_and_deferral_never_escalates(
     assert_eq!(statuses, ["over_budget", "deferred", "failed"]);
     assert_eq!(
         stub.calls.load(std::sync::atomic::Ordering::SeqCst),
-        2,
-        "over-budget and parser failure escalate under the v1.4 rule; deferral does not"
+        1,
+        "a parser failure escalates under the v1.4 rule; over-budget does not by default          (maintainer decision, 20 November 2026) and deferral never does"
     );
 }

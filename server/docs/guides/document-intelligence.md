@@ -172,7 +172,8 @@ same parser in a child process instead (design
   empty environment. No shell and no extra file is involved, so the distroless
   image needs nothing new.
 - Memory and CPU are enforced by the operating system: `setrlimit` (address
-  space, CPU time, no core dumps) on 64-bit Linux, a Job Object (committed
+  space, CPU time, no core dumps; through the pinned `rlimit` crate) on 64-bit
+  Linux, a Job Object (committed
   memory, user-mode CPU time, one process, kill on close) on Windows. Other
   platforms get no OS limit; the identity records `os=none`.
 - The parent enforces the wall-clock deadline and the output cap, and kills and
@@ -193,8 +194,11 @@ same parser in a child process instead (design
 | `MUNARIUM_PDF_EXTRACTION_MAX_OUTPUT_MIB` | `64` | largest extracted text accepted |
 | `MUNARIUM_PDF_EXTRACTION_CONCURRENCY` | `2` | children per process (1–64) |
 | `MUNARIUM_PDF_EXTRACTION_QUEUE_SECS` | `120` | admission wait before a document is deferred |
+| `MUNARIUM_PDF_EXTRACTION_ESCALATE_OVER_BUDGET` | `false` | `true` \| `false`; whether an over-budget document may escalate to document intelligence (see below) |
+| `MUNARIUM_PDF_EXTRACTION_DEFERRED` | `skip` | `skip` \| `fail`; what a build does with a deferred document (see below) |
 
-The bounds are read only under `isolated`. They are provisional and not frozen
+The bounds and both policies are read only under `isolated`; an invalid value
+is a startup error. They are provisional and not frozen
 production limits; the [measurements](../design/pdf-isolation-measurements.md)
 record what they were chosen from and what remains to qualify.
 
@@ -214,7 +218,7 @@ build log distinguish the outcomes `inline` reports as `failed`:
 | Status | Class in the log | Meaning | Escalates to document intelligence? |
 |---|---|---|---|
 | `failed` | `parser_failed` | the parser rejected or crashed on the document | yes, under the existing rules |
-| `over_budget` | `over_budget` (with `input`, `memory`, `cpu`, `wall_clock` or `output`) | the document exceeded a bound | yes, under the existing rules |
+| `over_budget` | `over_budget` (with `input`, `memory`, `cpu`, `wall_clock` or `output`) | the document exceeded a bound | **no** by default; yes, under the existing rules, with `MUNARIUM_PDF_EXTRACTION_ESCALATE_OVER_BUDGET=true` |
 | `deferred` | `deferred` | no slot within the queue wait; never parsed | **no** |
 | `cancelled` | `cancelled` | the build stopped first; the child was killed | **no** |
 | `failed` | `isolation_failed` | the child could not be started or confined | **no** |
@@ -222,8 +226,27 @@ build log distinguish the outcomes `inline` reports as `failed`:
 The escalation rules themselves are unchanged: a provider must be configured,
 must accept the media type, and its own `MUNARIUM_DOCINTEL_MAX_BYTES` and
 timeout apply. v1.4 escalates any PDF local extraction could not read, so a
-parser failure and an over-budget refusal keep escalating exactly as a v1.4
-`failed` result would. Work that was never attempted locally does not: paying
-for a document because the local queue was busy, or because the deployment
-cannot start its child, would turn congestion or misconfiguration into cost.
-A deferred document needs a rebuild to be indexed.
+parser failure keeps escalating exactly as a v1.4 `failed` result would. An
+over-budget document does not escalate unless
+`MUNARIUM_PDF_EXTRACTION_ESCALATE_OVER_BUDGET=true`: a document too large or
+too slow for the local budget is the one most likely to be expensive to
+analyze. When a configured provider would otherwise have been called, the build
+logs the refusal at warn level with the bound (`budget=` and the limit), never
+the document's text. Work that was never attempted locally does not escalate
+under either setting: paying for a document because the local queue was busy,
+or because the deployment cannot start its child, would turn congestion or
+misconfiguration into cost. Under `inline` none of these classes occur, so the
+setting changes nothing there.
+
+**Deferred documents.** With `MUNARIUM_PDF_EXTRACTION_DEFERRED=skip` (the
+default) a build continues without a deferred document, records it `deferred`
+on its source and logs at warn level how many documents it skipped. A rebuild
+picks them up: a version that skipped deferred documents lists them in its
+manifest (`deferred_sources`), so a rebuild of the same inputs builds a new
+version instead of reusing it, and a queued direct build's version id already
+covers each source's outcome. With `fail`, the first deferred document fails
+the build and nothing is committed. The error is `rate-limited` (HTTP 429, gRPC
+`RESOURCE_EXHAUSTED`), a capacity refusal to retry when extraction load allows;
+it names no document. A queued build job records it without an `error_code`,
+because no [build-job failure code](../api/errors.md#build-job-failure-codes)
+describes local extraction capacity. Neither policy is part of the identity.

@@ -94,8 +94,10 @@ Concurrency, with a 2,000-line document and a cap of two:
 
 ## Not yet measured
 
-- **Linux.** The `setrlimit` path compiles and passes clippy for
-  `x86_64-unknown-linux-musl`, but was not run on this machine. `RLIMIT_AS`
+- **Linux.** The `setrlimit` path (through the pinned `rlimit` 0.11.0 crate
+  since 20 November 2026, with no `unsafe` code of ours) compiles and passes
+  clippy for `x86_64-unknown-linux-musl`, and its tests pass in the Alpine
+  builder container, but it was not measured on this machine. `RLIMIT_AS`
   counts address space, including the mapped executable, so the same number
   admits less work than the Windows commit limit. CPU time and peak memory are
   not reported on Linux yet.
@@ -116,4 +118,4 @@ Concurrency, with a 2,000-line document and a cap of two:
 | Wall clock | 30 s | Three times the CPU limit, to cover I/O and scheduling delay. |
 | Output | 64 MiB | About 50 times the largest normal output here. |
 | Concurrency | 2 | Two children at 512 MiB each bound the extraction memory per replica at about 1 GiB. |
-| Queue wait | 120 s | Long enough for the queue to drain at these parse times. A deferred document needs a rebuild. |
+| Queue wait | 120 s | Long enough for the queue to drain at these parse times. A deferred document is skipped by default and a rebuild picks it up; `MUNARIUM_PDF_EXTRACTION_DEFERRED=fail` fails the build instead. |

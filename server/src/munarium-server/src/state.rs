@@ -328,10 +328,12 @@ fn build_extractors(
     let registry = munarium_extract::ExtractorRegistry::new();
     let registry = match pdf_extraction {
         crate::config::PdfExtractionConfig::Inline => registry,
-        crate::config::PdfExtractionConfig::Isolated(limits) => {
+        crate::config::PdfExtractionConfig::Isolated(limits, policy) => {
             let isolated = munarium_extract::IsolatedPdfExtractor::from_current_exe(limits)
                 .map_err(|e| KernelError::InvalidInput(format!("MUNARIUM_PDF_EXTRACTION: {e}")))?;
-            registry.with_isolated_pdf(isolated)
+            registry
+                .with_isolated_pdf(isolated)
+                .with_isolated_policy(policy)
         }
     };
     Ok(Arc::new(registry))
@@ -669,11 +671,13 @@ impl AppState {
         let extractors = build_extractors(pdf_extraction)?;
         match pdf_extraction {
             crate::config::PdfExtractionConfig::Inline => {}
-            crate::config::PdfExtractionConfig::Isolated(limits) => tracing::info!(
+            crate::config::PdfExtractionConfig::Isolated(limits, policy) => tracing::info!(
                 extractors = %extractors.version(),
                 os_limits = munarium_extract::isolated::os_limits(),
                 max_concurrent = limits.max_concurrent,
                 queue_wait_secs = limits.queue_wait.as_secs(),
+                escalate_over_budget = policy.escalate_over_budget,
+                deferred = policy.deferred.as_str(),
                 "isolated PDF extraction enabled (MUNARIUM_PDF_EXTRACTION=isolated); \
                  indexes keep their identity until rebuilt, verified and activated"
             ),
