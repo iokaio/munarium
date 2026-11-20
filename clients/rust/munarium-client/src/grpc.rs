@@ -1004,6 +1004,10 @@ impl RetrievalPlane for GrpcTransport {
             top_k: req.top_k.unwrap_or(0),
             filter_json: req.filter.map(|v| v.to_string()).unwrap_or_default(),
             index_version: req.index_version.unwrap_or_default(),
+            // ClearView R1 (experimental): this facade does not return the
+            // `execution` disclosure yet, so it always sends the v1.4 value
+            // rather than asking the server for data it would drop.
+            disclose_execution: false,
         };
         // Search is a read: same retry class as the query plane.
         let resp = self
@@ -1616,6 +1620,10 @@ impl SessionsPlane for GrpcTransport {
             // profile NAME is not a legal profile, so proto3's zero value
             // and `None` genuinely mean the same thing here.
             research_profile: req.research_profile.unwrap_or_default(),
+            // ClearView C1 (experimental): "" is the v1.4 behavior. This
+            // facade does not return `coverage` yet, so it does not select a
+            // partial-read policy it could not report on.
+            collection_availability: String::new(),
         };
         // A turn spends provider tokens — send once, never auto-retried,
         // and DEADLINE-EXEMPT like the REST twin: aborting client-side does
