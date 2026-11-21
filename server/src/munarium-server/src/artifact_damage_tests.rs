@@ -22,17 +22,17 @@ use munarium_core::artifact_verifier::VerifierSigningKey;
 use munarium_core::retrieval::{PreparedSearchQuery, SearchParams};
 use munarium_datastore::hydrate::{CacheBudget, L1Cache, Residency};
 use munarium_datastore::model::*;
-use munarium_datastore::shard::ShardWriter;
+use munarium_datastore::shard::{ShardWriter, MANIFEST};
 use munarium_datastore::store::LocalFileStore;
 use munarium_datastore::{ArtifactCacheKey, PreparedChunk};
 use munarium_retrieval::damage::{DamageGuard, DamageMode, FailureSite};
 use munarium_retrieval::executor::{ExecutionOutcome, TextPayload};
-use munarium_retrieval::mirror::LocalStoreFactory;
+use munarium_retrieval::mirror::{ArtifactStoreFactory, LocalStoreFactory};
 use munarium_store_pg::artifact_damage::{ArtifactDamageLedger, Decision, ReleaseDecision};
 use munarium_store_pg::artifacts::{ArtifactCatalog, BindingSlot, NewArtifact};
 use sha2::Digest as _;
 
-use crate::datastore_builds::tenant_path_hash;
+use crate::datastore_builds::{tenant_path_hash, ObjectStoreFactory};
 use crate::datastore_serving::DatastoreParts;
 use crate::state::AppState;
 
@@ -302,6 +302,10 @@ impl Fleet {
 
     /// A replica with an explicitly built damage guard.
     fn replica_with(&self, guard: DamageGuard) -> Replica {
+        Self::replica_with_store(guard, Arc::new(LocalStoreFactory::new(self.l2_root.path())))
+    }
+
+    fn replica_with_store(guard: DamageGuard, stores: Arc<dyn ArtifactStoreFactory>) -> Replica {
         let l1 = tempfile::tempdir().unwrap();
         let cache = L1Cache::new(
             l1.path(),
@@ -309,12 +313,7 @@ impl Fleet {
         )
         .unwrap();
         Replica {
-            parts: DatastoreParts::from_parts(
-                Arc::new(cache),
-                Arc::new(LocalStoreFactory::new(self.l2_root.path())),
-                8,
-                Arc::new(guard),
-            ),
+            parts: DatastoreParts::from_parts(Arc::new(cache), stores, 8, Arc::new(guard)),
             _l1: l1,
         }
     }
@@ -376,6 +375,124 @@ fn executed(outcome: ExecutionOutcome) -> munarium_retrieval::executor::Artifact
         ExecutionOutcome::Executed(e) => e,
         other => panic!("expected an execution, got {other:?}"),
     }
+}
+
+/// Exercise the serving and repair paths using real S3 generation metadata.
+/// The endpoint and database belong to the disposable rehearsal.
+#[tokio::test]
+#[ignore = "requires a disposable loopback S3 bucket and PostgreSQL"]
+async fn s3_serving_and_repair_bind_observations_to_object_generation() {
+    let url = std::env::var("MUNARIUM_TEST_DATABASE_URL").expect("disposable PostgreSQL");
+    let endpoint = std::env::var("MUNARIUM_TEST_S3_ENDPOINT").expect("disposable S3 endpoint");
+    let endpoint_url = reqwest::Url::parse(&endpoint).unwrap();
+    assert_eq!(endpoint_url.host_str(), Some("127.0.0.1"));
+    let store = munarium_store_objects::ObjectSourceStore::s3(munarium_store_objects::S3Config {
+        bucket: "sources".into(),
+        region: "us-east-1".into(),
+        endpoint: Some(endpoint),
+        force_path_style: true,
+        access_key_id: Some(std::env::var("MUNARIUM_TEST_S3_ACCESS_KEY").expect("test S3 key")),
+        secret_access_key: Some(
+            std::env::var("MUNARIUM_TEST_S3_SECRET_KEY").expect("test S3 secret"),
+        ),
+    })
+    .unwrap();
+    let stores = Arc::new(ObjectStoreFactory {
+        store: Arc::new(store),
+    });
+    let f = Fleet::new(url, "art-s3").await;
+    let root = f.l2_root.path().join(&f.l2_prefix);
+    let remote = stores.store_for_prefix(&f.l2_prefix).unwrap();
+    let manifest: ArtifactManifest =
+        serde_json::from_slice(&std::fs::read(root.join(MANIFEST)).unwrap()).unwrap();
+    let upload = remote.clone();
+    tokio::task::spawn_blocking(move || {
+        for path in manifest
+            .components
+            .into_iter()
+            .map(|c| c.path)
+            .chain([MANIFEST.to_string()])
+        {
+            upload
+                .put_component(&path, &std::fs::read(root.join(&path)).unwrap())
+                .unwrap();
+        }
+    })
+    .await
+    .unwrap();
+    let mut replicas = Vec::new();
+    for name in ["s3-warm", "s3-a", "s3-b", "s3-c"] {
+        replicas.push(Fleet::replica_with_store(
+            DamageGuard::new(DamageMode::Enforce, name).with_signing_key(f.vkey(name).await),
+            stores.clone(),
+        ));
+    }
+    let [warm, a, b, c] = replicas.as_slice() else {
+        unreachable!()
+    };
+    let pool = f.pool();
+    let ledger = f.ledger();
+    let warm_read = executed(warm.execute(&f, &pool).await);
+    let admission = warm_read.admission.expect("read admitted before damage");
+
+    let write = |bytes: Vec<u8>| {
+        let remote = remote.clone();
+        let victim = f.victim.0.clone();
+        tokio::task::spawn_blocking(move || {
+            remote.put_component(&victim, &bytes).unwrap();
+            remote
+                .get_component_with_generation(&victim)
+                .unwrap()
+                .generation
+                .expect("S3 generation")
+        })
+    };
+    let mut corrupt = f.victim.1.clone();
+    corrupt[0] ^= 0xa1;
+    let first = write(corrupt.clone()).await.unwrap();
+    refusal(&a.execute(&f, &pool).await);
+    corrupt[0] ^= 0xb2;
+    let second = write(corrupt).await.unwrap();
+    assert_ne!(first, second);
+    refusal(&b.execute(&f, &pool).await);
+    assert!(ledger.incidents().await.unwrap().is_empty());
+    refusal(&c.execute(&f, &pool).await);
+    let incident = ledger
+        .incidents()
+        .await
+        .unwrap()
+        .pop()
+        .expect("two verifiers at one generation");
+    assert_eq!(
+        incident.storage_generation.as_deref(),
+        Some(second.as_str())
+    );
+    assert!(matches!(
+        ledger.release(&[admission]).await.unwrap(),
+        ReleaseDecision::Refused(_)
+    ));
+    refusal(&warm.execute(&f, &pool).await);
+
+    ledger
+        .authorize_repair(&incident.incident_id, "s3-repair-test", "operator", None)
+        .await
+        .unwrap();
+    let repaired = write(f.victim.1.clone()).await.unwrap();
+    assert_ne!(repaired, second);
+    crate::datastore_serving::verify_repairs(&b.parts, &pool).await;
+    assert!(ledger
+        .admit(&f.version, &f.artifact)
+        .await
+        .unwrap()
+        .blocked_by
+        .is_some());
+    crate::datastore_serving::verify_repairs(&c.parts, &pool).await;
+    let cleared = ledger.incidents().await.unwrap().pop().unwrap();
+    assert_eq!(
+        cleared.clear_storage_generation.as_deref(),
+        Some(repaired.as_str())
+    );
+    assert!(!executed(warm.execute(&f, &pool).await).hits.is_empty());
 }
 
 /// ART1: one verifier isolates only; the same verifier again does not count;

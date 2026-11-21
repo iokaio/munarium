@@ -10,12 +10,14 @@ Typical sequence (from ``server/``)::
 
     py tools/compat/compat_local.py up        # network, PostgreSQL, stub, v1.4.0 on compat_base
     py tools/compat/compat_local.py seed      # v1.4 seed through REST
+    py tools/compat/compat_local.py backup    # capture v1.4 reads and take a logical backup
     py tools/compat/compat_local.py fork      # copy compat_base -> compat_cand, start the candidate
     py tools/compat/compat_local.py replay    # COMPAT-T1 REST replay through both, diff
     py tools/compat/compat_local.py mmctl     # COMPAT-T2 CLI cross-runs
     py tools/compat/compat_local.py console   # COMPAT-T5 console checks
     py tools/compat/compat_local.py t4        # COMPAT-T4 default-off checks and arrival counts
     py tools/compat/compat_local.py t3        # COMPAT-T3 rollback negative control
+    py tools/compat/compat_local.py restore   # stop the candidate, restore and re-read with v1.4
     py tools/compat/compat_local.py down
 
 Images default to the published v1.4.0 index digest and a local candidate tag;
@@ -157,7 +159,7 @@ class Run:
             out += ["-e", f"{k}={v}"]
         return out
 
-    def start_server(self, which: str, image: str, db: str) -> None:
+    def start_server(self, which: str, image: str, db: str, *, extra_env: tuple[str, ...] = ()) -> None:
         name = self.name(which)
         sh(["docker", "rm", "-f", name], check=False)
         http, grpc, ops = PORTS[which]
@@ -165,6 +167,7 @@ class Run:
             ["docker", "run", "-d", "--name", name, "--network", self.name("net"),
              "-p", f"127.0.0.1:{http}:8080", "-p", f"127.0.0.1:{grpc}:50051", "-p", f"127.0.0.1:{ops}:9090"]
             + self.server_env(db, f"compat-{which}")
+            + [arg for setting in extra_env for arg in ("-e", setting)]
             + [image]
         )
         self.wait_ready(which)
@@ -267,7 +270,7 @@ def step_reset(run: Run) -> None:
     """Drop both replay databases and restart v1.4.0 on an empty compat_base."""
     for which in ("base", "cand"):
         sh(["docker", "rm", "-f", run.name(which)], check=False)
-    for db in ("compat_cand", "compat_base"):
+    for db in ("compat_restored", "compat_cand", "compat_base"):
         run.psql(f"DROP DATABASE IF EXISTS {db}")
     run.psql("CREATE DATABASE compat_base")
     stub_log = run.out / "stub" / "arrivals.jsonl"
@@ -275,8 +278,18 @@ def step_reset(run: Run) -> None:
         stub_log.write_text("", encoding="utf-8")
     run.start_server("base", run.baseline_image, "compat_base")
     run.state.pop("seed", None)
+    run.state.pop("backup", None)
+    run.state.pop("t3_negative_control_passed", None)
     run.save()
     print("reset: empty compat_base, baseline ready")
+
+
+def step_mcp(run: Run) -> None:
+    """Restart the seeded candidate with opt-in MCP on the loopback ports."""
+    run.start_server("cand", run.candidate_image, "compat_cand", extra_env=(
+        "MUNARIUM_MCP=enabled", "MUNARIUM_TOKEN_REVOCATION_CHECK=true",
+        "MUNARIUM_MCP_RESULT_MAX_BYTES=16384",
+    ))
 
 
 def stub_lines(run: Run) -> list[str]:
@@ -302,7 +315,7 @@ def step_fork(run: Run) -> None:
 
 
 def compare(run: Run, label: str, base: list[dict[str, Any]], cand: list[dict[str, Any]]) -> dict[str, Any]:
-    comp = cw.Comparator(stable_ids=set(run.state["seed"]["stable_ids"]))
+    comp = cw.Comparator(stable_ids=set(run.state["seed"]["stable_ids"]), release_versions=("1.4.0", "1.5.0"))
     findings = comp.compare_transcripts(base, cand)
     summary = cw.summarize(findings)
     summary["cases"] = len(base)
@@ -310,6 +323,7 @@ def compare(run: Run, label: str, base: list[dict[str, Any]], cand: list[dict[st
         "baseline": cw.status_expectations(base),
         "candidate": cw.status_expectations(cand),
     }
+    summary["passed"] = summary["passed"] and not any(summary["status_expectation_misses"].values())
     cw.dump_json(str(run.out / f"{label}-diff.json"), summary)
     print(f"{label}: cases={len(base)} counts={summary['counts']} passed={summary['passed']}")
     return summary
@@ -751,9 +765,10 @@ def token_state(run: Run, which: str, jti: str) -> Any:
     return {"listed": False, "status": r["status"]}
 
 
-def rest_call(run: Run, which: str, method: str, path: str, token: str, body: Any = None) -> dict[str, Any]:
+def rest_call(run: Run, which: str, method: str, path: str, token: str, body: Any = None,
+              *, headers: dict[str, str] | None = None) -> dict[str, Any]:
     t = rest(run, which)
-    req = {"method": method, "path": path, "query": {}, "headers": {}, "token": token, "uid": "compat-user",
+    req = {"method": method, "path": path, "query": {}, "headers": headers or {}, "token": token, "uid": "compat-user",
            "content_type": "application/json" if body is not None else None,
            "body": json.dumps(body).encode() if body is not None else None}
     return t.call(req)
@@ -910,9 +925,126 @@ def index_identity(run: Run) -> dict[str, Any]:
 # ---------------------------------------------------------------- COMPAT-T3
 
 
+def checked_json(run: Run, which: str, method: str, path: str,
+                 token: str = "rw", body: Any = None, *, headers: dict[str, str] | None = None) -> Any:
+    result = rest_call(run, which, method, path, token, body, headers=headers)
+    if result["status"] not in (200, 201) or result.get("json") is None:
+        raise RuntimeError(f"{which} {method} {path} returned HTTP {result['status']}")
+    return result["json"]
+
+
+def rollback_reads(run: Run, which: str, evidence_id: str) -> dict[str, Any]:
+    seed = run.state["seed"]["variables"]
+    version = seed["version_id"]
+    session = seed["session_id"]
+    collection = seed["coll_text"]
+    paths = {
+        "head": f"/v1/versions/{version}/head",
+        "facts": f"/v1/versions/{version}/facts",
+        "collection": f"/v1/collections/{collection}",
+        "run": f"/v1/runs/{seed['run_id']}",
+        "manifest": f"/v1/evidence/{evidence_id}",
+        "rows": f"/v1/evidence/{evidence_id}/rows",
+    }
+    reads = {name: checked_json(run, which, "GET", path) for name, path in paths.items()}
+    reads["session"] = checked_json(run, which, "GET", f"/v1/sessions/{session}", seed["cap_token"])
+    return reads
+
+
+BACKUP_PATH = "/tmp/clearview-pre-upgrade.dump"
+MIGRATION_QUERY = "SELECT string_agg(version::text, ',' ORDER BY version) FROM _sqlx_migrations"
+
+
+def step_backup(run: Run) -> None:
+    """Take and validate the v1.4 archive before starting any candidate."""
+    if run.state["seed"]["problems"] or run.state["seed"]["variables"]["run_state"] != "done":
+        raise RuntimeError("rollback requires a successful v1.4 seed")
+    if run.psql("SELECT 1 FROM pg_database WHERE datname = 'compat_cand'"):
+        raise RuntimeError("take the rollback backup before fork")
+    csv = b"region,amount\nnorth,10.00\nsouth,20.00\n"
+    manifest = {
+        "contract_version": "0.1.0",  # Published v1.4.0 evidence contract.
+        "canon": "canon@1", "tenant": "compat", "kind": "table",
+        "logical_result_hash": f"sha256:{hashlib.sha256(csv).hexdigest()}",
+        "artifact_hash": f"sha256:{hashlib.sha256(csv).hexdigest()}",
+        "bytes_len": len(csv), "media_type": "text/csv; charset=utf-8",
+        "source": {"source_id": "fiction", "source_version": 1, "adapter": "postgres"},
+        "versions": {"policy": "rollback@1"},
+        "schema": {"columns": [
+            {"id": "c1", "name": "region", "type": "string", "nullable": False, "key": True},
+            {"id": "c2", "name": "amount", "type": "decimal", "nullable": False, "scale": 2},
+        ]},
+        "identity": {"row_id_rule": "keys", "rows": 2},
+        "completeness": {"truncated": False},
+        "snapshot_vector": [{"source_id": "fiction", "replay_level": "sealed_result"}],
+        "execution": {"started_at": "2026-11-20T10:00:00Z", "ended_at": "2026-11-20T10:00:01Z"},
+        "authorization_class": {"access_level": 0, "compartments": []},
+    }
+    sealed = checked_json(run, "base", "POST", "/v1/evidence", body={
+        "manifest": manifest, "bytes_base64": base64.b64encode(csv).decode(),
+    })
+    evidence_id = sealed["evidence_id"]
+    reads = rollback_reads(run, "base", evidence_id)
+    pg = ["docker", "exec", run.name("pg")]
+    started = time.monotonic()
+    sh(pg + ["pg_dump", "-U", "munarium", "-Fc", "-f", BACKUP_PATH, "compat_base"])
+    sh(pg + ["pg_restore", "--list", BACKUP_PATH])
+    run.state["backup"] = {
+        "sha256": sh(pg + ["sha256sum", BACKUP_PATH]).stdout.split()[0],
+        "seconds": round(time.monotonic() - started, 3),
+        "migrations": run.psql(MIGRATION_QUERY, "compat_base"),
+        "evidence_id": evidence_id,
+        "reads": reads,
+    }
+    run.save()
+    print("backup: verified archive table of contents and saved v1.4 reads")
+
+
+def step_restore(run: Run) -> None:
+    """Restore into a fresh database and prove the v1.5 write is absent."""
+    backup = run.state["backup"]
+    if not run.state.get("t3_negative_control_passed"):
+        raise RuntimeError("run the v1.4 startup refusal control before restore")
+    checked_json(run, "cand", "GET", f"/v1/evidence/{backup['evidence_id']}/rows")
+    version = run.state["seed"]["variables"]["version_id"]
+    facts_path = f"/v1/versions/{version}/facts"
+    marker = "clearview-v15-rollback-marker"
+    claim = {"claim_type": "fact", "subject": marker, "key": "state", "value": "written by v1.5"}
+    checked_json(run, "cand", "POST", f"/v1/versions/{version}/claims", body=claim,
+                 headers={"Idempotency-Key": marker})
+    if marker not in json.dumps(checked_json(run, "cand", "GET", facts_path)):
+        raise RuntimeError("the v1.5 rollback marker was never visible")
+    sh(["docker", "stop", run.name("cand")])
+    pg = ["docker", "exec", run.name("pg")]
+    digest = sh(pg + ["sha256sum", BACKUP_PATH]).stdout.split()[0]
+    if digest != backup["sha256"]:
+        raise RuntimeError("pre-upgrade archive digest changed")
+    started = time.monotonic()
+    run.psql("CREATE DATABASE compat_restored")
+    sh(pg + ["pg_restore", "-U", "munarium", "--exit-on-error", "--single-transaction",
+             "-d", "compat_restored", BACKUP_PATH])
+    restore_seconds = round(time.monotonic() - started, 3)
+    run.start_server("base", run.baseline_image, "compat_restored")
+    reads = rollback_reads(run, "base", backup["evidence_id"])
+    receipt = {
+        "evidence_class": "local", "images": run.state["images"],
+        "backup_sha256": digest, "backup_seconds": backup["seconds"],
+        "restore_seconds": restore_seconds,
+        "restored_migrations_match": run.psql(MIGRATION_QUERY, "compat_restored") == backup["migrations"],
+        "matching_reads": {name: value == backup["reads"][name] for name, value in reads.items()},
+        "v15_marker_absent": marker not in json.dumps(reads["facts"]),
+        "v14_direct_start_refused": True,
+    }
+    cw.dump_json(str(run.out / "t3-restore.json"), receipt)
+    print(json.dumps(receipt, indent=2))
+    if not (receipt["restored_migrations_match"] and receipt["v15_marker_absent"]
+            and all(receipt["matching_reads"].values())):
+        raise RuntimeError("backup rollback did not reproduce the v1.4 state")
+
+
 def step_t3(run: Run) -> None:
     """Start the v1.4.0 binary against the candidate-migrated database."""
-    sh(["docker", "stop", run.name("cand")], check=False)
+    sh(["docker", "stop", run.name("cand")])
     name = run.name("t3")
     sh(["docker", "rm", "-f", name], check=False)
     sh(["docker", "run", "-d", "--name", name, "--network", run.name("net")]
@@ -932,6 +1064,11 @@ def step_t3(run: Run) -> None:
     run.wait_ready("cand")
     cw.dump_json(str(run.out / "t3.json"), out)
     print(json.dumps(out, indent=2))
+    passed = out["version_missing"] and insp["Status"] == "exited" and insp["ExitCode"] != 0
+    run.state["t3_negative_control_passed"] = passed
+    run.save()
+    if not passed:
+        raise RuntimeError("v1.4 did not refuse the candidate database with VersionMissing")
 
 
 def step_down(run: Run) -> None:
@@ -948,7 +1085,8 @@ def step_down(run: Run) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("step", choices=["up", "reset", "seed", "fork", "replay", "diff", "mmctl", "clients", "console", "t4", "t3", "down"])
+    ap.add_argument("step", choices=["up", "reset", "seed", "backup", "fork", "replay", "diff",
+                                    "mmctl", "clients", "console", "t4", "t3", "restore", "mcp", "down"])
     ap.add_argument("--prefix", default="mcompat")
     ap.add_argument("--out")
     ap.add_argument("--baseline-image", default=BASELINE_IMAGE)
@@ -960,7 +1098,8 @@ def main() -> None:
     args = ap.parse_args()
     run = Run(args)
     {"up": step_up, "reset": step_reset, "seed": step_seed, "fork": step_fork, "replay": step_replay, "diff": step_diff, "mmctl": step_mmctl, "clients": step_clients,
-     "console": step_console, "t4": step_t4, "t3": step_t3, "down": step_down}[args.step](run)
+     "console": step_console, "t4": step_t4, "backup": step_backup, "t3": step_t3,
+     "restore": step_restore, "mcp": step_mcp, "down": step_down}[args.step](run)
 
 
 if __name__ == "__main__":

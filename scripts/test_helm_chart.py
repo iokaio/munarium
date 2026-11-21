@@ -335,6 +335,36 @@ def v14_chart(dest: Path) -> Path | None:
 
 @unittest.skipUnless(HELM, "helm is not installed; chart rendering unavailable")
 class LegacyUpgradeTests(unittest.TestCase):
+    def test_enable_builder_with_reused_v14_defaults(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            old = v14_chart(Path(tmp))
+            if old is None:
+                self.skipTest("tag v1.4.0 is not reachable in this checkout")
+            chart = Path(tmp) / "candidate"
+            shutil.copytree(CHART, chart)
+            # Helm --reuse-values carries forward the old chart's defaults.
+            shutil.copyfile(old / "values.yaml", chart / "values.yaml")
+            args = ("--set", "builder.enabled=true", "--set", "providerReplicaCount=auto")
+            rendered = render(*args, chart=chart)
+            self.assertEqual(rendered.returncode, 0, rendered.stderr)
+            docs = rendered.stdout.split("\n---\n")
+            builder = named(docs, "Deployment", "munarium-builder")
+            serving = named(docs, "Deployment", "munarium-server")
+            self.assertIn("\n  replicas: 1\n", builder)
+            self.assertIn("\n      terminationGracePeriodSeconds: 30\n", builder)
+            self.assertIn('name: MUNARIUM_SHUTDOWN_GRACE_SECS, value: "20"', builder)
+            self.assertEqual(replica_env(builder), ["3"])
+            self.assertEqual(replica_env(serving), ["3"])
+
+            stopped = render(*args, "--set", "builder.replicas=0", chart=chart)
+            self.assertEqual(stopped.returncode, 0, stopped.stderr)
+            stopped_builder = named(stopped.stdout.split("\n---\n"), "Deployment", "munarium-builder")
+            self.assertIn("\n  replicas: 0\n", stopped_builder)
+            self.assertEqual(replica_env(stopped_builder), ["2"])
+
+            invalid = render(*args, "--set", "builder.shutdownGraceSecs=0", chart=chart)
+            self.assertNotEqual(invalid.returncode, 0)
+
     def test_v14_values_render_exactly_as_the_v14_chart(self):
         with tempfile.TemporaryDirectory() as tmp:
             old = v14_chart(Path(tmp))

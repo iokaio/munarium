@@ -120,6 +120,84 @@ code belongs in the next C2 export.
   Docker Desktop Kubernetes context. L3 receipts still need the designated
   128 GiB workstation, named run owners and the frozen candidate inputs.
 
+### 21 November local qualification rehearsals
+
+- **A3-T2/T3.** Official TypeScript clients `@modelcontextprotocol/client`
+  2.4.0 and `@modelcontextprotocol/sdk` 1.32.2 passed Streamable HTTP discovery
+  or initialization, nine query tools, a known hit, scope refusal, lost-reply
+  recovery, expiry and renewal, and a smaller page after a typed size refusal.
+  PostgreSQL held one session per client. The management read of `/admin/mcp`
+  succeeded. The modern client exposed missing cache metadata. The Server change adds
+  immediate staleness and private scope to modern discovery and list results.
+  The runs used the Windows debug build from `e8a0076` with the local MCP
+  change, SHA-256
+  `c1f38c99cf20e50e8496c82c0cb17d3596b5e48680249e650b1b1c68189b5bdf`.
+  [Rehearsal driver](../ops/mcp-client-qualification.md#rehearse-with-the-official-typescript-sdks)
+- **COMPAT and default-off behavior.** The Linux/amd64 build of `e8a0076`
+  passed 127 REST, 126 native bridge and 29 typed gRPC replay cases after the
+  comparator began checking the expected `/version` identities explicitly.
+  The 20 packaged CLI commands matched in all four directions. Both binaries
+  kept seeded and rebuilt index IDs and ordering across eight reads. The stub
+  counted two discovery requests, seven completions and one embedding per
+  binary. MCP returned 404 on both. The v1.4.0 image also restored seven
+  saved reads from a verified pre-upgrade PostgreSQL backup, including sealed
+  evidence and a pinned session. The v1.5-only write was absent after restore.
+  Eleven standalone memory-store cases matched, including the unsupported
+  ingest response.
+  [Local backup evidence](compat-local-receipts.md#compat-t3)
+- **Helm and replica diagnostics.** A single-node kind v1.33.4 cluster with
+  CloudNativePG 1.25.1 and one PostgreSQL 16 instance ran two v1.4.0 pods,
+  then upgraded both to `e8a0076` with the v1.4 values. The replica divisor
+  stayed omitted. Enabling the builder group exposed missing defaults under
+  `--reuse-values`. With the chart fix, the builder group scaled 1 → 2 → 1,
+  both groups reported the configured total 3 → 4 → 3, and the serving
+  Service selected only serving pods. Helm rollback removed the builder group
+  and restored the omitted divisor on the v1.5 image. After heartbeat expiry,
+  the scale report showed two live replicas and the expected warning about
+  the default configured divisor of one. The 19 Helm tests include a regression
+  check for builder enablement with v1.4 values. All five black-box cluster
+  conformance cases passed across the two live serving pods. Load and drain
+  remain part of the workstation receipts.
+- **LOGIN1 and ART1/ART2.** Two Windows Server processes sharing PostgreSQL
+  demonstrated replica shortfall refusal, cutover when both reported ready,
+  cross-replica login and sign-out, CSRF refusal, legacy rollback and rejection
+  of the old epoch after re-enable. The S3 test used a disposable local
+  SeaweedFS instance at
+  `sha256:4b42c212543a0acd4c0e675215ecdcaf62a186ef98def76c7e12701871222d15`
+  after the pinned MinIO download failed. The Server serving-path test proved
+  that two different stored generations cannot confirm a block, two independent
+  verifiers of the same generation block a warm reader and an in-flight
+  result, and two verified matches clear the authorized repair at its new
+  generation. The local run does not exercise cluster scheduling or CNPG
+  object-store backup.
+- **Lens CPU.** The real Qwen3 weights at the published bundle revision
+  `cb8d6d3f4da7b0f5eacdbde4a61b5000f9d57cb1` passed publisher-model parity.
+  One measured 639-token rerank pair took 7.8 s on this CPU. Server's discovery,
+  1,024-dimensional embedding and reranking probes passed on the two pinned
+  models in 4.98 s after cold readiness at 30.63 s. The local Lens bearer
+  proposal was then tested with the same model assets. Missing and wrong
+  credentials failed the real Server probe and the configured bearer passed
+  all three checks. Lens refused a 1,500-token input with HTTP 413 and
+  `input_too_long` under the 1,024-token cap. The offline importer verified and
+  installed both real bundles in 22.84 s and refused an intentionally wrong
+  manifest digest. Server then passed all three authenticated probes using the
+  imported files in 3.5 s after cold readiness in 26.25 s. Held-out quality
+  and capacity qualification remain open.
+- **LENS-D2 input preparation.** The Git inventory generator enumerated and
+  independently rechecked 15 public roots. It counted 622 documentation
+  and 2,021 source/build entries, 164 exclusions and 22 entries for review.
+  Manifest SHA-256
+  `8047d3449d7b0f5b0b669ca68715db9e65cd6ad86aa8938c9ff7644bca4ea962`.
+  The restricted root requires its owner's processing authorization. The
+  inventory precedes build, extraction, citation and rollback coverage.
+- **Hardware and release boundaries.** This workstation has 64 GiB RAM,
+  about 16 GiB assigned to Docker and a 4 GiB NVIDIA GPU. The qualification
+  target is the 128 GB workstation with a 48 GB GPU. The Lens candidate
+  currently runs on CPU. GPU serving needs a reviewable runtime/image and its
+  own tests before capacity claims. Final receipts require exact Server, Lens
+  and Matrix artifacts, held-out judgments, the restricted-root authorization,
+  the shared exports, and the reviewed Matrix publisher before source removal.
+
 ## Phase 0 · v1.4 baseline and shared decisions
 
 | ID | Task and primary design | Status and next evidence |
@@ -239,7 +317,7 @@ The PR was open at the status check. DCO, hygiene, contract and unit/store/confo
 | Phase 5 | [Build the opt-in MCP route and tool catalog](mcp-analysis.md#92-sequencing) | Implemented experimentally against Proposed ADRs 0025–0027 (`0483db1`, `43d38c0`, `1dd0bb2`; [operator guide](../ops/mcp.md)). `POST /mcp` on the REST listener, outside `/v1` and OpenAPI. It is off by default (`MUNARIUM_MCP=disabled`: 404, no tasks, no MCP table access). JSON-RPC and Streamable HTTP are hand-built on axum, with no new dependency. There are eleven tools, results are bounded, and admission takes one ordinary REST slot, an MCP slot, and the heavy token where applicable, with the inner dispatch charged once. Migration 0070 (it sorts before 0080; the upgrade order on databases already at 0080 is untested). Seven new problem types are classified in R11. Provisional default: `MUNARIUM_MCP_MAX_CONCURRENCY` is half the ordinary pool. |
 | A1 | [Enforce MCP entry and underlying tool authority](mcp-analysis.md#a1) | Implemented. The `mcp` entry scope and each tool's native permission are enforced on discovery, listing and calls; static tokens never carry `mcp`. Two mutations were caught. |
 | A2 | [Require generative opt-in and a budget owner](mcp-analysis.md#a2) | Implemented. Generation needs an explicit trusted policy (a startup JSON file) with a `budget_owner` and both allowances. Seven refusal cases record zero provider arrivals. Helm mounts the same policy on both pod groups. Migration 0088 adds a policy digest to heartbeats. Fleet diagnostics warn on mismatch, and MCP refuses a generation attempt unless the live replicas agree. |
-| A3 | [Qualify both protocol revisions with real clients](mcp-analysis.md#a3) | Code ready. Fixtures cover both revisions: 2026-07-28 discovery with header checks, and the 2025-11-25 handshake (no MCP session ID). The real-client transcripts (A3-T2/T3) are **pending**; the procedure is in [mcp-client-qualification.md](../ops/mcp-client-qualification.md). |
+| A3 | [Qualify both protocol revisions with real clients](mcp-analysis.md#a3) | Code ready. Fixtures cover both revisions: 2026-07-28 discovery with header checks, and the 2025-11-25 handshake (no MCP session ID). Both [local TypeScript SDK transcripts](#21-november-local-qualification-rehearsals) passed. The exact candidate transcripts are pending. Reproduce with [mcp-client-qualification.md](../ops/mcp-client-qualification.md). |
 | A4 | [Add both readers and the read-only evidence capability](mcp-analysis.md#a4) | Implemented. A new `evidence_read` scope opens both sealed-evidence readers natively and through MCP; it cannot seal or commit. `mcp` plus a v1.4 `evidence` token does not open the MCP readers. |
 | A5 | [Qualify all eleven tools and native rollback](mcp-analysis.md#a5) | Partial. All eleven tools pass with native parity, plus default-off upgrade and rollback. A5-T2 passes locally (`45d9bf7`): published v1.4 clients get identical native results from both binaries with MCP off. Not run: the real-client runs (A3) and the hub contract export. |
 | A5-T5 | [Recover interrupted calls with a caller-known key](mcp-analysis.md#53-recovering-an-interrupted-call) | Implemented. The caller key `{id, expires_at}` is bound to tenant, uid and tool, with the validity window checked on the database clock. Two-replica tests cover duplicates without re-execution, conflicts, races, expiry and pruning. **Gap:** the session or turn receipt link is written after the native effect, not in its transaction, so a crash leaves it `unknown` (never replayed). |
@@ -265,7 +343,7 @@ The PR was open at the status check. DCO, hygiene, contract and unit/store/confo
 
 | ID | Task and primary design | Status and next evidence |
 |---|---|---|
-| SCALE-1 | [Align Helm replica counts and runtime admission](scale-out.md#scale-1-t1) | Code ready (`4d4d653`, docs `465b06b`); cluster receipt deferred until code complete. Chart 0.5.0 adds an optional `providerReplicaCount` (omitted by default, so the v1.4 render is unchanged; `auto` renders `replicas`; an integer renders that value) and an optional `strategy` for platform-v1 surge control. It adds a `values-production.yaml` profile and a README section on install, legacy and `--reuse-values` upgrades, migration, surge and rollback. `scripts/test_helm_chart.py` (8 cases) compares the legacy render byte for byte against the v1.4.0 chart. Admission settings are not exposed in the chart. Deferred: the SCALE-1-T1 cluster run on Azure, per the maintainer decision of 19 November 2026. |
+| SCALE-1 | [Align Helm replica counts and runtime admission](scale-out.md#scale-1-t1) | Code ready (`4d4d653`, docs `465b06b`); cluster receipt deferred until code complete. Chart 0.5.0 adds an optional `providerReplicaCount` (omitted by default, so the v1.4 render is unchanged; `auto` renders `replicas`; an integer renders that value) and an optional `strategy` for platform-v1 surge control. It adds a `values-production.yaml` profile and a README section on install, legacy and `--reuse-values` upgrades, migration, surge and rollback. `scripts/test_helm_chart.py` (8 cases) compares the legacy render byte for byte against the v1.4.0 chart. Admission settings are not exposed in the chart. The local kind upgrade and configured-count rollback passed. SCALE-1-T1 remains due on the designated workstation. |
 | SCALE-2 | [Separate serving and builder groups](scale-out.md#scale-2-t1) | Code ready (`6753f88`); cluster receipt deferred. An optional chart `builder` group (off by default) renders a `munarium-builder` Deployment that no Service selects. It runs the builder with gRPC disabled, the `builder` deployment plane and a validated grace window. The legacy render is still byte-identical to v1.4.0 (17 Helm cases). On SIGTERM a builder stops claiming, stops in-flight work at the next safe boundary (`StopReason::Draining`) and hands the claim back with `release_fenced`; another builder reclaims it under a new generation. A drained final claim counts as a claim (approved). Drain tests use their own scratch database; mutations are caught. |
 | SCALE-3 | [Expose replica, pool and queue diagnostics](scale-out.md#scale-3-t1) | Code ready (`273ac32`); cluster receipt deferred until code complete. New metrics: replica count, DB pool size, the build-queue backlog by state, the oldest pending age, and a queue-read health gauge. A new mgmt-only `GET /v1/reports/scale` reports on the answering replica: identity, configured count, pools and admission, and the caller tenant's backlog. A failed read returns `unavailable` with null counts. The console Health page has a section that follows the U5 rule. The API artifacts and four SDKs were regenerated (`generate_server_api.py --check` passes). **For review:** a new additive Server-only route was added without a hub record, because it is not a cross-project contract. Replica membership (`6a7cf0d`, `a71a055`, integrated as `c65ead3`, `f41d8dc`; migration 0087, maintainer decision 20 November 2026): each replica writes an expiring heartbeat (random per-process id, version, plane, configured count, capabilities) every 15 s, expiring after 45 s, scoped by `MUNARIUM_DEPLOYMENT_ENVIRONMENT_ID`. `GET /v1/reports/scale` sets `observed_replicas` and adds `replica_membership` with `exceeds_configured`; the Health page shows live against configured and warns on excess. A failed heartbeat read is `unavailable`, never 0; fewer live than configured is shown but not warned, because v1.4 processes write no heartbeat. Deferred: the SCALE-3-T1 cluster comparison. |
 | SC1 | [Qualify operator-controlled scale-up and drain](scale-out.md#sc1) | Planned. Exercise hash-only Server first, then the combined fleet with enrolled collections. |
@@ -296,7 +374,7 @@ The PR was open at the status check. DCO, hygiene, contract and unit/store/confo
 | ID | Task and primary design | Status and next evidence |
 |---|---|---|
 | R10 | [Record bounded, durable artifact damage](airk-analysis.md#r10) | Implemented, opt-in (`7c6d365`, migrations 0060, 0082, 0083), on the definitions in [artifact-damage.md](artifact-damage.md), amended per ADR 0028 (accepted and amended 20 November 2026). `MUNARIUM_ARTIFACT_DAMAGE_MODE=off|observe|enforce`, default `off`. Findings are bounded and durable. |
-| ART1 | [Isolate bad copies and confirm fleet blocks](airk-analysis.md#art1) | Implemented locally. A single mismatch isolates only the local copy. A fleet block needs two counted observations. **Independent mode (default):** distinct enrolled Ed25519 verifier keys (`c0bbe83`). Each observation is signed at the pin's current generation; unsigned, unenrolled, revoked, forged or shared-key observations never count. **Single-replica mode (`585629a`):** `MUNARIUM_ARTIFACT_DAMAGE_REPLICAS=single`, refused when the replica count exceeds one. One enrolled key, with distinct runs and fetches at least 300 s apart (configurable 60–3600 s). The assurance level (`independent`/`single_replica`) is recorded on each block. Serving checks cover cold, warm and restarted readers, the release fence, the warmer and rollout. Mutation checks were run. Fleet receipts are deferred to the workstation cluster. Storage generations and blocked-pin publication (`09fc8e0`, integrated as `35562b2`; no migration; maintainer decisions 20 November 2026): `ArtifactStore::get_component_with_generation` reports the version id or ETag where the object store has one (the local-file store reports none). Audits, observations, blocks, repair attempts and `artifact-damage list` carry it; different generations never combine toward a block or clearance, and an absent generation never combines with a known one. Mirror publication checks the pin's block on reuse, converged insert, upload and reconciler bind: `enforce` refuses (since `afb0c8d`, with its own `KernelError::ArtifactBlocked`: problem `artifact-blocked`, 409 on REST and `FAILED_PRECONDITION` on gRPC including the `ServerApi` proxy, no R11 hint, job `error_code` `artifact_blocked`; an unavailable check stays a transient `datastore-unavailable`), `observe` publishes and counts `munarium_artifact_publication_blocked_total`, `off` is unchanged, and a cleared pin publishes again. Ten mutations caught. An invalid `MUNARIUM_ARTIFACT_DAMAGE_MODE` now refuses to create a build context. A fence on each stream event is not needed: by design ([artifact-damage.md](artifact-damage.md)) a stream carries only content from search results that passed release. Open: a generation-bearing serving-path test on a live object store. |
+| ART1 | [Isolate bad copies and confirm fleet blocks](airk-analysis.md#art1) | Implemented locally. A single mismatch isolates only the local copy. A fleet block needs two counted observations. **Independent mode (default):** distinct enrolled Ed25519 verifier keys (`c0bbe83`). Each observation is signed at the pin's current generation; unsigned, unenrolled, revoked, forged or shared-key observations never count. **Single-replica mode (`585629a`):** `MUNARIUM_ARTIFACT_DAMAGE_REPLICAS=single`, refused when the replica count exceeds one. One enrolled key, with distinct runs and fetches at least 300 s apart (configurable 60–3600 s). The assurance level (`independent`/`single_replica`) is recorded on each block. Serving checks cover cold, warm and restarted readers, the release fence, the warmer and rollout. Mutation checks were run. Fleet receipts are deferred to the workstation cluster. Storage generations and blocked-pin publication (`09fc8e0`, integrated as `35562b2`; no migration; maintainer decisions 20 November 2026): `ArtifactStore::get_component_with_generation` reports the version id or ETag where the object store has one (the local-file store reports none). Audits, observations, blocks, repair attempts and `artifact-damage list` carry it; different generations never combine toward a block or clearance, and an absent generation never combines with a known one. Mirror publication checks the pin's block on reuse, converged insert, upload and reconciler bind: `enforce` refuses (since `afb0c8d`, with its own `KernelError::ArtifactBlocked`: problem `artifact-blocked`, 409 on REST and `FAILED_PRECONDITION` on gRPC including the `ServerApi` proxy, no R11 hint, job `error_code` `artifact_blocked`; an unavailable check stays a transient `datastore-unavailable`), `observe` publishes and counts `munarium_artifact_publication_blocked_total`, `off` is unchanged, and a cleared pin publishes again. Ten mutations caught. An invalid `MUNARIUM_ARTIFACT_DAMAGE_MODE` now refuses to create a build context. A fence on each stream event is not needed: by design ([artifact-damage.md](artifact-damage.md)) a stream carries only content from search results that passed release. The local generation-bearing S3 serving and repair test passed. The fleet receipt remains due. |
 | ART2 | [Clear blocks through a verified repair](airk-analysis.md#art2) | Implemented locally. A preauthorized repair clears a block after two fresh counted matches: distinct enrolled keys, or, in single mode, one key with spaced runs. The clearance assurance and verifiers are recorded. Unauthorized, stale, single-match, same-key (in independent mode), revoked, replayed and superseded repairs cannot clear. Verifier key commands: `generate-verifier-key`, `enroll-verifier`, `revoke-verifier`, `list-verifiers`. Since `35562b2` two matches clear only when both saw the same stored generation, and a match on a new generation replaces the attempt's first match (previously rejected); a two-replica fleet whose object is rewritten mid-verification can stall until the operator authorizes a new workflow (documented). |
 
 ## v1.5 release qualification
@@ -305,7 +383,7 @@ The PR was open at the status check. DCO, hygiene, contract and unit/store/confo
 |---|---|---|
 | COMPAT-T1 | [Replay REST, gRPC, native bridge and SSE compatibility](README.md#compat-t1) | Passes locally [local receipts](compat-local-receipts.md) (`45d9bf7`, `evidence_class: local`; harness in `server/tools/compat/`). 127 REST, 126 bridge and 29 typed gRPC cases against the published v1.4.0 image and a local candidate on identical seeded data, with no failing differences. Additive deltas only: R11 `retryable` and `retry_action` on two errors, and the invalid-scope text lists the new scopes. All 139 v1.4 operations are present and 9 were added. Must be repeated on the release candidate. |
 | COMPAT-T2 | [Replay the CLI, four SDKs and configuration](README.md#compat-t2) | Passes locally with gaps [local receipts](compat-local-receipts.md) (`45d9bf7`, `evidence_class: local`; harness in `server/tools/compat/`). The published 1.4.0 Rust, Python, .NET and Java suites pass against both binaries. The checkout clients pass against v1.4.0 except for the new operations, by design. 20 `mmctl` commands match across all four pairs. The chart upgrade is covered by `scripts/test_helm_chart.py`. Not covered: a Matrix peer, `mmp-conformance`, and a chart install. |
-| COMPAT-T3 | [Preserve and restore stored state and artifacts](README.md#compat-t3) | **Fails as expected** ([local receipts](compat-local-receipts.md)): v1.4.0 refuses a candidate-migrated database (`migration 43 … missing`). **By maintainer decision, binary rollback across v1.5 migrations is by backup restore**; the receipt must prove restoring the pre-upgrade backup into v1.4.0 (the procedure is being documented). |
+| COMPAT-T3 | [Preserve and restore stored state and artifacts](README.md#compat-t3) | **Passes locally** for the PostgreSQL source-store rehearsal and standalone memory-store cases. v1.4.0 refused an upgraded database and then restored the pre-upgrade backup, matching sealed evidence, a pinned session and the other saved reads. Cluster and object-store restore evidence is pending. [Backup and rollback](compat-local-receipts.md#compat-t3) |
 | COMPAT-T4 | [Preserve default work and spending behavior](README.md#compat-t4) | Passes locally [local receipts](compat-local-receipts.md) (`45d9bf7`, `evidence_class: local`; harness in `server/tools/compat/`). With no new settings, provider calls are identical on both binaries, index IDs and hit order match (text and legacy PDF), and none of the opt-in features activate. |
 | COMPAT-T5 | [Preserve supported operator workflows](README.md#compat-t5) | Passes locally with three known deltas [local receipts](compat-local-receipts.md) (`45d9bf7`, `evidence_class: local`; harness in `server/tools/compat/`): the revoke and approve console POSTs return a review page (U4), and token issuance moved to its own page (U8). Login, cookie, CSRF, view-only and the 20 v1.4 pages are unchanged. |
 | REL1 | [Qualify console login and artifact protection on the same candidate](README.md#rel1) | Planned. Collect both LOGIN1 and ART1/ART2 receipts on the exact Server v1.5 candidate. |

@@ -67,6 +67,21 @@ class SseTests(unittest.TestCase):
 
 
 class ComparatorTests(unittest.TestCase):
+    def test_release_metadata_requires_both_expected_versions(self) -> None:
+        for first, second, passed in (
+            ("1.4.0", "1.5.0", True),
+            ("1.4.0", "1.4.0", False),
+            ("1.5.0", "1.5.0", False),
+            (None, "1.5.0", False),
+        ):
+            comp = cw.Comparator(release_versions=("1.4.0", "1.5.0"))
+            base = {"version": first} if first else {}
+            findings = comp.compare_transcripts(
+                [entry("meta-version", 200, base)],
+                [entry("meta-version", 200, {"version": second})],
+            )
+            self.assertEqual(cw.summarize(findings)["passed"], passed)
+
     def test_identical_passes(self) -> None:
         self.assertTrue(diff([entry("a", 200, {"x": [1, 2]})], [entry("a", 200, {"x": [1, 2]})])["passed"])
 

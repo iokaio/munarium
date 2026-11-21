@@ -1,12 +1,10 @@
 # MCP client qualification receipts
 
-**Status: pending.** No real-client transcript has been recorded for the MCP
-endpoint yet. ClearView A3 requires one real, versioned client run for each
-protocol revision, `2026-07-28` (A3-T2) and `2025-11-25` (A3-T3), against the
-exact release candidate, and §10.5 of the [MCP analysis](../design/mcp-analysis.md#105-interoperability-record)
-lists what each run must attach. Until both are recorded the endpoint stays
-unqualified, whatever the automated suite reports. This page is the
-procedure; the results belong in the release evidence, not here.
+The official TypeScript SDKs passed both protocol revisions on a local
+ClearView build. See the [implementation ledger](../design/implementation-ledger.md#21-november-local-qualification-rehearsals).
+ClearView A3 still requires one real, versioned client run for each protocol
+revision, `2026-07-28` (A3-T2) and `2025-11-25` (A3-T3), on the exact release
+candidate. [Interoperability cases](../design/mcp-analysis.md#105-interoperability-record)
 
 ## Before a run
 
@@ -41,6 +39,28 @@ procedure; the results belong in the release evidence, not here.
 
 A client that supports both revisions may supply both runs.
 
+### Rehearse with the official TypeScript SDKs
+
+From `server/`, use the [compatibility harness](../design/compat-local-receipts.md#harness)
+with `up`, `seed`, `fork` and `mcp` and a local candidate image. The `mcp`
+step enables MCP, checks revocation and sets a 16 KiB response bound. Install
+the versioned SDKs in separate temporary directories and run the driver against
+the loopback candidate. Keep both output transcripts under ignored scratch.
+
+```powershell
+npm install --prefix <modern-dir> --ignore-scripts --no-audit @modelcontextprotocol/client@2.4.0
+npm install --prefix <legacy-dir> --ignore-scripts --no-audit @modelcontextprotocol/sdk@1.32.2
+$env:MUNARIUM_COMPAT_MCP_MGMT = '<disposable management token from the harness>'
+node tools/compat/mcp_sdk.mjs modern <modern-dir>
+node tools/compat/mcp_sdk.mjs legacy <legacy-dir>
+```
+
+The driver logs wire methods, negotiated versions, result and refusal outcomes,
+and the operator view's status. It drops one successful reply at the HTTP
+transport boundary and checks that replay and renewed credentials recover the
+same operation and session. Confirm the one stored session per client UID in the
+disposable database. Run the harness's `down` step after collecting evidence.
+
 ## What to attach
 
 For each client and revision: the Server revision and digest, client name and
@@ -55,5 +75,5 @@ the exact combinations recorded.
 
 The clients surveyed in the design (§10.2–§10.4) — Claude Code, Cursor,
 VS Code, Gemini CLI, Codex CLI, Claude Desktop and hosted connectors, and stdio
-clients through a pinned relay — are all **untested**. Mark each as qualified,
-incompatible or blocked, with the reason, only after a run on a named version.
+clients through a pinned relay — have no recorded run. Record any additional
+client's exact version and observed outcome.

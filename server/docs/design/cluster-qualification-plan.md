@@ -30,7 +30,7 @@ Placeholders used below: `<registry>`, `<candidate-digest>`, `<baseline-digest>`
 
 ## The qualification environment: the maintainer workstation
 
-Every scaling and compatibility receipt runs on **the maintainer's workstation (Windows, 128 GB RAM, Docker Desktop Kubernetes)**: the single-node Kubernetes cluster built into Docker Desktop, on the WSL2 backend. This is profile **L3** below and the single qualification path (maintainer decision of 20 November 2026). The runs are deferred until implementation moves to that machine. L3 uses the candidate artifacts, disposable namespaces and test credentials, and it is torn down after each run.
+Every scaling and compatibility receipt runs on **the maintainer's workstation (Windows, 128 GB RAM, 48 GB GPU, Docker Desktop Kubernetes)**: the single-node Kubernetes cluster built into Docker Desktop, on the WSL2 backend. This is profile **L3** below and the single qualification path. The runs start when implementation moves to that machine. L3 uses the candidate artifacts, disposable namespaces and test credentials, and it is torn down after each run.
 
 ### What one Docker Desktop node can prove
 
@@ -547,7 +547,7 @@ Where the code for a receipt is not yet complete, the parts that exist can still
 
 ## Tooling inventory
 
-Existing repository tooling named in the procedures: `scripts/test_helm_chart.py`, `server/test.ps1` (`-Cluster`, `-Postgres`, `-Platform`), `server/gates.ps1`, `server/localdeploy.ps1`, `server/docker-compose.yml` profiles `cluster`, `gateway` and `s3`, `mmp-conformance`, the four client conformance suites, `server/tools/check_validation_receipt.py`, `scripts/frozen_eval.py`, the PostgreSQL-versus-Datastore benchmark, the [Phase 1 fixtures](../../tests/fixtures/clearview-phase1/README.md) and the [deployment runbook](../ops/deployment-runbook.md). Everything marked "to be written" above is new work; none of it exists yet. No cloud environment is used.
+Existing repository tooling named in the procedures: `scripts/test_helm_chart.py`, `server/test.ps1` (`-Cluster`, `-Postgres`, `-Platform`), `server/gates.ps1`, `server/localdeploy.ps1`, `server/docker-compose.yml` profiles `cluster`, `gateway` and `s3`, `mmp-conformance`, the four client conformance suites, `server/tools/check_validation_receipt.py`, `scripts/lens_workspace.py`, `scripts/frozen_eval.py`, the PostgreSQL-versus-Datastore benchmark, the [Phase 1 fixtures](../../tests/fixtures/clearview-phase1/README.md) and the [deployment runbook](../ops/deployment-runbook.md). [Local rehearsals](implementation-ledger.md#21-november-local-qualification-rehearsals) record tested versions and coverage.
 
 ## Decisions that block scheduling
 

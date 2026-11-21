@@ -3,12 +3,9 @@
 These receipts replay v1.4 behavior through the **published v1.4.0 image** and a
 **local build of the ClearView branch**, on one Windows workstation with Docker.
 Every receipt is `evidence_class: local`. Local evidence is separate from
-`release-candidate-cluster` evidence. The candidate is a pre-release build of
-`feat/clearview` at `4a67227`, not a frozen release candidate. A release receipt
-must be collected again on the exact candidate. The release owner has not
-recorded local receipts as an accepted environment of record. Under the
-maintainer's decision of 20 November 2026, nothing here used paid cloud or
-cluster resources.
+`release-candidate-cluster` evidence. The historical receipts use a pre-release
+build of `feat/clearview` at `4a67227`. The 21 November rollback receipt names
+its newer build. Collect release receipts again on the exact candidate.
 
 The fields follow the [release evidence format](README.md#release-evidence) and
 the [receipt skeleton](cluster-qualification-plan.md#receipt-format). Outcomes use
@@ -22,7 +19,7 @@ here, not counted as failures. The baseline record is [P0-T1](v14-baseline.md).
 |---|---|---|
 | [COMPAT-T1](#compat-t1) | passed (local) | 127 REST, 126 native-bridge and 29 typed gRPC cases matched v1.4.0. The only differences are two additive problem members and one problem-detail wording change. All 139 v1.4 bridge operations are served; none were removed. |
 | [COMPAT-T2](#compat-t2) | passed (local), with gaps | The published 1.4.0 Rust, Python, .NET and Java clients passed against the candidate. The checkout clients passed against v1.4.0, apart from one catalog test that probes nine new operations. Twenty `mmctl` commands gave identical output and exit codes in all four CLI/server pairs. No Matrix peer or chart run was included. |
-| [COMPAT-T3](#compat-t3) | failed, as expected (negative control) | v1.4.0 exits 1 against the candidate-migrated database: `migration 43 was previously applied but is missing`. The rollback route is still undecided. |
+| [COMPAT-T3](#compat-t3) | passed (local PostgreSQL scope) | v1.4.0 refused the upgraded database and matched seven saved reads after a verified pre-upgrade archive restore. |
 | [COMPAT-T4](#compat-t4) | passed (local) | Both binaries made identical provider arrivals (2 tags, 7 chat, 1 embed) and produced identical index IDs and hit order after a fresh build, including legacy PDF. No opt-in feature activated. |
 | [COMPAT-T5](#compat-t5) | passed (local), with three known deltas | Bookmarks, login, cookie, CSRF refusal and view-only behaved the same on both binaries. Known deltas: revoke and approve POSTs now return a review page (U4), and the issue form moved to its own page (U8). |
 | [A5-T2](#a5-t2) | passed (local) | With MCP off, the published v1.4 clients and stubs got the same native results, refusals and budget refusal from both binaries. `/mcp` returns 404 on both. |
@@ -39,7 +36,7 @@ the gRPC calls go through the released v1.4 stubs, the old strict readers.
 
 | File | Role |
 |---|---|
-| `compat_local.py` | Orchestrator. Steps: `up`, `reset`, `seed`, `fork`, `replay`, `diff`, `t4`, `mmctl`, `clients`, `console`, `t3` and `down`. Containers, the network and the volume use the `mcompat-` prefix. Server ports bind to `127.0.0.1` 28080/28051/28090 (baseline) and 29080/29051/29090 (candidate). |
+| `compat_local.py` | Orchestrator. Steps include `up`, `reset`, `seed`, `backup`, `fork`, `replay`, `diff`, `t4`, `mmctl`, `clients`, `console`, `t3`, `restore`, `mcp` and `down`. Containers, the network and the volume use the `mcompat-` prefix. Server ports bind to `127.0.0.1` 28080/28051/28090 (baseline) and 29080/29051/29090 (candidate). |
 | `compat_wire.py` | Case runner (templating, capture, polling, SSE parsing) and the comparator |
 | `grpc_driver.py` | Native-bridge transport, which routes each REST case by its v1.4 `server_api.proto` comment; a typed `CommandService`/`QueryService`/`SessionService` replay; and a probe of the served catalog |
 | `count_stub.py` | Counting provider stub (Ollama and OpenAI-compatible). It logs the method, path, size and client address of each arrival, never the body. |
@@ -230,13 +227,34 @@ meaning) and exit codes were identical in every pair.
 
 <a id="compat-t3"></a>
 
-## COMPAT-T3 · Binary rollback (negative control)
+## COMPAT-T3 · PostgreSQL backup and rollback
+
+On 21 November, the local Linux/amd64 image built from Server
+`e8a0076490cde6c2973fa68cbeb2cd109b986c2f`
+(`sha256:575a5c6b994794e4c61b20d805a4c46d3d84c8ef8b198fb71630a5270d78b167`)
+upgraded the v1.4 schema through migration 0088. The published v1.4.0 image
+exited 1 with `VersionMissing` on the upgraded database and served the
+pre-upgrade archive restored into a fresh database. The seven saved reads
+all matched exactly: ledger head and facts, collection and approved index,
+runbook run, sealed evidence manifest and rows, and the pinned session.
+The rehearsal verified the v1.5-only write before rollback and its absence
+after restore. The archive digest matched and restored migrations ended at
+0042. Backup took 0.751 s and restore took 1.422 s on this fictional fixture.
+
+Run `up`, `seed`, `backup`, `fork`, `t3`, `restore` and `down` in order.
+`t3-restore.json` records hard pass conditions and image IDs. This rehearsal
+used the PostgreSQL source store. A separate run compared 11 standalone
+memory-store cases, including ledger writes, reads and unsupported ingest.
+COMPAT-T3 still needs the cluster backup and object-store consistency point
+and held mixed replicas.
+
+The original 20 November rehearsal captured the startup negative control:
 
 ```yaml
 acceptance_id: COMPAT-T3
 outcome: failed            # expected; recorded, not worked around
 not_run_reason: null
-expected (current branch): v1.4.0 refuses to start against the upgraded database (sqlx VersionMissing), pending the maintainer's rollback decision
+expected: v1.4.0 refuses to start against the upgraded database (sqlx VersionMissing)
 observed:
   procedure: stop the candidate; start the published v1.4.0 image against compat_cand (migrated by the candidate to 0043–0047, 0050, 0060, 0070, 0080)
   container_state: exited, ExitCode 1, after one startup attempt
@@ -369,10 +387,8 @@ None of these is a compatibility regression. Each is recorded for a reviewer.
 - **COMPAT-T2:** chart install, upgrade with `--reuse-values`, replica-count
   migration and rollback (L2/L3), plus Matrix-enabled runs with a pinned peer
   after M1 step 3.
-- **COMPAT-T3:** the rollback route is a pre-upgrade backup restore (route B,
-  maintainer decision of 20 November 2026). Sealed evidence and pinned sessions
-  read after a drilled restore into v1.4.0, with the `VersionMissing` negative
-  control.
+- **COMPAT-T3:** capture the matching object-store backup and restore in the
+  cluster, with the `VersionMissing` negative control and mixed-version checks.
 - **COMPAT-T5:** mixed-replica console sessions and the LOGIN1 cutover.
 - **A5-T3** and the other multi-replica MCP cases.
 

@@ -102,8 +102,8 @@ impl BuildObserver for MetricsObserver {
 /// Holds the `ObjectSourceStore` rather than the raw `object_store` client, so
 /// the `object_store` crate stays inside `munarium-store-objects` — the one
 /// place that owns cloud client construction.
-struct ObjectStoreFactory {
-    store: Arc<munarium_store_objects::ObjectSourceStore>,
+pub(crate) struct ObjectStoreFactory {
+    pub(crate) store: Arc<munarium_store_objects::ObjectSourceStore>,
 }
 
 impl std::fmt::Debug for ObjectStoreFactory {

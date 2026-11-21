@@ -388,6 +388,7 @@ class Comparator:
     findings: list[Finding] = field(default_factory=list)
     informational_keys: tuple[str, ...] = ("detail", "details")
     volatile: tuple[str, ...] = ()
+    release_versions: tuple[str, str] | None = None
 
     def compare_transcripts(self, base: list[dict[str, Any]], cand: list[dict[str, Any]]) -> list[Finding]:
         cand_by_id = {c["id"]: c for c in cand}
@@ -422,6 +423,9 @@ class Comparator:
         problem = rb["media_type"] == "application/problem+json"
         self.volatile = tuple(b.get("volatile", ()))
         problem = problem or rb["media_type"] == "grpc-error"
+        check_versions = self.release_versions is not None and cid == "meta-version"
+        if check_versions and not all(isinstance(r.get("json"), dict) for r in (rb, rc)):
+            self.findings.append(Finding(cid, "/json/version", "format", None, None))
         for key in ("json", "events", "text"):
             if key in rb or key in rc:
                 if key == "text":
@@ -429,7 +433,13 @@ class Comparator:
                 elif key == "events":
                     self.compare_value(cid, "/events", order_concurrent(rb.get(key)), order_concurrent(rc.get(key)), problem)
                 else:
-                    self.compare_value(cid, f"/{key}", rb.get(key), rc.get(key), problem)
+                    left, right = rb.get(key), rc.get(key)
+                    if check_versions and isinstance(left, dict) and isinstance(right, dict):
+                        left, right = dict(left), dict(right)
+                        versions = (left.pop("version", None), right.pop("version", None))
+                        kind = "informational" if versions == self.release_versions else "value_changed"
+                        self.findings.append(Finding(cid, "/json/version", kind, *versions))
+                    self.compare_value(cid, f"/{key}", left, right, problem)
 
     def _compare_text(self, cid: str, b: str | None, c: str | None) -> None:
         if b == c:

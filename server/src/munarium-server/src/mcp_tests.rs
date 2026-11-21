@@ -517,6 +517,8 @@ async fn a3_protocol_fixtures_for_both_revisions() {
     assert_eq!(d.headers["cache-control"], "private, no-store");
     let res = &d.body["result"];
     assert_eq!(res["resultType"], "complete");
+    assert_eq!(res["ttlMs"], 0);
+    assert_eq!(res["cacheScope"], "private");
     assert_eq!(res["supportedVersions"], json!([MODERN, LEGACY]));
     assert_eq!(res["capabilities"], json!({"tools": {}}));
     assert_eq!(
@@ -528,6 +530,8 @@ async fn a3_protocol_fixtures_for_both_revisions() {
     // A client may start directly with a tool request (no handshake).
     let l = rpc(&router, &t, "tools/list", json!({})).await;
     assert_eq!(l.body["result"]["resultType"], "complete");
+    assert_eq!(l.body["result"]["ttlMs"], 0);
+    assert_eq!(l.body["result"]["cacheScope"], "private");
     for tool in l.body["result"]["tools"].as_array().unwrap() {
         assert_eq!(tool["inputSchema"]["additionalProperties"], false, "{tool}");
         assert_eq!(tool["inputSchema"]["type"], "object");
@@ -809,6 +813,8 @@ async fn a3_protocol_fixtures_for_both_revisions() {
     let l = legacy(&router, &t, "tools/list", json!({})).await;
     assert_eq!(tool_names(&l).len(), 9);
     assert!(l.body["result"].get("resultType").is_none());
+    assert!(l.body["result"].get("ttlMs").is_none());
+    assert!(l.body["result"].get("cacheScope").is_none());
     let bad_init = send_raw(
         &router,
         "POST",

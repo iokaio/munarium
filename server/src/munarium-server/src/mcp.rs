@@ -580,11 +580,16 @@ impl Revision {
 }
 
 /// Wraps a method result for the revision: the modern revision adds
-/// `resultType` and the server identity under `_meta`.
-pub(crate) fn finish_result(revision: Revision, mut result: Value) -> Value {
+/// `resultType`, the server identity under `_meta` and cache policy where
+/// required. Discovery is authenticated and the catalog varies by scope.
+fn finish_result(revision: Revision, method: &str, mut result: Value) -> Value {
     if revision == Revision::Modern {
         if let Some(obj) = result.as_object_mut() {
             obj.insert("resultType".into(), json!("complete"));
+            if matches!(method, "server/discover" | "tools/list") {
+                obj.insert("ttlMs".into(), json!(0));
+                obj.insert("cacheScope".into(), json!("private"));
+            }
             let meta = obj
                 .entry("_meta")
                 .or_insert_with(|| Value::Object(Map::new()));
@@ -914,12 +919,11 @@ pub async fn handle(service: Arc<McpService>, req: axum::extract::Request) -> Re
     };
     match result {
         Ok(result) => {
-            let body = rpc_result(&id, finish_result(revision, result));
+            let body = rpc_result(&id, finish_result(revision, method, result));
             let bytes = serde_json::to_vec(&body).unwrap_or_default();
             if bytes.len() > state.mcp.settings.result_max_bytes {
-                // Only `tools/call` can grow; the tool layer bounds its own
-                // results and turns an oversized one into a typed tool error,
-                // so reaching here means a protocol result outgrew the bound.
+                // The tool layer bounds its own results with a typed tool
+                // error. Fixed protocol responses can exceed a small bound.
                 count(&state, method, "too-large");
                 return rpc_error(
                     StatusCode::OK,

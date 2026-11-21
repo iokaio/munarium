@@ -2,14 +2,14 @@
 {{- if include "munarium.builderEnabled" . }}
 {{- $mcpPolicy := (.Values.mcp | default dict).generationPolicy -}}
 {{- $b := .Values.builder }}
-{{- $replicas := $b.replicas | default 0 | int }}
-{{- if or (not (regexMatch "^[0-9]+$" (toString $b.replicas))) (lt $replicas 0) }}
-{{- fail (printf "builder.replicas must be a non-negative integer; got %v" $b.replicas) }}
-{{- end }}
-{{- $grace := $b.shutdownGraceSecs | int }}
-{{- $term := $b.terminationGracePeriodSeconds | int }}
+{{- $replicas := include "munarium.builderReplicas" . }}
+{{- $graceValue := dig "shutdownGraceSecs" 20 $b }}
+{{- $termValue := dig "terminationGracePeriodSeconds" 30 $b }}
+{{- $grace := int $graceValue }}
+{{- $term := int $termValue }}
+{{- $staging := $b.staging | default dict }}
 {{- if or (lt $grace 1) (ge $grace $term) }}
-{{- fail (printf "builder.shutdownGraceSecs (%v) must be at least 1 and below builder.terminationGracePeriodSeconds (%v), so a draining builder can finish or release its claim before Kubernetes kills it" $b.shutdownGraceSecs $b.terminationGracePeriodSeconds) }}
+{{- fail (printf "builder.shutdownGraceSecs (%v) must be at least 1 and below builder.terminationGracePeriodSeconds (%v), so a draining builder can finish or release its claim before Kubernetes kills it" $graceValue $termValue) }}
 {{- end }}
 # The optional builder group (scale-out.md, SCALE-2). The same image runs the
 # durable build-job worker with its own replicas and resources. Its pods are
@@ -79,7 +79,7 @@ spec:
             - { name: MUNARIUM_DEPLOYMENT_PLANE, value: builder }
             - { name: MUNARIUM_GRPC_ADDR, value: disabled }
             - { name: MUNARIUM_SHUTDOWN_GRACE_SECS, value: {{ $grace | quote }} }
-            {{- if $b.staging.sizeLimit }}
+            {{- if $staging.sizeLimit }}
             - { name: MUNARIUM_DATASTORE_STAGING_ROOT, value: /var/munarium/staging }
             {{- end }}
           {{- with $b.resources }}
@@ -90,28 +90,28 @@ spec:
             httpGet: { path: /healthz, port: 8080 }
           readinessProbe:
             httpGet: { path: /readyz, port: 8080 }
-          {{- if or $b.staging.sizeLimit $mcpPolicy }}
+          {{- if or $staging.sizeLimit $mcpPolicy }}
           volumeMounts:
             {{- if $mcpPolicy }}
             {{- include "munarium.mcpPolicyMount" . | nindent 12 }}
             {{- end }}
-            {{- if $b.staging.sizeLimit }}
+            {{- if $staging.sizeLimit }}
             - { name: staging, mountPath: /var/munarium/staging }
             - { name: scratch, mountPath: /tmp }
             {{- end }}
           {{- end }}
-      {{- if or $b.staging.sizeLimit $mcpPolicy }}
+      {{- if or $staging.sizeLimit $mcpPolicy }}
       # Build workspace and Tantivy scratch (TMPDIR defaults to /tmp): the
       # root filesystem is read-only. Disk-backed, lost with the pod.
       volumes:
         {{- if $mcpPolicy }}
         {{- include "munarium.mcpPolicyVolume" . | nindent 8 }}
         {{- end }}
-        {{- if $b.staging.sizeLimit }}
+        {{- if $staging.sizeLimit }}
         - name: staging
-          emptyDir: { sizeLimit: {{ $b.staging.sizeLimit | quote }} }
+          emptyDir: { sizeLimit: {{ $staging.sizeLimit | quote }} }
         - name: scratch
-          emptyDir: { sizeLimit: {{ $b.staging.sizeLimit | quote }} }
+          emptyDir: { sizeLimit: {{ $staging.sizeLimit | quote }} }
         {{- end }}
       {{- end }}
 {{- end }}

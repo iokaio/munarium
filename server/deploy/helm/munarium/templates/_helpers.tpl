@@ -20,7 +20,7 @@ Every Server group renders the same value.
 {{- else if and (kindIs "string" $v) (eq $v "auto") -}}
 {{- $builders := 0 -}}
 {{- if include "munarium.builderEnabled" . -}}
-{{- $builders = int .Values.builder.replicas -}}
+{{- $builders = include "munarium.builderReplicas" . | int -}}
 {{- end -}}
 {{- max 1 (add (int .Values.replicas) $builders) -}}
 {{- else if regexMatch "^[1-9][0-9]*$" (toString $v) -}}
@@ -40,6 +40,15 @@ which reads as disabled; so does `builder: null`.
 {{- if and (kindIs "map" $b) (eq (toString (index $b "enabled")) "true") -}}
 true
 {{- end -}}
+{{- end -}}
+
+{{/* Reused v1.4 values have no defaults for a newly enabled builder group. */}}
+{{- define "munarium.builderReplicas" -}}
+{{- $replicas := dig "replicas" 1 .Values.builder -}}
+{{- if not (regexMatch "^[0-9]+$" (toString $replicas)) -}}
+{{- fail (printf "builder.replicas must be a non-negative integer; got %v" $replicas) -}}
+{{- end -}}
+{{- int $replicas -}}
 {{- end -}}
 
 {{/*
