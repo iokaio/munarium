@@ -193,7 +193,11 @@ fn problem_status(status: u16, body: &[u8]) -> Status {
         401 => tonic::Code::Unauthenticated,
         403 => tonic::Code::PermissionDenied,
         404 => tonic::Code::NotFound,
-        409 if slug == "command-unresolved" => tonic::Code::FailedPrecondition,
+        // ABORTED reads as a retryable conflict to older clients. Neither an
+        // unresolved command nor a fleet-blocked artifact may invite a retry.
+        409 if slug == "command-unresolved" || slug == "artifact-blocked" => {
+            tonic::Code::FailedPrecondition
+        }
         409 => tonic::Code::Aborted,
         410 | 412 => tonic::Code::FailedPrecondition,
         413 | 429 => tonic::Code::ResourceExhausted,
@@ -296,6 +300,28 @@ mod tests {
             serde_json::from_str(&info.metadata["gate_findings"]).unwrap();
         assert!(!findings.is_empty());
         assert!(findings.len() < 100);
+    }
+
+    /// The proxied rebuild route's blocked-artifact refusal keeps the
+    /// native mapping's `FAILED_PRECONDITION` and carries no retry hint,
+    /// while an ordinary 409 stays `ABORTED`.
+    #[test]
+    fn a_blocked_artifact_is_a_failed_precondition_without_a_retry_hint() {
+        let (status, problem) = crate::error::to_problem(
+            &munarium_core::KernelError::ArtifactBlocked("artifact a1".into()),
+        );
+        let body = serde_json::to_vec(&problem).unwrap();
+        let grpc = problem_status(status.as_u16(), &body);
+        assert_eq!(grpc.code(), tonic::Code::FailedPrecondition);
+        let info = grpc.get_error_details().error_info().unwrap().clone();
+        assert_eq!(info.reason, "artifact-blocked");
+        assert!(!info.metadata.contains_key("retryable"));
+        assert!(!info.metadata.contains_key("retry_action"));
+        let conflict = serde_json::to_vec(&serde_json::json!({
+            "type": "https://munarium.ioka.io/problems/head-conflict"
+        }))
+        .unwrap();
+        assert_eq!(problem_status(409, &conflict).code(), tonic::Code::Aborted);
     }
 
     #[test]

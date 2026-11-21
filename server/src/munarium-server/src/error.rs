@@ -673,6 +673,7 @@ pub fn slug(e: &KernelError) -> &'static str {
         KernelError::RateLimited(_) => "rate-limited",
         KernelError::Storage(_) => "storage-error",
         KernelError::DatastoreUnavailable(_) => "datastore-unavailable",
+        KernelError::ArtifactBlocked(_) => "artifact-blocked",
         KernelError::Provider(_) => "provider-error",
     }
 }
@@ -748,6 +749,10 @@ pub fn to_problem(e: &KernelError) -> (StatusCode, Problem) {
         KernelError::DatastoreUnavailable(_) => {
             (StatusCode::SERVICE_UNAVAILABLE, "datastore unavailable")
         }
+        // 409, not 503: the artifact's state, a fleet block, refuses the
+        // operation, and waiting does not change it. Only a verified ART2
+        // repair clears the block, so the slug carries no R11 retry hint.
+        KernelError::ArtifactBlocked(_) => (StatusCode::CONFLICT, "artifact blocked"),
         KernelError::Provider(_) => (StatusCode::BAD_GATEWAY, "provider error"),
     };
     // A storage error's text is the driver's — table, column and constraint
@@ -883,9 +888,9 @@ pub fn to_status(e: &KernelError) -> tonic::Status {
     }
     let code = match e {
         KernelError::HeadConflict { .. } => Code::Aborted,
-        KernelError::PolicyRejection { .. } | KernelError::ShapeViolation { .. } => {
-            Code::FailedPrecondition
-        }
+        KernelError::PolicyRejection { .. }
+        | KernelError::ShapeViolation { .. }
+        | KernelError::ArtifactBlocked(_) => Code::FailedPrecondition,
         KernelError::IdempotencyMismatch | KernelError::InvalidInput(_) => Code::InvalidArgument,
         KernelError::Unauthenticated(_) => Code::Unauthenticated,
         KernelError::Forbidden(_) => Code::PermissionDenied,

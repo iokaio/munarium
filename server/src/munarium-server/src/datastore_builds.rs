@@ -844,7 +844,8 @@ pub async fn verify_artifacts(
     params(("index_version_id" = String, Path, description = "logical index version id")),
     responses(
         (status = 200, description = "what the build did", body = dto::IndexArtifactBuildDto),
-        (status = 404, description = "no such index version")
+        (status = 404, description = "no such index version"),
+        (status = 409, description = "artifact-blocked: the build's result is a fleet-blocked artifact (MUNARIUM_ARTIFACT_DAMAGE_MODE=enforce); nothing was published, and only a verified repair clears it")
     )
 )]
 pub async fn rebuild_artifact(

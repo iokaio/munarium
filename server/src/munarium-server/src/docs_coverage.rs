@@ -391,6 +391,7 @@ mod tests {
             KernelError::RateLimited(String::new()),
             KernelError::Storage(String::new()),
             KernelError::DatastoreUnavailable(String::new()),
+            KernelError::ArtifactBlocked(String::new()),
             KernelError::Provider(String::new()),
         ] {
             slugs.insert(crate::error::slug(&e).to_string());

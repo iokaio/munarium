@@ -5,9 +5,10 @@
 //!
 //! A rebuild of unchanged content converges on the artifact id it built
 //! before. When that pin carries an active fleet block, `enforce` refuses the
-//! build with a `datastore-unavailable` error (a build job records
-//! `datastore_unavailable`), `observe` publishes as before and reports it,
-//! and `off` is unchanged. A verified ART2 clearance lets it publish again.
+//! build with an `artifact-blocked` error (a build job records
+//! `artifact_blocked`, not the transient `datastore_unavailable`), `observe`
+//! publishes as before and reports it, and `off` is unchanged. A verified
+//! ART2 clearance lets it publish again.
 //!
 //! The block and the clearance are committed through the real ledger with
 //! disposable, test-only verifier keys enrolled in this database. Skips
@@ -294,8 +295,8 @@ fn already_built(outcome: &MirrorOutcome, artifact: &str) {
 }
 
 /// `enforce` refuses a rebuild that converges on a blocked pin, with a
-/// content-free `datastore-unavailable` error that a build job records as
-/// `datastore_unavailable`, and leaves the binding untouched.
+/// content-free `artifact-blocked` error that a build job records as
+/// `artifact_blocked`, and leaves the binding untouched.
 #[tokio::test]
 async fn enforce_refuses_a_rebuild_that_converges_on_a_blocked_pin() {
     guard!();
@@ -308,8 +309,8 @@ async fn enforce_refuses_a_rebuild_that_converges_on_a_blocked_pin() {
         .build(&f.ctx(DamageMode::Enforce, None))
         .await
         .expect_err("a blocked pin is not published");
-    let KernelError::DatastoreUnavailable(reason) = &err else {
-        panic!("expected datastore-unavailable, got {err:?}");
+    let KernelError::ArtifactBlocked(reason) = &err else {
+        panic!("expected artifact-blocked, got {err:?}");
     };
     assert!(
         reason.contains(&incident) && reason.contains(&artifact),
@@ -321,7 +322,7 @@ async fn enforce_refuses_a_rebuild_that_converges_on_a_blocked_pin() {
 
     // The job outcome: the builder records the typed cause's code (C2).
     let failure = classify(&err);
-    assert_eq!(failure.code, Some(JobFailureCode::DatastoreUnavailable));
+    assert_eq!(failure.code, Some(JobFailureCode::ArtifactBlocked));
     let jobs = BuildJobs::new(f.pool.clone());
     let job_id = format!("bjob-artpub-{}", uuid::Uuid::new_v4().simple());
     sqlx::query(
@@ -343,8 +344,10 @@ async fn enforce_refuses_a_rebuild_that_converges_on_a_blocked_pin() {
         .unwrap());
     let job = jobs.get(&f.tenant, &job_id).await.unwrap().unwrap();
     assert_eq!(job.state, "failed");
-    assert_eq!(job.error_code.as_deref(), Some("datastore_unavailable"));
-    assert!(!job.error.unwrap_or_default().contains(&incident));
+    assert_eq!(job.error_code.as_deref(), Some("artifact_blocked"));
+    let error = job.error.unwrap_or_default();
+    assert_eq!(error, JobFailureCode::ArtifactBlocked.message());
+    assert!(!error.contains(&incident) && !error.contains(&artifact));
 }
 
 /// `observe` publishes as before and reports the blocked pin.
@@ -415,9 +418,14 @@ async fn an_unavailable_check_refuses_only_in_enforce() {
         .build(&f.ctx(DamageMode::Enforce, Some(&closed)))
         .await
         .expect_err("an unavailable check refuses");
+    // Transient, unlike a block: it stays `datastore-unavailable`.
     assert!(
         matches!(err, KernelError::DatastoreUnavailable(_)),
         "{err:?}"
+    );
+    assert_eq!(
+        classify(&err).code,
+        Some(JobFailureCode::DatastoreUnavailable)
     );
     already_built(
         &f.build(&f.ctx(DamageMode::Observe, Some(&closed)))

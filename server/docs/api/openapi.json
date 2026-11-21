@@ -2744,6 +2744,9 @@
           },
           "404": {
             "description": "no such index version"
+          },
+          "409": {
+            "description": "artifact-blocked: the build's result is a fleet-blocked artifact (MUNARIUM_ARTIFACT_DAMAGE_MODE=enforce); nothing was published, and only a verified repair clears it"
           }
         }
       }

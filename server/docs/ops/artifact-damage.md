@@ -110,9 +110,9 @@ A rebuild of unchanged content produces the same artifact id it produced before.
 |---|---|
 | `off` | Unchanged. The build reports `already_built` or `converged`. |
 | `observe` | The build succeeds as before. The replica logs `a build's result is a fleet-blocked artifact` with the version, artifact and incident ids, and counts `munarium_artifact_publication_blocked_total{action="published"}`. Serving still refuses the artifact. |
-| `enforce` | The build is refused before anything is bound or uploaded. A build job fails with `error_code` `datastore_unavailable`, a synchronous rebuild returns `datastore-unavailable`, and a backfill reports that version as `failed`. The log line `publication refused: the build's result is a fleet-blocked artifact` names the ids. Counts `action="refused"`. |
+| `enforce` | The build is refused before anything is bound or uploaded. A build job fails with `error_code` [`artifact_blocked`](../api/errors.md#job-failure-artifact_blocked), a synchronous rebuild returns [`artifact-blocked`](../api/errors.md#problem-artifact-blocked) (409), and a backfill reports that version as `failed`. Retrying does not help: the refusal holds until the block is cleared. The log line `publication refused: the build's result is a fleet-blocked artifact` names the ids. Counts `action="refused"`. |
 
-An unavailable integrity check also refuses the build in `enforce`. Clear the block through the repair procedure above; the same rebuild then succeeds. [Publication of a blocked pin](../design/artifact-damage.md#publication-of-a-blocked-pin)
+An unavailable integrity check also refuses the build in `enforce`, with `datastore_unavailable` (`datastore-unavailable`), because it can pass on a later attempt. Clear the block through the repair procedure above; the same rebuild then succeeds. [Publication of a blocked pin](../design/artifact-damage.md#publication-of-a-blocked-pin)
 
 ## Roll back safely
 

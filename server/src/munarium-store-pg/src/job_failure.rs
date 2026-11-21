@@ -41,17 +41,22 @@ pub enum JobFailureCode {
     DatastoreUnavailable,
     /// An upstream model provider (for example an embedding call) failed.
     ProviderError,
+    /// The build's result is a datastore artifact with an active fleet
+    /// block, refused in `MUNARIUM_ARTIFACT_DAMAGE_MODE=enforce` (ClearView
+    /// ART1/ART2). Not transient: only a verified ART2 repair clears it.
+    ArtifactBlocked,
 }
 
 impl JobFailureCode {
     /// Every code, in registry order.
-    pub const ALL: [JobFailureCode; 6] = [
+    pub const ALL: [JobFailureCode; 7] = [
         Self::AttemptsExhausted,
         Self::InvalidInput,
         Self::NotFound,
         Self::StorageError,
         Self::DatastoreUnavailable,
         Self::ProviderError,
+        Self::ArtifactBlocked,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -62,6 +67,7 @@ impl JobFailureCode {
             Self::StorageError => "storage_error",
             Self::DatastoreUnavailable => "datastore_unavailable",
             Self::ProviderError => "provider_error",
+            Self::ArtifactBlocked => "artifact_blocked",
         }
     }
 
@@ -79,6 +85,10 @@ impl JobFailureCode {
                 "build job failed: a datastore artifact could not be read or written"
             }
             Self::ProviderError => "build job failed: an upstream model provider call failed",
+            Self::ArtifactBlocked => {
+                "build job failed: its result is an artifact blocked by artifact damage; \
+                 repair is required"
+            }
         }
     }
 }
@@ -128,6 +138,7 @@ pub fn classify(e: &KernelError) -> JobFailure {
         KernelError::NotFound { .. } => JobFailureCode::NotFound,
         KernelError::Storage(_) => JobFailureCode::StorageError,
         KernelError::DatastoreUnavailable(_) => JobFailureCode::DatastoreUnavailable,
+        KernelError::ArtifactBlocked(_) => JobFailureCode::ArtifactBlocked,
         KernelError::Provider(_) => JobFailureCode::ProviderError,
         KernelError::HeadConflict { .. }
         | KernelError::PolicyRejection { .. }
@@ -217,6 +228,10 @@ mod tests {
                 KernelError::Provider(secret.into()),
                 Some(JobFailureCode::ProviderError),
             ),
+            (
+                KernelError::ArtifactBlocked(secret.into()),
+                Some(JobFailureCode::ArtifactBlocked),
+            ),
             (KernelError::Forbidden(secret.into()), None),
             (KernelError::RateLimited(secret.into()), None),
             (KernelError::Unauthenticated(secret.into()), None),
@@ -243,6 +258,22 @@ mod tests {
         assert_eq!(
             classify(&KernelError::Storage("invalid input: not found".into())).code,
             Some(JobFailureCode::StorageError)
+        );
+        // A blocked publication is told apart from an unavailable datastore by
+        // its type alone: text that reads like either does not move it.
+        assert_eq!(
+            classify(&KernelError::DatastoreUnavailable(
+                "artifact blocked: repair is required".into()
+            ))
+            .code,
+            Some(JobFailureCode::DatastoreUnavailable)
+        );
+        assert_eq!(
+            classify(&KernelError::ArtifactBlocked(
+                "datastore unavailable: retry later".into()
+            ))
+            .code,
+            Some(JobFailureCode::ArtifactBlocked)
         );
         // Text that names a code is not a code.
         assert_eq!(

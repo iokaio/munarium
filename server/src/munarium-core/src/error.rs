@@ -51,6 +51,14 @@ pub enum KernelError {
     #[error("datastore unavailable: {0}")]
     DatastoreUnavailable(String),
 
+    /// A datastore artifact carries an active fleet block (ClearView
+    /// ART1/ART2), so an operation that would publish or bind it as its
+    /// result is refused. Unlike [`KernelError::DatastoreUnavailable`] this is
+    /// not transient: the block clears only after a verified ART2 repair, not
+    /// by waiting. The text names ids only, never content.
+    #[error("artifact blocked: {0}")]
+    ArtifactBlocked(String),
+
     #[error("provider error: {0}")]
     Provider(String),
 }

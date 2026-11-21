@@ -1245,8 +1245,9 @@ async fn publish_and_verify(
 
 /// Refuse, in `enforce`, to publish or bind a pin that carries an active
 /// fleet block; report it in `observe`; do nothing in `off` (see
-/// [`PublicationGate`]). The refusal is a `datastore-unavailable` error that
-/// names only ids, so a build job records `datastore_unavailable` (C2).
+/// [`PublicationGate`]). The refusal is an `artifact-blocked` error that
+/// names only ids, so a build job records `artifact_blocked` (C2). An
+/// unavailable check refuses in `enforce` with `datastore-unavailable`.
 async fn guard_blocked_publication(
     ctx: &MirrorContext,
     index_version_id: &str,

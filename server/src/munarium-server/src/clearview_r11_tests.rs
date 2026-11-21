@@ -30,6 +30,8 @@ const CLASSIFIED: &[(&str, Option<(bool, &str)>)] = &[
     ("provider-error", None),
     ("storage-error", None),
     ("datastore-unavailable", Some((false, "retry_later"))),
+    // A fleet block clears only after an ART2 repair: no automated action.
+    ("artifact-blocked", None),
     ("inference-stage-unavailable", Some((false, "retry_later"))),
     ("inference-not-qualified", Some((false, "reread"))),
     ("uid-required", None),
@@ -133,6 +135,7 @@ fn both_transports_carry_the_same_hint_for_the_same_error() {
         KernelError::InvalidInput(format!("{RUN_LOCKED_PREFIX}run-1")),
         KernelError::InvalidInput(format!("{COMMAND_UNRESOLVED_PREFIX}unknown")),
         KernelError::DatastoreUnavailable("scope".into()),
+        KernelError::ArtifactBlocked("artifact a of index version v".into()),
         KernelError::InvalidInput("bad".into()),
         KernelError::Storage("driver text".into()),
         KernelError::Provider("upstream".into()),
@@ -228,4 +231,29 @@ fn a_v14_problem_reader_is_unaffected() {
             "detail": "invalid input: bad"
         })
     );
+}
+
+/// ClearView ART1/ART2: a publication refused because its result is a
+/// fleet-blocked artifact is its own problem type, a 409 on REST and
+/// `FAILED_PRECONDITION` on gRPC, with no retry hint on either: waiting does
+/// not clear a block, only a verified repair does. The transient
+/// `datastore-unavailable` keeps its `retry_later`.
+#[test]
+fn a_blocked_artifact_is_not_retryable_on_either_transport() {
+    let blocked = KernelError::ArtifactBlocked(
+        "artifact a1 of index version v1 is blocked by integrity incident i1".into(),
+    );
+    let (status, problem) = to_problem(&blocked);
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert!(problem.problem_type.ends_with("/artifact-blocked"));
+    assert_eq!(rest_hint(&problem), None);
+    assert!(problem.detail.as_deref().unwrap().contains("i1"));
+    let grpc = to_status(&blocked);
+    assert_eq!(grpc.code(), tonic::Code::FailedPrecondition);
+    assert_eq!(grpc_hint(&grpc), ("artifact-blocked".into(), None));
+    assert_eq!(problem_slug(&blocked), "artifact-blocked");
+
+    let (status, unavailable) = to_problem(&KernelError::DatastoreUnavailable("scope".into()));
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(rest_hint(&unavailable), Some((false, "retry_later".into())));
 }

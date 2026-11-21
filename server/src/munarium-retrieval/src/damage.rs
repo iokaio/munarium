@@ -134,9 +134,11 @@ pub fn parse_replica_assurance(
 /// `observe` and `enforce` ([`PublicationGate::for_mode`] returns `None` for
 /// `off`, which leaves publication exactly as before).
 ///
-/// - `enforce` refuses the publication with a `datastore-unavailable` error
-///   that names only the version, the artifact id and the incident id. An
-///   unavailable pin check refuses too, as serving admission does.
+/// - `enforce` refuses the publication with an `artifact-blocked` error
+///   ([`KernelError::ArtifactBlocked`]) that names only the version, the
+///   artifact id and the incident id; a build job records `artifact_blocked`
+///   (C2). An unavailable pin check refuses too, as serving admission does,
+///   with a transient `datastore-unavailable` error.
 /// - `observe` publishes as before and reports the blocked pin (a warning
 ///   and the build observer's `publication_blocked`). Like serving in
 ///   `observe`, it never changes an outcome on its own authority beyond
@@ -170,9 +172,10 @@ impl std::fmt::Display for BlockedPublication {
 }
 
 impl From<BlockedPublication> for KernelError {
-    /// Classified as `datastore_unavailable` by a build job (C2).
+    /// Its own type, so a build job classifies it as `artifact_blocked` (C2)
+    /// and a client is not told to retry: waiting does not clear a block.
     fn from(b: BlockedPublication) -> Self {
-        KernelError::DatastoreUnavailable(b.to_string())
+        KernelError::ArtifactBlocked(b.to_string())
     }
 }
 
