@@ -17,6 +17,16 @@
   default trait implementations keep existing implementers compiling; its
   `turn`, `turn_stream` and `search` refuse the new options client-side rather
   than drop their response members.
+- Expose the multi-collection read `execution` (IR-3: `version`, `stages`, one
+  receipt per enrolled member and stage) on the typed turn result over REST
+  and SSE `done`, and the optional `collection` member on every stage receipt,
+  including a single search's `execution.stages`. Both are optional, so a turn
+  of unenrolled collections or from a Server 1.4 decodes unchanged. Typed gRPC
+  `TurnResponse` carries no such field, so the gRPC result's `execution` is
+  always absent. Rust already decodes both through `turn_covered` and
+  `turn_stream_covered`. No typed facade wraps `POST /v1.2/query`; its
+  `execution` member reaches callers through the generated untyped Server API
+  clients as part of the JSON body.
 - Python, .NET and Java errors carry the R11 `retryable` and `retry_action`
   guidance from problem+json or gRPC `ErrorInfo`. It is informational: retry
   behavior is unchanged and turns stay send-once. The Rust error enum does not
