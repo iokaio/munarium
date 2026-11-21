@@ -32,8 +32,8 @@ import org.junit.jupiter.api.Test;
 /**
  * The Server 1.5 (ClearView) wire fields on the typed REST facade: C1
  * {@code collection_availability}/{@code coverage}, R1
- * {@code disclose_execution}/{@code execution} and R11
- * {@code retryable}/{@code retry_action}. Each request option leaves the
+ * {@code disclose_execution}/{@code execution}, the IR-3 turn
+ * {@code execution} and R11 {@code retryable}/{@code retry_action}. Each request option leaves the
  * process only when set; each response member is optional, so a v1.4 body
  * still decodes.
  */
@@ -209,6 +209,96 @@ class ClearViewFieldsTest {
             assertNull(result.execution());
             assertFalse(Json.MAPPER.writeValueAsString(result).contains("execution"));
         }
+    }
+
+    // -- IR-3: the multi-collection turn execution ----------------------------
+
+    private static final String TURN_EXECUTION = "{\"version\":1,\"stages\":["
+            + "{\"stage\":\"reranking\",\"policy\":\"require\",\"policy_revision\":2,"
+            + "\"applied\":true,\"state\":\"ready\",\"identity\":\"rr-a\",\"scored\":8,"
+            + "\"collection\":\"contracts\"},"
+            + "{\"stage\":\"reranking\",\"policy\":\"prefer\",\"policy_revision\":5,"
+            + "\"applied\":false,\"state\":\"unavailable\",\"fallback\":\"fused_order\","
+            + "\"collection\":\"letters\"}]}";
+
+    private static final String EXECUTED_TURN =
+            COVERED_TURN.substring(0, COVERED_TURN.length() - 1)
+                    + ",\"execution\":" + TURN_EXECUTION + "}";
+
+    static void assertTurnExecution(Retrieval.ReadExecution e) {
+        assertNotNull(e);
+        assertEquals(1, e.version());
+        assertEquals(2, e.stages().size());
+        var contracts = e.stages().get(0);
+        assertEquals("contracts", contracts.collection());
+        assertTrue(contracts.applied());
+        assertEquals(8L, contracts.scored());
+        assertEquals("rr-a", contracts.identity());
+        assertNull(contracts.fallback());
+        var letters = e.stages().get(1);
+        assertEquals("letters", letters.collection());
+        assertEquals("fused_order", letters.fallback());
+    }
+
+    @Test
+    void turnDecodesTheMultiCollectionExecution() throws Exception {
+        SessionsApi.TurnResult result;
+        try (var server = new Recorder(EXECUTED_TURN);
+                var transport = transport(server)) {
+            result = transport.turn("s-1", Params.TurnOptions.of("q"));
+        }
+        assertTurnExecution(result.execution());
+        assertCoverage(result.coverage());
+        var again = Json.MAPPER.readValue(
+                Json.MAPPER.writeValueAsString(result), SessionsApi.TurnResult.class);
+        assertEquals(result.execution(), again.execution());
+    }
+
+    @Test
+    void aTurnWithoutExecutionOrWithNullDecodesToNullAndOmitsTheKey() throws Exception {
+        String nullExecution = LEGACY_TURN.substring(0, LEGACY_TURN.length() - 1)
+                + ",\"execution\":null}";
+        for (String body : List.of(LEGACY_TURN, COVERED_TURN, nullExecution)) {
+            var result = Json.MAPPER.readValue(body, SessionsApi.TurnResult.class);
+            assertNull(result.execution(), body);
+            assertFalse(Json.MAPPER.writeValueAsString(result).contains("execution"), body);
+        }
+    }
+
+    @Test
+    void sseDoneCarriesTheMultiCollectionExecution() {
+        SessionsApi.TurnResult result;
+        try (var transport = offlineTransport()) {
+            result = transport.readTurnStream(
+                    new ByteArrayInputStream(sse("done", EXECUTED_TURN).getBytes(UTF_8)),
+                    p -> { }, Duration.ofSeconds(5));
+        }
+        assertTurnExecution(result.execution());
+    }
+
+    @Test
+    void theOlderTurnResultConstructorsLeaveExecutionNull() {
+        var v14 = new SessionsApi.TurnResult("s-1", 1, List.of(), List.of(), List.of(), List.of(),
+                null, null);
+        var covered = new SessionsApi.TurnResult("s-1", 1, List.of(), List.of(), List.of(),
+                List.of(), null, null, null);
+        assertNull(v14.execution());
+        assertNull(covered.execution());
+    }
+
+    @Test
+    void aSingleSearchStageDecodesWithAndWithoutCollection() throws Exception {
+        var plain = Json.MAPPER.readValue(DISCLOSED_SEARCH, Retrieval.SearchResult.class);
+        assertNull(plain.execution().stages().get(0).collection());
+        assertFalse(Json.MAPPER.writeValueAsString(plain).contains("collection"));
+        var named = Json.MAPPER.readValue(
+                DISCLOSED_SEARCH.replace("\"fallback\":\"fused_order\"",
+                        "\"fallback\":\"fused_order\",\"collection\":\"contracts\""),
+                Retrieval.SearchResult.class);
+        assertEquals("contracts", named.execution().stages().get(0).collection());
+        var nineComponents = new Retrieval.SearchStage("embedding", "require", 1, true, "ready",
+                null, null, null, null);
+        assertNull(nineComponents.collection());
     }
 
     // -- R11: retryable / retry_action ---------------------------------------

@@ -126,6 +126,10 @@ public final class SessionsApi {
      * <p>{@code coverage} (ClearView C1) is present only when the turn set
      * {@code collectionAvailability}; a v1.4 server, or a turn without a
      * policy, leaves it null.
+     *
+     * <p>{@code execution} (ClearView IR-3) is present only when a searched
+     * member is enrolled for inference; a v1.4 server leaves it null, and the
+     * typed gRPC transport always does (REST-first).
      */
     public record TurnResult(
             String sessionId,
@@ -136,7 +140,23 @@ public final class SessionsApi {
             List<CollectionEnvelope> envelopes,
             TurnCompletion completion,
             EvidenceHierarchyDecision hierarchy,
-            TurnCoverage coverage) {
+            TurnCoverage coverage,
+            Retrieval.ReadExecution execution) {
+        /** The component list with coverage and no execution. */
+        public TurnResult(
+                String sessionId,
+                int ordinal,
+                List<String> collectionsSearched,
+                List<String> skipped,
+                List<TurnHit> hits,
+                List<CollectionEnvelope> envelopes,
+                TurnCompletion completion,
+                EvidenceHierarchyDecision hierarchy,
+                TurnCoverage coverage) {
+            this(sessionId, ordinal, collectionsSearched, skipped, hits, envelopes, completion,
+                    hierarchy, coverage, null);
+        }
+
         /** The 1.4 component list: no coverage. */
         public TurnResult(
                 String sessionId,
@@ -148,7 +168,7 @@ public final class SessionsApi {
                 TurnCompletion completion,
                 EvidenceHierarchyDecision hierarchy) {
             this(sessionId, ordinal, collectionsSearched, skipped, hits, envelopes, completion,
-                    hierarchy, null);
+                    hierarchy, null, null);
         }
     }
 

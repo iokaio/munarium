@@ -1417,7 +1417,10 @@ public final class GrpcTransport implements io.ioka.munarium.client.Transport {
                         .toList(),
                 envelopes, completion, hierarchy,
                 // Present only when the request selected a policy (C1).
-                resp.hasCoverage() ? coverage(resp.getCoverage()) : null);
+                resp.hasCoverage() ? coverage(resp.getCoverage()) : null,
+                // The typed gRPC TurnResponse carries no stage receipts
+                // (IR-3 is REST-first), so execution is always absent here.
+                null);
     }
 
     private static SessionsApi.TurnCoverage coverage(Session.TurnCoverage c) {

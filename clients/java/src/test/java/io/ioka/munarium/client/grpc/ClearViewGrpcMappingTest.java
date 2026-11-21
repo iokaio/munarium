@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The typed-gRPC mapping of the ClearView C1 {@code coverage} and R1
- * {@code execution} members: proto3 absence (unset message, empty string,
+ * {@code execution} members (the IR-3 turn {@code execution} is REST-only): proto3 absence (unset message, empty string,
  * unset {@code optional}) maps to the same nulls the REST twin decodes.
  */
 class ClearViewGrpcMappingTest {
@@ -61,6 +61,13 @@ class ClearViewGrpcMappingTest {
     void aTurnWithoutCoverageMapsToNull() {
         var resp = Session.TurnResponse.newBuilder().setSessionId("s-1").build();
         assertNull(GrpcTransport.turnResult(resp).coverage());
+    }
+
+    @Test
+    void aTurnNeverCarriesExecutionOverTypedGrpc() {
+        // IR-3 is REST-first: the typed TurnResponse has no stage receipts.
+        var resp = Session.TurnResponse.newBuilder().setSessionId("s-1").build();
+        assertNull(GrpcTransport.turnResult(resp).execution());
     }
 
     @Test

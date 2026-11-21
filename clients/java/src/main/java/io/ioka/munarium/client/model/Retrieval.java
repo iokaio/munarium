@@ -73,6 +73,11 @@ public final class Retrieval {
      * {@code stage} is {@code embedding | reranking}; {@code policy} is
      * {@code require | prefer}; {@code state} is {@code ready} when it ran.
      * Content-free: no query, passage or endpoint detail.
+     *
+     * <p>{@code collection} (ClearView IR-3) names the member this receipt is
+     * for on a multi-collection read (a session turn), which holds one
+     * receipt per enrolled member and stage; it is null on a
+     * single-collection search.
      */
     public record SearchStage(
             String stage,
@@ -83,7 +88,32 @@ public final class Retrieval {
             String reason,
             String fallback,
             String identity,
-            Long scored) {}
+            Long scored,
+            String collection) {
+        /** The single-collection component list: no {@code collection}. */
+        public SearchStage(
+                String stage,
+                String policy,
+                long policyRevision,
+                boolean applied,
+                String state,
+                String reason,
+                String fallback,
+                String identity,
+                Long scored) {
+            this(stage, policy, policyRevision, applied, state, reason, fallback, identity,
+                    scored, null);
+        }
+    }
+
+    /**
+     * The inference stages of a multi-collection read (ClearView IR-3): one
+     * receipt per enrolled member and configured stage, each naming its
+     * {@code collection}. {@code version} is the disclosure format version
+     * (currently 1). REST and SSE {@code done} only: the typed gRPC
+     * {@code TurnResponse} carries no stage receipts.
+     */
+    public record ReadExecution(int version, List<SearchStage> stages) {}
 
     public record IndexStatus(
             String indexVersion,
