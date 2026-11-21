@@ -247,3 +247,113 @@ The [recorded local qualification](../../conformance/results/README.md#local-liv
 completed with a rejected usefulness claim and all three paths within their frozen
 local latency budgets. Keep that measured rejection; it is not permission to weaken
 the conventional baseline or lower D6 retrospectively.
+
+## I3 retrieval-quality runner
+
+[I3](../design/airk-analysis.md#i3) asks one fixed serving profile to meet each
+corpus family's predeclared retrieval-quality and latency thresholds, with
+documentation and source code evaluated separately against four arms: the v1.4
+hash baseline, the embedder alone, the reranker alone and both stages combined.
+The standard-library runner [i3_eval.py](../../../scripts/i3_eval.py) implements
+the freeze, run and verify steps. It reuses this page's record helpers (canonical
+hashing, exclusive creation, nearest-rank latency reports) but writes its own
+record kinds (`i3_manifest`, `i3_raw`, `i3_receipt`, `i3_verdict`). Keep them in
+their own directory, not in the public P13 index.
+
+**Freeze.** `freeze` writes a manifest named by its canonical hash before
+anything runs. It pins the runner, fixture and Server build-input hashes, the
+release binary's SHA-256, the PostgreSQL image digest and, per family, the tracked
+corpus files with their hashes. It also pins the query set and file-level graded
+judgments, the arms, the k values, the serving profile, the thresholds and the
+purpose. The profile covers the embedding and rerank models and Lens bundle pins,
+the Server-owned instructions, chunking, `top_k`, rerank `max_candidates`, the
+deadline, batch and attempt limits, the Lens build and settings, and the hardware
+identity. Its hash is the profile identity that both family receipts must share.
+Thresholds are optional at freeze. Without them the manifest records
+`thresholds_status: none_declared`, and every family receipt is `incomplete` with
+`no_thresholds_declared`, never `passed`. A thresholds file declares one block per
+family: `k`, `min_recall`, `min_ndcg`, `max_p95_ms`, `max_failures`,
+`max_unauthorized_disclosures` (which must be 0) and an optional
+`min_ndcg_gain_over_hash`. They apply to the candidate arm (`combined`).
+
+**Answer keys stay out of the corpus.** Corpus files come from `git ls-files`
+filtered by the fixture's globs, so ignored local files can never be selected.
+The fixture, the runner, its tests and this guide are refused as corpus inputs at
+freeze, at manifest validation and again in the upload plan. The pilot fixture
+[i3_pilot_fixture.json](../../../scripts/i3_pilot_fixture.json) holds 36
+documentation and 34 source-code queries (conceptual, exact-identifier and
+paraphrase). It was authored against this repository and is not held out.
+
+**Run.** `run` checks the manifest, the source and binary hashes, the corpus
+bytes and the hardware before creating anything. It then checks the running
+endpoint's readiness: served model names, bundle manifest digests, backend and
+input-token limit. It starts a uniquely named `--rm` PostgreSQL container on a
+random loopback port and a child release Server with `MUNARIUM_INFERENCE=enabled`
+and the builder enabled, and strips every inherited `MUNARIUM_*` setting. It
+ingests each family into its own collection and a small restricted collection
+(access level 1) of marked copies, and builds the hash indexes through a runbook.
+It applies and probes an `openai-compatible` configuration pointing at the
+endpoint the operator started. Each arm is configured through the real binding
+API, in the order hash, reranker, embedder, combined. The reranker arm is a
+rerank-only binding over the active hash index. The embedder arm runs a queued
+`semantic` build with the shape's `max_chars` and enrolls. The combined arm
+rebinds the same semantic space, keeps the built index and enrolls. Every
+inference arm is rolled back before the next. The reranker arm therefore runs
+before any semantic index exists, and the hash arm is replayed after the last
+rollback to confirm the restored reads. Each query records the ranked hits,
+client round-trip latency, failures with a fixed problem code and the
+`execution.stages` receipts. A receipt that does not show exactly the arm's
+stages applied counts as a failure. An arm that cannot be configured is recorded
+as `unavailable` with its reason.
+
+**Authorization outcomes.** Every hit returned to the level-0 reader is checked
+for the restricted prefix and marker. For each authorization query the level-0
+reader must be refused on the restricted collection (403 or 404). A level-1 reader
+must retrieve the restricted copies, a positive control that keeps the negative
+check from being vacuous. Any disclosure or an unrefused read fails the family
+whatever the thresholds say. A missing or failed control leaves it incomplete.
+
+**Receipts and verdict.** Recall@k and graded nDCG@k (gain `2^grade - 1`) are
+computed at file level over the distinct files in the returned hits. They are
+averaged over the planned queries with failed or unexecuted queries scored zero,
+and over successful queries separately. p95 is nearest-rank over successful
+queries. Each family receipt is `passed`, `failed` or `incomplete` (I3-T2): a
+missed threshold fails it; a missing arm, unexecuted query, run error or
+incomplete authorization evidence leaves it incomplete; failure takes precedence.
+The verdict record applies I3-T1. It is `supported` only for a `qualification`
+manifest whose two family receipts both passed for the same profile identity.
+A single family, a pooled receipt or mismatched profiles cannot claim both, and a
+pilot or diagnostic manifest never qualifies. Exits follow P02: 0, 1 and 3.
+`verify DIRECTORY` recomputes every receipt and verdict from the manifest and raw
+record and rejects any mismatch.
+
+```powershell
+$env:CARGO_TARGET_DIR = "<target-dir>"
+cargo build --manifest-path server/Cargo.toml --release -p munarium-server
+# Start Lens (qwen3,fetch) with both bundles on a loopback port first.
+py scripts/i3_eval.py freeze --binary <target-dir>/release/munarium-server.exe `
+  --output server/scratch/i3-pilot --purpose pilot `
+  --lens-binary <lens-binary> --lens-source-commit <lens-commit> `
+  --lens-setting LENS_MAX_INPUT_TOKENS=1024 --lens-setting LENS_QUEUE_TIMEOUT_MS=60000
+py scripts/i3_eval.py run --manifest <printed-manifest-path> `
+  --binary <target-dir>/release/munarium-server.exe `
+  --lens-url http://127.0.0.1:<lens-port> --lens-binary <lens-binary>
+py scripts/i3_eval.py verify server/scratch/i3-pilot
+py -m unittest discover -s scripts -p "test_*.py"
+```
+
+The output directory must be ignored by Git (the runner checks it). Pilot raw
+records stay there; publish only a sanitized record after review.
+
+**Limitations.** The pilot uses this repository's own documentation and Server
+sources with judgments written by the runner's author: the queries are not
+held out, the judgments are file-level and unreviewed, and the restricted
+collection is a small set of marked copies. Latency is the client round trip on
+one shared workstation with Lens on the same host, sequential queries and warm
+caches. It is not a capacity measurement. Reranking reorders only the
+`min(top_k, max_candidates)` returned hits (Server reranks the served head), so
+the reranker arm cannot change recall at `k = top_k`. Lens on a laptop CPU scores
+one sequence at a time, which bounds `max_candidates` well below the Server
+default. A threshold proposal from a pilot is input to the maintainer's
+decision. A qualifying run needs `purpose: qualification`, frozen thresholds,
+held-out queries and a reviewed commit of the manifest before execution.

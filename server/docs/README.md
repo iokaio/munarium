@@ -57,7 +57,7 @@ and API references when applying them to a new deployment.
 | [guides/managing-key-and-secrets.md](guides/managing-key-and-secrets.md) | Supported AI providers, environment and Docker file secrets, provider verification, rotation and revocation, PostgreSQL passwords, API tokens and capability signing keys |
 | [guides/datastore.md](guides/datastore.md) | Complete Datastore configuration, Docker storage setup, artifact builds and verification, promotion, serving rollout, fleet gates, testing, rollback and links to the existing references |
 | [guides/measuring-performance.md](guides/measuring-performance.md) | Metrics and persisted performance records, repeatable benchmarks, large ingest/index workloads, retrieval and AI query scaling, bottleneck diagnosis and engineering opportunities |
-| [guides/frozen-evaluation.md](guides/frozen-evaluation.md) | Frozen manifests, immutable outcomes and grading receipts, scripted offline pilot and non-blocking latency reports |
+| [guides/frozen-evaluation.md](guides/frozen-evaluation.md) | Frozen manifests, immutable outcomes and grading receipts, scripted offline pilot, non-blocking latency reports and the I3 retrieval-quality runner |
 | [guides/validation.md](guides/validation.md) | Selected validation profiles, truthful exits and source receipts, owned test resources, and JSON persistence feature qualification |
 | [guides/server-1.3.md](guides/server-1.3.md) | Server 1.3 changes since the 1.2.1 image, compatibility, migrations, activation/rollback and build/release checklist |
 | [guides/release-notes-1.3.0.md](guides/release-notes-1.3.0.md) | Detailed Server 1.3.0 release notes: all 42 PRs since 1.2.1, feature improvements, new APIs, upgrade actions and qualification limits |

@@ -474,7 +474,7 @@ Attach raw metric exports, `kubectl` snapshots and logs to the evidence location
 
 1. Pilot: start the Lens image with verified assets, run the candidate Server's embedding and rerank probes, record image digest, model and tokenizer revisions, dimensions, precision, driver. Ingest a representative sample from each family and measure tokens per second, peak device memory, end-to-end build time. Exercise oversize input, failed model load and timeout.
 2. Compute the forecast (`F` files, source bytes, chunks, tokens, measured throughput) as in [Qualification environments](README.md#qualification-environments). Confirm that the forecast fits the workstation before step 3; a root that cannot is recorded as a limitation.
-3. I3: run the frozen query sets per family against the four arms; record recall@k, nDCG@k, p95, failures, authorization outcomes. Use `scripts/frozen_eval.py` (exists) for the record format.
+3. I3: run the frozen query sets per family against the four arms; record recall@k, nDCG@k, p95, failures, authorization outcomes. Use `scripts/i3_eval.py` (freeze, run, verify; [I3 runner](../guides/frozen-evaluation.md#i3-retrieval-quality-runner)), which reuses the `scripts/frozen_eval.py` record format.
 4. LENS-D2-T2: build each public root's baseline and Lens-backed index side by side; verify; record per-root results.
 5. LENS-D2-T3: enroll; fresh sessions; content-derived queries covering every content-bearing file; resolve citations.
 6. LENS-D2-T4: switch back to prior indexes and policies; with Lens unavailable, replay baselines and resolve citations.
@@ -534,7 +534,7 @@ Where the code for a receipt is not yet complete, the parts that exist can still
 | Lens stand-in | Lens CPU scaffold (typed 503 only) | A Lens protocol stub returning deterministic embeddings and permutations, with per-instance identity and request counters, for routing, placement and outage rehearsals |
 | Artifact fault injection | — | Object corruption helper and a test-only pause hook between admission and release |
 | Console session driver | — | HTTP driver that follows CSRF tokens and pins requests to a chosen replica |
-| Evidence collection | `tools/check_validation_receipt.py` for local runner receipts; `scripts/frozen_eval.py` for I3 records | A collector that snapshots `kubectl`, `/metrics`, `/v1/reports/scale` and SQL ground truth into the receipt format above |
+| Evidence collection | `tools/check_validation_receipt.py` for local runner receipts; `scripts/frozen_eval.py` record helpers and `scripts/i3_eval.py` for I3 manifests, receipts and verdicts | A collector that snapshots `kubectl`, `/metrics`, `/v1/reports/scale` and SQL ground truth into the receipt format above |
 | CNPG backup target | — | WAL archive and base backup to MinIO for the COMPAT-T3 backup restore |
 | Workspace manifest | Freeze procedure specified in [workspace inventory](repository-handoffs.md#workspace-inventory) | Manifest generator and reconciler |
 
