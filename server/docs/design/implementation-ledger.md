@@ -38,6 +38,28 @@ When a task advances, add a dated status, link the PR or implementation revision
 19. **Linux only in production:** Munarium always runs on Linux. Item 11 is resolved for Windows by removing the Job Object `unsafe` code rather than replacing it; Windows builds are for development and testing and apply no OS limits.
 20. **Lens model distribution:** bundles are hosted at `huggingface.co/iokaio/munarium-lens-models` with a GitHub Releases backup, fetched by the opt-in Lens `fetch` feature over HTTPS only, Hugging Face first, with fixed endpoints and order that operators cannot change. Approved with it: standard `HTTPS_PROXY`/`NO_PROXY` egress proxy support, the `ureq`/`rustls`/`ring`/`webpki-roots` deny exceptions, restart-only retry, trimming the redirect allowlist after the first bundle is published, no `qwen3` image without the fetcher, and the RUSTSEC-2024-0436 `paste` advisory exception (compile-time only, in the Candle graph).
 
+## Maintainer decisions (21 November 2026)
+
+Made in review of the open "for review" items. Items marked *to implement* need code or documentation changes on `feat/clearview`; the rest accept what is built.
+
+1. **B4 limits frozen (B4-T1):** CPU 30 s and wall clock 60 s; memory 512 MiB, output 64 MiB, concurrency 2 and queue wait 120 s unchanged. *To implement:* update `IsolatedPdfLimits::PROVISIONAL` and the guides, and treat the values as the frozen profile.
+2. **Deferred PDF failure code:** `MUNARIUM_PDF_EXTRACTION_DEFERRED=fail` gets its own additive error type and C2 code `extraction_deferred` instead of `rate-limited` with no code. *To implement.*
+3. **Output-cap framing:** keep the fixed 4 KiB frame allowance beyond `max_output_bytes`, so the text limit stays exactly the setting. *To implement:* one sentence in the document-intelligence guide.
+4. **I3 thresholds,** per corpus family at k 10: recall ≥ 0.90, nDCG ≥ 0.85, nDCG gain over the v1.4 hash arm ≥ 0.03, zero failures, zero unauthorized disclosures. Frozen before the held-out run.
+5. **I3 candidate profile:** embedding only (no reranker). The reranker stays available but is not the qualified default; the pilot showed it lowered documentation quality (0.941 combined against 0.965).
+6. **I3 latency:** a per-arm, CPU-only p95 bound recorded with the hardware: ≤ 5 s for embedding-only reads and ≤ 45 s for reranked reads. GPU latency is recorded as a receipt limitation.
+7. **Rollback replay (LENS-D2-T4):** confirm the HNSW cause of the 45-of-70 replay mismatch with `EXPLAIN`; if confirmed, pinned or rolled-back hash reads use an exact (non-HNSW) scan so replay is identical. *To implement.*
+8. **C1 `report` with no completed member:** keep refusing with 424 `required-evidence-unavailable`.
+9. **C1 slugs:** keep the one `required-evidence-unavailable` slug for every C1 refusal; `coverage` says which members failed.
+10. **C2 detail:** accept hiding `InvalidInput` and `NotFound` detail from job clients; the full detail stays in Server logs.
+11. **R11 provider-budget 429:** keep `retryable: false` with `retry_action: retry_later`. *To implement:* `errors.md` states that `retryable` means an immediate repeat and `retry_later` means after the window resets.
+12. **R4 review items accepted as built:** a current claim fills an empty `staged` slot when it finds an already-verified artifact; a direct build holds the job-row lock for its insert transaction; attempt IDs live in the link table.
+13. **SCALE-3 route accepted** as a Server-only additive route without a hub record.
+14. **A2 policy file kept for v1.5, consistent across the fleet.** *To implement:* a chart value renders the generation policy into one ConfigMap mounted by every serving and builder pod; each replica reports the policy's SHA-256 in its heartbeat; the scale report warns, and a replica whose digest differs from the fleet's refuses MCP generation.
+15. **A8 reservation estimate:** replace request bytes + 64 + `max_tokens` with a per-model bytes-per-token ratio from the policy file (default 3, so `ceil(bytes / 3)`) + 64 + `max_tokens`. *To implement.*
+16. **A8 overshoot:** actual usage always settles. When it exceeds the reservation, the finished attempt is charged in full, the excess is recorded and counted in a metric, and later attempts are refused once the balance is exhausted; a request allowance can be overshot by at most one attempt's estimate error. *To implement* with item 15.
+17. **Rust client R11 fields in 1.5, as a breaking change:** add `retryable` and `retry_action` to the public error enum in the Rust client 1.5, mark the enum `#[non_exhaustive]` in the same release, and call out the break in the changelog and migration notes. The maintainer accepted that Cargo treats 1.4 → 1.5 as compatible. *To implement.*
+
 ## Phase 0 · v1.4 baseline and shared decisions
 
 | ID | Task and primary design | Status and next evidence |
