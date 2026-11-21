@@ -351,6 +351,14 @@ async fn call(
 }
 
 async fn search(h: &Harness, query: &str) -> (u16, Value) {
+    search_at(h, query, None).await
+}
+
+async fn search_at(h: &Harness, query: &str, index_version: Option<&str>) -> (u16, Value) {
+    let mut body = json!({"query": query, "filter": {"collections": ["alpha"]}});
+    if let Some(pin) = index_version {
+        body["index_version"] = json!(pin);
+    }
     let mut req = axum::http::Request::builder()
         .method("POST")
         .uri("/v1/search")
@@ -361,12 +369,7 @@ async fn search(h: &Harness, query: &str) -> (u16, Value) {
     let response = h
         .router
         .clone()
-        .oneshot(
-            req.body(Body::from(
-                json!({"query": query, "filter": {"collections": ["alpha"]}}).to_string(),
-            ))
-            .unwrap(),
-        )
+        .oneshot(req.body(Body::from(body.to_string())).unwrap())
         .await
         .unwrap();
     let status = response.status().as_u16();
@@ -604,6 +607,8 @@ async fn enrollment_serves_both_stages_and_rollback_needs_no_endpoint() {
         return;
     };
     let h = harness(url, true).await;
+    let (status, pinned) = search_at(&h, "orchid nebula survey", Some(&h.hash_index)).await;
+    assert_eq!(status, 200, "{pinned}");
     let (stub, revision) = enrolled(&h, None).await;
 
     let (_, described) = call(
@@ -710,6 +715,10 @@ async fn enrollment_serves_both_stages_and_rollback_needs_no_endpoint() {
     let (status, body) = search(&h, "orchid nebula survey").await;
     assert_eq!(status, 200, "{body}");
     assert_eq!(body["envelope"]["index_version"], h.hash_index.as_str());
+    assert_eq!(
+        body["hits"], pinned["hits"],
+        "restored hash candidates replay the pin"
+    );
     assert!(
         body.get("execution").is_none(),
         "a rolled-back read is the v1.4 read"

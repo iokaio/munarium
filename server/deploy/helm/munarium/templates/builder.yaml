@@ -1,5 +1,6 @@
 {{/* SPDX-License-Identifier: Apache-2.0 */}}
 {{- if include "munarium.builderEnabled" . }}
+{{- $mcpPolicy := (.Values.mcp | default dict).generationPolicy -}}
 {{- $b := .Values.builder }}
 {{- $replicas := $b.replicas | default 0 | int }}
 {{- if or (not (regexMatch "^[0-9]+$" (toString $b.replicas))) (lt $replicas 0) }}
@@ -33,10 +34,17 @@ spec:
     metadata:
       {{- if .Values.metrics.scrapeAnnotations }}
       # The builder's ops plane carries the build-queue gauges (SCALE-3).
+      {{- end }}
+      {{- if or .Values.metrics.scrapeAnnotations $mcpPolicy }}
       annotations:
+        {{- with $mcpPolicy }}
+        checksum/mcp-generation-policy: {{ mustToJson . | sha256sum | quote }}
+        {{- end }}
+        {{- if .Values.metrics.scrapeAnnotations }}
         prometheus.io/scrape: "true"
         prometheus.io/port: "9090"
         prometheus.io/path: "/metrics"
+        {{- end }}
       {{- end }}
       labels:
         app: munarium-builder
@@ -82,18 +90,28 @@ spec:
             httpGet: { path: /healthz, port: 8080 }
           readinessProbe:
             httpGet: { path: /readyz, port: 8080 }
-          {{- if $b.staging.sizeLimit }}
+          {{- if or $b.staging.sizeLimit $mcpPolicy }}
           volumeMounts:
+            {{- if $mcpPolicy }}
+            {{- include "munarium.mcpPolicyMount" . | nindent 12 }}
+            {{- end }}
+            {{- if $b.staging.sizeLimit }}
             - { name: staging, mountPath: /var/munarium/staging }
             - { name: scratch, mountPath: /tmp }
+            {{- end }}
           {{- end }}
-      {{- if $b.staging.sizeLimit }}
+      {{- if or $b.staging.sizeLimit $mcpPolicy }}
       # Build workspace and Tantivy scratch (TMPDIR defaults to /tmp): the
       # root filesystem is read-only. Disk-backed, lost with the pod.
       volumes:
+        {{- if $mcpPolicy }}
+        {{- include "munarium.mcpPolicyVolume" . | nindent 8 }}
+        {{- end }}
+        {{- if $b.staging.sizeLimit }}
         - name: staging
           emptyDir: { sizeLimit: {{ $b.staging.sizeLimit | quote }} }
         - name: scratch
           emptyDir: { sizeLimit: {{ $b.staging.sizeLimit | quote }} }
+        {{- end }}
       {{- end }}
 {{- end }}

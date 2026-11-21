@@ -21,16 +21,18 @@
 //! per-request allowance among the contributors (A9), shared across stages
 //! and retries — and (b) every applicable daily allowance: each contributing
 //! collection's, plus each contributing index's own when it overrides. The
-//! UTC day is the database's. The reservation is sized from an upper bound:
-//! the serialized request's byte length (a token is at least one byte) plus
-//! fixed framing plus the permitted output. Refusal leaves no partial
+//! UTC day is the database's. The reservation estimates input tokens from
+//! serialized bytes and the model's bytes-per-token ratio, then adds fixed
+//! framing and the permitted output. Refusal leaves no partial
 //! reservation. Settlement uses provider-reported input and output counts
-//! once; uncertain usage keeps the full reservation; usage above the bound is
-//! recorded and stops that provider/model for the tenant until cleared.
+//! once; uncertain usage keeps the full reservation. Recorded usage above
+//! the estimate is charged in full and reduces the remaining allowances.
 
 use munarium_core::{KernelError, Result};
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU64;
 use std::sync::Arc;
 
 /// Sentinel prefixes promoted to problem types at the transport boundary
@@ -42,7 +44,7 @@ pub const ACCOUNTING_PREFIX: &str = "mcp-accounting: ";
 /// Framing slack added to the byte-length bound (role markers, templates).
 pub const FRAMING_TOKENS: u64 = 64;
 
-fn not_authorized(why: &str) -> KernelError {
+pub(crate) fn not_authorized(why: &str) -> KernelError {
     KernelError::Forbidden(format!("{NOT_AUTHORIZED_PREFIX}{why}"))
 }
 
@@ -50,7 +52,7 @@ fn exhausted(why: &str) -> KernelError {
     KernelError::RateLimited(format!("{ALLOWANCE_PREFIX}{why}"))
 }
 
-fn accounting(_e: impl std::fmt::Display) -> KernelError {
+pub(crate) fn accounting(_e: impl std::fmt::Display) -> KernelError {
     // Driver text is never shown; the slug says what the caller needs.
     KernelError::Storage(format!(
         "{ACCOUNTING_PREFIX}generation accounting is unavailable; no model call was made"
@@ -67,6 +69,8 @@ struct PolicyFile {
     version: u32,
     #[serde(default)]
     collections: Vec<CollectionEntry>,
+    #[serde(default)]
+    model_bytes_per_token: BTreeMap<String, NonZeroU64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -110,6 +114,8 @@ pub struct CollectionPolicy {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GenerationPolicy {
     entries: BTreeMap<(String, String), CollectionPolicy>,
+    model_bytes_per_token: BTreeMap<String, NonZeroU64>,
+    digest: Option<String>,
 }
 
 impl GenerationPolicy {
@@ -118,6 +124,13 @@ impl GenerationPolicy {
             serde_json::from_str(text).map_err(|e| format!("not a valid policy document: {e}"))?;
         if file.version != 1 {
             return Err(format!("unsupported policy version {}", file.version));
+        }
+        if file
+            .model_bytes_per_token
+            .keys()
+            .any(|model| model.trim().is_empty())
+        {
+            return Err("each bytes-per-token override needs a model name".into());
         }
         let mut entries = BTreeMap::new();
         for c in file.collections {
@@ -159,7 +172,21 @@ impl GenerationPolicy {
                 ));
             }
         }
-        Ok(Self { entries })
+        Ok(Self {
+            entries,
+            model_bytes_per_token: file.model_bytes_per_token,
+            digest: Some(format!("{:x}", Sha256::digest(text.as_bytes()))),
+        })
+    }
+
+    pub fn digest(&self) -> Option<&str> {
+        self.digest.as_deref()
+    }
+
+    pub fn bytes_per_token(&self, model: &str) -> u64 {
+        self.model_bytes_per_token
+            .get(model)
+            .map_or(3, |ratio| ratio.get())
     }
 
     #[cfg(test)]
@@ -274,6 +301,8 @@ pub struct CallContext {
     pub policy: std::result::Result<SharedPolicy, String>,
     /// Physical attempts admitted under this call (for tests and receipts).
     pub admitted: std::sync::atomic::AtomicU64,
+    /// A failed settlement can leave the actual charge higher than the estimate.
+    pub settlement_failed: std::sync::atomic::AtomicBool,
 }
 
 tokio::task_local! {
@@ -294,20 +323,21 @@ pub fn current() -> Option<Arc<CallContext>> {
 #[derive(Debug)]
 pub struct Attempt {
     pub attempt_id: String,
-    pub bound: u64,
 }
 
-/// The reservation bound for one completion request: serialized bytes (a
-/// token is at least one byte), framing, and the permitted output (which
+/// The reservation estimate for one completion request: serialized bytes
+/// divided by the configured ratio and rounded up, framing, and the permitted output (which
 /// includes reasoning tokens on every adapter that bounds them by
 /// `max_tokens`).
 pub fn bound_for(
+    policy: &GenerationPolicy,
     request: &munarium_core::provider::CompletionRequest,
     schema: Option<&serde_json::Value>,
 ) -> Result<u64> {
     let bytes = serde_json::to_vec(&(request, schema))
         .map_err(|_| KernelError::InvalidInput("cannot size the completion request".into()))?;
     (bytes.len() as u64)
+        .div_ceil(policy.bytes_per_token(&request.model))
         .checked_add(FRAMING_TOKENS)
         .and_then(|n| n.checked_add(u64::from(request.max_tokens.max(1))))
         .ok_or_else(|| KernelError::InvalidInput("completion bound overflow".into()))
@@ -335,28 +365,17 @@ pub async fn admit_attempt(
         ));
     }
     let policy = ctx.policy.as_ref().map_err(|why| not_authorized(why))?;
+    if ctx
+        .settlement_failed
+        .load(std::sync::atomic::Ordering::Acquire)
+    {
+        return Err(accounting("an earlier attempt's settlement failed"));
+    }
     let Some(pool) = pool else {
         return Err(accounting("no durable store"));
     };
     let attempt_id = format!("mga-{}", uuid::Uuid::now_v7().simple());
     let mut tx = pool.begin().await.map_err(accounting)?;
-    let violated: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM mcp_bound_violations
-                        WHERE tenant_id = $1 AND provider_config = $2 AND model = $3
-                          AND cleared_at IS NULL)",
-    )
-    .bind(&ctx.tenant)
-    .bind(provider_config)
-    .bind(model)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(accounting)?;
-    if violated {
-        return Err(not_authorized(
-            "observed usage exceeded this model's reservation bound; MCP generation on it is \
-             suspended pending operator investigation",
-        ));
-    }
     // Lock order: the invocation, then every daily scope in sorted order, so
     // two replicas reserving overlapping scopes cannot deadlock.
     let mut locks: BTreeSet<String> = BTreeSet::new();
@@ -386,7 +405,7 @@ pub async fn admit_attempt(
     let used = used.max(0) as u64;
     if used.saturating_add(bound) > policy.request_ceiling {
         return Err(exhausted(&format!(
-            "this request has {} of {} tokens left and the next model call needs up to {bound}",
+            "this request has {} of {} tokens left and the next model call reserves {bound}",
             policy.request_ceiling.saturating_sub(used),
             policy.request_ceiling
         )));
@@ -410,7 +429,7 @@ pub async fn admit_attempt(
             // this caller is authorized to use, but the detail stays generic.
             return Err(exhausted(&format!(
                 "a contributing {kind}'s daily allowance cannot cover the next model call \
-                 (up to {bound} tokens); the window resets at midnight UTC"
+                ({bound} reserved tokens); the window resets at midnight UTC"
             )));
         }
     }
@@ -447,7 +466,7 @@ pub async fn admit_attempt(
     tx.commit().await.map_err(accounting)?;
     ctx.admitted
         .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    Ok(Attempt { attempt_id, bound })
+    Ok(Attempt { attempt_id })
 }
 
 /// A reservation that was never dispatched (a later native check refused it
@@ -464,60 +483,49 @@ pub async fn release(pool: Option<&sqlx::PgPool>, attempt: &Attempt) {
     .await;
 }
 
-/// Settle once, keyed by the attempt id so a repeated settlement cannot
-/// change usage. `observed` is the provider-reported input + output total
-/// when both were reported; `None` keeps the full reservation (`uncertain`).
+/// Settle once by attempt id and return the recorded excess, if any.
+/// Missing usage leaves the reservation charged at its estimate.
 pub async fn settle(
     pool: Option<&sqlx::PgPool>,
-    ctx: &CallContext,
-    provider_config: &str,
-    model: &str,
     attempt: &Attempt,
     observed: Option<u64>,
-) -> Result<bool> {
+) -> Result<(bool, u64)> {
     let Some(pool) = pool else {
-        return Ok(false);
+        return Ok((false, 0));
     };
-    let changed = match observed {
+    match observed {
         Some(units) => {
-            let changed = sqlx::query(
-                "UPDATE mcp_token_attempts SET state = 'settled', settled_units = $2,
+            let excess: Option<i64> = sqlx::query_scalar(
+                "WITH settled AS (
+                    UPDATE mcp_token_attempts SET state = 'settled', settled_units = $2,
                         settled_at = now()
-                  WHERE attempt_id = $1 AND state = 'reserved'",
+                     WHERE attempt_id = $1 AND state IN ('reserved', 'uncertain')
+                    RETURNING attempt_id, tenant_id, provider_config, model, bound_units, settled_units
+                 ), overage AS (
+                    INSERT INTO mcp_bound_violations
+                        (attempt_id, tenant_id, provider_config, model, bound_units, observed_units)
+                    SELECT attempt_id, tenant_id, provider_config, model, bound_units, settled_units
+                      FROM settled WHERE settled_units > bound_units
+                    RETURNING observed_units - bound_units AS excess
+                 )
+                 SELECT COALESCE((SELECT excess FROM overage), 0) FROM settled",
             )
             .bind(&attempt.attempt_id)
             .bind(units.min(i64::MAX as u64) as i64)
-            .execute(pool)
+            .fetch_optional(pool)
             .await
-            .map_err(|e| KernelError::Storage(e.to_string()))?
-            .rows_affected()
-                > 0;
-            if changed && units > attempt.bound {
-                sqlx::query(
-                    "INSERT INTO mcp_bound_violations
-                        (attempt_id, tenant_id, provider_config, model, bound_units, observed_units)
-                     VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (attempt_id) DO NOTHING",
-                )
-                .bind(&attempt.attempt_id)
-                .bind(&ctx.tenant)
-                .bind(provider_config)
-                .bind(model)
-                .bind(attempt.bound as i64)
-                .bind(units.min(i64::MAX as u64) as i64)
-                .execute(pool)
-                .await
-                .map_err(|e| KernelError::Storage(e.to_string()))?;
+            .map_err(|e| KernelError::Storage(e.to_string()))?;
+            if let Some(excess) = excess.filter(|n| *n > 0) {
                 tracing::warn!(
                     attempt = %attempt.attempt_id,
-                    bound = attempt.bound,
-                    observed = units,
-                    "MCP generation usage exceeded its reservation bound; the model is suspended for MCP"
+                    excess,
+                    "MCP generation usage exceeded its reservation estimate"
                 );
             }
-            changed
+            Ok((excess.is_some(), excess.unwrap_or(0) as u64))
         }
         None => {
-            sqlx::query(
+            let changed = sqlx::query(
                 "UPDATE mcp_token_attempts SET state = 'uncertain', settled_at = now()
                   WHERE attempt_id = $1 AND state = 'reserved'",
             )
@@ -526,27 +534,10 @@ pub async fn settle(
             .await
             .map_err(|e| KernelError::Storage(e.to_string()))?
             .rows_affected()
-                > 0
+                > 0;
+            Ok((changed, 0))
         }
-    };
-    Ok(changed)
-}
-
-/// Settle an attempt by id only: the A8-T2 duplicate- and late-receipt
-/// fixtures. Returns whether anything changed.
-#[cfg(test)]
-pub async fn settle_by_id(pool: &sqlx::PgPool, attempt_id: &str, units: u64) -> Result<bool> {
-    Ok(sqlx::query(
-        "UPDATE mcp_token_attempts SET state = 'settled', settled_units = $2, settled_at = now()
-          WHERE attempt_id = $1 AND state IN ('reserved', 'uncertain')",
-    )
-    .bind(attempt_id)
-    .bind(units.min(i64::MAX as u64) as i64)
-    .execute(pool)
-    .await
-    .map_err(|e| KernelError::Storage(e.to_string()))?
-    .rows_affected()
-        > 0)
+    }
 }
 
 #[cfg(test)]
@@ -660,7 +651,7 @@ mod tests {
     }
 
     #[test]
-    fn the_bound_covers_every_byte_framing_and_output() {
+    fn reservation_rounds_up_using_the_resolved_models_ratio() {
         let req = munarium_core::provider::CompletionRequest {
             model: "m".into(),
             system: Some("s".repeat(100)),
@@ -669,15 +660,19 @@ mod tests {
             temperature: None,
             tools: None,
         };
-        let b = bound_for(&req, None).unwrap();
-        assert!(b >= 1100 + FRAMING_TOKENS + 500, "{b}");
-        let native = munarium_core::provider::CompletionEstimate::for_request(&req, None)
-            .unwrap()
-            .total()
-            .unwrap();
+        let schema = serde_json::json!({"type": "object"});
+        let bytes = serde_json::to_vec(&(&req, &schema)).unwrap().len() as u64;
+        let p =
+            GenerationPolicy::parse(r#"{"version":1,"model_bytes_per_token":{"m":5,"other":2}}"#)
+                .unwrap();
+        for (policy, ratio) in [(&p, 5), (&GenerationPolicy::default(), 3)] {
+            assert_eq!(
+                bound_for(policy, &req, Some(&schema)).unwrap(),
+                bytes.div_ceil(ratio) + FRAMING_TOKENS + 500
+            );
+        }
         assert!(
-            b > native,
-            "the MCP bound is never below the native estimate"
+            GenerationPolicy::parse(r#"{"version":1,"model_bytes_per_token":{"m":0}}"#).is_err()
         );
     }
 }

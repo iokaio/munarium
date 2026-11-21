@@ -2,7 +2,11 @@
 
 This page defines what Phase 8 needs before implementation: verifier identities, storage pins and durable finding records. It then specifies how a damaged Datastore artifact moves from local isolation through a fleet block and a verified repair to clearance. It implements [R10](airk-analysis.md#r10), [ART1](airk-analysis.md#art1) and [ART2](airk-analysis.md#art2) as an opt-in Server feature. [Delivery phases](README.md#phase-8-record-and-recover-from-durable-artifact-damage) · [REL1](README.md#rel1)
 
-**Status: proposal for maintainer review.** The definitions below are the Server component's proposed choices. The ART1 and ART2 hub decision records are still pending. A hub record that differs from these definitions takes precedence and requires this page and the implementation to change. Multi-replica receipts on a real fleet are deferred cluster work. The local tests listed at the end are deterministic single-process stand-ins. [Decision register](README.md#5-maintainer-decision-register) · [Cluster qualification plan](cluster-qualification-plan.md)
+**Status.** Local implementation follows the accepted and amended hub ADR 0028.
+The versioned export remains pending. The tests below use deterministic local
+fixtures. The ART1 and ART2 receipts still require the designated workstation
+fleet. [Decision register](README.md#5-maintainer-decision-register)
+· [Cluster qualification plan](cluster-qualification-plan.md)
 
 ## Definitions
 

@@ -628,7 +628,7 @@ fn pdf_extraction_from(
     {
         "inline" | "" => Ok(PdfExtractionConfig::Inline),
         "isolated" => {
-            let d = munarium_extract::IsolatedPdfLimits::PROVISIONAL;
+            let d = munarium_extract::IsolatedPdfLimits::DEFAULT_PROFILE;
             let limits = munarium_extract::IsolatedPdfLimits {
                 memory_bytes: mebibytes("MUNARIUM_PDF_EXTRACTION_MEMORY_MIB", d.memory_bytes)?,
                 cpu_seconds: number("MUNARIUM_PDF_EXTRACTION_CPU_SECS", d.cpu_seconds)?,
@@ -1129,7 +1129,7 @@ mod pdf_extraction_tests {
         assert_eq!(
             parse(&[("MUNARIUM_PDF_EXTRACTION", "isolated")]).expect("isolated"),
             PdfExtractionConfig::Isolated(
-                munarium_extract::IsolatedPdfLimits::PROVISIONAL,
+                munarium_extract::IsolatedPdfLimits::DEFAULT_PROFILE,
                 munarium_extract::IsolatedPdfPolicy::default()
             )
         );

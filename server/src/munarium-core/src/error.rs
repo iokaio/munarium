@@ -39,6 +39,10 @@ pub enum KernelError {
     #[error("rate limited: {0}")]
     RateLimited(String),
 
+    /// A build could not acquire an isolated PDF extraction slot in time.
+    #[error("extraction deferred: {0}")]
+    ExtractionDeferred(String),
+
     #[error("storage error: {0}")]
     Storage(String),
 

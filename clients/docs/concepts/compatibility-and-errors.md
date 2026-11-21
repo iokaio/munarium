@@ -54,6 +54,17 @@ rejection, and so on. It's short enough to read end to end, and several of the c
 this set link into specific rows of it (evidence's five refusal types, the token mismatch and
 override-not-allowed errors, and the rest).
 
+### Rust client 1.5 migration
+
+Cargo considers 1.5 compatible with a 1.4 version requirement. When updating,
+add a wildcard arm to exhaustive `MunariumError` matches and `..` to
+patterns that listed every field of `HeadConflict`, `Overloaded`,
+`RateLimited`, `RunLocked` or `Unexpected`. When constructing those variants
+in application code, initialize `retryable` and `retry_action` to `None`
+unless you have a Server response carrying those hints. Use
+`err.retryable()` and `err.retry_action()` to read the optional guidance
+without depending on the variant. A Server without guidance leaves both absent.
+
 ## Why one registry instead of per-language error types
 
 An application that talks to Munarium from more than one language — a Python ingestion job and

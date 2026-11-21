@@ -1252,6 +1252,7 @@ async fn execute(
                     Err("this tool does not generate".into())
                 },
                 admitted: Default::default(),
+                settlement_failed: Default::default(),
             });
             let req = match build_request(caller, invocation_id, method, template, plan) {
                 Ok(r) => r,

@@ -675,7 +675,7 @@ mod tests {
     #[test]
     fn the_isolated_profile_replaces_pdf_text_and_changes_the_identity() {
         let isolated =
-            IsolatedPdfExtractor::new("munarium-server".into(), IsolatedPdfLimits::PROVISIONAL)
+            IsolatedPdfExtractor::new("munarium-server".into(), IsolatedPdfLimits::DEFAULT_PROFILE)
                 .expect("valid limits");
         let r = ExtractorRegistry::new().with_isolated_pdf(isolated);
         let v = r.version();

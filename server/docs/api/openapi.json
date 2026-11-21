@@ -11561,6 +11561,13 @@
             "type": "string",
             "description": "`MUNARIUM_INSTANCE_ID`, else the host name."
           },
+          "mcp_generation_policy_sha256": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "SHA-256 of the trusted MCP generation policy bytes loaded at startup."
+          },
           "plane": {
             "type": "string",
             "description": "`MUNARIUM_DEPLOYMENT_PLANE` (`rest` by default, `builder` for a\nseparate builder group)."
@@ -13166,6 +13173,13 @@
               "null"
             ],
             "description": "True when more replicas are live than `replica_count` allows: the\nprovider limits are then divided too few ways. Null when unavailable."
+          },
+          "mcp_generation_policy_mismatch": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "True when the answering replica and a live heartbeat disagree on the\nMCP generation policy. Null when membership is unavailable."
           },
           "reason": {
             "type": [

@@ -1,3 +1,4 @@
+{{- $mcpPolicy := (.Values.mcp | default dict).generationPolicy -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -20,10 +21,17 @@ spec:
       # Prometheus discovery for the ops plane's /metrics (text exposition,
       # 2026-08-17). Annotation-based scraping covers the common in-cluster
       # setups; a ServiceMonitor is the operator's own choice.
+      {{- end }}
+      {{- if or .Values.metrics.scrapeAnnotations $mcpPolicy }}
       annotations:
+        {{- with $mcpPolicy }}
+        checksum/mcp-generation-policy: {{ mustToJson . | sha256sum | quote }}
+        {{- end }}
+        {{- if .Values.metrics.scrapeAnnotations }}
         prometheus.io/scrape: "true"
         prometheus.io/port: "9090"
         prometheus.io/path: "/metrics"
+        {{- end }}
       {{- end }}
       labels:
         app: munarium-server
@@ -61,6 +69,12 @@ spec:
             httpGet: { path: /healthz, port: 8080 }
           readinessProbe:
             httpGet: { path: /readyz, port: 8080 }
+          {{- if $mcpPolicy }}
+          volumeMounts:
+            {{- include "munarium.mcpPolicyMount" . | nindent 12 }}
+      volumes:
+        {{- include "munarium.mcpPolicyVolume" . | nindent 8 }}
+          {{- end }}
 {{- if .Values.workloadIdentity.clientId }}
 ---
 # The subject Terraform's federated credential is pinned to:

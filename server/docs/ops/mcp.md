@@ -206,11 +206,21 @@ budgets, not this policy.
 
 The policy file (`MUNARIUM_MCP_GENERATION_POLICY`) is trusted deployment
 configuration, read at startup; tool arguments cannot select a policy or payer.
-Deploy the same file to every replica.
+Deploy the same file to every replica. Helm's `mcp.generationPolicy` renders
+and mounts one ConfigMap on both serving and builder pods. The policy checksum
+rolls both deployments when the policy changes. Each live replica reports the
+SHA-256 of the bytes it loaded in `GET /v1/reports/scale`. The report and
+console Health page warn when digests differ. All replicas sharing the fleet
+must use the same PostgreSQL database and `MUNARIUM_DEPLOYMENT_ENVIRONMENT_ID`.
+During a mixed policy rollout,
+generation waits for agreement across the observed fleet and a current
+heartbeat from the answering replica. Allow up to 45 seconds for a stopped
+replica's heartbeat to expire.
 
 ```json
 {
   "version": 1,
+  "model_bytes_per_token": {"example-completion-model": 3},
   "collections": [
     {"tenant": "acme", "collection": "legal", "budget_owner": "shared-research",
      "request_tokens": 2000, "daily_tokens": 200000,
@@ -242,8 +252,10 @@ before it is sent, in one PostgreSQL transaction, against:
 - every applicable **daily allowance**: each contributing collection's, and
   each contributing index's own when it overrides, for the database's UTC day.
 
-The reservation is an upper bound: the serialized request's bytes (a token is
-at least one byte), 64 tokens of framing, and the permitted output. A refusal
+The reservation estimates input tokens as serialized request and schema bytes
+divided by the resolved model's positive integer `model_bytes_per_token`
+setting, rounded up. The default is 3 bytes per token. Server adds 64 tokens
+of framing and the permitted output. A refusal
 reserves nothing anywhere and is a tool error: `mcp-generation-not-authorized`
 (no opt-in, owner, allowance or common payer), `mcp-allowance-exhausted`, or
 `mcp-accounting-unavailable`. Each attempt is settled once from the provider's
@@ -251,14 +263,13 @@ reported input and output counts; missing or unreliable usage keeps the full
 reservation against its original day. An attempt the provider answered with
 an error, whose transport failed, or that a retry replaced may still have
 run: it is settled `uncertain` at its full bound when the model call ends, so
-no attempt is left `reserved` and nothing is charged twice. Usage above the bound is retained and
-suspends MCP generation on that provider configuration and model for the
-tenant until an operator clears it:
-
-```sql
-UPDATE mcp_bound_violations SET cleared_at = now()
- WHERE tenant_id = $1 AND provider_config = $2 AND model = $3 AND cleared_at IS NULL;
-```
+no attempt is left `reserved` and nothing is charged twice. Reliable usage
+above the estimate is charged in full and recorded atomically in
+`mcp_bound_violations`. The excess increments
+`munarium_mcp_generation_excess_tokens_total`. Later attempts use the reduced
+request and daily balances. An attempt can overshoot a request allowance by
+its own estimate error. If usage is unavailable, the reservation remains the
+recorded charge.
 
 The native token budgets (`dailyTokens`, `dailyTotalTokens`) still apply to
 the same calls, unchanged.

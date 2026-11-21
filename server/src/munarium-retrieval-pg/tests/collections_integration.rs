@@ -1446,8 +1446,20 @@ async fn sparse_generation_exact_oracle_and_hnsw_recall() {
                 .any(|line| line.contains("Index Scan") && line.contains("embedding")),
             "expected HNSW: {plan:?}"
         );
-        let approximate = ann
+        let replay = ann
             .search_collection_prepared(&col.id, &prepared, Some(version))
+            .await
+            .unwrap();
+        assert_eq!(
+            replay.hits.iter().map(|h| &h.chunk_id).collect::<Vec<_>>(),
+            expected.iter().collect::<Vec<_>>(),
+            "a pin uses exact candidates even when the planner favors HNSW"
+        );
+        ann.activate_collection_index(&col.id, version)
+            .await
+            .unwrap();
+        let approximate = ann
+            .search_collection_prepared(&col.id, &prepared, None)
             .await
             .unwrap();
         assert_eq!(&approximate.envelope.index_version, version);

@@ -23,6 +23,12 @@ replicas: 2
 # live processes at `replicas`. platform-v1 requires `type: Recreate`.
 strategy: {}
 
+# Trusted MCP generation policy (version 1 JSON object rendered from values).
+# Set only with a Server image that supports the policy. This mounts the file
+# and rolls both deployments when its contents change.
+mcp:
+  generationPolicy: null
+
 # Optional builder group (scale-out.md, SCALE-2). Off by default, which renders
 # exactly the single Server group of v1.4. Enabled, a separate
 # `munarium-builder` Deployment runs the durable build-job worker

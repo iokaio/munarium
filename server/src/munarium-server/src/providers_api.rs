@@ -496,7 +496,11 @@ async fn complete_guarded(
     // this completion is reserved against the MCP allowances by the attempt
     // observer, sized by this bound. Native traffic computes nothing here.
     let mcp_bound = match crate::mcp_generation::current() {
-        Some(_) => Some(crate::mcp_generation::bound_for(&input, schema.as_ref())?),
+        Some(_) => Some(crate::mcp_generation::bound_for(
+            &state.mcp.settings.generation,
+            &input,
+            schema.as_ref(),
+        )?),
         None => None,
     };
     let started = std::time::Instant::now();

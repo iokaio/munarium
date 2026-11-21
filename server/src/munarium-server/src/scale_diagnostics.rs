@@ -130,6 +130,9 @@ pub struct ReplicaMembership {
     /// True when more replicas are live than `replica_count` allows: the
     /// provider limits are then divided too few ways. Null when unavailable.
     pub exceeds_configured: Option<bool>,
+    /// True when the answering replica and a live heartbeat disagree on the
+    /// MCP generation policy. Null when membership is unavailable.
+    pub mcp_generation_policy_mismatch: Option<bool>,
     /// The live replicas, ordered by instance id. Empty when unavailable.
     pub replicas: Vec<crate::replica_fleet::LiveReplica>,
     /// A short reason when `status` is `unavailable`.
@@ -174,6 +177,7 @@ pub fn observed_count(m: &ReplicaMembership) -> Option<u32> {
 pub fn membership_report(
     environment_id: String,
     configured: u32,
+    local_policy_digest: Option<&str>,
     read: Result<Vec<crate::replica_fleet::LiveReplica>>,
 ) -> ReplicaMembership {
     match read {
@@ -181,6 +185,11 @@ pub fn membership_report(
             status: "observed".into(),
             environment_id,
             exceeds_configured: Some(replicas.len() as u64 > u64::from(configured)),
+            mcp_generation_policy_mismatch: Some(
+                replicas
+                    .iter()
+                    .any(|r| r.mcp_generation_policy_sha256.as_deref() != local_policy_digest),
+            ),
             replicas,
             reason: None,
         },
@@ -190,6 +199,7 @@ pub fn membership_report(
                 status: "unavailable".into(),
                 environment_id,
                 exceeds_configured: None,
+                mcp_generation_policy_mismatch: None,
                 replicas: Vec::new(),
                 reason: Some(match e {
                     KernelError::Storage(m) if m == "replica heartbeat read timed out" => m,
@@ -274,6 +284,7 @@ pub async fn op_scale_report(state: &AppState, tenant: &str) -> ScaleReport {
     let membership = membership_report(
         state.fleet.environment(),
         state.config.replica_count,
+        state.mcp.settings.generation.digest(),
         crate::replica_fleet::live_replicas(state).await,
     );
     ScaleReport {
@@ -396,6 +407,11 @@ pub fn health_section(report: &ScaleReport) -> String {
             report.replica_count
         ));
     }
+    if m.mcp_generation_policy_mismatch == Some(true) {
+        note.push_str(
+            r#"<div class="notice" role="alert">warning: live replicas disagree on the MCP generation policy. Generation pauses until the policy agrees across the fleet.</div>"#,
+        );
+    }
     let members = if m.status == "observed" {
         let rows: Vec<Vec<String>> = m
             .replicas
@@ -468,7 +484,7 @@ mod tests {
     use super::*;
 
     fn report(queue: Option<Result<BuildQueueBacklog>>) -> ScaleReport {
-        let membership = membership_report("env".into(), 2, Ok(Vec::new()));
+        let membership = membership_report("env".into(), 2, None, Ok(Vec::new()));
         ScaleReport {
             instance_id: "pod-<a>".into(),
             version: "x".into(),
@@ -500,6 +516,7 @@ mod tests {
             plane: "rest".into(),
             replica_count: 2,
             capabilities: vec!["console-sessions".into()],
+            mcp_generation_policy_sha256: None,
             seconds_since_heartbeat: 3.2,
         }
     }
@@ -508,15 +525,20 @@ mod tests {
     /// only when more are live, and a failed read unavailable, never 0.
     #[test]
     fn membership_warns_on_excess_and_a_failed_read_is_unavailable() {
-        let two = membership_report("env".into(), 2, Ok(vec![live("a"), live("b")]));
+        let two = membership_report("env".into(), 2, None, Ok(vec![live("a"), live("b")]));
         assert_eq!(two.exceeds_configured, Some(false));
-        let one = membership_report("env".into(), 2, Ok(vec![live("a")]));
+        let one = membership_report("env".into(), 2, None, Ok(vec![live("a")]));
         assert_eq!(
             one.exceeds_configured,
             Some(false),
             "a shortfall is no warning"
         );
-        let three = membership_report("env".into(), 2, Ok(vec![live("a"), live("b"), live("<c>")]));
+        let three = membership_report(
+            "env".into(),
+            2,
+            None,
+            Ok(vec![live("a"), live("b"), live("<c>")]),
+        );
         assert_eq!(three.exceeds_configured, Some(true));
         let mut r = report(None);
         r.observed_replicas = Some(3);
@@ -536,6 +558,7 @@ mod tests {
         let failed = membership_report(
             "env".into(),
             2,
+            None,
             Err(KernelError::Storage("connection refused <db>".into())),
         );
         assert_eq!(failed.status, "unavailable");
@@ -547,7 +570,7 @@ mod tests {
         );
         assert_eq!(observed_count(&failed), None, "unknown, never 0");
         assert_eq!(
-            observed_count(&membership_report("env".into(), 2, Ok(Vec::new()))),
+            observed_count(&membership_report("env".into(), 2, None, Ok(Vec::new()))),
             Some(0),
             "an observed empty fleet is 0"
         );

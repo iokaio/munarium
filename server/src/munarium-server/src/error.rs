@@ -41,6 +41,7 @@ pub(crate) fn retry_hint(slug: &str) -> Option<(bool, &'static str)> {
     match slug {
         "overloaded" => Some((true, "repeat")),
         "rate-limited"
+        | "extraction-deferred"
         | "daily-cap-reached"
         | "run-locked"
         | "datastore-unavailable"
@@ -671,6 +672,7 @@ pub fn slug(e: &KernelError) -> &'static str {
         KernelError::Unauthenticated(_) => "unauthenticated",
         KernelError::Forbidden(_) => "forbidden",
         KernelError::RateLimited(_) => "rate-limited",
+        KernelError::ExtractionDeferred(_) => "extraction-deferred",
         KernelError::Storage(_) => "storage-error",
         KernelError::DatastoreUnavailable(_) => "datastore-unavailable",
         KernelError::ArtifactBlocked(_) => "artifact-blocked",
@@ -741,6 +743,9 @@ pub fn to_problem(e: &KernelError) -> (StatusCode, Problem) {
         KernelError::Unauthenticated(_) => (StatusCode::UNAUTHORIZED, "unauthenticated"),
         KernelError::Forbidden(_) => (StatusCode::FORBIDDEN, "forbidden"),
         KernelError::RateLimited(_) => (StatusCode::TOO_MANY_REQUESTS, "rate limited"),
+        KernelError::ExtractionDeferred(_) => {
+            (StatusCode::TOO_MANY_REQUESTS, "extraction deferred")
+        }
         KernelError::Storage(_) => (StatusCode::INTERNAL_SERVER_ERROR, "storage error"),
         // 503, not 500: the scope is temporarily unservable and retrying can
         // help (a warming replica, a re-verified artifact) -- and rollback to
@@ -894,7 +899,7 @@ pub fn to_status(e: &KernelError) -> tonic::Status {
         KernelError::IdempotencyMismatch | KernelError::InvalidInput(_) => Code::InvalidArgument,
         KernelError::Unauthenticated(_) => Code::Unauthenticated,
         KernelError::Forbidden(_) => Code::PermissionDenied,
-        KernelError::RateLimited(_) => Code::ResourceExhausted,
+        KernelError::RateLimited(_) | KernelError::ExtractionDeferred(_) => Code::ResourceExhausted,
         KernelError::NotFound { .. } => Code::NotFound,
         KernelError::Storage(_) => Code::Internal,
         KernelError::DatastoreUnavailable(_) => Code::Unavailable,

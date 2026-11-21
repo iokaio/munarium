@@ -1,0 +1,9 @@
+{{/* SPDX-License-Identifier: Apache-2.0 */}}
+{{- with (.Values.mcp | default dict).generationPolicy }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: munarium-mcp-generation-policy
+data:
+  policy.json: {{ mustToJson . | quote }}
+{{- end }}

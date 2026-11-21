@@ -274,7 +274,12 @@ Thresholds are optional at freeze. Without them the manifest records
 `no_thresholds_declared`, never `passed`. A thresholds file declares one block per
 family: `k`, `min_recall`, `min_ndcg`, `max_p95_ms`, `max_failures`,
 `max_unauthorized_disclosures` (which must be 0) and an optional
-`min_ndcg_gain_over_hash`. They apply to the candidate arm (`combined`).
+`min_ndcg_gain_over_hash`. The candidate arm is embedding-only. A qualification
+manifest needs a held-out fixture and freezes the approved block for each family
+at k 10 with recall ≥ 0.90, nDCG ≥ 0.85, nDCG gain ≥ 0.03 over the hash arm,
+zero failures, and zero unauthorized disclosures. It records CPU p95 limits of
+5 s for embedding-only reads and 45 s for each reranked arm. GPU latency remains
+a receipt limitation.
 
 **Answer keys stay out of the corpus.** Corpus files come from `git ls-files`
 filtered by the fixture's globs, so ignored local files can never be selected.
@@ -299,8 +304,10 @@ rerank-only binding over the active hash index. The embedder arm runs a queued
 `semantic` build with the shape's `max_chars` and enrolls. The combined arm
 rebinds the same semantic space, keeps the built index and enrolls. Every
 inference arm is rolled back before the next. The reranker arm therefore runs
-before any semantic index exists, and the hash arm is replayed after the last
-rollback and compared with the original hash reads. Each query records the ranked hits,
+before any semantic index exists. The unpinned hash arm measures the v1.4 hash
+configuration on the candidate. A separate pass pins that hash version before
+any inference arm starts. After the final rollback, the runner compares
+restored active reads with those exact pinned reads. Each query records the ranked hits,
 client round-trip latency, failures with a fixed problem code and the
 `execution.stages` receipts. A receipt that does not show exactly the arm's
 stages applied counts as a failure. An arm that cannot be configured is recorded
@@ -354,13 +361,10 @@ caches. It is not a capacity measurement. Reranking reorders only the
 `min(top_k, max_candidates)` returned hits (Server reranks the served head), so
 the reranker arm cannot change recall at `k = top_k`. Lens on a laptop CPU scores
 one sequence at a time, which bounds `max_candidates` well below the Server
-default. The rollback replay is recorded per query (`identical`,
-`scores_changed`, `order_changed`, `hits_changed`, `index_version_changed`) and
-does not affect the verdict. Expect differences: the hash index's vector leg is
-an approximate HNSW scan of the collection's chunk partition, filtered to the
-pinned index version. Rows of another version, such as the semantic index built
-beside it, can change a pinned hash read's vector-leg candidates, so the hash
-arm is measured before any semantic build. A threshold proposal from a pilot is
-input to the maintainer's decision. A qualifying run needs
+default. The rollback replay records per-query differences separately from the
+I3 quality verdict. PostgreSQL uses the exact hash-vector leg for pinned and
+restored reads. On the ordinary active hash path, HNSW can traverse another
+version's rows in the collection partition before filtering. Measure that hash
+arm before the semantic build. A qualifying run needs
 `purpose: qualification`, frozen thresholds, held-out queries and a reviewed
 commit of the manifest before execution.

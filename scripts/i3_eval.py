@@ -82,6 +82,16 @@ THRESHOLD_FIELDS = (
     "max_failures",
     "max_unauthorized_disclosures",
 )
+CPU_P95_LIMIT_MS = {"embedder": 5_000, "reranker": 45_000, "combined": 45_000}
+QUALIFICATION_THRESHOLDS = {
+    "k": 10,
+    "min_recall": 0.90,
+    "min_ndcg": 0.85,
+    "min_ndcg_gain_over_hash": 0.03,
+    "max_p95_ms": CPU_P95_LIMIT_MS["embedder"],
+    "max_failures": 0,
+    "max_unauthorized_disclosures": 0,
+}
 LENS_BUNDLES = {
     "repository": "iokaio/munarium-lens-models",
     "revision": "cb8d6d3f4da7b0f5eacdbde4a61b5000f9d57cb1",
@@ -356,6 +366,7 @@ def validate_thresholds(thresholds, k_values):
 
 def validate_manifest(manifest):
     ev.envelope(manifest, KIND_MANIFEST)
+    require(manifest.get("revision") in ("1", "2"), "unsupported_manifest_revision")
     require(manifest.get("purpose") in PURPOSES, "invalid_purpose")
     require(tuple(manifest.get("arms", ())) == ARMS, "arms_must_be_the_four_i3_arms")
     require(manifest.get("candidate_arm") in ARMS, "invalid_candidate_arm")
@@ -404,6 +415,16 @@ def validate_manifest(manifest):
         require(
             manifest.get("thresholds") is not None, "qualification_needs_thresholds"
         )
+        if manifest["revision"] == "2":
+            require(manifest.get("fixture") != FIXTURE, "qualification_needs_held_out_fixture")
+            require(
+                manifest.get("thresholds")
+                == {family: QUALIFICATION_THRESHOLDS for family in FAMILIES},
+                "qualification_thresholds_differ_from_frozen_profile",
+            )
+    if manifest["revision"] == "2":
+        require(manifest["candidate_arm"] == "embedder", "candidate_must_be_embedding_only")
+        require(manifest.get("cpu_p95_limit_ms") == CPU_P95_LIMIT_MS, "invalid_cpu_p95_limits")
     for field in ("source", "build", "resource_limits", "postgres_image"):
         require(bool(manifest.get(field)), "missing_" + field)
 
@@ -475,11 +496,13 @@ def freeze(args):
         }
     cases = fixture["queries"]
     thresholds = ev.read(args.thresholds) if args.thresholds else None
+    if args.purpose == "qualification" and thresholds is None:
+        thresholds = {family: QUALIFICATION_THRESHOLDS for family in FAMILIES}
     profile = build_profile(args)
     manifest = ev.seal(
         KIND_MANIFEST,
         campaign="i3-retrieval-quality",
-        revision="1",
+        revision="2",
         purpose=args.purpose,
         frozen_at=now(),
         git_commit=git_commit(),
@@ -496,7 +519,8 @@ def freeze(args):
         fixture=fixture_path,
         fixture_sha256=ev.source_identity(ROOT / fixture_path),
         arms=list(ARMS),
-        candidate_arm="combined",
+        candidate_arm="embedder",
+        cpu_p95_limit_ms=CPU_P95_LIMIT_MS,
         k_values=[5, 10],
         primary_k=10,
         profile=profile,
@@ -1121,17 +1145,20 @@ def rollback_family(rig, ids, family):
     return steps
 
 
-def search(client, token, query, collection, top_k, timeout):
+def search(client, token, query, collection, top_k, timeout, index_version=None):
     started = time.perf_counter()
+    body = {
+        "query": query,
+        "top_k": top_k,
+        "filter": {"collections": [collection]},
+        "disclose_execution": True,
+    }
+    if index_version is not None:
+        body["index_version"] = index_version
     response = client.call(
         "POST",
         "/v1/search",
-        {
-            "query": query,
-            "top_k": top_k,
-            "filter": {"collections": [collection]},
-            "disclose_execution": True,
-        },
+        body,
         token=token,
         timeout=timeout,
     )
@@ -1175,6 +1202,11 @@ def replay_summary(replay):
     if replay is None or "differences" not in replay:
         return replay  # absent, or a count-only record from an earlier runner
     counts = {}
+    if "baseline_queries" in replay:
+        before = {r["id"]: r for r in replay["baseline_queries"]}
+        expected = {r["id"]: replay_difference(before.get(r["id"]), r)
+                    for r in replay["queries"]}
+        require(expected == replay["differences"], "rollback_replay_difference_mismatch")
     for kind in replay["differences"].values():
         counts[kind] = counts.get(kind, 0) + 1
     return {"queries": len(replay["queries"]), "differences": counts}
@@ -1213,7 +1245,7 @@ def stage_problem(arm, stages):
     return None
 
 
-def run_queries(rig, manifest, arm, family, ids, tokens, journal):
+def run_queries(rig, manifest, arm, family, ids, tokens, journal, hash_pin=None):
     profile = manifest["profile"]
     timeout = manifest["resource_limits"]["http_timeout_seconds"]
     public, restricted = collection_names(family)
@@ -1228,19 +1260,21 @@ def run_queries(rig, manifest, arm, family, ids, tokens, journal):
                 public,
                 profile["top_k"],
                 timeout,
+                hash_pin,
             )
             stages = stage_rows(response)
             problem = stage_problem(arm, stages)
+            envelope = response.get("envelope") or {}
+            if hash_pin is not None and envelope.get("index_version") != hash_pin:
+                problem = "hash_pin_mismatch"
             row.update(
                 status="failed" if problem else "ok",
                 failure={"class": problem} if problem else None,
                 latency_ms=round(ms, 3),
                 hits=hit_rows(response.get("hits", [])),
                 stages=stages,
-                index_version=(response.get("envelope") or {}).get("index_version"),
-                provider_fingerprint=(response.get("envelope") or {}).get(
-                    "provider_fingerprint"
-                ),
+                index_version=envelope.get("index_version"),
+                provider_fingerprint=envelope.get("provider_fingerprint"),
             )
         except Exception as exc:  # noqa: BLE001 - every failure is retained
             if isinstance(exc, RuntimeError) and str(exc) in (
@@ -1302,13 +1336,14 @@ def run_queries(rig, manifest, arm, family, ids, tokens, journal):
                 timeout,
             )
             hits = allowed.get("hits", [])
-            ok = bool(hits) and all(
+            control_problem = stage_problem(arm, stage_rows(allowed))
+            ok = control_problem is None and bool(hits) and all(
                 h["source_path"].startswith(f"{family}-restricted/") for h in hits
             )
             check["control"] = {
                 "outcome": "passed" if ok else "failed",
                 "hits": len(hits),
-                "stage_problem": stage_problem(arm, stage_rows(allowed)),
+                "stage_problem": control_problem,
             }
         except Exception as exc:  # noqa: BLE001
             check["control"] = {
@@ -1397,6 +1432,14 @@ def execute(manifest, binary, lens_url, lens_binary, directory, run_id):
             }
             for family in FAMILIES:
                 fam = record["families"][family]
+                exact_baseline = None
+                if manifest["revision"] == "2":
+                    public, _ = collection_names(family)
+                    pin = record["setup"]["collections"][public]["hash_index"]
+                    require(bool(pin), "missing_hash_index_pin")
+                    exact_baseline, _ = run_queries(
+                        rig, manifest, "hash", family, ids, tokens, journal, hash_pin=pin
+                    )
                 for arm in ARM_ORDER:
                     slot = fam["arms"][arm]
                     log(f"{family}/{arm}: configuring")
@@ -1422,7 +1465,9 @@ def execute(manifest, binary, lens_url, lens_binary, directory, run_id):
                 replay, _ = run_queries(
                     rig, manifest, "hash", family, ids, tokens, journal
                 )
-                baseline = {r["id"]: r for r in fam["arms"]["hash"]["queries"]}
+                reference = (exact_baseline if exact_baseline is not None
+                             else fam["arms"]["hash"]["queries"])
+                baseline = {r["id"]: r for r in reference}
                 fam["rollback_replay"] = {
                     "queries": replay,
                     "differences": {
@@ -1430,6 +1475,8 @@ def execute(manifest, binary, lens_url, lens_binary, directory, run_id):
                         for r in replay
                     },
                 }
+                if exact_baseline is not None:
+                    fam["rollback_replay"]["baseline_queries"] = exact_baseline
             record["setup"]["database_bytes"] = rig.database_bytes()
     except Exception as exc:  # noqa: BLE001 - the run is retained as incomplete
         record["run_error"] = failure_of(exc)
@@ -1597,6 +1644,12 @@ def family_receipts(manifest, raw):
     for family in FAMILIES:
         fam = raw["families"][family]
         arms = {arm: summarize_arm(manifest, family, fam["arms"][arm]) for arm in ARMS}
+        for arm, limit in manifest.get("cpu_p95_limit_ms", {}).items():
+            p95 = (arms[arm]["latency"] or {}).get("p95_ms")
+            arms[arm]["cpu_p95_limit_ms"] = limit
+            arms[arm]["cpu_latency_status"] = (
+                "incomplete" if p95 is None else "passed" if p95 <= limit else "failed"
+            )
         thresholds = (manifest.get("thresholds") or {}).get(family)
         verdict, reasons = family_verdict(thresholds, arms, manifest["candidate_arm"])
         if raw.get("run_error") is not None:

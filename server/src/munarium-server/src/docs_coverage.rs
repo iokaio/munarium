@@ -389,6 +389,7 @@ mod tests {
             KernelError::Unauthenticated(String::new()),
             KernelError::Forbidden(String::new()),
             KernelError::RateLimited(String::new()),
+            KernelError::ExtractionDeferred(String::new()),
             KernelError::Storage(String::new()),
             KernelError::DatastoreUnavailable(String::new()),
             KernelError::ArtifactBlocked(String::new()),

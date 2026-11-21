@@ -425,8 +425,11 @@ curl -X POST -H "Authorization: Bearer $MGMT" -H "Content-Type: application/json
 Rollback reactivates the prior approved index and sets the binding to
 `rolled_back`. It calls no endpoint, so it works with the endpoint down or
 inference disabled, and it is a control operation that can use the
-[control reserve](../ops/admission.md). Afterwards reads are v1.4 reads. The
-semantic index and the prior index are kept by index retirement while the
+[control reserve](../ops/admission.md). The restored hash index serves without
+inference. PostgreSQL reads pinned to a hash version and reads of the active
+hash index restored by rollback both use exact distance ordering with chunk ID
+as the tie-break, so a newer version in the collection cannot change their
+candidate sets. The semantic index and the prior index are kept by index retirement while the
 binding names them; enroll again (after a new probe if the configuration
 changed) to return to the semantic index.
 

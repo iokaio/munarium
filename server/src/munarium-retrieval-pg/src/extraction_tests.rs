@@ -270,20 +270,16 @@ fn deferred_documents_fail_the_build_when_set_to_fail() {
         }
     }
     let err = d.observe("s-1", &deferred()).expect_err("fail");
-    let KernelError::RateLimited(message) = &err else {
-        panic!("a capacity refusal is RateLimited, got {err:?}");
+    let KernelError::ExtractionDeferred(message) = &err else {
+        panic!("expected ExtractionDeferred, got {err:?}");
     };
     assert_eq!(message, DEFERRED_BUILD_MESSAGE);
     assert!(!message.contains("s-1"), "names no source");
     assert!(d.skipped().is_empty());
-    // No C2 code describes local extraction capacity: a queued job records
-    // the failure unclassified, with the generic safe message.
+    use munarium_store_pg::job_failure::JobFailureCode;
     let failure = munarium_store_pg::job_failure::classify(&err);
-    assert_eq!(failure.code, None);
-    assert_eq!(
-        failure.message,
-        munarium_store_pg::job_failure::GENERIC_FAILURE_MESSAGE
-    );
+    assert_eq!(failure.code, Some(JobFailureCode::ExtractionDeferred));
+    assert!(!failure.message.contains("s-1"));
 }
 
 #[test]

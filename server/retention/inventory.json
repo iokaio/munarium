@@ -2925,7 +2925,7 @@
         "recorded_at": "timestamptz",
         "cleared_at": "timestamptz"
       },
-      "content": "MCP generation attempts whose provider-reported usage exceeded the reservation bound: the bound, the observed usage and when an operator cleared the suspension. No prompt or completion text.",
+      "content": "MCP generation overage evidence: the reserved estimate and actual token usage, plus a historical clearance timestamp on legacy records. No prompt or completion text.",
       "json_content": {},
       "owner": "Tenant operators and the database operator.",
       "policy": "mcp",
@@ -2943,16 +2943,18 @@
         "plane": "text",
         "replica_count": "int",
         "capabilities": "text[]",
+        "mcp_generation_policy_sha256": "text",
         "started_at": "timestamptz",
         "last_seen_at": "timestamptz",
         "expires_at": "timestamptz"
       },
-      "content": "Process metadata only: deployment environment, a random per-process replica id, the instance id (MUNARIUM_INSTANCE_ID or host name), build version, deployment plane, configured replica count, capability names and heartbeat times. No tenant, credential or corpus content.",
+      "content": "Process metadata only: deployment environment, replica and instance ids, build version, deployment plane, configured replica count, capability names, optional MCP generation policy digest and heartbeat times. No policy contents, credentials or corpus content.",
       "json_content": {},
       "owner": "Deployment/environment operator.",
       "policy": "replica_fleet",
       "origins": [
         "src/munarium-store-pg/migrations/0087_replica_heartbeats_console_fleet.sql",
+        "src/munarium-store-pg/migrations/0088_mcp_generation_policy_digest.sql",
         "src/munarium-server/src/replica_fleet.rs"
       ]
     },

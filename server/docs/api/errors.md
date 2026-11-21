@@ -26,7 +26,7 @@ same names (`"true"`/`"false"` and the action string):
 | Slug | `retryable` | `retry_action` | Meaning |
 |---|---|---|---|
 | `overloaded` | `true` | `repeat` | Shed at admission before any handler ran. The identical request may be repeated after `Retry-After`. |
-| `rate-limited`, `daily-cap-reached`, `run-locked`, `datastore-unavailable`, `inference-stage-unavailable`, `mcp-audit-unavailable`, `mcp-allowance-exhausted`, `mcp-accounting-unavailable` | `false` | `retry_later` | Transient, but the response does not prove the request had no effect. Repeat only a safe read or a request under a documented idempotency key; otherwise decide again later. Existing `Retry-After` headers are unchanged. |
+| `rate-limited`, `daily-cap-reached`, `extraction-deferred`, `run-locked`, `datastore-unavailable`, `inference-stage-unavailable`, `mcp-audit-unavailable`, `mcp-allowance-exhausted`, `mcp-accounting-unavailable` | `false` | `retry_later` | Wait for the limiting condition to clear. Repeat only a safe read or a request under a documented idempotency key. Otherwise decide again later. |
 | `head-conflict`, `inference-not-qualified` | `false` | `reread` | Read the current head (or the collection's inference state) and make a fresh decision. Never replay the stale request. |
 | `command-unresolved` | `false` | `inspect_outcome` | The guarded command's outcome is unknown. Inspect it ([guarded command recovery](../ops/command-recovery.md)) before explicitly authorizing a new key. Never replay automatically. |
 
@@ -36,6 +36,10 @@ authorizes **no** automated replay, and `retryable` is never `true` without
 `repeat`. A v1.4 client ignores both members; problems without guidance
 serialize exactly as before. Session turns remain non-retryable in the
 official clients regardless of these members.
+
+`retryable` governs a direct repeat of the same request, subject to any
+`Retry-After` delay. On a provider-budget 429, `retryable: false` rules out
+an immediate repeat and `retry_later` means wait for the budget window to reset.
 
 ## Problem types
 
@@ -62,6 +66,7 @@ every slug the server emits has one.
 | `forbidden`<a id="problem-forbidden"></a> | 403 | `PERMISSION_DENIED` | valid token, wrong tenant/role. |
 | `rate-limited`<a id="problem-rate-limited"></a> | 429 | `RESOURCE_EXHAUSTED` | per-tenant limits or provider budget (rpm/tpm) exhausted — including an upstream provider 429 that survived the retry policy (2026-09-01; previously flattened into `provider-error`). REST responses carry `Retry-After: 60` (the rpm window's upper bound). |
 | `daily-cap-reached`<a id="problem-daily-cap-reached"></a> | 429 | `RESOURCE_EXHAUSTED` | the (provider config × tier) daily token cap is exhausted (spending caps, 2026-09-01: `spec.budgets.dailyTokens`, UTC-day window, migration 0029). The detail names the config, tier, remaining/limit and the reset; REST responses carry `Retry-After` = seconds to midnight UTC. Recovery differs from `rate-limited`: wait for the window, or re-send on a cheaper tier. |
+| `extraction-deferred`<a id="problem-extraction-deferred"></a> | 429 | `RESOURCE_EXHAUSTED` | An isolated PDF did not acquire an extraction slot before the queue deadline and the build policy is `MUNARIUM_PDF_EXTRACTION_DEFERRED=fail`. Retry after extraction capacity returns. A queued build records `extraction_deferred`. |
 | `provider-error`<a id="problem-provider-error"></a> | 502 | `UNAVAILABLE` | upstream LLM failure, refused/malformed/unsupported completion, or session token exhaustion after its single bounded retry; extensions: `provider`, `endpoint_fingerprint` (never key material). Dispatched calls retain their accounted usage even when no answer is returned. |
 | `storage-error`<a id="problem-storage-error"></a> | 500 | `INTERNAL` | backend failure. |
 | `datastore-unavailable`<a id="problem-datastore-unavailable"></a> | 503 | `UNAVAILABLE` | a scope selected to serve from the datastore could not be served from its artifacts. There is deliberately **no fallback past selection**: a replica that agreed to serve a scope from the datastore leaves the traffic pool rather than silently answering from PostgreSQL, so the two engines can never be confused for each other. Recovery is an operator action, never a request-path one — `PUT /v1/retrieval-rollout` with `serving: postgres` (the rollback, never gated) or `mmctl datastore rollout set <collection|shape> <id> postgres` per scope for a whole corpus. |
@@ -119,7 +124,7 @@ keep their registered meanings and HTTP statuses, with a `Bearer` challenge on
 | `mcp-tool-unavailable`<a id="problem-mcp-tool-unavailable"></a> | 403 | `PERMISSION_DENIED` | the tool or argument form is not offered on this deployment: the execution form of a generating tool with `MUNARIUM_MCP_PAID_TOOLS=disabled`, or any keyed execution with `MUNARIUM_MCP_EXECUTION=recovery-only`. The recovery form (the operation key alone) stays available. |
 | `mcp-operation-conflict`<a id="problem-mcp-operation-conflict"></a> | 409 | `FAILED_PRECONDITION` | the operation key already identifies a call with different arguments. Nothing ran. Recover with the key alone, or choose a new key for new work. |
 | `mcp-operation-key-invalid`<a id="problem-mcp-operation-key-invalid"></a> | 400 | `INVALID_ARGUMENT` | the operation key cannot admit work: expired, beyond `MUNARIUM_MCP_KEY_MAX_VALIDITY_SECS`, expiring before the work deadline, or expired before dispatch. Nothing ran. A client never extends a key or mints a replacement automatically. |
-| `mcp-generation-not-authorized`<a id="problem-mcp-generation-not-authorized"></a> | 403 | `PERMISSION_DENIED` | an MCP call reached a model stage that is not authorized: generation disabled, a contributing collection without a budget owner and both allowances, no common budget owner, or a model suspended after usage exceeded its reservation bound. Refused before the provider is contacted. |
+| `mcp-generation-not-authorized`<a id="problem-mcp-generation-not-authorized"></a> | 403 | `PERMISSION_DENIED` | an MCP call reached a model stage that is not authorized because generation is disabled, a contributor lacks an owner or allowances, the contributors lack a common payer, or the generation policy is unconfirmed across live replicas. Refused before the provider is contacted for that attempt. |
 | `mcp-allowance-exhausted`<a id="problem-mcp-allowance-exhausted"></a> | 429 | `RESOURCE_EXHAUSTED` | the next physical model attempt does not fit the call's request allowance or a contributor's UTC-day allowance. Refused before dispatch with nothing reserved. Earlier stages of the same call may have run and been charged. |
 | `mcp-accounting-unavailable`<a id="problem-mcp-accounting-unavailable"></a> | 503 | `UNAVAILABLE` | the generation accounting store could not reserve the attempt, so no model call was made. |
 
@@ -190,6 +195,7 @@ build-job page links to.
 | `datastore_unavailable`<a id="job-failure-datastore_unavailable"></a> | a datastore artifact could not be read or written (`datastore-unavailable` cause) | build job failed: a datastore artifact could not be read or written |
 | `provider_error`<a id="job-failure-provider_error"></a> | an upstream model provider call failed (`provider-error` cause) | build job failed: an upstream model provider call failed |
 | `artifact_blocked`<a id="job-failure-artifact_blocked"></a> | the build was refused in `MUNARIUM_ARTIFACT_DAMAGE_MODE=enforce` because its result is a fleet-blocked artifact (`artifact-blocked` cause); not transient, a verified repair clears it ([artifact damage](../ops/artifact-damage.md#builds-of-a-blocked-artifact)) | build job failed: its result is an artifact blocked by artifact damage; repair is required |
+| `extraction_deferred`<a id="job-failure-extraction_deferred"></a> | isolated PDF extraction reached its queue deadline with the deferred policy set to `fail` | build job failed: isolated PDF extraction was deferred; retry when extraction capacity returns |
 
 Any other cause is unclassified: `error` is the generic message "build job failed; no
 classified cause was recorded for this failure" and `error_code` is omitted. The same

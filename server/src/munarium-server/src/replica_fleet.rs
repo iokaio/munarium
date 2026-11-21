@@ -109,6 +109,8 @@ pub struct LiveReplica {
     /// `console-sessions` when the replica will serve revocable console
     /// sessions under an enabled fleet mode.
     pub capabilities: Vec<String>,
+    /// SHA-256 of the trusted MCP generation policy bytes loaded at startup.
+    pub mcp_generation_policy_sha256: Option<String>,
     /// Seconds since its last heartbeat, by the database clock.
     pub seconds_since_heartbeat: f64,
 }
@@ -144,6 +146,7 @@ fn this_replica(state: &AppState) -> LiveReplica {
         plane: plane(),
         replica_count: state.config.replica_count,
         capabilities: capabilities(state),
+        mcp_generation_policy_sha256: state.mcp.settings.generation.digest().map(String::from),
         seconds_since_heartbeat: 0.0,
     }
 }
@@ -171,15 +174,16 @@ pub async fn beat(state: &AppState) -> Result<()> {
         sqlx::query(
             "INSERT INTO server_replica_heartbeats
                  (environment_id, replica_id, instance_id, version, plane, replica_count,
-                  capabilities, started_at, last_seen_at, expires_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now(),
-                     now() + make_interval(secs => $8::double precision))
+                  capabilities, mcp_generation_policy_sha256, started_at, last_seen_at, expires_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), now(),
+                     now() + make_interval(secs => $9::double precision))
              ON CONFLICT (environment_id, replica_id) DO UPDATE SET
                  instance_id = EXCLUDED.instance_id,
                  version = EXCLUDED.version,
                  plane = EXCLUDED.plane,
                  replica_count = EXCLUDED.replica_count,
                  capabilities = EXCLUDED.capabilities,
+                 mcp_generation_policy_sha256 = EXCLUDED.mcp_generation_policy_sha256,
                  last_seen_at = now(),
                  expires_at = EXCLUDED.expires_at",
         )
@@ -190,6 +194,7 @@ pub async fn beat(state: &AppState) -> Result<()> {
         .bind(&me.plane)
         .bind(i32::try_from(me.replica_count).unwrap_or(i32::MAX))
         .bind(&me.capabilities)
+        .bind(&me.mcp_generation_policy_sha256)
         .bind(HEARTBEAT_TTL_SECS as f64)
         .execute(pool),
     )
@@ -228,7 +233,16 @@ pub fn spawn_heartbeat(state: &Arc<AppState>) {
     });
 }
 
-type HeartbeatRow = (String, String, String, String, i32, Vec<String>, f64);
+type HeartbeatRow = (
+    String,
+    String,
+    String,
+    String,
+    i32,
+    Vec<String>,
+    f64,
+    Option<String>,
+);
 
 /// The live replicas of `environment`: rows whose expiry is still ahead by
 /// the database clock.
@@ -240,7 +254,8 @@ pub async fn read_live<'e, E: sqlx::PgExecutor<'e>>(
         "replica heartbeat read",
         sqlx::query_as(
             "SELECT replica_id, instance_id, version, plane, replica_count, capabilities,
-                    GREATEST(EXTRACT(EPOCH FROM now() - last_seen_at), 0)::float8
+                    GREATEST(EXTRACT(EPOCH FROM now() - last_seen_at), 0)::float8,
+                    mcp_generation_policy_sha256
                FROM server_replica_heartbeats
               WHERE environment_id = $1 AND expires_at > now()
               ORDER BY instance_id, replica_id",
@@ -259,6 +274,7 @@ pub async fn read_live<'e, E: sqlx::PgExecutor<'e>>(
             replica_count: u32::try_from(r.4).unwrap_or(0),
             capabilities: r.5,
             seconds_since_heartbeat: r.6,
+            mcp_generation_policy_sha256: r.7,
         })
         .collect())
 }
@@ -269,6 +285,45 @@ pub async fn live_replicas(state: &AppState) -> Result<Vec<LiveReplica>> {
     match state.pg_pool() {
         Some(pool) => read_live(pool, &state.fleet.environment()).await,
         None => Ok(vec![this_replica(state)]),
+    }
+}
+
+/// The policy a replica will use to admit a physical MCP attempt.
+pub(crate) struct McpPolicyIdentity {
+    environment: String,
+    replica_id: String,
+    digest: Option<String>,
+}
+
+impl McpPolicyIdentity {
+    pub fn from_state(state: &AppState) -> Self {
+        Self {
+            environment: state.fleet.environment(),
+            replica_id: state.fleet.replica_id.clone(),
+            digest: state.mcp.settings.generation.digest().map(String::from),
+        }
+    }
+
+    /// A live self heartbeat and agreement across the observed fleet are
+    /// required. During a policy rollout there is no authoritative majority.
+    pub async fn agrees(&self, pool: &sqlx::PgPool) -> Result<bool> {
+        let Some(digest) = self.digest.as_deref() else {
+            return Ok(false);
+        };
+        bounded(
+            "MCP generation policy check",
+            sqlx::query_scalar(
+                "SELECT COALESCE(bool_or(replica_id = $2) AND
+                         bool_and(mcp_generation_policy_sha256 IS NOT DISTINCT FROM $3), false)
+                   FROM server_replica_heartbeats
+                  WHERE environment_id = $1 AND expires_at > now()",
+            )
+            .bind(&self.environment)
+            .bind(&self.replica_id)
+            .bind(digest)
+            .fetch_one(pool),
+        )
+        .await
     }
 }
 
@@ -753,6 +808,7 @@ mod tests {
             } else {
                 Vec::new()
             },
+            mcp_generation_policy_sha256: None,
             seconds_since_heartbeat: 1.0,
         }
     }
@@ -1013,7 +1069,7 @@ mod pg_tests {
             .unwrap();
         let read = read_live(&pool, "env").await;
         assert!(read.is_err());
-        let m = crate::scale_diagnostics::membership_report("env".into(), 2, read);
+        let m = crate::scale_diagnostics::membership_report("env".into(), 2, None, read);
         assert_eq!(m.status, "unavailable");
         assert_eq!(m.exceeds_configured, None);
         assert!(m.replicas.is_empty());

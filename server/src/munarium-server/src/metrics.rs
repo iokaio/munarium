@@ -61,6 +61,11 @@ const METRICS_META: &[(&str, &str, &str)] = &[
         "MCP tool handlers started after a confirmed admission, by tool.",
     ),
     (
+        "munarium_mcp_generation_excess_tokens_total",
+        "counter",
+        "Provider-reported MCP tokens settled above their reservation estimates.",
+    ),
+    (
         "munarium_build_info",
         "gauge",
         "Build metadata; value is always 1.",

@@ -7,6 +7,16 @@ for registry availability, digests and public signing instructions. The detailed
 
 ## 1.5.0 — unreleased
 
+- Freeze the opt-in isolated PDF profile at 30 CPU seconds and 60 seconds
+  elapsed. Deferred extraction under the `fail` policy has a typed problem
+  and job code.
+- Replay pinned and restored PostgreSQL hash reads with exact vector search
+  and deterministic tie-breaking. The I3 runner keeps the embedding-only
+  qualification and rollback replay measurements independently.
+- Share one MCP generation policy across Helm serving and builder pods.
+  Replica heartbeats carry its digest (migration 0088) and MCP generation
+  pauses during digest disagreement. Token reservations use a per-model
+  estimate. Observed excess is recorded, charged and counted.
 - Prepare Server/mmctl and SDK source versions 1.5.0, with SDK target range
   1.5/1.4. Image and package publication remain separate actions; installation
   defaults stay on published Server 1.4.0.

@@ -493,7 +493,14 @@ Attach raw metric exports, `kubectl` snapshots and logs to the evidence location
 
 ## Multi-replica MCP cases
 
-[A5-T3](mcp-analysis.md#a5-t3), [A5-T5](mcp-analysis.md#a5-t5), [A6-T2](mcp-analysis.md#a6-t1) and the two-replica races in [A8-T1](mcp-analysis.md#a8-t1) and [A9-T2](mcp-analysis.md#a9-t2) need two replicas and a durable store, not cloud hardware. Run them on L1 or L2 with a recording provider. Real-client transcripts ([A3](mcp-analysis.md#a3)) need the clients, not a cluster. If the release owner wants them on the same candidate deployment as the cluster receipts, run them on L3 in the same run. Prerequisites: ledger Phase 5 rows (planned).
+[A5-T3](mcp-analysis.md#a5-t3), [A5-T5](mcp-analysis.md#a5-t5), [A6-T2](mcp-analysis.md#a6-t1) and the two-replica races in [A8-T1](mcp-analysis.md#a8-t1) and [A9-T2](mcp-analysis.md#a9-t2) need two replicas and a durable store. Rehearse them on L1 or L2 with a recording provider. Collect [A3](mcp-analysis.md#a3) transcripts with the selected real client builds on the candidate. [Phase 5 status](implementation-ledger.md#phase-5--governed-mcp-endpoint)
+
+For A2, change the Helm generation policy while both pod groups are running.
+Record each group's ConfigMap reference and the reported policy digests before,
+during and after the rollout. While live digests disagree, confirm the scale
+warning and zero arrivals at the recording provider. Once the replacement
+replicas agree and the old heartbeats expire, repeat with a fresh operation key
+and verify that the new allowance is in force.
 
 ## Run order
 
@@ -548,9 +555,8 @@ The environment (workstation only, no Azure), the rollback route (backup restore
 
 | Decision | Blocks | Owner |
 |---|---|---|
-| U10 shared session store | LOGIN1 | Server console and deployment maintainers ([open items](README.md#open-items)) |
 | ART1 verifier identity and independence (hub ADR 0028, accepted; export pending) | ART1/ART2 | Hub contract owners |
 | SC2 placement contract (hub ADR 0024, accepted; export pending) | SC2 | Hub contract owners |
-| Lens runtime, precision and workstation profile; I3 thresholds | LENS-D1, I3, LENS-D2, SC1-T2/T3, SC2 | Lens maintainers ([open items](README.md#open-items)) |
+| Lens workstation serving profile and held-out judgments | LENS-D1, I3, LENS-D2, SC1-T2/T3, SC2 | Lens maintainers ([open items](README.md#open-items)) |
 | Restricted-root authorization | LENS-D2 restricted root (L3R) | Corpus owner |
 | Qualification assignments and access | The workstation run | Release engineering ([open items](README.md#open-items)) |

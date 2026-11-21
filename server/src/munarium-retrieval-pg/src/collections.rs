@@ -1270,6 +1270,17 @@ impl PgRetrieval {
         collection_id: &str,
         index_version: Option<&str>,
     ) -> Result<(String, i64)> {
+        self.resolve_collection_index(collection_id, index_version)
+            .await
+            .map(|(id, watermark, _)| (id, watermark))
+    }
+
+    /// Also resolves whether a hash read must replay an immutable version.
+    async fn resolve_collection_index(
+        &self,
+        collection_id: &str,
+        index_version: Option<&str>,
+    ) -> Result<(String, i64, bool)> {
         match index_version {
             Some(id) => {
                 let row = sqlx::query(
@@ -1282,19 +1293,24 @@ impl PgRetrieval {
                 .fetch_optional(&self.pool)
                 .await
                 .map_err(storage_err)?;
-                row.map(|r| (r.get::<String, _>("id"), r.get::<i64, _>("watermark_seq")))
+                row.map(|r| (r.get("id"), r.get("watermark_seq"), true))
             }
             None => {
                 let row = sqlx::query(
-                    "SELECT id, watermark_seq FROM index_versions
-                      WHERE tenant_id = $1 AND collection_id = $2 AND active",
+                    "SELECT v.id, v.watermark_seq, EXISTS (
+                                SELECT 1 FROM collection_inference_bindings b
+                                 WHERE b.tenant_id = v.tenant_id AND b.collection_id = v.collection_id
+                                   AND b.state = 'rolled_back' AND b.prior_index_id = v.id
+                            ) AS restored
+                       FROM index_versions v
+                      WHERE v.tenant_id = $1 AND v.collection_id = $2 AND v.active",
                 )
                 .bind(&self.tenant_id)
                 .bind(collection_id)
                 .fetch_optional(&self.pool)
                 .await
                 .map_err(storage_err)?;
-                row.map(|r| (r.get::<String, _>("id"), r.get::<i64, _>("watermark_seq")))
+                row.map(|r| (r.get("id"), r.get("watermark_seq"), r.get("restored")))
             }
         }
         .ok_or_else(|| KernelError::NotFound {
@@ -1314,7 +1330,7 @@ impl PgRetrieval {
     }
 
     /// The collection search, with the vector leg drawn either from the
-    /// built-in hash vectors (`semantic = None`, the v1.4 path, unchanged) or
+    /// built-in hash vectors (`semantic = None`) or
     /// from a semantic index's companion vectors (ClearView IR-2). The
     /// lexical leg, fusion and envelope are the same code either way.
     pub(crate) async fn search_collection_leg(
@@ -1347,8 +1363,8 @@ impl PgRetrieval {
             }
         };
         let query: &str = plan.original.as_str();
-        let (index_id, watermark) = self
-            .resolve_index_version(collection_id, index_version)
+        let (index_id, watermark, exact_hash) = self
+            .resolve_collection_index(collection_id, index_version)
             .await?;
 
         let expanded_query: &str = plan.expanded.as_str();
@@ -1489,31 +1505,39 @@ impl PgRetrieval {
             }
             (None, None) => Vec::new(),
             (None, Some(qvec)) => {
-                let ef_search = prepared.vector_candidates.clamp(40, 1000);
                 let mut tx = self.pool.begin().await.map_err(storage_err)?;
-                sqlx::query("SELECT set_config('hnsw.ef_search', $1, true)")
-                    .bind(ef_search.to_string())
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(storage_err)?;
-                sqlx::query("SAVEPOINT iterative_scan")
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(storage_err)?;
-                if sqlx::query("SELECT set_config('hnsw.iterative_scan', 'relaxed_order', true)")
-                    .execute(&mut *tx)
-                    .await
-                    .is_err()
-                {
-                    sqlx::query("ROLLBACK TO SAVEPOINT iterative_scan")
+                let order = if exact_hash {
+                    // The expression prevents use of the partition-wide HNSW
+                    // graph. Break ties before LIMIT so replay selects the same
+                    // candidate set even when adjacent versions change.
+                    "(embedding <=> $4) + 0, chunk_id"
+                } else {
+                    let ef_search = prepared.vector_candidates.clamp(40, 1000);
+                    sqlx::query("SELECT set_config('hnsw.ef_search', $1, true)")
+                        .bind(ef_search.to_string())
                         .execute(&mut *tx)
                         .await
                         .map_err(storage_err)?;
-                }
-                // Preserve the HNSW candidate selection, then rerank that bounded
-                // pool with the runbook's content penalties (same rule forms as the
-                // lexical leg; an empty rule list adds 0 and keeps the ANN order).
-                let vector = sqlx::query(
+                    sqlx::query("SAVEPOINT iterative_scan")
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(storage_err)?;
+                    if sqlx::query(
+                        "SELECT set_config('hnsw.iterative_scan', 'relaxed_order', true)",
+                    )
+                    .execute(&mut *tx)
+                    .await
+                    .is_err()
+                    {
+                        sqlx::query("ROLLBACK TO SAVEPOINT iterative_scan")
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(storage_err)?;
+                    }
+                    "embedding <=> $4"
+                };
+                // Apply runbook content penalties to the selected pool.
+                let sql = format!(
                     "WITH rules AS (
                         SELECT (rule->>'vector_distance_penalty')::double precision AS penalty,
                                CASE WHEN rule->>'match' = 'phrase'
@@ -1536,20 +1560,21 @@ impl PgRetrieval {
                               FROM collection_chunks
                              WHERE tenant_id = $1 AND collection_id = $2
                                AND index_version_id = $3
-                             ORDER BY embedding <=> $4
+                             ORDER BY {order}
                              LIMIT $5
                        ) AS candidates
                       ORDER BY distance, candidates.chunk_id",
-            )
-            .bind(&self.tenant_id)
-            .bind(collection_id)
-            .bind(&index_id)
-            .bind(&qvec)
-            .bind(prepared.vector_candidates)
-            .bind(&demotions_json)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(storage_err)?;
+            );
+                let vector = sqlx::query(&sql)
+                    .bind(&self.tenant_id)
+                    .bind(collection_id)
+                    .bind(&index_id)
+                    .bind(&qvec)
+                    .bind(prepared.vector_candidates)
+                    .bind(&demotions_json)
+                    .fetch_all(&mut *tx)
+                    .await
+                    .map_err(storage_err)?;
                 tx.commit().await.map_err(storage_err)?;
                 vector
             }
@@ -1557,6 +1582,7 @@ impl PgRetrieval {
 
         tracing::debug!(target: "munarium_retrieval::work", engine = "postgres", leg = "vector",
             enabled = prepared.embedding.is_some(),
+            exact_hash = exact_hash && semantic.is_none(),
             requested = prepared.vector_candidates, candidate_limit = prepared.vector_candidates,
             fetched = vector.len(), accepted = vector.len(),
             adapter_rejected = 0, rejection_reason = "none", refill_count = 0,

@@ -45,11 +45,13 @@ pub enum JobFailureCode {
     /// block, refused in `MUNARIUM_ARTIFACT_DAMAGE_MODE=enforce` (ClearView
     /// ART1/ART2). Not transient: only a verified ART2 repair clears it.
     ArtifactBlocked,
+    /// A PDF exceeded its wait for an isolated extraction slot.
+    ExtractionDeferred,
 }
 
 impl JobFailureCode {
     /// Every code, in registry order.
-    pub const ALL: [JobFailureCode; 7] = [
+    pub const ALL: [JobFailureCode; 8] = [
         Self::AttemptsExhausted,
         Self::InvalidInput,
         Self::NotFound,
@@ -57,6 +59,7 @@ impl JobFailureCode {
         Self::DatastoreUnavailable,
         Self::ProviderError,
         Self::ArtifactBlocked,
+        Self::ExtractionDeferred,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -68,6 +71,7 @@ impl JobFailureCode {
             Self::DatastoreUnavailable => "datastore_unavailable",
             Self::ProviderError => "provider_error",
             Self::ArtifactBlocked => "artifact_blocked",
+            Self::ExtractionDeferred => "extraction_deferred",
         }
     }
 
@@ -88,6 +92,9 @@ impl JobFailureCode {
             Self::ArtifactBlocked => {
                 "build job failed: its result is an artifact blocked by artifact damage; \
                  repair is required"
+            }
+            Self::ExtractionDeferred => {
+                "build job failed: isolated PDF extraction was deferred; retry when extraction capacity returns"
             }
         }
     }
@@ -139,6 +146,7 @@ pub fn classify(e: &KernelError) -> JobFailure {
         KernelError::Storage(_) => JobFailureCode::StorageError,
         KernelError::DatastoreUnavailable(_) => JobFailureCode::DatastoreUnavailable,
         KernelError::ArtifactBlocked(_) => JobFailureCode::ArtifactBlocked,
+        KernelError::ExtractionDeferred(_) => JobFailureCode::ExtractionDeferred,
         KernelError::Provider(_) => JobFailureCode::ProviderError,
         KernelError::HeadConflict { .. }
         | KernelError::PolicyRejection { .. }

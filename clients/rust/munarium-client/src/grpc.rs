@@ -293,6 +293,8 @@ impl CommandsPlane for GrpcTransport {
             .await?
             .into_inner();
         let claim = resp.claim.ok_or_else(|| MunariumError::Unexpected {
+            retryable: None,
+            retry_action: None,
             status: None,
             detail: "ProposeClaimResponse without claim".into(),
         })?;
@@ -359,6 +361,8 @@ impl CommandsPlane for GrpcTransport {
             .await?
             .into_inner();
         let p = resp.promise.ok_or_else(|| MunariumError::Unexpected {
+            retryable: None,
+            retry_action: None,
             status: None,
             detail: "OpenPromiseResponse without promise".into(),
         })?;
@@ -414,6 +418,8 @@ impl CommandsPlane for GrpcTransport {
             .await?
             .into_inner();
         let a = resp.anchor.ok_or_else(|| MunariumError::Unexpected {
+            retryable: None,
+            retry_action: None,
             status: None,
             detail: "LockAnchorResponse without anchor".into(),
         })?;
@@ -498,6 +504,8 @@ impl QueryPlane for GrpcTransport {
             .await?
             .into_inner();
         let claim = resp.claim.ok_or_else(|| MunariumError::Unexpected {
+            retryable: None,
+            retry_action: None,
             status: None,
             detail: "GetClaimResponse without claim".into(),
         })?;
@@ -532,6 +540,8 @@ impl QueryPlane for GrpcTransport {
             .await?
             .into_inner();
         let slice = resp.slice.ok_or_else(|| MunariumError::Unexpected {
+            retryable: None,
+            retry_action: None,
             status: None,
             detail: "SliceFactsResponse without slice".into(),
         })?;
@@ -693,6 +703,8 @@ impl QueryPlane for GrpcTransport {
             .await?
             .into_inner();
         let ctx = resp.context.ok_or_else(|| MunariumError::Unexpected {
+            retryable: None,
+            retry_action: None,
             status: None,
             detail: "ComposeContextResponse without context".into(),
         })?;
@@ -757,6 +769,8 @@ impl IngestPlane for GrpcTransport {
         // (documented parity gap).
         let mut results = self.ingest_files(vec![file]).await?;
         let result = results.pop().ok_or_else(|| MunariumError::Unexpected {
+            retryable: None,
+            retry_action: None,
             status: None,
             detail: "IngestFilesResponse carried no result for the one file sent".into(),
         })?;
@@ -767,6 +781,8 @@ impl IngestPlane for GrpcTransport {
                 })
             }
             (Some(err), _) => Err(MunariumError::Unexpected {
+                retryable: None,
+                retry_action: None,
                 status: None,
                 detail: format!("ingest failed: {err}"),
             }),
@@ -922,6 +938,8 @@ impl GrpcTransport {
             // A surplus is as wrong as a shortfall: results splice back by
             // POSITION, so any count mismatch would mis-pair files silently.
             return Err(MunariumError::Unexpected {
+                retryable: None,
+                retry_action: None,
                 status: None,
                 detail: format!(
                     "IngestFilesResponse carried {} results for {} files sent",
@@ -1694,6 +1712,8 @@ impl SessionsPlane for GrpcTransport {
 /// typed message has no inference stages, so `stages` is empty.
 fn disclosed_search_dto(resp: pb::HybridSearchResponse) -> Result<dto::DisclosedSearchResponse> {
     let envelope = resp.envelope.ok_or_else(|| MunariumError::Unexpected {
+        retryable: None,
+        retry_action: None,
         status: None,
         detail: "HybridSearchResponse without ProvenanceEnvelope".into(),
     })?;
@@ -1732,6 +1752,8 @@ fn covered_turn_response_dto(mut resp: pb::TurnResponse) -> Result<dto::CoveredT
         .map(|c| {
             let policy = dto::CollectionAvailabilityDto::parse(&c.policy).ok_or_else(|| {
                 MunariumError::Unexpected {
+                    retryable: None,
+                    retry_action: None,
                     status: None,
                     detail: format!("TurnCoverage with an unknown policy '{}'", c.policy),
                 }
@@ -1770,6 +1792,8 @@ fn turn_response_dto(resp: pb::TurnResponse) -> Result<dto::TurnResponse> {
         .into_iter()
         .map(|e| {
             let envelope = e.envelope.ok_or_else(|| MunariumError::Unexpected {
+                retryable: None,
+                retry_action: None,
                 status: None,
                 detail: format!(
                     "CollectionEnvelope for '{}' without ProvenanceEnvelope",

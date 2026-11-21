@@ -32,6 +32,7 @@ const CLASSIFIED: &[(&str, Option<(bool, &str)>)] = &[
     ("datastore-unavailable", Some((false, "retry_later"))),
     // A fleet block clears only after an ART2 repair: no automated action.
     ("artifact-blocked", None),
+    ("extraction-deferred", Some((false, "retry_later"))),
     ("inference-stage-unavailable", Some((false, "retry_later"))),
     ("inference-not-qualified", Some((false, "reread"))),
     ("uid-required", None),
@@ -136,6 +137,7 @@ fn both_transports_carry_the_same_hint_for_the_same_error() {
         KernelError::InvalidInput(format!("{COMMAND_UNRESOLVED_PREFIX}unknown")),
         KernelError::DatastoreUnavailable("scope".into()),
         KernelError::ArtifactBlocked("artifact a of index version v".into()),
+        KernelError::ExtractionDeferred("extraction queue wait elapsed".into()),
         KernelError::InvalidInput("bad".into()),
         KernelError::Storage("driver text".into()),
         KernelError::Provider("upstream".into()),

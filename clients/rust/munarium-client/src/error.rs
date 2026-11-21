@@ -10,13 +10,19 @@ use std::time::Duration;
 /// Errors a client call can surface. The first group mirrors the server's
 /// problem registry one-to-one; the last three are client-side conditions.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum MunariumError {
     /// Optimistic `expected_head` mismatch — normal and retryable: re-read
     /// head, re-decide, retry (or use `MunariumClient::propose_claim_with_retry`).
     /// `actual == 0` means the server did not carry structured details
     /// (e.g. an intermediary stripped them) — re-read the head yourself.
     #[error("head conflict: expected seq {expected}, actual {actual}")]
-    HeadConflict { expected: u64, actual: u64 },
+    HeadConflict {
+        expected: u64,
+        actual: u64,
+        retryable: Option<bool>,
+        retry_action: Option<String>,
+    },
 
     /// Block-severity gate findings on a non-claim path. NOTE: a gated
     /// `propose_claim`/`append_events` does NOT error — the claim is recorded
@@ -56,12 +62,18 @@ pub enum MunariumError {
     RateLimited {
         detail: String,
         retry_after: Option<Duration>,
+        retryable: Option<bool>,
+        retry_action: Option<String>,
     },
 
     /// Load-shed / graceful drain (503 / `overloaded`) — transient, retried
     /// automatically on read paths.
     #[error("server overloaded: {detail}")]
-    Overloaded { detail: String },
+    Overloaded {
+        detail: String,
+        retryable: Option<bool>,
+        retry_action: Option<String>,
+    },
 
     /// Another run holds this runbook's run lock (409 / gRPC ABORTED with
     /// reason `run-locked`, 2026-08-17). The server rejected the request
@@ -71,7 +83,11 @@ pub enum MunariumError {
     /// is held for a whole run (minutes), so sub-second auto-retry would be
     /// futile churn that masks the typed signal.
     #[error("run locked: {detail}")]
-    RunLocked { detail: String },
+    RunLocked {
+        detail: String,
+        retryable: Option<bool>,
+        retry_action: Option<String>,
+    },
 
     #[error("server storage error: {detail}")]
     Storage { detail: String },
@@ -101,12 +117,59 @@ pub enum MunariumError {
 
     /// An error response that did not match the registry.
     #[error("unexpected server error (status {status:?}): {detail}")]
-    Unexpected { status: Option<u16>, detail: String },
+    Unexpected {
+        status: Option<u16>,
+        detail: String,
+        retryable: Option<bool>,
+        retry_action: Option<String>,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, MunariumError>;
 
 impl MunariumError {
+    /// The server's explicit guidance about repeating the same request.
+    /// Older servers and responses without structured details return `None`.
+    pub fn retryable(&self) -> Option<bool> {
+        self.retry_guidance().0
+    }
+
+    /// The server's recommended recovery action, if present.
+    pub fn retry_action(&self) -> Option<&str> {
+        self.retry_guidance().1
+    }
+
+    fn retry_guidance(&self) -> (Option<bool>, Option<&str>) {
+        match self {
+            Self::HeadConflict {
+                retryable,
+                retry_action,
+                ..
+            }
+            | Self::RateLimited {
+                retryable,
+                retry_action,
+                ..
+            }
+            | Self::Overloaded {
+                retryable,
+                retry_action,
+                ..
+            }
+            | Self::RunLocked {
+                retryable,
+                retry_action,
+                ..
+            }
+            | Self::Unexpected {
+                retryable,
+                retry_action,
+                ..
+            } => (*retryable, retry_action.as_deref()),
+            _ => (None, None),
+        }
+    }
+
     /// Registry slug for this error, when it maps to one.
     pub fn slug(&self) -> Option<&'static str> {
         Some(match self {
@@ -191,6 +254,8 @@ pub(crate) struct ProblemExt {
     pub shape_ref: Option<String>,
     pub kind: Option<String>,
     pub id: Option<String>,
+    pub retryable: Option<bool>,
+    pub retry_action: Option<String>,
 }
 
 impl ProblemExt {
@@ -209,6 +274,8 @@ impl ProblemExt {
             shape_ref: body["shape_ref"].as_str().map(String::from),
             kind: body["kind"].as_str().map(String::from),
             id: body["id"].as_str().map(String::from),
+            retryable: body["retryable"].as_bool(),
+            retry_action: body["retry_action"].as_str().map(String::from),
         }
     }
 
@@ -229,6 +296,8 @@ impl ProblemExt {
             shape_ref: md.get("shape_ref").cloned(),
             kind: md.get("kind").cloned(),
             id: md.get("id").cloned(),
+            retryable: md.get("retryable").and_then(|v| v.parse().ok()),
+            retry_action: md.get("retry_action").cloned(),
         }
     }
 }
@@ -240,10 +309,17 @@ pub(crate) fn from_parts(
     retry_after: Option<Duration>,
     ext: ProblemExt,
 ) -> MunariumError {
+    let ProblemExt {
+        retryable,
+        retry_action,
+        ..
+    } = ext;
     match slug {
         "head-conflict" => MunariumError::HeadConflict {
             expected: ext.expected.unwrap_or(0),
             actual: ext.actual.unwrap_or(0),
+            retryable,
+            retry_action,
         },
         "policy-rejection" => MunariumError::PolicyRejection {
             findings_total: ext.findings_total.unwrap_or(ext.gate_findings.len() as u64),
@@ -265,8 +341,14 @@ pub(crate) fn from_parts(
         "rate-limited" => MunariumError::RateLimited {
             detail,
             retry_after,
+            retryable,
+            retry_action,
         },
-        "overloaded" => MunariumError::Overloaded { detail },
+        "overloaded" => MunariumError::Overloaded {
+            detail,
+            retryable,
+            retry_action,
+        },
         "storage-error" => MunariumError::Storage { detail },
         "provider-error" => MunariumError::Provider { detail },
         // platform identity/lifecycle slugs — mapped to the existing kinds by
@@ -286,12 +368,21 @@ pub(crate) fn from_parts(
         // mapping it decoded as Unexpected, hiding that a later re-run
         // succeeds once the holding run finishes.
         "session-not-open" | "authoring-draft-invalid" => MunariumError::InvalidInput { detail },
-        "run-locked" => MunariumError::RunLocked { detail },
+        "run-locked" => MunariumError::RunLocked {
+            detail,
+            retryable,
+            retry_action,
+        },
         "runbook-removed" => MunariumError::NotFound {
             kind: ext.kind.unwrap_or_else(|| "runbook".into()),
             id: ext.id.unwrap_or(detail),
         },
-        _ => MunariumError::Unexpected { status, detail },
+        _ => MunariumError::Unexpected {
+            status,
+            detail,
+            retryable,
+            retry_action,
+        },
     }
 }
 
@@ -316,6 +407,8 @@ pub(crate) fn from_status(status: tonic::Status) -> MunariumError {
         tonic::Code::Aborted => MunariumError::HeadConflict {
             expected: 0,
             actual: 0,
+            retryable: None,
+            retry_action: None,
         },
         tonic::Code::NotFound => MunariumError::NotFound {
             kind: "resource".into(),
@@ -333,6 +426,8 @@ pub(crate) fn from_status(status: tonic::Status) -> MunariumError {
         tonic::Code::ResourceExhausted => MunariumError::RateLimited {
             detail: detail_text,
             retry_after: None,
+            retryable: None,
+            retry_action: None,
         },
         // UNAVAILABLE, and both spellings of deadline expiry (tonic's
         // client-side timeout layer reports CANCELLED "Timeout expired";
@@ -350,6 +445,8 @@ pub(crate) fn from_status(status: tonic::Status) -> MunariumError {
         code => MunariumError::Unexpected {
             status: None,
             detail: format!("{code:?}: {detail_text}"),
+            retryable: None,
+            retry_action: None,
         },
     }
 }
@@ -357,6 +454,50 @@ pub(crate) fn from_status(status: tonic::Status) -> MunariumError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rest_retry_guidance_is_optional_and_preserves_false() {
+        let body = serde_json::json!({
+            "type": "https://munarium.ioka.io/problems/daily-cap-reached",
+            "retryable": false,
+            "retry_action": "retry_later"
+        });
+        let err = MunariumError::from_problem(429, None, &body);
+        assert_eq!(err.retryable(), Some(false));
+        assert_eq!(err.retry_action(), Some("retry_later"));
+        assert!(!err.is_command_retry_safe());
+        let old = MunariumError::from_problem(
+            429,
+            None,
+            &serde_json::json!({
+                "type": "https://munarium.ioka.io/problems/rate-limited"
+            }),
+        );
+        assert_eq!(old.retryable(), None);
+        assert_eq!(old.retry_action(), None);
+    }
+
+    #[cfg(feature = "grpc")]
+    #[test]
+    fn grpc_retry_guidance_decodes_on_typed_errors() {
+        use tonic_types::{ErrorDetails, StatusExt};
+        let details = ErrorDetails::with_error_info(
+            "head-conflict",
+            "mmp.ioka.io",
+            std::collections::HashMap::from([
+                ("retryable".into(), "false".into()),
+                ("retry_action".into(), "reread".into()),
+            ]),
+        );
+        let err = from_status(tonic::Status::with_error_details(
+            tonic::Code::Aborted,
+            "head conflict",
+            details,
+        ));
+        assert!(matches!(err, MunariumError::HeadConflict { .. }));
+        assert_eq!(err.retryable(), Some(false));
+        assert_eq!(err.retry_action(), Some("reread"));
+    }
 
     #[test]
     fn problem_head_conflict_decodes_extensions() {
@@ -372,6 +513,7 @@ mod tests {
             MunariumError::HeadConflict {
                 expected: 3,
                 actual: 7,
+                ..
             } => {}
             other => panic!("expected HeadConflict, got {other:?}"),
         }
@@ -503,6 +645,7 @@ mod tests {
             MunariumError::HeadConflict {
                 expected: 3,
                 actual: 7,
+                ..
             } => {}
             other => panic!("expected HeadConflict from ErrorInfo, got {other:?}"),
         }
@@ -544,6 +687,7 @@ mod tests {
             MunariumError::HeadConflict {
                 expected: 0,
                 actual: 0,
+                ..
             } => {}
             other => panic!("expected HeadConflict fallback, got {other:?}"),
         }
@@ -592,7 +736,9 @@ mod tests {
 
         // Load-shed happens BEFORE execution, so it is safe either way.
         assert!(MunariumError::Overloaded {
-            detail: "shed".into()
+            detail: "shed".into(),
+            retryable: None,
+            retry_action: None,
         }
         .is_command_retry_safe());
     }

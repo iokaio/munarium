@@ -56,6 +56,9 @@ the builder group appends its role settings.
 - { name: MUNARIUM_AUTH_MODE, value: static }
 - { name: MUNARIUM_STATIC_TOKENS, value: {{ .Values.staticTokens | quote }} }
 - { name: MUNARIUM_LOG, value: info }
+{{- if (.Values.mcp | default dict).generationPolicy }}
+- { name: MUNARIUM_MCP_GENERATION_POLICY, value: /etc/munarium/mcp-generation/policy.json }
+{{- end }}
 {{- $replicaCount := include "munarium.providerReplicaCount" . }}
 {{- if $replicaCount }}
 # providerReplicaCount (SCALE-1): divides each provider RPM/TPM
@@ -85,4 +88,14 @@ the builder group appends its role settings.
 - { name: MUNARIUM_DOCINTEL_ENDPOINT, value: {{ .Values.docIntel.endpoint | quote }} }
 - { name: MUNARIUM_DOCINTEL_AUTH, value: managed_identity }
 {{- end }}
+{{- end -}}
+
+{{- define "munarium.mcpPolicyMount" -}}
+- { name: mcp-generation-policy, mountPath: /etc/munarium/mcp-generation, readOnly: true }
+{{- end -}}
+
+{{- define "munarium.mcpPolicyVolume" -}}
+- name: mcp-generation-policy
+  configMap:
+    name: munarium-mcp-generation-policy
 {{- end -}}

@@ -961,8 +961,8 @@ async fn deferred_documents_fail_the_build_when_set_to_fail() {
         f.pg.build_collection_index(&f.collection_id, 400, 1, true)
             .await
             .expect_err("a deferred document fails the build");
-    let munarium_core::KernelError::RateLimited(message) = &err else {
-        panic!("a capacity refusal is RateLimited, got {err:?}");
+    let munarium_core::KernelError::ExtractionDeferred(message) = &err else {
+        panic!("expected ExtractionDeferred, got {err:?}");
     };
     assert_eq!(message, munarium_retrieval_pg::DEFERRED_BUILD_MESSAGE);
     assert!(!message.contains(&f.source_id), "{message}");
@@ -974,7 +974,7 @@ async fn deferred_documents_fail_the_build_when_set_to_fail() {
         panic!("the prepared build fails too");
     };
     assert!(
-        matches!(err, munarium_core::KernelError::RateLimited(_)),
+        matches!(err, munarium_core::KernelError::ExtractionDeferred(_)),
         "{err:?}"
     );
     assert_eq!(f.provider.calls(), 0);
@@ -1064,7 +1064,7 @@ fn minimum_memory_mib(bytes: &[u8]) -> Option<Result<u64, String>> {
 #[test]
 #[ignore = "measurement harness; run explicitly in release"]
 fn measure() {
-    let limits = IsolatedPdfLimits::PROVISIONAL;
+    let limits = IsolatedPdfLimits::DEFAULT_PROFILE;
     let x = extractor(limits);
     let mut cases: Vec<(String, Vec<u8>)> = vec![
         ("empty text layer".into(), pdf_with_content("")),

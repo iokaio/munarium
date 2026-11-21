@@ -72,6 +72,7 @@ digest value; use a Helm post-renderer to replace the image with
 | `replicas` | `2` | server pods |
 | `providerReplicaCount` | _(omitted)_ | `MUNARIUM_REPLICA_COUNT`, the provider RPM/TPM divisor that arms the cluster startup checks. Omitted: no entry is rendered, as in v1.4. `auto`: `replicas`, plus `builder.replicas` when the builder group is enabled. A positive integer: that divisor. Anything else fails the render. See [replica count](#replica-count-and-provider-limits) |
 | `strategy` | `{}` | Deployment update strategy, rendered verbatim when set. Empty keeps the Kubernetes default (RollingUpdate, 25% surge) |
+| `mcp.generationPolicy` | `null` | Trusted v1.5 MCP generation policy object. Set `version: 1` and the collection rules documented in the [MCP guide](../../../docs/ops/mcp.md). One ConfigMap is mounted read-only on both pod groups, and policy edits roll both deployments. Set MCP and paid-tool opt-ins separately on serving pods. |
 | `builder.enabled` | `false` | Renders the optional [builder group](#builder-group): a separate `munarium-builder` Deployment that runs the build-job worker and serves no traffic. Off renders exactly the v1.4 objects |
 | `builder.replicas` | `1` | builder pods, independent of `replicas`; a non-negative integer |
 | `builder.resources` / `builder.strategy` | `{}` / `{}` | the builder container's resources and the builder Deployment's update strategy, rendered verbatim when set |

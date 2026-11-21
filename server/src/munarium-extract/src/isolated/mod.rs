@@ -91,12 +91,11 @@ pub struct IsolatedPdfLimits {
 }
 
 impl IsolatedPdfLimits {
-    /// Provisional defaults, chosen conservatively before measurement. They
-    /// are not frozen production limits (B4-T1).
-    pub const PROVISIONAL: Self = Self {
+    /// Default isolated extraction profile frozen after B4-T1 measurements.
+    pub const DEFAULT_PROFILE: Self = Self {
         memory_bytes: 512 * MIB,
-        cpu_seconds: 10,
-        wall_clock: Duration::from_secs(30),
+        cpu_seconds: 30,
+        wall_clock: Duration::from_secs(60),
         max_output_bytes: 64 * 1024 * 1024,
         max_concurrent: 2,
         queue_wait: Duration::from_secs(120),

@@ -20,6 +20,8 @@ SCALE-1-T1 and SCALE-2-T1). The cases skip when `helm` is not installed.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 import shutil
@@ -87,6 +89,33 @@ def env_lines(doc: str) -> list[str]:
 
 def replica_env(doc: str) -> list[str]:
     return re.findall(r"name: MUNARIUM_REPLICA_COUNT, value: \"([^\"]*)\"", doc)
+
+
+@unittest.skipUnless(HELM, "helm is not installed; chart rendering unavailable")
+class McpPolicyTests(unittest.TestCase):
+    def test_both_groups_mount_one_policy_and_roll_on_policy_changes(self):
+        base = ["--set", "builder.enabled=true", "--set", "builder.staging.sizeLimit=1Gi"]
+        self.assertIsNone(named(documents(*base), "ConfigMap", "munarium-mcp-generation-policy"))
+        digests = set()
+        for ratio in (3, 4):
+            docs = documents(
+                *base, "--set", "mcp.generationPolicy.version=1",
+                "--set", f"mcp.generationPolicy.model_bytes_per_token.fixture={ratio}"
+            )
+            config = named(docs, "ConfigMap", "munarium-mcp-generation-policy")
+            self.assertIsNotNone(config)
+            policy = json.loads(re.search(r"^  policy.json: (.*)$", config, re.M)[1])
+            self.assertEqual(json.loads(policy)["model_bytes_per_token"], {"fixture": ratio})
+            checksum = hashlib.sha256(policy.encode()).hexdigest()
+            digests.add(checksum)
+            for app in ("munarium-server", "munarium-builder"):
+                deployment_doc = named(docs, "Deployment", app)
+                self.assertIn(f'checksum/mcp-generation-policy: "{checksum}"', deployment_doc)
+                self.assertIn("name: munarium-mcp-generation-policy", deployment_doc)
+                self.assertIn("mountPath: /etc/munarium/mcp-generation, readOnly: true", deployment_doc)
+                self.assertIn("value: /etc/munarium/mcp-generation/policy.json", deployment_doc)
+            self.assertIn("emptyDir: { sizeLimit:", named(docs, "Deployment", "munarium-builder"))
+        self.assertEqual(len(digests), 2)
 
 
 @unittest.skipUnless(HELM, "helm is not installed; chart rendering unavailable")

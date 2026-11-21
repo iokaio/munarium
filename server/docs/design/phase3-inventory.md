@@ -114,9 +114,9 @@ server binary with OS memory and CPU limits (`setrlimit` on Linux, the
 production platform; development builds on other platforms have none), a
 deadline, an output cap and a per-process admission cap; `extract_source`
 cancels the child when its build is dropped, and over-budget, deferred and
-cancelled outcomes get their own `extraction_status`. Limits are provisional
-([guide](../guides/document-intelligence.md#isolated-pdf-extraction),
-[measurements](pdf-isolation-measurements.md)).
+cancelled outcomes get their own `extraction_status`. The maintainer froze
+the production limits on 21 November 2026. [Guide](../guides/document-intelligence.md#isolated-pdf-extraction)
+· [Measurements](pdf-isolation-measurements.md)
 
 ## B3-T2 classification (proposed)
 

@@ -1,4 +1,4 @@
-# Isolated PDF extraction: provisional measurements (B4)
+# Isolated PDF extraction measurements (B4)
 
 Recorded 19 November 2026 (Windows) and 20 November 2026 (Linux) for
 [R3/B4](airk-analysis.md#b4). The numbers describe one developer machine,
@@ -128,21 +128,20 @@ On the quieter first run the same probe moved from 2.19 to 2.49 ms at p95.
 - **A scanned document without a text layer** extracts as `empty` in about
   6 ms, as inline does; OCR is a separate feature and was not measured.
 
-### Proposed production limits (for review)
+### Production limits frozen on 21 November 2026
 
-| Setting | Provisional | Proposed | Reason |
+| Setting | Measured profile | Frozen profile | Reason |
 |---|---|---|---|
 | Memory | 512 MiB | 512 MiB | Real documents peaked at 238 MiB of address space; two children stay within about 1 GiB per replica. |
 | CPU | 10 s | 30 s | The largest real document used 7.6 s under load. 30 s gives about 4 times that while still stopping a pathological parse. |
 | Wall clock | 30 s | 60 s | Twice the CPU limit, for scheduling delay on a busy node. |
 | Output | 64 MiB | 64 MiB | The largest real output was 3.7 MB. |
 | Concurrency | 2 | 2 | No measurable effect on the probe at two. |
-| Queue wait | 120 s | 120 s | Still long enough to drain two queued parses at the proposed CPU limit. |
+| Queue wait | 120 s | 120 s | Allows two queued parses to drain at the frozen CPU limit. |
 
-These limits stay provisional until the maintainer accepts them (B4-T1). The
-measurements here come from one machine's Docker VM. They are not a Kubernetes
-node with cgroup limits, and the service probe stands in for request work
-rather than measuring REST latency.
+The maintainer froze this profile following B4-T1 review. These measurements
+come from one Docker VM. Kubernetes cgroup limits and REST latency under
+extraction load remain qualification work.
 
 ## Windows measurements (19 November 2026)
 
@@ -150,8 +149,9 @@ rather than measuring REST latency.
 
 The harness is the ignored test `measure` in
 [`munarium-server/tests/isolated_pdf.rs`](../../src/munarium-server/tests/isolated_pdf.rs).
-It drives the real server binary through `IsolatedPdfExtractor` under
-`IsolatedPdfLimits::PROVISIONAL` and prints one row per document:
+It drives the real server binary through `IsolatedPdfExtractor` and prints one
+row per document. The original Windows run used the measured profile above.
+The harness now uses `IsolatedPdfLimits::DEFAULT_PROFILE`.
 
 ```console
 cd server

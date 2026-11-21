@@ -1108,6 +1108,8 @@ async fn replica(
     let state = AppState::new_with_mcp(config(Some(f.url.clone()), &f.tenant, instance), settings)
         .await
         .unwrap();
+    state.fleet.set_environment(&state.fleet.replica_id);
+    crate::replica_fleet::beat(&state).await.unwrap();
     apply_provider(&state, &f.tenant, &f.rec.endpoint).await;
     let router = crate::rest::router(state.clone());
     (state, router)
@@ -1330,6 +1332,71 @@ fn paid() -> McpSettings {
         paid_tools: true,
         ..Default::default()
     }
+}
+
+#[tokio::test]
+async fn a2_live_policy_mismatch_refuses_generation_until_fleet_converges() {
+    let Some(url) = database() else { return };
+    let f = fixture(url, enabled()).await;
+    let policy_a = McpSettings {
+        generation: policy(&f.tenant, Some("library"), Some(100_000), Some(1_000_000)),
+        ..paid()
+    };
+    let policy_b = McpSettings {
+        generation: policy(&f.tenant, Some("library"), Some(90_000), Some(1_000_000)),
+        ..paid()
+    };
+    let (a, ra) = replica(&f, policy_a.clone(), "policy-a").await;
+    let (b, rb) = replica(&f, policy_b, "policy-b").await;
+    b.fleet.set_environment(&a.fleet.environment());
+    crate::replica_fleet::beat(&b).await.unwrap();
+    let tok = f.reader("fleet-reader");
+    let question = || {
+        json!({
+            "operation_key": fresh_key(), "question": "What is in the orchid archive?",
+            "collections": ["alpha"]
+        })
+    };
+    for router in [&ra, &rb] {
+        let result = tool(router, &tok, "ask_collections", question()).await;
+        assert_eq!(
+            problem_slug(&result),
+            "mcp-generation-not-authorized",
+            "{result}"
+        );
+    }
+    assert_eq!(f.rec.arrivals.load(Ordering::SeqCst), 0);
+    assert_eq!(f.attempts().await, 0);
+    let report = crate::scale_diagnostics::op_scale_report(&a, &f.tenant).await;
+    assert_eq!(
+        report.replica_membership.mcp_generation_policy_mismatch,
+        Some(true)
+    );
+    assert!(crate::scale_diagnostics::health_section(&report)
+        .contains("live replicas disagree on the MCP generation policy"));
+
+    // Replace the differing replica; a heartbeat from a separate environment
+    // above and the expired heartbeat in this environment do not count.
+    let (replacement, _) = replica(&f, policy_a, "policy-b-restarted").await;
+    replacement.fleet.set_environment(&a.fleet.environment());
+    crate::replica_fleet::beat(&replacement).await.unwrap();
+    sqlx::query(
+        "UPDATE server_replica_heartbeats SET expires_at = now()
+          WHERE environment_id = $1 AND replica_id = $2",
+    )
+    .bind(a.fleet.environment())
+    .bind(&b.fleet.replica_id)
+    .execute(a.pg_pool().unwrap())
+    .await
+    .unwrap();
+    let result = tool(&ra, &tok, "ask_collections", question()).await;
+    assert_eq!(result["isError"], false, "{result}");
+    assert!(f.rec.arrivals.load(Ordering::SeqCst) > 0);
+    let report = crate::scale_diagnostics::op_scale_report(&a, &f.tenant).await;
+    assert_eq!(
+        report.replica_membership.mcp_generation_policy_mismatch,
+        Some(false)
+    );
 }
 
 /// A5-T1 / A5-T4: all eleven tools through `/mcp`, each compared with its
@@ -2160,6 +2227,7 @@ fn ctx(
         paid_enabled: true,
         policy: Ok(policy),
         admitted: Default::default(),
+        settlement_failed: Default::default(),
     }
 }
 
@@ -2194,7 +2262,7 @@ async fn day_used(pool: &sqlx::PgPool, tenant: &str, kind: &str, id: &str) -> i6
 /// last capacity, settlement once, uncertain usage held, bound violations.
 #[tokio::test]
 async fn a8_a9_allowances_under_retries_and_concurrency() {
-    use crate::mcp_generation::{admit_attempt, settle, settle_by_id};
+    use crate::mcp_generation::{admit_attempt, settle};
     let Some(url) = database() else { return };
     let f = fixture(url, enabled()).await;
     let pool = f.a.pg_pool().unwrap().clone();
@@ -2211,21 +2279,15 @@ async fn a8_a9_allowances_under_retries_and_concurrency() {
     let a1 = admit_attempt(Some(&pool), &c, "fixture", "m", 5_000)
         .await
         .unwrap();
-    settle(Some(&pool), &c, "fixture", "m", &a1, Some(5_000))
-        .await
-        .unwrap();
+    settle(Some(&pool), &a1, Some(5_000)).await.unwrap();
     let a2 = admit_attempt(Some(&pool), &c, "fixture", "m", 2_000)
         .await
         .unwrap();
-    settle(Some(&pool), &c, "fixture", "m", &a2, Some(2_000))
-        .await
-        .unwrap();
+    settle(Some(&pool), &a2, Some(2_000)).await.unwrap();
     let a3 = admit_attempt(Some(&pool), &c, "fixture", "m", 1_000)
         .await
         .unwrap(); // a retry
-    settle(Some(&pool), &c, "fixture", "m", &a3, Some(1_000))
-        .await
-        .unwrap();
+    settle(Some(&pool), &a3, Some(1_000)).await.unwrap();
     let refused = admit_attempt(Some(&pool), &c, "fixture", "m", 1)
         .await
         .unwrap_err();
@@ -2243,7 +2305,10 @@ async fn a8_a9_allowances_under_retries_and_concurrency() {
     .unwrap();
     assert_eq!(payer, 8_000, "the common payer is charged once per attempt");
     // A duplicate settlement receipt changes nothing.
-    assert!(!settle_by_id(&pool, &a3.attempt_id, 999).await.unwrap());
+    assert_eq!(
+        settle(Some(&pool), &a3, Some(999)).await.unwrap(),
+        (false, 0)
+    );
     // Legal alone keeps its 2,000 ceiling.
     let legal = ctx(
         t,
@@ -2307,9 +2372,7 @@ async fn a8_a9_allowances_under_retries_and_concurrency() {
     let u = admit_attempt(Some(&pool), &unsure, "fixture", "m", 700)
         .await
         .unwrap();
-    settle(Some(&pool), &unsure, "fixture", "m", &u, None)
-        .await
-        .unwrap();
+    settle(Some(&pool), &u, None).await.unwrap();
     assert_eq!(day_used(&pool, t, "collection", "unsure").await, 700);
     let (state, day_ok): (String, bool) = sqlx::query_as(
         "SELECT state, day = (now() AT TIME ZONE 'UTC')::date FROM mcp_token_attempts WHERE attempt_id = $1",
@@ -2320,29 +2383,46 @@ async fn a8_a9_allowances_under_retries_and_concurrency() {
     .unwrap();
     assert_eq!((state.as_str(), day_ok), ("uncertain", true));
     // A late reliable receipt settles once; a repeat does nothing.
-    assert!(settle_by_id(&pool, &u.attempt_id, 650).await.unwrap());
-    assert!(!settle_by_id(&pool, &u.attempt_id, 650).await.unwrap());
-    // Usage over the declared bound is retained and suspends the model.
+    assert_eq!(settle(Some(&pool), &u, Some(650)).await.unwrap(), (true, 0));
+    assert_eq!(
+        settle(Some(&pool), &u, Some(650)).await.unwrap(),
+        (false, 0)
+    );
+    // Overage is charged and recorded atomically; it doesn't suspend the model.
     let over = ctx(
         t,
         "inv-over",
-        shared(100_000, &[("collection", "over", 100_000)]),
+        shared(5_010, &[("collection", "over", 100_000)]),
     );
     let o = admit_attempt(Some(&pool), &over, "fixture", "over-model", 100)
         .await
         .unwrap();
-    settle(Some(&pool), &over, "fixture", "over-model", &o, Some(5_000))
+    assert_eq!(
+        settle(Some(&pool), &o, Some(5_000)).await.unwrap(),
+        (true, 4_900)
+    );
+    let observed: i64 =
+        sqlx::query_scalar("SELECT observed_units FROM mcp_bound_violations WHERE attempt_id = $1")
+            .bind(&o.attempt_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(observed, 5_000);
+    assert_eq!(day_used(&pool, t, "collection", "over").await, 5_000);
+    let last = admit_attempt(Some(&pool), &over, "fixture", "over-model", 10)
         .await
         .unwrap();
-    assert_eq!(day_used(&pool, t, "collection", "over").await, 5_000);
-    let next = admit_attempt(Some(&pool), &over, "fixture", "over-model", 10)
+    assert_eq!(
+        settle(Some(&pool), &last, Some(30)).await.unwrap(),
+        (true, 20)
+    );
+    let next = admit_attempt(Some(&pool), &over, "fixture", "over-model", 1)
         .await
         .unwrap_err();
-    assert!(next.to_string().contains("suspended"), "{next}");
     assert!(
-        admit_attempt(Some(&pool), &over, "fixture", "other-model", 10)
-            .await
-            .is_ok()
+        next.to_string()
+            .contains(crate::mcp_generation::ALLOWANCE_PREFIX),
+        "{next}"
     );
     // No durable store: accounting is unavailable and nothing is sent.
     let none = admit_attempt(None, &over, "fixture", "m", 1)
@@ -2360,6 +2440,15 @@ async fn a8_a9_allowances_under_retries_and_concurrency() {
 async fn a8_failed_model_calls_settle_uncertain_at_the_full_bound() {
     let Some(url) = database() else { return };
     let f = fixture(url, enabled()).await;
+    let (state, _) = replica(
+        &f,
+        McpSettings {
+            generation: policy(&f.tenant, Some("o"), Some(50_000), Some(500_000)),
+            ..paid()
+        },
+        "mcp-accounting",
+    )
+    .await;
     let pool = f.a.pg_pool().unwrap().clone();
     let t = &f.tenant;
     let arrivals = Arc::new(AtomicUsize::new(0));
@@ -2384,9 +2473,9 @@ async fn a8_failed_model_calls_settle_uncertain_at_the_full_bound() {
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         format!("http://{}", l.local_addr().unwrap())
     };
-    apply_named(&f.a, t, "refusing", &refusing).await;
-    apply_named(&f.a, t, "unreachable", &closed).await;
-    let store = f.a.store_for(t).await.unwrap();
+    apply_named(&state, t, "refusing", &refusing).await;
+    apply_named(&state, t, "unreachable", &closed).await;
+    let store = state.store_for(t).await.unwrap();
     for (config, invocation) in [("refusing", "inv-error"), ("unreachable", "inv-transport")] {
         let c = Arc::new(ctx(
             t,
@@ -2396,7 +2485,7 @@ async fn a8_failed_model_calls_settle_uncertain_at_the_full_bound() {
         let result = crate::mcp_generation::scope(
             c,
             crate::providers_api::op_complete(
-                &f.a,
+                &state,
                 t,
                 store.as_ref(),
                 config,
@@ -2440,6 +2529,47 @@ async fn a8_failed_model_calls_settle_uncertain_at_the_full_bound() {
         arrivals.load(Ordering::SeqCst),
         1,
         "the error reached the stub once"
+    );
+
+    let overage = recorder(500, 50).await;
+    apply_named(&state, t, "overage", &overage.endpoint).await;
+    let invocation = "inv-metered-overage";
+    let c = Arc::new(ctx(
+        t,
+        invocation,
+        shared(50_000, &[("collection", invocation, 50_000)]),
+    ));
+    crate::mcp_generation::scope(
+        c,
+        crate::providers_api::op_complete(
+            &state,
+            t,
+            store.as_ref(),
+            "overage",
+            munarium_api_types::CompleteRequest {
+                tier: Some("fast".into()),
+                prompt: Some("orchid?".into()),
+                max_tokens: Some(16),
+                ..Default::default()
+            },
+        ),
+    )
+    .await
+    .unwrap();
+    let (reserved, settled): (i64, i64) = sqlx::query_as(
+        "SELECT bound_units, settled_units FROM mcp_token_attempts
+          WHERE tenant_id = $1 AND invocation_id = $2",
+    )
+    .bind(t)
+    .bind(invocation)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(settled, 550);
+    assert!(settled > reserved);
+    assert_eq!(
+        counter(&state, "munarium_mcp_generation_excess_tokens_total", ""),
+        (settled - reserved) as u64
     );
 }
 

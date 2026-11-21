@@ -194,6 +194,8 @@ impl RestTransport {
                 .json::<T>()
                 .await
                 .map_err(|e| MunariumError::Unexpected {
+                    retryable: None,
+                    retry_action: None,
                     status: Some(status.as_u16()),
                     detail: format!("undecodable success body: {e}"),
                 });
@@ -215,6 +217,8 @@ impl RestTransport {
         match resp.json::<serde_json::Value>().await {
             Ok(body) => MunariumError::from_problem(code, retry_after, &body),
             Err(_) => MunariumError::Unexpected {
+                retryable: None,
+                retry_action: None,
                 status: Some(code),
                 detail: format!("non-JSON error body (HTTP {code})"),
             },
@@ -231,6 +235,8 @@ impl RestTransport {
             }
         } else {
             MunariumError::Unexpected {
+                retryable: None,
+                retry_action: None,
                 status: None,
                 detail: e.to_string(),
             }
@@ -1177,6 +1183,8 @@ fn classify_turn_event(ev: crate::sse::SseEvent) -> Option<(Result<CoveredTurnSt
                 Ok(t) => (Ok(E::Done(Box::new(t))), true),
                 Err(e) => (
                     Err(MunariumError::Unexpected {
+                        retryable: None,
+                        retry_action: None,
                         status: None,
                         detail: format!("undecodable SSE done event: {e}"),
                     }),
@@ -1200,6 +1208,8 @@ fn classify_turn_event(ev: crate::sse::SseEvent) -> Option<(Result<CoveredTurnSt
             }
             Err(e) => (
                 Err(MunariumError::Unexpected {
+                    retryable: None,
+                    retry_action: None,
                     status: None,
                     detail: format!("undecodable SSE error event: {e}"),
                 }),
@@ -1253,6 +1263,8 @@ fn turn_event_stream(bytes: ByteStream) -> CoveredTurnStream {
                     }
                     Err(_) => {
                         st.queue.push_back(Err(MunariumError::Unexpected {
+                            retryable: None,
+                            retry_action: None,
                             status: None,
                             detail: format!(
                                 "SSE peer exceeded the {} MiB event buffer without \

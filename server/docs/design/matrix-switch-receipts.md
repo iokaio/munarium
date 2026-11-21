@@ -35,10 +35,15 @@ These local results are rehearsal evidence from an unreviewed candidate. They ar
 | Standalone build and tests from declared inputs | Passed on Windows with no sibling path read by any build or test: `cargo clippy --locked --workspace --all-targets -- -D warnings`, `cargo test --locked -p munarium-api-types -p munarium-core` (including 10 `matrix_contract` and 7 `matrix_pin` tests), `cargo test --locked -p munarium-server --bin munarium-server` (330 passed, 8 ignored; 16 `evidence_providers::`) and `docs_coverage` (7). `check_matrix_contract.py` passed against the Matrix checkout. Cargo used the local registry cache, and the run did not disable the network. |
 | Container image from `server/` | Passed. `docker build` with only `server/` as the context produced local image ID `sha256:bfdb2a78…365e`, with no sibling checkout in the context. The Server started with authentication disabled, and `/mmctl` printed the v1.4 `mmctl matrix` usage. The report route needs PostgreSQL and is covered by M1-T2. The build fetched base images and crates from the network. |
 
-Still open for M1-T1:
+On 21 November 2026, a fresh tracked-source archive of Server `72810a0`
+passed `cargo check --locked --offline -p munarium-server --bin munarium-server`
+on Windows with its own build directory in the network-restricted sandbox.
+The Matrix publisher pin check also reproduced the existing export and Rust
+constants from `79aa8c5`. All 17 Matrix contract and pin tests passed
+separately from the Server working tree.
 
-- Repeat the build with external network disabled after `cargo fetch --locked` and from the packaged source distribution.
-- Re-pin to the reviewed, merged publisher revision.
+M1-T1 still needs the packaged-source and container runs on the release
+candidate and the re-pin to the reviewed, merged publisher revision.
 
 ## M1-T2 procedure: installed peer and clients
 
@@ -49,9 +54,9 @@ M1-T2 needs a running Matrix peer. It was not run for this change. The procedure
 1. **Start an isolated stack.** From a Matrix checkout at the pinned revision, run `docker compose -p m1t2 up -d postgres munarium-matrix`. Seed one data view with the Matrix operator guide's quickstart. Record its name as `<view>`.
 2. **Baseline, unconfigured.** Start the v1.4.0 image on the same network and database with `MUNARIUM_MATRIX_BASE_URL`, `MUNARIUM_MATRIX_ADMIN_URL` and `MUNARIUM_MATRIX_TOKEN` unset. Record `GET /v1/reports/matrix`, gRPC `MatrixReport`, `/admin/matrix`, `/metrics` lines matching `munarium_matrix_provider_requests_total` and a runbook declaring `<view>`. That runbook must fail its verify step, not pass vacuously.
 3. **Baseline, configured.** Restart the same image with the three variables set to the peer. Save a runbook with a `matrix:<view>` reference and run one structured read. Save the answer's citations and a `matrix.` finding filter result. Also run a governed refusal, an unauthorized read and a peer outage (`docker compose -p m1t2 stop munarium-matrix`). Record the report, typed refusal, breaker state, per-user audit rows and metric `outcome` labels for each case.
-4. **Clients.** Against the configured baseline, run the report and evidence calls from the Rust, Python, .NET and Java SDKs at their released v1.4 versions. Save each response.
+4. **Clients and backup.** Against the configured baseline, run the report and evidence calls from the Rust, Python, .NET and Java SDKs at their released v1.4 versions. Save each response. Before upgrading, take and verify a consistency-point backup of PostgreSQL and any object-store data used by this test. Save the baseline evidence references to check after restore.
 5. **Upgrade.** Stop the baseline. Start `<candidate-digest>` with the same database, environment and tokens. Repeat steps 2 to 4 without reseeding. Compare each saved response and metric series. Differences other than timestamps and IDs fail the receipt. The `contract_version` emitted on sealed evidence must stay `0.1.0`.
-6. **Rollback.** Stop the candidate. Start `<baseline-digest>` with the same database and original configuration. Repeat steps 3 and 4. Check that the runbooks, evidence references and citations written by the candidate still resolve.
+6. **Rollback.** Stop the candidate and confirm the baseline refuses the upgraded database. Restore the pre-upgrade backup into a fresh v1.4 database, with the matching object-store revisions and original configuration, and start `<baseline-digest>`. Repeat the configured reads and client cases against the restored data. Verify the baseline runbooks, evidence references and citations still resolve. Record the loss of post-upgrade writes separately. [Server rollback procedure](../guides/server-1.5.md#rolling-back-to-140)
 7. **Helm.** Render the chart with `helm template` twice: once with `matrix.baseUrl` and `matrix.adminUrl` empty, and once with both set. Diff the rendered Server environment against the Compose inputs used above. Run the full install only in the environment the [cluster qualification plan](cluster-qualification-plan.md) authorizes.
 8. **CLI (M1-T3 inputs).** With `MUNARIUMCTL_MATRIX_URL`, `MUNARIUMCTL_MATRIX_TOKEN` and `MUNARIUMCTL_UID` set, run Matrix's `tools/check_mmctl_matrix.py` against `/mmctl` in both images and against `mmctl` built from this branch.
 9. **Clean up.** Run `docker compose -p m1t2 down -v`. Remove only the containers, volume and images this run created.

@@ -8,7 +8,7 @@ use std::sync::mpsc;
 use std::thread;
 
 fn limits() -> IsolatedPdfLimits {
-    IsolatedPdfLimits::PROVISIONAL
+    IsolatedPdfLimits::DEFAULT_PROFILE
 }
 
 fn exited(success: bool, code: Option<i32>, signal: Option<i32>) -> Observed {
@@ -21,7 +21,7 @@ fn exited(success: bool, code: Option<i32>, signal: Option<i32>) -> Observed {
 }
 
 #[test]
-fn provisional_limits_are_valid_and_bad_ones_are_refused() {
+fn default_profile_is_valid_and_bad_limits_are_refused() {
     assert_eq!(limits().validate(), Ok(()));
     let mut l = limits();
     l.memory_bytes = 1024;

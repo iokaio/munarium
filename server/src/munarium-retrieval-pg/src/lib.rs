@@ -254,11 +254,8 @@ pub const DEFERRED_SOURCES_MEMBER: &str = "deferred_sources";
 /// [`finish`](Self::finish) logs how many were skipped. `Fail` refuses the
 /// build at the first deferred document, before anything is committed.
 ///
-/// The failure is `RateLimited`, a capacity refusal a caller may retry: REST
-/// answers 429 `rate-limited`, gRPC `RESOURCE_EXHAUSTED`. No ClearView C2
-/// build-job code fits it (the codes classify by error type, and none of the
-/// six describes local extraction capacity), so a queued job records it
-/// unclassified, with the generic message, and the cause goes to the log.
+/// The failure is `ExtractionDeferred`. The caller may retry the build after
+/// extraction capacity returns. Queued jobs record `extraction_deferred`.
 #[derive(Debug)]
 pub(crate) struct DeferredDocuments {
     policy: munarium_extract::DeferredPolicy,
@@ -287,9 +284,9 @@ impl DeferredDocuments {
                 self.skipped.push(source_id.to_string());
                 Ok(())
             }
-            munarium_extract::DeferredPolicy::Fail => {
-                Err(KernelError::RateLimited(DEFERRED_BUILD_MESSAGE.to_string()))
-            }
+            munarium_extract::DeferredPolicy::Fail => Err(KernelError::ExtractionDeferred(
+                DEFERRED_BUILD_MESSAGE.to_string(),
+            )),
         }
     }
 

@@ -27,11 +27,13 @@
   `turn_stream_covered`. No typed facade wraps `POST /v1.2/query`; its
   `execution` member reaches callers through the generated untyped Server API
   clients as part of the JSON body.
-- Python, .NET and Java errors carry the R11 `retryable` and `retry_action`
+- Python, .NET, Java and Rust errors carry the R11 `retryable` and `retry_action`
   guidance from problem+json or gRPC `ErrorInfo`. It is informational: retry
-  behavior is unchanged and turns stay send-once. The Rust error enum does not
-  carry it yet, because adding fields to its public variants would break
-  existing matches.
+  behavior is unchanged and turns stay send-once.
+- **Rust source break.** `MunariumError` is now `#[non_exhaustive]`, and
+  its head-conflict, overload, rate-limit, run-lock and unexpected variants carry
+  optional retry fields. Update exhaustive matches and variant constructors
+  when Cargo resolves 1.5. See the [migration notes](docs/concepts/compatibility-and-errors.md#rust-client-15-migration).
 
 ## 1.4.0 — 2026-10-09, Server 1.4 clients
 

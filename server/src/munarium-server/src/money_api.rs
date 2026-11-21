@@ -38,10 +38,15 @@ struct Observer {
     /// ClearView A8/A9: the MCP call this completion serves and the attempt
     /// bound, when it runs under an MCP tool dispatch. `None` for native
     /// traffic and for embeddings, which this changes nothing for.
-    mcp: Option<(Arc<crate::mcp_generation::CallContext>, u64)>,
+    mcp: Option<(
+        Arc<crate::mcp_generation::CallContext>,
+        u64,
+        crate::replica_fleet::McpPolicyIdentity,
+    )>,
     mcp_attempts:
         tokio::sync::Mutex<std::collections::HashMap<String, crate::mcp_generation::Attempt>>,
     pool: Option<sqlx::PgPool>,
+    metrics: Arc<crate::metrics::Metrics>,
 }
 
 #[async_trait::async_trait]
@@ -51,16 +56,30 @@ impl AttemptObserver for Observer {
         // reserves nothing, natively or for MCP. Each HTTP attempt, retries
         // included, is its own reservation.
         let mcp_attempt = match &self.mcp {
-            Some((ctx, bound)) => Some(
-                crate::mcp_generation::admit_attempt(
-                    self.pool.as_ref(),
-                    ctx,
-                    &self.config,
-                    &self.model,
-                    *bound,
+            Some((ctx, bound, fleet)) => {
+                use crate::mcp_generation::{accounting, not_authorized};
+                if ctx.paid_enabled && ctx.policy.is_ok() {
+                    let pool = self
+                        .pool
+                        .as_ref()
+                        .ok_or_else(|| accounting("no durable store"))?;
+                    if !fleet.agrees(pool).await.map_err(accounting)? {
+                        return Err(not_authorized(
+                            "the MCP generation policy is not confirmed across live Server replicas",
+                        ));
+                    }
+                }
+                Some(
+                    crate::mcp_generation::admit_attempt(
+                        self.pool.as_ref(),
+                        ctx,
+                        &self.config,
+                        &self.model,
+                        *bound,
+                    )
+                    .await?,
                 )
-                .await?,
-            ),
+            }
             None => None,
         };
         let id = match self.begin_native(route).await {
@@ -79,24 +98,25 @@ impl AttemptObserver for Observer {
     }
     async fn finish(&self, attempt: &str, usage: MoneyUsage) -> Result<()> {
         let mcp_attempt = self.mcp_attempts.lock().await.remove(attempt);
-        if let (Some((ctx, _)), Some(a)) = (&self.mcp, mcp_attempt) {
+        if let (Some((ctx, _, _)), Some(a)) = (&self.mcp, mcp_attempt) {
             // Settle once against reliable usage: both counts reported and no
             // unknown categories. Anything else keeps the full reservation.
             let observed = match (usage.input, usage.output) {
                 (Some(i), Some(o)) if !usage.unknown_categories => i.checked_add(o),
                 _ => None,
             };
-            if let Err(e) = crate::mcp_generation::settle(
-                self.pool.as_ref(),
-                ctx,
-                &self.config,
-                &self.model,
-                &a,
-                observed,
-            )
-            .await
-            {
-                tracing::warn!(error = %e, "MCP attempt settle failed; the reservation stands");
+            match crate::mcp_generation::settle(self.pool.as_ref(), &a, observed).await {
+                Ok((_, excess)) if excess > 0 => self.metrics.inc_by(
+                    "munarium_mcp_generation_excess_tokens_total",
+                    String::new(),
+                    excess,
+                ),
+                Ok(_) => {}
+                Err(e) => {
+                    ctx.settlement_failed
+                        .store(true, std::sync::atomic::Ordering::Release);
+                    tracing::warn!(error = %e, "MCP attempt settle failed; the reservation stands");
+                }
             }
         }
         self.finish_native(attempt, usage).await
@@ -110,18 +130,12 @@ impl Observer {
     /// bound as `uncertain` (the same charge `reserved` already counted, so
     /// nothing is charged twice) and its receipt reads honestly.
     async fn settle_unfinished(&self) {
-        let Some((ctx, _)) = &self.mcp else { return };
+        if self.mcp.is_none() {
+            return;
+        }
         let unfinished: Vec<_> = self.mcp_attempts.lock().await.drain().collect();
         for (_, attempt) in unfinished {
-            if let Err(e) = crate::mcp_generation::settle(
-                self.pool.as_ref(),
-                ctx,
-                &self.config,
-                &self.model,
-                &attempt,
-                None,
-            )
-            .await
+            if let Err(e) = crate::mcp_generation::settle(self.pool.as_ref(), &attempt, None).await
             {
                 tracing::warn!(error = %e, "MCP attempt not marked uncertain; it stays reserved");
             }
@@ -265,7 +279,15 @@ pub(crate) async fn capture<T>(
     // The serving share of the daily cap: the whole cap unless a shadow
     // allocation (ClearView I2) is set aside from it.
     let limit = entry.doc.spec.budgets.serving_daily_limit();
-    let mcp = mcp_bound.and_then(|bound| crate::mcp_generation::current().map(|c| (c, bound)));
+    let mcp = mcp_bound.and_then(|bound| {
+        crate::mcp_generation::current().map(|ctx| {
+            (
+                ctx,
+                bound,
+                crate::replica_fleet::McpPolicyIdentity::from_state(state),
+            )
+        })
+    });
     if state.pg_pool().is_none() && limit.is_none() && mcp.is_none() {
         return (work.await, true);
     }
@@ -287,6 +309,7 @@ pub(crate) async fn capture<T>(
         mcp,
         mcp_attempts: Default::default(),
         pool: state.pg_pool().cloned(),
+        metrics: state.metrics.clone(),
     });
     let result = CONTEXT
         .scope(

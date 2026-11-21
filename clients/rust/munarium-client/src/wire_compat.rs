@@ -44,7 +44,7 @@ fn wire_integer_json_request_response_and_error_metadata_are_exact() {
         assert_eq!(response.json::<dto::HeadResponse>().unwrap().head_seq, n);
         let problem = json!({"type":"https://munarium.ioka.io/problems/head-conflict", "expected":n, "actual":n, "future_field":true});
         assert!(
-            matches!(MunariumError::from_problem(409, None, &problem), MunariumError::HeadConflict { expected, actual } if expected == n && actual == n)
+            matches!(MunariumError::from_problem(409, None, &problem), MunariumError::HeadConflict { expected, actual, .. } if expected == n && actual == n)
         );
     }
     for invalid in [
@@ -108,7 +108,7 @@ fn wire_integer_protobuf_and_native_body_preserve_exact_values() {
         );
         let status = tonic::Status::with_error_details(tonic::Code::Aborted, "conflict", details);
         assert!(
-            matches!(crate::error::from_status(status), MunariumError::HeadConflict { expected, actual } if expected == n && actual == n)
+            matches!(crate::error::from_status(status), MunariumError::HeadConflict { expected, actual, .. } if expected == n && actual == n)
         );
     }
 }

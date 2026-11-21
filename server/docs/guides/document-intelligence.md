@@ -192,12 +192,12 @@ same parser in a child process instead (design
   arrival order. A document that waits longer than
   `MUNARIUM_PDF_EXTRACTION_QUEUE_SECS` is not parsed.
 
-| Var | Default (provisional) | Notes |
+| Var | Default | Notes |
 |---|---|---|
 | `MUNARIUM_PDF_EXTRACTION` | `inline` | `inline` \| `isolated`; anything else is a startup error |
 | `MUNARIUM_PDF_EXTRACTION_MEMORY_MIB` | `512` | child memory limit: address space on Linux, including the mapped binary; not enforced by development builds on other platforms beyond refusing a larger input |
-| `MUNARIUM_PDF_EXTRACTION_CPU_SECS` | `10` | child CPU time (user and system) on Linux; not enforced on other platforms |
-| `MUNARIUM_PDF_EXTRACTION_TIMEOUT_SECS` | `30` | wall clock from spawn to exit |
+| `MUNARIUM_PDF_EXTRACTION_CPU_SECS` | `30` | child CPU time (user and system) on Linux; not enforced on other platforms |
+| `MUNARIUM_PDF_EXTRACTION_TIMEOUT_SECS` | `60` | wall clock from spawn to exit |
 | `MUNARIUM_PDF_EXTRACTION_MAX_OUTPUT_MIB` | `64` | largest extracted text accepted |
 | `MUNARIUM_PDF_EXTRACTION_CONCURRENCY` | `2` | children per process (1–64) |
 | `MUNARIUM_PDF_EXTRACTION_QUEUE_SECS` | `120` | admission wait before a document is deferred |
@@ -205,9 +205,10 @@ same parser in a child process instead (design
 | `MUNARIUM_PDF_EXTRACTION_DEFERRED` | `skip` | `skip` \| `fail`; what a build does with a deferred document (see below) |
 
 The bounds and both policies are read only under `isolated`; an invalid value
-is a startup error. They are provisional and not frozen
-production limits; the [measurements](../design/pdf-isolation-measurements.md)
-record what they were chosen from and what remains to qualify.
+is a startup error. The [B4 measurements](../design/pdf-isolation-measurements.md)
+record the basis for the frozen production defaults.
+The child response may use up to 4 KiB of additional framing space while the
+extracted text remains capped at the configured output limit.
 
 **Identity.** The profile's extractor identity is
 `pdf-text-isolated@1{os=…;mem_bytes=…;cpu_s=…;wall_ms=…;out_bytes=…}`, so the
@@ -252,8 +253,8 @@ picks them up: a version that skipped deferred documents lists them in its
 manifest (`deferred_sources`), so a rebuild of the same inputs builds a new
 version instead of reusing it, and a queued direct build's version id already
 covers each source's outcome. With `fail`, the first deferred document fails
-the build and nothing is committed. The error is `rate-limited` (HTTP 429, gRPC
-`RESOURCE_EXHAUSTED`), a capacity refusal to retry when extraction load allows;
-it names no document. A queued build job records it without an `error_code`,
-because no [build-job failure code](../api/errors.md#build-job-failure-codes)
-describes local extraction capacity. Neither policy is part of the identity.
+the build before publication. The error is `extraction-deferred` (HTTP 429,
+gRPC `RESOURCE_EXHAUSTED`), with guidance to retry when extraction capacity
+returns. It names no document. A queued build job records
+[`extraction_deferred`](../api/errors.md#job-failure-extraction_deferred).
+Neither policy is part of the identity.

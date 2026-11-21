@@ -471,6 +471,36 @@ class Replay(unittest.TestCase):
 
 
 class Manifests(unittest.TestCase):
+    def test_new_qualification_manifest_requires_the_frozen_profile_and_held_out_fixture(self):
+        fields = {k: v for k, v in manifest().items()
+                  if k not in ("id", "kind", "schema_version")}
+        fields.update(
+            revision="2", purpose="qualification", candidate_arm="embedder",
+            cpu_p95_limit_ms=i3.CPU_P95_LIMIT_MS, fixture="scripts/i3_held_out.json",
+            thresholds={f: i3.QUALIFICATION_THRESHOLDS for f in i3.FAMILIES},
+        )
+        i3.validate_manifest(ev.seal(i3.KIND_MANIFEST, **fields))
+        for override in (
+            {"candidate_arm": "combined"},
+            {"fixture": i3.FIXTURE},
+            {"thresholds": {f: THRESHOLD for f in i3.FAMILIES}},
+        ):
+            with self.subTest(override=override), self.assertRaises(ValueError):
+                i3.validate_manifest(ev.seal(i3.KIND_MANIFEST, **(fields | override)))
+
+    def test_new_replay_receipts_recompute_differences_from_exact_baseline(self):
+        before = good_row("d1", "docs", ["d/a.md"])
+        after = good_row("d1", "docs", ["d/b.md"])
+        replay = {
+            "baseline_queries": [before],
+            "queries": [after],
+            "differences": {"d1": "identical"},
+        }
+        with self.assertRaisesRegex(ValueError, "rollback_replay_difference_mismatch"):
+            i3.replay_summary(replay)
+        replay["differences"]["d1"] = "scores_changed"
+        self.assertEqual(i3.replay_summary(replay)["differences"], {"scores_changed": 1})
+
     def test_thresholds_must_be_complete_and_keep_disclosures_at_zero(self):
         i3.validate_thresholds(None, [10])
         i3.validate_thresholds({f: THRESHOLD for f in i3.FAMILIES}, [5, 10])
