@@ -482,7 +482,11 @@ class RestSessions:
         ``"require"``) selects how a multi-collection read treats a member
         that cannot be searched, and fills
         :attr:`models.TurnResult.coverage`. Omitted, the request carries no
-        such key and the v1.4 behavior applies."""
+        such key and the v1.4 behavior applies.
+
+        When a searched member is enrolled for inference, the result also
+        carries :attr:`models.TurnResult.execution` (ClearView IR-3): one
+        stage receipt per enrolled member, each naming its collection."""
         return self._t.run(
             s.turn(
                 session_id,

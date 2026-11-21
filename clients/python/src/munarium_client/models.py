@@ -270,6 +270,10 @@ class SearchStage(_Model):
     fallback: str | None = None
     identity: str | None = None
     scored: UInt64 | None = None
+    #: ClearView IR-3: the collection this receipt is for. Present only on a
+    #: multi-collection read (a session turn), which holds one receipt per
+    #: enrolled member and stage; ``None`` on a single-collection search.
+    collection: str | None = None
 
 
 class SearchExecution(_Model):
@@ -515,6 +519,17 @@ class TurnCoverage(_Model):
     withheld_claims: list[str]
 
 
+class ReadExecution(_Model):
+    """The inference stages of a multi-collection read (ClearView IR-3): one
+    receipt per enrolled member and configured stage, each naming its
+    ``collection``. REST and SSE ``done`` only: the typed gRPC
+    ``TurnResponse`` carries no stage receipts."""
+
+    #: Disclosure format version; currently 1.
+    version: int
+    stages: list[SearchStage]
+
+
 class TurnResult(_Model):
     session_id: str
     ordinal: int
@@ -533,6 +548,9 @@ class TurnResult(_Model):
     #: ClearView C1: present ONLY when the turn selected a
     #: ``collection_availability`` policy. Absent from every v1.4 response.
     coverage: TurnCoverage | None = None
+    #: ClearView IR-3: present ONLY when a searched member is enrolled for
+    #: inference. Absent from every v1.4 response and on typed gRPC.
+    execution: ReadExecution | None = None
 
 
 class TurnProgress(_Model):

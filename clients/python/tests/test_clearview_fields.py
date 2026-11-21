@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Offline unit tests for the Server 1.5 (ClearView) wire fields on the typed
 facade: C1 ``collection_availability``/``coverage``, R1
-``disclose_execution``/``execution`` and R11 ``retryable``/``retry_action``.
+``disclose_execution``/``execution``, the IR-3 turn ``execution`` and R11
+``retryable``/``retry_action``.
 
 Each new request option is sent only when the caller sets it, so a default
 call keeps the v1.4 request bytes; each new response member is optional, so a
@@ -319,6 +320,86 @@ def test_grpc_search_sends_and_parses_execution() -> None:
     core = _FakeCore(retrieval_pb2.HybridSearchResponse(envelope=envelope))
     plain = SyncGrpcRetrieval(core).search(query="q", shape_ref="docs")  # type: ignore[arg-type]
     assert core.sent[0].disclose_execution is False and plain.execution is None
+
+
+# ---------------------------------------------------------------------------
+# IR-3: the multi-collection turn execution
+# ---------------------------------------------------------------------------
+
+_TURN_EXECUTION: dict[str, object] = {
+    "version": 1,
+    "stages": [
+        {
+            "stage": "reranking",
+            "policy": "require",
+            "policy_revision": 2,
+            "applied": True,
+            "state": "ready",
+            "identity": "rr-a",
+            "scored": 8,
+            "collection": "contracts",
+        },
+        {
+            "stage": "reranking",
+            "policy": "prefer",
+            "policy_revision": 5,
+            "applied": False,
+            "state": "unavailable",
+            "fallback": "fused_order",
+            "collection": "letters",
+        },
+    ],
+}
+
+
+def _assert_turn_execution(result: TurnResult) -> None:
+    e = result.execution
+    assert e is not None and e.version == 1
+    contracts, letters = e.stages
+    assert (contracts.collection, contracts.applied, contracts.scored) == ("contracts", True, 8)
+    assert contracts.identity == "rr-a" and contracts.fallback is None
+    assert (letters.collection, letters.fallback) == ("letters", "fused_order")
+
+
+def test_rest_turn_decodes_execution() -> None:
+    body = {**_LEGACY_TURN, "coverage": _COVERAGE, "execution": _TURN_EXECUTION}
+    result = RestSessions(_rest(_Responder(body))).turn("s-1", query="q")
+    _assert_turn_execution(result)
+    _assert_coverage(result)
+    assert result.model_dump(exclude_none=True)["execution"] == _TURN_EXECUTION
+
+
+def test_a_turn_without_execution_or_with_null_decodes_to_none() -> None:
+    for body in (_LEGACY_TURN, {**_LEGACY_TURN, "execution": None}):
+        result = TurnResult.model_validate(body)
+        assert result.execution is None
+        assert result.model_dump(exclude_none=True) == _LEGACY_TURN
+
+
+def test_sse_done_carries_execution() -> None:
+    item = classify_turn_event(
+        SseEvent("done", json.dumps({**_LEGACY_TURN, "execution": _TURN_EXECUTION}))
+    )
+    assert isinstance(item, TurnResult)
+    _assert_turn_execution(item)
+    legacy = classify_turn_event(SseEvent("done", json.dumps(_LEGACY_TURN)))
+    assert isinstance(legacy, TurnResult) and legacy.execution is None
+
+
+def test_grpc_turn_carries_no_execution() -> None:
+    assert parse_turn_response(session_pb2.TurnResponse(session_id="s-1")).execution is None
+
+
+def test_single_search_stage_collection_is_optional() -> None:
+    named = json.loads(json.dumps(_EXECUTION))
+    named["stages"][0]["collection"] = "contracts"
+    result = SearchResult.model_validate({**_SEARCH, "execution": named})
+    assert result.execution is not None
+    assert result.execution.stages[0].collection == "contracts"
+    plain = SearchResult.model_validate({**_SEARCH, "execution": _EXECUTION})
+    assert plain.execution is not None and plain.execution.stages[0].collection is None
+    stage = plain.model_dump(exclude_none=True)["execution"]["stages"][0]
+    assert "collection" not in stage
 
 
 # ---------------------------------------------------------------------------
