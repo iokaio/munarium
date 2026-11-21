@@ -30,6 +30,14 @@ for registry availability, digests and public signing instructions. The detailed
   the child's memory and CPU limits come from `setrlimit` (`os=rlimit`).
   Windows builds are for development and testing only: they apply no OS limit
   and their extractor identity records `os=none` instead of `os=job`.
+- Mark the isolated PDF child non-dumpable on Linux before it reads a
+  document. `RLIMIT_CORE=0` does not stop a host whose `core_pattern` pipes
+  dumps to a handler (systemd-coredump, apport, a crash collector), and a
+  child that reaches its memory limit aborts, so its address space reached
+  that handler. Extracted text and the extractor identity are unchanged.
+  Linux measurements of the provisional limits on public documents, with
+  proposed production limits for review, are in
+  [the B4 record](docs/design/pdf-isolation-measurements.md#linux-measurements-20-november-2026).
 
 ## 1.4.0 — 2026-10-09
 

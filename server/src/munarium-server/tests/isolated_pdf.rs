@@ -15,6 +15,11 @@
 //! ```console
 //! cargo test --release -p munarium-server --test isolated_pdf measure -- --ignored --nocapture
 //! ```
+//!
+//! Set `MUNARIUM_PDF_MEASURE_DIR` to a directory of PDFs to measure them too
+//! (for example public reports downloaded for the purpose; they are read,
+//! never committed). On Linux the harness also reports child CPU time and
+//! the smallest memory limit each document extracts under.
 
 use munarium_extract::{
     Budget, Cancellation, DeferredPolicy, ExtractionStatus, FailureClass, IsolatedPdfExtractor,
@@ -980,63 +985,152 @@ async fn deferred_documents_fail_the_build_when_set_to_fail() {
 // measurement harness
 // ---------------------------------------------------------------------------
 
-/// Records CPU, peak memory, elapsed time, output size and the overhead over
-/// inline extraction for representative normal and near-limit documents
-/// under the provisional limits. Prints one row per document.
+/// CPU time (user + system) of this process's reaped children so far, from
+/// `cutime` and `cstime` in `/proc/self/stat` (fields 16 and 17, in
+/// `USER_HZ` = 100 ticks per second, so 10 ms resolution). The extractor
+/// reaps each child before `run` returns, so the difference across one run
+/// is that child's CPU time. Read from procfs, so no system-call binding.
+#[cfg(target_os = "linux")]
+fn children_cpu() -> Option<Duration> {
+    let stat = std::fs::read_to_string("/proc/self/stat").ok()?;
+    // Field 2 (comm) may contain spaces; field 3 starts after its last ')'.
+    let fields: Vec<&str> = stat.rsplit_once(')')?.1.split_whitespace().collect();
+    let ticks = fields.get(13)?.parse::<u64>().ok()? + fields.get(14)?.parse::<u64>().ok()?;
+    Some(Duration::from_millis(ticks * 10))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn children_cpu() -> Option<Duration> {
+    None
+}
+
+fn outcome(run: &munarium_extract::IsolatedRun) -> String {
+    match run.extracted.failure {
+        Some(FailureClass::OverBudget(b)) => format!("over_budget({})", b.as_str()),
+        Some(f) => f.as_str().to_string(),
+        None => run.extracted.status.as_str().to_string(),
+    }
+}
+
+/// The ceiling for the minimum-memory search.
+const SEARCH_CEILING_MIB: u64 = 4096;
+
+/// The smallest OS memory limit, to 1 MiB, under which `bytes` extracts with
+/// the same outcome and text as under [`SEARCH_CEILING_MIB`], or `Err` with
+/// the ceiling's outcome when even that does not extract. CPU and wall clock
+/// are generous so that only memory decides. `None` without OS limits.
+fn minimum_memory_mib(bytes: &[u8]) -> Option<Result<u64, String>> {
+    if munarium_extract::isolated::os_limits() == "none" {
+        return None;
+    }
+    let at = |mib: u64| {
+        let limits = IsolatedPdfLimits {
+            memory_bytes: mib * MIB,
+            cpu_seconds: 300,
+            wall_clock: Duration::from_secs(600),
+            max_output_bytes: 256 * MIB as usize,
+            max_concurrent: 1,
+            queue_wait: Duration::from_secs(1),
+        };
+        extractor(limits).run(bytes, &Cancellation::new())
+    };
+    let reference = at(SEARCH_CEILING_MIB);
+    if reference.extracted.failure.is_some() {
+        return Some(Err(outcome(&reference)));
+    }
+    let same = |run: &munarium_extract::IsolatedRun| {
+        run.extracted.failure.is_none()
+            && run.extracted.status == reference.extracted.status
+            && run.extracted.text == reference.extracted.text
+    };
+    // `lo` fails (or is below the 16 MiB floor or the input size), `hi` works.
+    let mut lo = (bytes.len() as u64 / MIB).max(15);
+    let mut hi = SEARCH_CEILING_MIB;
+    while hi - lo > 1 {
+        let mid = lo + (hi - lo) / 2;
+        if same(&at(mid)) {
+            hi = mid;
+        } else {
+            lo = mid;
+        }
+    }
+    Some(Ok(hi))
+}
+
+/// Records CPU, the memory each document needs, elapsed time, output size
+/// and the overhead over inline extraction for representative normal and
+/// near-limit documents under the provisional limits, plus admission and the
+/// effect of running children on in-process work. Prints Markdown tables.
 #[test]
 #[ignore = "measurement harness; run explicitly in release"]
 fn measure() {
     let limits = IsolatedPdfLimits::PROVISIONAL;
     let x = extractor(limits);
-    let cases: Vec<(&str, Vec<u8>)> = vec![
-        ("empty text layer", pdf_with_content("")),
-        ("1 page, 40 lines", text_pdf(40)),
-        ("text, 2k lines", text_pdf(2_000)),
-        ("text, 20k lines", text_pdf(20_000)),
-        ("heavy, 250k ops", heavy_pdf(250_000)),
-        ("heavy, 1M ops", heavy_pdf(1_000_000)),
-        ("heavy, 4M ops", heavy_pdf(4_000_000)),
-        ("heavy, 8M ops", heavy_pdf(8_000_000)),
+    let mut cases: Vec<(String, Vec<u8>)> = vec![
+        ("empty text layer".into(), pdf_with_content("")),
+        ("1 page, 40 lines".into(), text_pdf(40)),
+        ("text, 2k lines".into(), text_pdf(2_000)),
+        ("text, 20k lines".into(), text_pdf(20_000)),
+        ("heavy, 250k ops".into(), heavy_pdf(250_000)),
+        ("heavy, 1M ops".into(), heavy_pdf(1_000_000)),
+        ("heavy, 4M ops".into(), heavy_pdf(4_000_000)),
+        ("heavy, 8M ops".into(), heavy_pdf(8_000_000)),
     ];
+    if let Some(dir) = std::env::var_os("MUNARIUM_PDF_MEASURE_DIR") {
+        let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
+            .expect("MUNARIUM_PDF_MEASURE_DIR is readable")
+            .map(|e| e.expect("entry").path())
+            .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf")))
+            .collect();
+        files.sort();
+        for f in files {
+            let name = f.file_name().expect("name").to_string_lossy().into_owned();
+            cases.push((name, std::fs::read(&f).expect("read pdf")));
+        }
+    }
     println!(
         "os_limits={} limits={limits:?}",
         munarium_extract::isolated::os_limits()
     );
     println!(
-        "| document | input bytes | outcome | inline ms | isolated ms | overhead ms | child CPU ms | peak memory MiB | output bytes |"
+        "| document | input bytes | outcome | inline ms | isolated ms | overhead ms | child CPU ms | minimum memory limit MiB | output bytes |"
     );
     println!("|---|---:|---|---:|---:|---:|---:|---:|---:|");
-    for (name, bytes) in cases {
-        // Inline only where it is safe to run in this process.
+    for (name, bytes) in &cases {
         let (inline_ms, inline_text) = {
             let t = Instant::now();
-            let r = PdfTextExtractor.extract(&bytes);
+            let r = PdfTextExtractor.extract(bytes);
             (
                 t.elapsed().as_secs_f64() * 1000.0,
                 r.ok().map(|e| e.text.len()),
             )
         };
-        let run = x.run(&bytes, &Cancellation::new());
-        let iso_ms = run.report.elapsed.as_secs_f64() * 1000.0;
-        let outcome = match run.extracted.failure {
-            Some(FailureClass::OverBudget(b)) => format!("over_budget({})", b.as_str()),
-            Some(f) => f.as_str().to_string(),
-            None => run.extracted.status.as_str().to_string(),
+        let cpu_before = children_cpu();
+        let run = x.run(bytes, &Cancellation::new());
+        let cpu = match (cpu_before, children_cpu()) {
+            (Some(a), Some(b)) => Some(b.saturating_sub(a)),
+            _ => run.report.cpu,
         };
+        let iso_ms = run.report.elapsed.as_secs_f64() * 1000.0;
         if run.extracted.failure.is_none() {
             assert_eq!(Some(run.extracted.text.len()), inline_text, "{name}");
         }
+        let overhead = if run.extracted.failure.is_none() {
+            format!("{:.1}", iso_ms - inline_ms)
+        } else {
+            // Refused early while the inline parse ran to the end.
+            "n/a".into()
+        };
+        let minimum = match minimum_memory_mib(bytes) {
+            None => "n/a".into(),
+            Some(Ok(mib)) => mib.to_string(),
+            Some(Err(o)) => format!("> {SEARCH_CEILING_MIB} ({o})"),
+        };
         println!(
-            "| {name} | {} | {outcome} | {inline_ms:.1} | {iso_ms:.1} | {:.1} | {} | {} | {} |",
+            "| {name} | {} | {} | {inline_ms:.1} | {iso_ms:.1} | {overhead} | {} | {minimum} | {} |",
             bytes.len(),
-            iso_ms - inline_ms,
-            run.report
-                .cpu
-                .map(|c| format!("{:.0}", c.as_secs_f64() * 1000.0))
-                .unwrap_or_else(|| "n/a".into()),
-            run.report
-                .peak_memory_bytes
-                .map(|m| format!("{:.1}", m as f64 / MIB as f64))
+            outcome(&run),
+            cpu.map(|c| format!("{:.0}", c.as_secs_f64() * 1000.0))
                 .unwrap_or_else(|| "n/a".into()),
             run.report.output_bytes,
         );
@@ -1067,5 +1161,53 @@ fn measure() {
             queued.as_secs_f64() * 1000.0,
             x.peak_running()
         );
+    }
+
+    // Service overhead: the latency of a small in-process parse (a stand-in
+    // for request work on the replica) while idle and while the cap's
+    // children parse continuously.
+    let probe = text_pdf(40);
+    let sample = |label: &str| {
+        let mut ms: Vec<f64> = (0..400)
+            .map(|_| {
+                let t = Instant::now();
+                PdfTextExtractor.extract(&probe).expect("probe");
+                t.elapsed().as_secs_f64() * 1000.0
+            })
+            .collect();
+        ms.sort_by(f64::total_cmp);
+        println!(
+            "service probe, {label}: p50 {:.3} ms, p95 {:.3} ms, p99 {:.3} ms",
+            ms[ms.len() / 2],
+            ms[ms.len() * 95 / 100],
+            ms[ms.len() * 99 / 100]
+        );
+    };
+    sample("idle");
+    for (label, doc) in [
+        ("2 children on text, 20k lines", text_pdf(20_000)),
+        ("2 children on heavy, 250k ops", heavy_pdf(250_000)),
+    ] {
+        let x = Arc::new(extractor(limits));
+        let doc = Arc::new(doc);
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let load: Vec<_> = (0..limits.max_concurrent)
+            .map(|_| {
+                let (x, doc, stop) = (Arc::clone(&x), Arc::clone(&doc), Arc::clone(&stop));
+                std::thread::spawn(move || {
+                    let mut runs = 0usize;
+                    while !stop.load(std::sync::atomic::Ordering::SeqCst) {
+                        x.run(&doc, &Cancellation::new());
+                        runs += 1;
+                    }
+                    runs
+                })
+            })
+            .collect();
+        std::thread::sleep(Duration::from_millis(200));
+        sample(label);
+        stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        let runs: usize = load.into_iter().map(|h| h.join().expect("load")).sum();
+        println!("  (background children completed: {runs})");
     }
 }
