@@ -1154,6 +1154,32 @@ def hit_rows(hits):
     ]
 
 
+def replay_difference(before, after):
+    """How a post-rollback hash read differs from the original hash read."""
+    if before is None or before.get("status") != "ok" or after.get("status") != "ok":
+        return "not_comparable"
+    if before.get("index_version") != after.get("index_version"):
+        return "index_version_changed"
+    if before["hits"] == after["hits"]:
+        return "identical"
+    ids = [h["chunk_id"] for h in before["hits"]]
+    again = [h["chunk_id"] for h in after["hits"]]
+    if ids == again:
+        return "scores_changed"
+    if sorted(ids) == sorted(again):
+        return "order_changed"
+    return "hits_changed"
+
+
+def replay_summary(replay):
+    if replay is None or "differences" not in replay:
+        return replay  # absent, or a count-only record from an earlier runner
+    counts = {}
+    for kind in replay["differences"].values():
+        counts[kind] = counts.get(kind, 0) + 1
+    return {"queries": len(replay["queries"]), "differences": counts}
+
+
 def stage_rows(response):
     return [
         {
@@ -1398,14 +1424,11 @@ def execute(manifest, binary, lens_url, lens_binary, directory, run_id):
                 )
                 baseline = {r["id"]: r for r in fam["arms"]["hash"]["queries"]}
                 fam["rollback_replay"] = {
-                    "queries": len(replay),
-                    "identical": sum(
-                        1
+                    "queries": replay,
+                    "differences": {
+                        r["id"]: replay_difference(baseline.get(r["id"]), r)
                         for r in replay
-                        if r["status"] == "ok"
-                        and baseline.get(r["id"], {}).get("hits") == r["hits"]
-                        and baseline[r["id"]].get("index_version") == r["index_version"]
-                    ),
+                    },
                 }
             record["setup"]["database_bytes"] = rig.database_bytes()
     except Exception as exc:  # noqa: BLE001 - the run is retained as incomplete
@@ -1592,7 +1615,7 @@ def family_receipts(manifest, raw):
                 k_values=manifest["k_values"],
                 arms=arms,
                 builds=fam["builds"],
-                rollback_replay=fam["rollback_replay"],
+                rollback_replay=replay_summary(fam["rollback_replay"]),
                 thresholds=thresholds,
                 thresholds_status="declared" if thresholds else "none_declared",
                 verdict=verdict,

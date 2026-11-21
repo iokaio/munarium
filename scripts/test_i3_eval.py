@@ -437,6 +437,39 @@ class Verdicts(unittest.TestCase):
         )
 
 
+class Replay(unittest.TestCase):
+    def test_replay_differences_are_classified(self):
+        before = good_row("d1", "docs", ["d/a.md", "d/b.md"])
+        self.assertEqual(
+            i3.replay_difference(before, copy.deepcopy(before)), "identical"
+        )
+        moved = copy.deepcopy(before)
+        moved["hits"][0]["score"] = 0.5
+        self.assertEqual(i3.replay_difference(before, moved), "scores_changed")
+        swapped = copy.deepcopy(before)
+        swapped["hits"].reverse()
+        self.assertEqual(i3.replay_difference(before, swapped), "order_changed")
+        other = good_row("d1", "docs", ["d/c.md"])
+        self.assertEqual(i3.replay_difference(before, other), "hits_changed")
+        repinned = dict(copy.deepcopy(before), index_version="idx-other")
+        self.assertEqual(
+            i3.replay_difference(before, repinned), "index_version_changed"
+        )
+        failed = {"id": "d1", "status": "failed"}
+        self.assertEqual(i3.replay_difference(before, failed), "not_comparable")
+        self.assertEqual(i3.replay_difference(None, before), "not_comparable")
+        summary = i3.replay_summary(
+            {
+                "queries": [before, moved],
+                "differences": {"a": "identical", "b": "scores_changed"},
+            }
+        )
+        self.assertEqual(
+            summary,
+            {"queries": 2, "differences": {"identical": 1, "scores_changed": 1}},
+        )
+
+
 class Manifests(unittest.TestCase):
     def test_thresholds_must_be_complete_and_keep_disclosures_at_zero(self):
         i3.validate_thresholds(None, [10])

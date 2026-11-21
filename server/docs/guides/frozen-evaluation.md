@@ -300,7 +300,7 @@ rerank-only binding over the active hash index. The embedder arm runs a queued
 rebinds the same semantic space, keeps the built index and enrolls. Every
 inference arm is rolled back before the next. The reranker arm therefore runs
 before any semantic index exists, and the hash arm is replayed after the last
-rollback to confirm the restored reads. Each query records the ranked hits,
+rollback and compared with the original hash reads. Each query records the ranked hits,
 client round-trip latency, failures with a fixed problem code and the
 `execution.stages` receipts. A receipt that does not show exactly the arm's
 stages applied counts as a failure. An arm that cannot be configured is recorded
@@ -354,6 +354,13 @@ caches. It is not a capacity measurement. Reranking reorders only the
 `min(top_k, max_candidates)` returned hits (Server reranks the served head), so
 the reranker arm cannot change recall at `k = top_k`. Lens on a laptop CPU scores
 one sequence at a time, which bounds `max_candidates` well below the Server
-default. A threshold proposal from a pilot is input to the maintainer's
-decision. A qualifying run needs `purpose: qualification`, frozen thresholds,
-held-out queries and a reviewed commit of the manifest before execution.
+default. The rollback replay is recorded per query (`identical`,
+`scores_changed`, `order_changed`, `hits_changed`, `index_version_changed`) and
+does not affect the verdict. Expect differences: the hash index's vector leg is
+an approximate HNSW scan of the collection's chunk partition, filtered to the
+pinned index version. Rows of another version, such as the semantic index built
+beside it, can change a pinned hash read's vector-leg candidates, so the hash
+arm is measured before any semantic build. A threshold proposal from a pilot is
+input to the maintainer's decision. A qualifying run needs
+`purpose: qualification`, frozen thresholds, held-out queries and a reviewed
+commit of the manifest before execution.
