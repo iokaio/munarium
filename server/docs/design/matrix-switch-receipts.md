@@ -1,6 +1,6 @@
 # Matrix switch receipts (ClearView M1 step 3)
 
-This page records the Server side of [M1](repository-handoffs.md#m1) step 3, "switch the consumer without changing deployment", and the procedure for the receipts that still need an installed Matrix peer. The acceptance criteria are [M1-T1](repository-handoffs.md#m1-t1) and [M1-T2](repository-handoffs.md#m1-t2). Where this page and the handoff page disagree, the handoff page wins. Step 4, removing the superseded Server sources, has not started. [Transfer order and rollback](repository-handoffs.md#transfer-order-and-rollback) · [Matrix transfer inventory](https://github.com/iokaio/munarium-matrix/blob/79aa8c573011e8095c171dc532b01f19a6ecda63/docs/clearview-transfer.md)
+This page records the Server side of [M1](repository-handoffs.md#m1) step 3, "switch the consumer without changing deployment", and the procedure for the receipts that still need a release-candidate Matrix peer. The acceptance criteria are [M1-T1](repository-handoffs.md#m1-t1) and [M1-T2](repository-handoffs.md#m1-t2). Where this page and the handoff page disagree, the handoff page wins. Step 4, removing the superseded Server sources, has not started. [Transfer order and rollback](repository-handoffs.md#transfer-order-and-rollback) · [Matrix transfer inventory](https://github.com/iokaio/munarium-matrix/blob/79aa8c573011e8095c171dc532b01f19a6ecda63/docs/clearview-transfer.md)
 
 ## What the Server consumes
 
@@ -45,9 +45,32 @@ separately from the Server working tree.
 M1-T1 still needs the packaged-source and container runs on the release
 candidate and the re-pin to the reviewed, merged publisher revision.
 
+## Local reverse-peer rehearsal, 21 November 2026
+
+Server `67e368d` and Matrix `79aa8c5` were built from source on Windows with
+`cargo build --locked --offline` and paired over loopback. The rehearsal used
+the CI-pinned disposable pgvector container, separate Server and Matrix
+databases, and the fictional Matrix T0 PostgreSQL fixture. Both processes
+and the database container were shut down after the run.
+
+| Case | Observed |
+|---|---|
+| Unconfigured peer | The Server Matrix report returned `configured: false`. |
+| Configured peer | Matrix verified `open-pipeline-by-region@3`. The Server runbook's `verifyDataViews` passed and the Matrix report listed the pinned contract. |
+| Structured evidence | A provider-free turn with the required Matrix layer produced a sealed evidence reference. The caller resolved its rows through the Server evidence API. |
+| Authority | Server refused session creation without query scope. Matrix returned `policy_denied` for a mismatched tenant. |
+| Peer outage | Stopping the owned Matrix process produced `required-evidence-unavailable` (424) for a fresh turn. The Server report still showed the peer as configured and recorded one breaker failure. |
+
+The same Matrix revision passed all nine checks on [PR #4](https://github.com/iokaio/munarium-matrix/pull/4/checks).
+This rehearsal used the candidate sources. The M1-T2 release receipt still
+needs the exact packaged artifacts, both client directions and the baseline
+backup-restore comparison.
+
 ## M1-T2 procedure: installed peer and clients
 
-M1-T2 needs a running Matrix peer. It was not run for this change. The procedure uses only disposable local resources: a dedicated Compose project name, loopback ports, test tokens and a disposable database volume that is removed at the end. It needs no paid resource.
+The procedure uses a dedicated Compose project, loopback ports, test tokens
+and a disposable database volume. It requires the reviewed Matrix publisher
+revision and the exact Server release candidate.
 
 **Inputs to record.** Server v1.4.0 image by digest, as `<baseline-digest>`. The candidate image built from this branch, as `<candidate-digest>`, with the Server commit. The Matrix image built from the reviewed publisher revision, with its commit. The four released v1.4 SDK versions from `clients/release.json`. The chart revision. The host and Docker versions.
 

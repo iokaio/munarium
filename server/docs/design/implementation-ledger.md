@@ -97,6 +97,29 @@ The hub export must reconcile the 21 November allowance decisions with ADR
 0026's earlier upper-bound and model-suspension rules. The new deferred-job
 code belongs in the next C2 export.
 
+### Handoff progress after the Server implementation
+
+- The hub's [C2 and MCP allowance review candidate](https://github.com/iokaio/munarium-platform/tree/042973e3e13f1be635adf46d905f9de7944738ef/docs/decisions/clearview-c2-mcp-v1)
+  records the 21 November amendments to ADRs 0022 and 0026. The candidate
+  passed 20 JSON Schema vectors and the hub's 83 offline tests. All eight
+  job-failure messages matched the registry at Server `67e368d`. A
+  disposable export reproduced the committed bytes and bundle digest
+  `2b4032a8d80c485150a4047f9384dbabe8f7c23f263a6ef86c0faa92c094783f`.
+  Review of the exact candidate and formal Server re-vendoring remain pending.
+  Server's MMP publisher independently reproduced its 24 locked files.
+- [Matrix PR #4](https://github.com/iokaio/munarium-matrix/pull/4) advanced
+  to the existing `79aa8c5` publisher revision. All nine hosted checks
+  passed on that head, including the previously failing dependency job,
+  both Server interoperability jobs, the client suites and the image-size gate.
+  A local reverse-peer rehearsal on Server `67e368d` passed report, runbook
+  verification, sealed evidence, authority and outage checks.
+  [Rehearsal scope](matrix-switch-receipts.md#local-reverse-peer-rehearsal-21-november-2026)
+  Matrix publisher review, pairing the final Server and Matrix artifacts,
+  and per-path removal confirmations remain part of M1.
+- The local environment probe found 64 GiB physical memory and no selected
+  Docker Desktop Kubernetes context. L3 receipts still need the designated
+  128 GiB workstation, named run owners and the frozen candidate inputs.
+
 ## Phase 0 · v1.4 baseline and shared decisions
 
 | ID | Task and primary design | Status and next evidence |
