@@ -2322,6 +2322,114 @@ mod clearview_wire_tests {
         assert!(resp.execution.is_none());
     }
 
+    fn turn_execution() -> serde_json::Value {
+        serde_json::json!({
+            "version": 1,
+            "stages": [
+                {"stage": "reranking", "policy": "require", "policy_revision": 2,
+                 "applied": true, "state": "ready", "identity": "rr-a", "scored": 8,
+                 "collection": "contracts"},
+                {"stage": "reranking", "policy": "prefer", "policy_revision": 5,
+                 "applied": false, "state": "unavailable", "fallback": "fused_order",
+                 "collection": "letters"}
+            ]
+        })
+    }
+
+    fn executed_turn() -> serde_json::Value {
+        let mut body = covered_turn();
+        body["execution"] = turn_execution();
+        body
+    }
+
+    fn assert_turn_execution(e: &dto::ReadExecutionDto) {
+        assert_eq!(e.version, 1);
+        let [contracts, letters] = &e.stages[..] else {
+            panic!("two receipts expected: {:?}", e.stages);
+        };
+        assert_eq!(contracts.collection.as_deref(), Some("contracts"));
+        assert_eq!((contracts.applied, contracts.scored), (true, Some(8)));
+        assert_eq!(contracts.identity.as_deref(), Some("rr-a"));
+        assert_eq!(letters.collection.as_deref(), Some("letters"));
+        assert_eq!(letters.fallback.as_deref(), Some("fused_order"));
+    }
+
+    #[tokio::test]
+    async fn turn_covered_decodes_the_multi_collection_execution() {
+        let (base, _seen) =
+            canned_responder(200, "application/json", executed_turn().to_string()).await;
+        let resp = transport(&base)
+            .turn_covered("s-1", turn_request(None))
+            .await
+            .expect("turn");
+        assert_turn_execution(resp.execution.as_ref().expect("execution present"));
+        assert_coverage(resp.coverage.as_ref().expect("coverage alongside"));
+        let text = serde_json::to_string(&resp).expect("serializes");
+        let again: dto::CoveredTurnResponse = serde_json::from_str(&text).expect("decodes again");
+        assert_eq!(
+            again.execution, resp.execution,
+            "execution and its collection members round-trip"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_turn_without_execution_or_with_null_decodes_to_none() {
+        for body in [covered_turn(), {
+            let mut b = legacy_turn();
+            b["execution"] = serde_json::Value::Null;
+            b
+        }] {
+            let (base, _seen) = canned_responder(200, "application/json", body.to_string()).await;
+            let resp = transport(&base)
+                .turn_covered("s-1", turn_request(None))
+                .await
+                .expect("turn");
+            assert!(resp.execution.is_none(), "{body}");
+            let out = serde_json::to_value(&resp).expect("serializes");
+            assert!(out.get("execution").is_none(), "{out}");
+        }
+    }
+
+    #[tokio::test]
+    async fn sse_done_carries_the_multi_collection_execution() {
+        let stream = format!(
+            "event: done
+data: {}
+
+",
+            executed_turn()
+        );
+        let (base, _seen) = canned_responder(200, "text/event-stream", stream).await;
+        let mut events = transport(&base)
+            .turn_stream_covered("s-1", turn_request(None))
+            .await
+            .expect("stream opens");
+        let Some(Ok(CoveredTurnStreamEvent::Done(done))) = events.next().await else {
+            panic!("done expected");
+        };
+        assert_turn_execution(done.execution.as_ref().expect("execution on done"));
+        assert!(events.next().await.is_none());
+    }
+
+    #[test]
+    fn a_single_search_stage_decodes_with_and_without_collection() {
+        let base = serde_json::json!({
+            "stage": "embedding", "policy": "require", "policy_revision": 1,
+            "applied": true, "state": "ready"
+        });
+        let plain: dto::SearchStageDto = serde_json::from_value(base.clone()).expect("plain");
+        assert_eq!(plain.collection, None);
+        let out = serde_json::to_value(&plain).expect("serializes");
+        assert!(
+            out.get("collection").is_none(),
+            "a single-collection receipt grows no collection key: {out}"
+        );
+        let mut named = base;
+        named["collection"] = "contracts".into();
+        let named: dto::SearchStageDto = serde_json::from_value(named).expect("named");
+        assert_eq!(named.collection.as_deref(), Some("contracts"));
+    }
+
     #[tokio::test]
     async fn the_plain_search_refuses_a_disclosure_it_would_drop() {
         let err = transport("http://127.0.0.1:1")
