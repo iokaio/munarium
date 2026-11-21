@@ -610,6 +610,10 @@ public sealed record TurnResult
     /// <see cref="TurnRequest.CollectionAvailability"/>; null on every other
     /// turn and from a v1.4 server.</summary>
     [JsonPropertyName("coverage")] public TurnCoverage? Coverage { get; init; }
+    /// <summary>ClearView IR-3: present only when a searched member is
+    /// enrolled for inference; null from a v1.4 server and always null on
+    /// typed gRPC (REST-first).</summary>
+    [JsonPropertyName("execution")] public ReadExecution? Execution { get; init; }
 }
 
 /// <summary>One progress event on the streaming turn plane. The wire tags

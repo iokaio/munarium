@@ -302,6 +302,22 @@ public sealed record SearchStage
     [JsonPropertyName("fallback")] public string? Fallback { get; init; }
     [JsonPropertyName("identity")] public string? Identity { get; init; }
     [JsonPropertyName("scored")] public ulong? Scored { get; init; }
+    /// <summary>ClearView IR-3: the collection this receipt is for. Present
+    /// only on a multi-collection read (a session turn), which holds one
+    /// receipt per enrolled member and stage; null on a single-collection
+    /// search.</summary>
+    [JsonPropertyName("collection")] public string? Collection { get; init; }
+}
+
+/// <summary>The inference stages of a multi-collection read (ClearView
+/// IR-3): one receipt per enrolled member and configured stage, each naming
+/// its <see cref="SearchStage.Collection"/>. REST and SSE <c>done</c> only:
+/// the typed gRPC <c>TurnResponse</c> carries no stage receipts.</summary>
+public sealed record ReadExecution
+{
+    /// <summary>Disclosure format version; currently 1.</summary>
+    [JsonPropertyName("version")] public uint Version { get; init; }
+    [JsonPropertyName("stages")] public IReadOnlyList<SearchStage> Stages { get; init; } = [];
 }
 
 public sealed record ApplyShapeResult

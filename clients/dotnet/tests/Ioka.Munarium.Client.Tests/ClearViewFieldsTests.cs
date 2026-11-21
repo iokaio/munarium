@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Offline pins for the Server 1.5 (ClearView) wire fields on the typed
 // facade: C1 collection_availability/coverage, R1 disclose_execution/
-// execution and R11 retryable/retry_action. Each request option leaves the
+// execution, the IR-3 turn execution and R11 retryable/retry_action. Each request option leaves the
 // process only when set; each response member is optional, so a v1.4 body
 // still decodes. No server: a canned HttpMessageHandler stands in for the
 // REST peer, and the gRPC mapping is exercised on hand-built messages.
@@ -18,7 +18,8 @@ namespace Ioka.Munarium.Client.Tests;
 
 public class ClearViewFieldsTests
 {
-    private sealed class CannedHandler(string body) : HttpMessageHandler
+    private sealed class CannedHandler(string body, string mediaType = "application/json")
+        : HttpMessageHandler
     {
         public List<string?> Bodies { get; } = [];
 
@@ -30,7 +31,7 @@ public class ClearViewFieldsTests
                 : await request.Content.ReadAsStringAsync(cancellationToken));
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+                Content = new StringContent(body, Encoding.UTF8, mediaType),
             };
         }
     }
@@ -199,6 +200,91 @@ public class ClearViewFieldsTests
         Assert.Equal(("probe", "unavailable"), (unavailable.Stage, unavailable.Outcome));
         Assert.Null(unavailable.Hits);
         Assert.Equal("no_active_index", unavailable.Reason);
+    }
+
+    // -- IR-3: the multi-collection turn execution ---------------------------
+
+    private const string TurnExecution = """
+        {"version":1,"stages":[
+          {"stage":"reranking","policy":"require","policy_revision":2,"applied":true,
+           "state":"ready","identity":"rr-a","scored":8,"collection":"contracts"},
+          {"stage":"reranking","policy":"prefer","policy_revision":5,"applied":false,
+           "state":"unavailable","fallback":"fused_order","collection":"letters"}]}
+        """;
+
+    private static readonly string ExecutedTurn = $$"""
+        {"session_id":"s-1","ordinal":1,"collections_searched":["contracts","letters"],
+         "skipped":[],"hits":[],"envelopes":[],"execution":{{TurnExecution}}}
+        """;
+
+    private static void AssertTurnExecution(ReadExecution? e)
+    {
+        Assert.NotNull(e);
+        Assert.Equal(1u, e.Version);
+        Assert.Equal(2, e.Stages.Count);
+        var contracts = e.Stages[0];
+        Assert.Equal(("contracts", true, 8ul), (contracts.Collection, contracts.Applied, contracts.Scored));
+        Assert.Equal("rr-a", contracts.Identity);
+        Assert.Null(contracts.Fallback);
+        Assert.Equal(("letters", "fused_order"), (e.Stages[1].Collection, e.Stages[1].Fallback));
+    }
+
+    [Fact]
+    public async Task ARestTurnDecodesTheMultiCollectionExecution()
+    {
+        await using var client = RestOver(new CannedHandler(ExecutedTurn));
+        var result = await client.Sessions.TurnAsync("s-1", new TurnRequest { Query = "q" });
+        AssertTurnExecution(result.Execution);
+        var again = JsonSerializer.Deserialize(
+            JsonSerializer.Serialize(result, MunariumJsonContext.Default.TurnResult),
+            MunariumJsonContext.Default.TurnResult)!;
+        AssertTurnExecution(again.Execution);
+    }
+
+    [Fact]
+    public void ATurnWithoutExecutionOrWithNullDecodesToNullAndOmitsTheKey()
+    {
+        var nullExecution = LegacyTurn.TrimEnd().TrimEnd('}') + ""","execution":null}""";
+        foreach (var body in new[] { LegacyTurn, CoveredTurn, nullExecution })
+        {
+            var result = JsonSerializer.Deserialize(body, MunariumJsonContext.Default.TurnResult)!;
+            Assert.Null(result.Execution);
+            Assert.DoesNotContain(
+                "execution", JsonSerializer.Serialize(result, MunariumJsonContext.Default.TurnResult));
+        }
+    }
+
+    [Fact]
+    public async Task SseDoneCarriesTheMultiCollectionExecution()
+    {
+        var stream = "event: done\ndata: " + ExecutedTurn.ReplaceLineEndings("") + "\n\n";
+        await using var client = RestOver(new CannedHandler(stream, "text/event-stream"));
+        var events = new List<TurnStreamEvent>();
+        await foreach (var ev in client.Sessions.TurnStreamAsync("s-1", new TurnRequest { Query = "q" }))
+        {
+            events.Add(ev);
+        }
+        var done = Assert.IsType<TurnStreamEvent.Done>(Assert.Single(events));
+        AssertTurnExecution(done.Response.Execution);
+    }
+
+    [Fact]
+    public void TheGrpcTurnCarriesNoExecution()
+    {
+        Assert.Null(GrpcTransport.ToTurnResult(new Mmp.V1.TurnResponse { SessionId = "s-1" }).Execution);
+    }
+
+    [Fact]
+    public void ASingleSearchStageDecodesWithAndWithoutCollection()
+    {
+        var plain = JsonSerializer.Deserialize(DisclosedSearch, MunariumJsonContext.Default.SearchResult)!;
+        Assert.Null(plain.Execution!.Stages[0].Collection);
+        Assert.DoesNotContain(
+            "collection", JsonSerializer.Serialize(plain, MunariumJsonContext.Default.SearchResult));
+        var named = JsonSerializer.Deserialize(
+            DisclosedSearch.Replace("\"fallback\":\"fused_order\"", "\"fallback\":\"fused_order\",\"collection\":\"contracts\""),
+            MunariumJsonContext.Default.SearchResult)!;
+        Assert.Equal("contracts", named.Execution!.Stages[0].Collection);
     }
 
     // -- R1: disclose_execution / execution ----------------------------------
