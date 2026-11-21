@@ -172,9 +172,13 @@ same parser in a child process instead (design
   empty environment. No shell and no extra file is involved, so the distroless
   image needs nothing new.
 - Memory and CPU are enforced by the operating system on 64-bit Linux, the
-  only production platform: the child applies `setrlimit` to itself (address
-  space, CPU time, no core dumps; through the pinned `rlimit` crate) before
-  it reads the document, and the identity records `os=rlimit`. Windows and
+  only production platform: before it reads the document the child marks
+  itself non-dumpable and applies `setrlimit` to itself (address space, CPU
+  time, no core file; through the pinned `rlimit` crate and rustix), and the
+  identity records `os=rlimit`. Non-dumpable matters because a host whose
+  `core_pattern` pipes dumps to a handler (systemd-coredump, apport, a crash
+  collector) receives the whole address space despite `RLIMIT_CORE=0`, and a
+  child that reaches its memory limit aborts. Windows and
   other builds are for development and testing only. They apply no OS memory
   or CPU limit, and the identity records `os=none`; the wall-clock deadline,
   output cap, input-size check and admission cap below still apply. The

@@ -78,3 +78,11 @@ tokio = { workspace = true, features = ["rt", "macros"] }
 # enforcement mechanism must be a reviewed change.
 [target.'cfg(all(target_os = "linux", target_pointer_width = "64"))'.dependencies]
 rlimit = "=0.11.0"
+# The same child marks itself non-dumpable (`prctl(PR_SET_DUMPABLE, 0)`)
+# through rustix's safe wrapper: `RLIMIT_CORE` does not stop a core_pattern
+# pipe handler, which would otherwise receive the child's whole address space.
+# rustix 1.1.6 (Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT,
+# bytecodealliance/rustix) is already in the Linux graph through `tempfile`;
+# this adds only its `process` feature. Exact pin for the same reason; 1.1.6
+# is the release that fixes RUSTSEC-2026-0486 (xattr functions, unused here).
+rustix = { version = "=1.1.6", default-features = false, features = ["std", "process"] }
